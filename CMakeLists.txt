@@ -57,6 +57,14 @@ qt_add_executable(BrickSuite
     src/repositories/StorageLocationRepository.cpp
     src/ui/storage/StorageWidget.cpp
     src/ui/storage/StorageWidget.h
+    src/models/Part.h
+    src/models/Part.cpp
+    src/models/InventoryRecord.h
+    src/models/InventoryRecord.cpp
+    src/repositories/PartRepository.h
+    src/repositories/PartRepository.cpp
+    src/repositories/InventoryRecordRepository.h
+    src/repositories/InventoryRecordRepository.cpp
 )
 target_link_libraries(BrickSuite PRIVATE
     Qt6::Core

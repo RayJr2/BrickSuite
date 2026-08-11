@@ -53,6 +53,7 @@ bool ReferenceDataSeeder::seedIfRequired()
 {
     int colorCount = 0;
     int categoryCount = 0;
+    int partCount = 0;
 
     if (!getRecordCount(
             "color",
@@ -68,15 +69,14 @@ bool ReferenceDataSeeder::seedIfRequired()
         return false;
     }
 
-    if (colorCount > 0 &&
-        categoryCount > 0)
-    {
-        qInfo()
-            << "BrickSuite reference data already seeded."
-            << "Colors:"
-            << colorCount
-            << "Categories:"
-            << categoryCount;
+    if (!getRecordCount("part", partCount)) {
+        return false;
+    }
+
+    if (colorCount > 0 && categoryCount > 0 && partCount > 0) {
+        qInfo() << "BrickSuite reference data already seeded."
+                << "Colors:" << colorCount << "Categories:" << categoryCount
+                << "Parts:" << partCount;
 
         return true;
     }
@@ -104,25 +104,24 @@ bool ReferenceDataSeeder::seedReferenceData()
     RebrickableReferenceImporter::ImportResult
         categoryResult;
 
-    if (!importer.importColors(
-            ":/rebrickable/colors.csv",
-            colorResult,
-            false))
-    {
-        qCritical()
-            << "Unable to seed Rebrickable colors.";
+    RebrickableReferenceImporter::ImportResult partResult;
+
+    if (!importer.importPartCategories(":/rebrickable/part_categories.csv", categoryResult, false)) {
+        qCritical() << "Unable to seed Rebrickable part categories.";
 
         m_database.rollback();
         return false;
     }
 
-    if (!importer.importPartCategories(
-            ":/rebrickable/part_categories.csv",
-            categoryResult,
-            false))
-    {
-        qCritical()
-            << "Unable to seed Rebrickable part categories.";
+    if (!importer.importColors(":/rebrickable/colors.csv", colorResult, false)) {
+        qCritical() << "Unable to seed Rebrickable colors.";
+
+        m_database.rollback();
+        return false;
+    }
+
+    if (!importer.importParts(":/rebrickable/parts.csv", partResult, false)) {
+        qCritical() << "Unable to seed Rebrickable parts.";
 
         m_database.rollback();
         return false;
@@ -138,12 +137,10 @@ bool ReferenceDataSeeder::seedReferenceData()
         return false;
     }
 
-    qInfo()
-        << "BrickSuite reference data seeded."
-        << "Colors:"
-        << colorResult.recordsImported
-        << "Categories:"
-        << categoryResult.recordsImported;
+    qInfo() << "BrickSuite reference data seeded."
+            << "Colors:" << colorResult.recordsImported
+            << "Categories:" << categoryResult.recordsImported
+            << "Parts:" << partResult.recordsImported;
 
     return true;
 }

@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -528,6 +529,240 @@ bool RebrickableReferenceImporter::importPartCategories(const QString& filePath,
     qInfo()
         << "Rebrickable part categories imported:"
         << result.recordsImported;
+
+    return true;
+}
+
+bool RebrickableReferenceImporter::importParts(const QString& filePath,
+                                               ImportResult& result,
+                                               bool manageTransaction)
+{
+    result = {};
+
+    QFile file(filePath);
+
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qCritical() << "Unable to open Rebrickable parts file:" << filePath << file.errorString();
+
+        return false;
+    }
+
+    QTextStream stream(&file);
+
+    if (stream.atEnd()) {
+        qCritical() << "Rebrickable parts file is empty:" << filePath;
+
+        return false;
+    }
+
+    const QStringList header = parseCsvLine(stream.readLine());
+
+    const QStringList requiredColumns = {"part_num", "name", "part_cat_id", "part_material"};
+
+    if (!validateHeader(header, requiredColumns, QFileInfo(filePath).fileName())) {
+        return false;
+    }
+
+    const int partNumberIndex = header.indexOf("part_num");
+
+    const int nameIndex = header.indexOf("name");
+
+    const int categoryIndex = header.indexOf("part_cat_id");
+
+    const int materialIndex = header.indexOf("part_material");
+
+    // Build:
+    //
+    // Rebrickable category ID
+    //          ->
+    // BrickSuite part_category.id
+    //
+    QHash<int, int> categoryMap;
+
+    {
+        QSqlQuery categoryQuery(m_database);
+
+        if (!categoryQuery.exec(R"(
+            SELECT
+                id,
+                rebrickable_id
+            FROM part_category
+            WHERE rebrickable_id IS NOT NULL
+        )")) {
+            qCritical() << "Unable to load part-category mapping:"
+                        << categoryQuery.lastError().text();
+
+            return false;
+        }
+
+        while (categoryQuery.next()) {
+            const int brickSuiteId = categoryQuery.value("id").toInt();
+
+            const int rebrickableId = categoryQuery.value("rebrickable_id").toInt();
+
+            categoryMap.insert(rebrickableId, brickSuiteId);
+        }
+    }
+
+    if (categoryMap.isEmpty()) {
+        qCritical() << "Cannot import Rebrickable parts: "
+                       "no part-category mappings are available.";
+
+        return false;
+    }
+
+    if (manageTransaction) {
+        if (!m_database.transaction()) {
+            qCritical() << "Unable to begin parts import transaction:"
+                        << m_database.lastError().text();
+
+            return false;
+        }
+    }
+
+    QSqlQuery query(m_database);
+
+    if (!query.prepare(R"(
+        INSERT INTO part
+        (
+            part_number,
+            name,
+            part_category_id,
+            rebrickable_part_id,
+            material,
+            is_active,
+            created_utc,
+            modified_utc
+        )
+        VALUES
+        (
+            :part_number,
+            :name,
+            :part_category_id,
+            :rebrickable_part_id,
+            :material,
+            1,
+            :created_utc,
+            :modified_utc
+        )
+
+        ON CONFLICT(rebrickable_part_id)
+        DO UPDATE SET
+            part_number = excluded.part_number,
+            name = excluded.name,
+            part_category_id = excluded.part_category_id,
+            material = excluded.material,
+            is_active = 1,
+            modified_utc = excluded.modified_utc
+    )")) {
+        qCritical() << "Unable to prepare Rebrickable parts import:" << query.lastError().text();
+
+        if (manageTransaction)
+            m_database.rollback();
+
+        return false;
+    }
+
+    const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+
+    while (!stream.atEnd()) {
+        const QString line = stream.readLine();
+
+        if (line.trimmed().isEmpty())
+            continue;
+
+        ++result.recordsProcessed;
+
+        const QStringList fields = parseCsvLine(line);
+
+        if (fields.size() != header.size()) {
+            ++result.recordsFailed;
+
+            qWarning() << "Invalid Rebrickable part row:" << result.recordsProcessed;
+
+            continue;
+        }
+
+        const QString partNumber = fields.at(partNumberIndex).trimmed();
+
+        const QString name = fields.at(nameIndex).trimmed();
+
+        const QString material = fields.at(materialIndex).trimmed();
+
+        bool categoryValid = false;
+
+        const int rebrickableCategoryId = fields.at(categoryIndex).toInt(&categoryValid);
+
+        if (partNumber.isEmpty() || name.isEmpty() || !categoryValid) {
+            ++result.recordsFailed;
+
+            qWarning() << "Invalid Rebrickable part:" << partNumber;
+
+            continue;
+        }
+
+        const auto categoryIterator = categoryMap.constFind(rebrickableCategoryId);
+
+        if (categoryIterator == categoryMap.constEnd()) {
+            ++result.recordsFailed;
+
+            qWarning() << "Unknown Rebrickable category" << rebrickableCategoryId << "for part"
+                       << partNumber;
+
+            continue;
+        }
+
+        const int brickSuiteCategoryId = categoryIterator.value();
+
+        query.bindValue(":part_number", partNumber);
+
+        query.bindValue(":name", name);
+
+        query.bindValue(":part_category_id", brickSuiteCategoryId);
+
+        // Rebrickable's part_num is the provider's
+        // part identifier.
+        query.bindValue(":rebrickable_part_id", partNumber);
+
+        query.bindValue(":material", material);
+
+        query.bindValue(":created_utc", now);
+
+        query.bindValue(":modified_utc", now);
+
+        if (!query.exec()) {
+            ++result.recordsFailed;
+
+            qWarning() << "Unable to import Rebrickable part:" << partNumber
+                       << query.lastError().text();
+
+            continue;
+        }
+
+        ++result.recordsImported;
+    }
+
+    if (result.recordsFailed > 0) {
+        qCritical() << "Rebrickable parts import encountered" << result.recordsFailed
+                    << "failed records out of" << result.recordsProcessed;
+
+        if (manageTransaction)
+            m_database.rollback();
+
+        return false;
+    }
+
+    if (manageTransaction) {
+        if (!m_database.commit()) {
+            qCritical() << "Unable to commit Rebrickable parts import:"
+                        << m_database.lastError().text();
+
+            m_database.rollback();
+            return false;
+        }
+    }
+
+    qInfo() << "Rebrickable parts imported:" << result.recordsImported;
 
     return true;
 }

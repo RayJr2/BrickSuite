@@ -2,5 +2,6 @@
     <qresource prefix="/rebrickable">
         <file alias="colors.csv">rebrickable/colors.csv</file>
         <file alias="part_categories.csv">rebrickable/part_categories.csv</file>
+        <file alias="parts.csv">rebrickable/parts.csv</file>
     </qresource>
 </RCC>

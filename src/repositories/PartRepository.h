@@ -1,0 +1,25 @@
+#pragma once
+
+#include "../models/Part.h"
+
+#include <QList>
+#include <optional>
+
+class QSqlQuery;
+
+class PartRepository
+{
+public:
+    bool create(Part& part);
+
+    QList<Part> getAll() const;
+
+    std::optional<Part> getById(int id) const;
+
+    std::optional<Part> getByPartNumber(const QString& partNumber) const;
+
+    bool update(Part& part);
+
+private:
+    Part partFromQuery(const QSqlQuery& query) const;
+};

@@ -23,6 +23,8 @@ public:
                               ImportResult& result,
                               bool manageTransaction = true);
 
+    bool importParts(const QString& filePath, ImportResult& result, bool manageTransaction = true);
+
 private:
     QStringList parseCsvLine(const QString& line) const;
 

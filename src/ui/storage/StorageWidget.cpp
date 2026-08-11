@@ -36,9 +36,6 @@ StorageWidget::StorageWidget(
     m_tree->setHeaderLabels(
         QStringList() << "Location" << "Type");
 
-    m_addButton =
-        new QPushButton("Add Location", this);
-
     m_addButton = new QPushButton("Add Location", this);
 
     m_editButton = new QPushButton("Edit Location", this);
@@ -55,11 +52,7 @@ StorageWidget::StorageWidget(
     layout->addWidget(m_tree);
     layout->addLayout(buttonLayout);
 
-    connect(
-        m_addButton,
-        &QPushButton::clicked,
-        this,
-        &StorageWidget::addLocation);
+    connect(m_addButton, &QPushButton::clicked, this, &StorageWidget::addLocation);
 
     connect(
         &m_workspaceContext,

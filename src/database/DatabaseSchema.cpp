@@ -60,6 +60,36 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 2;
     }
 
+    // Version 2 -> Version 3.
+    if (version == 2) {
+        if (!migrateVersion2ToVersion3(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 3)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 3;
+    }
+
+    // Version 3 -> Version 4.
+    if (version == 3) {
+        if (!migrateVersion3ToVersion4(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 4)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 4;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -352,6 +382,169 @@ bool DatabaseSchema::seedStorageLocationTypes(QSqlDatabase& database)
 
             return false;
         }
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion2ToVersion3(QSqlDatabase& database)
+{
+    if (!createPartTable(database))
+        return false;
+
+    if (!createInventoryRecordTable(database))
+        return false;
+
+    if (!createInventoryIndexes(database))
+        return false;
+
+    return true;
+}
+
+bool DatabaseSchema::createPartTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS part
+        (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            part_number         TEXT NOT NULL,
+            name                TEXT NOT NULL,
+            part_category_id    INTEGER,
+            rebrickable_part_id TEXT,
+            is_active           INTEGER NOT NULL DEFAULT 1,
+            created_utc         TEXT NOT NULL,
+            modified_utc        TEXT NOT NULL,
+
+            FOREIGN KEY (part_category_id)
+                REFERENCES part_category(id),
+
+            UNIQUE(part_number),
+            UNIQUE(rebrickable_part_id)
+        )
+    )")) {
+        qCritical() << "Unable to create part table:" << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::createInventoryRecordTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS inventory_record
+        (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id        INTEGER NOT NULL,
+            part_id             INTEGER NOT NULL,
+            color_id            INTEGER NOT NULL,
+            storage_location_id INTEGER NOT NULL,
+
+            condition           TEXT NOT NULL DEFAULT 'Used',
+            ownership_type      TEXT NOT NULL DEFAULT 'Owned',
+
+            quantity            INTEGER NOT NULL DEFAULT 0,
+
+            created_utc         TEXT NOT NULL,
+            modified_utc        TEXT NOT NULL,
+
+            FOREIGN KEY (workspace_id)
+                REFERENCES workspace(id),
+
+            FOREIGN KEY (part_id)
+                REFERENCES part(id),
+
+            FOREIGN KEY (color_id)
+                REFERENCES color(id),
+
+            FOREIGN KEY (storage_location_id)
+                REFERENCES storage_location(id),
+
+            CHECK(quantity >= 0),
+
+            UNIQUE
+            (
+                workspace_id,
+                part_id,
+                color_id,
+                storage_location_id,
+                condition,
+                ownership_type
+            )
+        )
+    )")) {
+        qCritical() << "Unable to create inventory_record table:" << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::createInventoryIndexes(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_part_category
+        ON part(part_category_id)
+    )")) {
+        qCritical() << "Unable to create part category index:" << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_inventory_workspace
+        ON inventory_record(workspace_id)
+    )")) {
+        qCritical() << "Unable to create inventory workspace index:" << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_inventory_part
+        ON inventory_record(part_id)
+    )")) {
+        qCritical() << "Unable to create inventory part index:" << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_inventory_storage_location
+        ON inventory_record(storage_location_id)
+    )")) {
+        qCritical() << "Unable to create inventory storage-location index:"
+                    << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion3ToVersion4(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        ALTER TABLE part
+        ADD COLUMN material TEXT
+    )")) {
+        qCritical() << "Unable to add material column to part table:" << query.lastError().text();
+
+        return false;
     }
 
     return true;

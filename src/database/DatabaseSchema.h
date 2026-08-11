@@ -8,7 +8,7 @@ public:
     static bool initialize(QSqlDatabase& database);
 
 private:
-    static constexpr int CurrentSchemaVersion = 2;
+    static constexpr int CurrentSchemaVersion = 4;
 
     static bool createSchemaVersionTable(QSqlDatabase& database);
     static bool getSchemaVersion(QSqlDatabase& database, int& version);
@@ -28,4 +28,14 @@ private:
     static bool createStorageLocationTable(QSqlDatabase& database);
 
     static bool seedStorageLocationTypes(QSqlDatabase& database);
+
+    static bool migrateVersion2ToVersion3(QSqlDatabase& database);
+
+    static bool createPartTable(QSqlDatabase& database);
+
+    static bool createInventoryRecordTable(QSqlDatabase& database);
+
+    static bool createInventoryIndexes(QSqlDatabase& database);
+
+    static bool migrateVersion3ToVersion4(QSqlDatabase& database);
 };
