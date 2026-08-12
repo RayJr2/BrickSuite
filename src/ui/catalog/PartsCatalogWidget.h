@@ -14,6 +14,7 @@ class PartsCatalogWidget : public QWidget
 
 public:
     explicit PartsCatalogWidget(QWidget* parent = nullptr);
+    void settingsChanged();
 
 private slots:
     void searchParts();

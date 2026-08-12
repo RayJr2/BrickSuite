@@ -3,15 +3,20 @@
 #include "../app/WorkspaceContext.h"
 #include "../models/Workspace.h"
 #include "../repositories/WorkspaceRepository.h"
+#include "../settings/UserSettings.h"
 #include "catalog/PartsCatalogWidget.h"
 #include "inventory/AddInventoryDialog.h"
 #include "inventory/MyInventoryWidget.h"
+#include "settings/SettingsDialog.h"
 #include "storage/StorageWidget.h"
 
+#include <QAction>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
+#include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStatusBar>
@@ -74,6 +79,27 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     loadWorkspaces();
 
+    // Menu bar
+    auto* editMenu = menuBar()->addMenu("Edit");
+
+    auto* settingsAction = editMenu->addAction("Settings...");
+
+    connect(settingsAction, &QAction::triggered, this, [this]() {
+        SettingsDialog dialog(m_workspaceContext, this);
+
+        connect(&dialog, &SettingsDialog::settingsChanged, this, [this]() {
+            if (m_partsCatalogWidget) {
+                m_partsCatalogWidget->settingsChanged();
+            }
+
+            if (m_myInventoryWidget) {
+                m_myInventoryWidget->settingsChanged();
+            }
+        });
+
+        dialog.exec();
+    });
+
     statusBar()->showMessage("BrickSuite Version 1.0");
 }
 
@@ -85,12 +111,31 @@ void MainWindow::loadWorkspaces()
 
     const QList<Workspace> workspaces = repository.getAll();
 
+    const int defaultWorkspaceId = UserSettings::instance().defaultWorkspaceId();
+
+    QListWidgetItem* defaultItem = nullptr;
+
     for (const Workspace& workspace : workspaces) {
         auto* item = new QListWidgetItem(workspace.name());
 
         item->setData(Qt::UserRole, workspace.id());
 
         m_workspaceList->addItem(item);
+
+        if (workspace.id() == defaultWorkspaceId) {
+            defaultItem = item;
+        }
+    }
+
+    // Selection priority:
+    //
+    // 1. User's saved default workspace.
+    // 2. If there is only one workspace, select it automatically.
+    // 3. Otherwise leave the selection empty.
+    if (defaultItem) {
+        m_workspaceList->setCurrentItem(defaultItem);
+    } else if (m_workspaceList->count() == 1) {
+        m_workspaceList->setCurrentRow(0);
     }
 }
 

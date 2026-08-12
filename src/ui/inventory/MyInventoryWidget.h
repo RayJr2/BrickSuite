@@ -20,6 +20,7 @@ public:
         QWidget* parent = nullptr);
 
     void refresh();
+    void settingsChanged();
 
 private slots:
     void workspaceChanged(int workspaceId);

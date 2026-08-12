@@ -12,6 +12,10 @@
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
+#include "../../services/RebrickableApiClient.h"
+#include "../../settings/UserSettings.h"
+
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -39,7 +43,7 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
 
     m_colorCombo = new QComboBox(this);
 
-    m_storageCombo = new QComboBox(this);
+    m_showAllColorsCheck = new QCheckBox("Show all colors", this);
 
     m_conditionCombo = new QComboBox(this);
 
@@ -60,8 +64,7 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
     layout->addRow("Part:", m_partLabel);
 
     layout->addRow("Color:", m_colorCombo);
-
-    layout->addRow("Storage:", m_storageCombo);
+    layout->addRow(QString(), m_showAllColorsCheck);
 
     layout->addRow("Condition:", m_conditionCombo);
 
@@ -71,22 +74,55 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
 
     layout->addRow(m_buttonBox);
 
+    m_rebrickableApiClient = new RebrickableApiClient(this);
+
+    connect(m_rebrickableApiClient,
+            &RebrickableApiClient::partColorsFinished,
+            this,
+            [this](const RebrickableApiClient::PartColorsResult& result) {
+                if (!result.success) {
+                    loadAllColors();
+
+                    const int index = m_colorCombo->findData(m_originalColorId);
+
+                    if (index >= 0) {
+                        m_colorCombo->setCurrentIndex(index);
+                    }
+
+                    m_showAllColorsCheck->setChecked(true);
+
+                    return;
+                }
+
+                m_knownRebrickableColorIds.clear();
+
+                for (const auto& color : result.colors) {
+                    m_knownRebrickableColorIds.append(color.rebrickableColorId);
+                }
+
+                applyKnownColors();
+            });
+
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &EditInventoryDialog::saveChanges);
 
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
-    loadColors();
-    loadStorageLocations();
+    loadAllColors();
 
     if (!loadInventoryRecord()) {
         if (QPushButton* saveButton = m_buttonBox->button(QDialogButtonBox::Save)) {
             saveButton->setEnabled(false);
         }
+        return;
     }
+
+    loadKnownColors();
 }
 
-void EditInventoryDialog::loadColors()
+void EditInventoryDialog::loadAllColors()
 {
+    m_colorCombo->clear();
+
     ColorRepository repository;
 
     const QList<Color> colors = repository.getAll();
@@ -94,44 +130,8 @@ void EditInventoryDialog::loadColors()
     for (const Color& color : colors) {
         m_colorCombo->addItem(color.name(), color.id());
     }
-}
 
-void EditInventoryDialog::loadStorageLocations()
-{
-    if (!m_workspaceContext.hasCurrentWorkspace())
-        return;
-
-    StorageLocationRepository repository;
-
-    const QList<StorageLocation> locations = repository.getByWorkspace(
-        m_workspaceContext.currentWorkspaceId());
-
-    QHash<int, StorageLocation> locationById;
-
-    for (const StorageLocation& location : locations) {
-        locationById.insert(location.id(), location);
-    }
-
-    for (const StorageLocation& location : locations) {
-        QStringList pathParts;
-
-        pathParts.prepend(location.name());
-
-        int parentId = location.parentLocationId();
-
-        while (parentId > 0) {
-            if (!locationById.contains(parentId))
-                break;
-
-            const StorageLocation parent = locationById.value(parentId);
-
-            pathParts.prepend(parent.name());
-
-            parentId = parent.parentLocationId();
-        }
-
-        m_storageCombo->addItem(pathParts.join(" / "), location.id());
-    }
+    m_colorCombo->setEnabled(true);
 }
 
 bool EditInventoryDialog::loadInventoryRecord()
@@ -148,11 +148,20 @@ bool EditInventoryDialog::loadInventoryRecord()
 
     m_partId = record->partId();
 
+    m_originalColorId = record->colorId();
+
+    // Preserve the current storage location.
+    // Physical relocation is handled through
+    // the dedicated Move Inventory workflow.
+    m_storageLocationId = record->storageLocationId();
+
     PartRepository partRepository;
 
     const std::optional<Part> part = partRepository.getById(m_partId);
 
     if (part) {
+        m_partNumber = part->partNumber();
+
         m_partLabel->setText(QString("%1 — %2").arg(part->partNumber()).arg(part->name()));
     }
 
@@ -160,12 +169,6 @@ bool EditInventoryDialog::loadInventoryRecord()
 
     if (colorIndex >= 0) {
         m_colorCombo->setCurrentIndex(colorIndex);
-    }
-
-    const int storageIndex = m_storageCombo->findData(record->storageLocationId());
-
-    if (storageIndex >= 0) {
-        m_storageCombo->setCurrentIndex(storageIndex);
     }
 
     const int conditionIndex = m_conditionCombo->findText(record->condition());
@@ -212,7 +215,7 @@ void EditInventoryDialog::saveChanges()
 
     updated.setColorId(m_colorCombo->currentData().toInt());
 
-    updated.setStorageLocationId(m_storageCombo->currentData().toInt());
+    updated.setStorageLocationId(m_storageLocationId);
 
     updated.setCondition(m_conditionCombo->currentText().trimmed());
 
@@ -227,4 +230,103 @@ void EditInventoryDialog::saveChanges()
     }
 
     accept();
+}
+
+void EditInventoryDialog::loadKnownColors()
+{
+    m_knownRebrickableColorIds.clear();
+
+    const QString apiKey = UserSettings::instance().rebrickableApiKey();
+
+    if (m_partNumber.isEmpty() || apiKey.isEmpty()) {
+        loadAllColors();
+
+        const int index = m_colorCombo->findData(m_originalColorId);
+
+        if (index >= 0) {
+            m_colorCombo->setCurrentIndex(index);
+        }
+
+        m_showAllColorsCheck->setChecked(true);
+
+        return;
+    }
+
+    m_colorCombo->clear();
+
+    m_colorCombo->addItem("Loading known colors...");
+
+    m_colorCombo->setEnabled(false);
+
+    m_rebrickableApiClient->getPartColors(m_partNumber, apiKey);
+}
+
+void EditInventoryDialog::applyKnownColors()
+{
+    m_colorCombo->clear();
+
+    ColorRepository repository;
+
+    const QList<Color> colors = repository.getAll();
+
+    bool originalColorAdded = false;
+
+    for (const Color& color : colors) {
+        const bool knownColor = m_knownRebrickableColorIds.contains(color.rebrickableId());
+
+        const bool currentColor = color.id() == m_originalColorId;
+
+        if (!knownColor && !currentColor) {
+            continue;
+        }
+
+        m_colorCombo->addItem(color.name(), color.id());
+
+        if (currentColor) {
+            originalColorAdded = true;
+        }
+    }
+
+    m_colorCombo->setEnabled(true);
+
+    if (m_colorCombo->count() == 0) {
+        loadAllColors();
+
+        m_showAllColorsCheck->setChecked(true);
+
+        return;
+    }
+
+    const int originalIndex = m_colorCombo->findData(m_originalColorId);
+
+    if (originalIndex >= 0) {
+        m_colorCombo->setCurrentIndex(originalIndex);
+    }
+}
+
+void EditInventoryDialog::showAllColorsToggled(bool checked)
+{
+    const int currentColorId = m_colorCombo->currentData().toInt();
+
+    if (checked) {
+        loadAllColors();
+
+        int index = m_colorCombo->findData(currentColorId);
+
+        if (index < 0) {
+            index = m_colorCombo->findData(m_originalColorId);
+        }
+
+        if (index >= 0) {
+            m_colorCombo->setCurrentIndex(index);
+        }
+
+        return;
+    }
+
+    if (!m_knownRebrickableColorIds.isEmpty()) {
+        applyKnownColors();
+    } else {
+        loadKnownColors();
+    }
 }

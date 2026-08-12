@@ -1,4 +1,5 @@
 #include "ImportInventoryDialog.h"
+#include "InventoryImportPreviewDialog.h"
 
 #include "../../app/WorkspaceContext.h"
 #include "../../database/DatabaseManager.h"
@@ -181,6 +182,23 @@ void ImportInventoryDialog::importFile()
     options.ownershipType = m_ownershipCombo->currentText().trimmed();
 
     RebrickableInventoryImporter::ImportResult result;
+
+    // Preview
+    RebrickableInventoryImportPreview preview;
+
+    if (!importer.previewOwnedParts(filePath, options, preview)) {
+        QMessageBox::critical(this,
+                              "BrickSuite",
+                              "Unable to preview the selected Rebrickable inventory file.");
+
+        return;
+    }
+
+    InventoryImportPreviewDialog previewDialog(preview, this);
+
+    if (previewDialog.exec() != QDialog::Accepted) {
+        return;
+    }
 
     if (!importer.importOwnedParts(filePath, options, result)) {
         QMessageBox::critical(this,

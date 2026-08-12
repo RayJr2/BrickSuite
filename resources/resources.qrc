@@ -4,4 +4,8 @@
         <file alias="part_categories.csv">rebrickable/part_categories.csv</file>
         <file alias="parts.csv">rebrickable/parts.csv</file>
     </qresource>
+    <qresource prefix="/icons">
+        <file alias="combo_down_light.png">icons/combo_down_light.png</file>
+        <file alias="combo_down_dark.png">icons/combo_down_dark.png</file>
+    </qresource>
 </RCC>

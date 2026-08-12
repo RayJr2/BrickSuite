@@ -24,7 +24,12 @@ public:
 
     QList<InventorySearchResult> search(const InventorySearchCriteria& criteria) const;
 
-    bool addOrIncreaseQuantity(InventoryRecord& record);
+    bool addOrIncreaseQuantity(InventoryRecord& record,
+                               const QString& movementType = QString(),
+                               const QString& referenceType = QString(),
+                               const QString& referenceId = QString(),
+                               const QString& notes = QString(),
+                               bool manageTransaction = true);
 
     bool updateOrMerge(InventoryRecord& record);
 

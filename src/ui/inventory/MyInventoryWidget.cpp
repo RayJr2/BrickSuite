@@ -5,6 +5,7 @@
 #include "MoveInventoryDialog.h"
 
 #include "../../app/WorkspaceContext.h"
+#include "../../settings/UserSettings.h"
 
 #include "../../models/Color.h"
 #include "../../models/InventorySearchCriteria.h"
@@ -18,11 +19,12 @@
 #include "../../repositories/StorageLocationRepository.h"
 
 #include <QComboBox>
-#include <QHash>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListView>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -64,6 +66,14 @@ MyInventoryWidget::MyInventoryWidget(
 
     m_colorCombo =
         new QComboBox(this);
+
+    // TODO: Fix spacing of items in comboBox
+    auto* colorView = new QListView(m_colorCombo);
+
+    colorView->setSpacing(0);
+    colorView->setUniformItemSizes(true);
+
+    m_colorCombo->setView(colorView);
 
     m_storageCombo =
         new QComboBox(this);
@@ -411,9 +421,11 @@ void MyInventoryWidget::searchInventory()
 
     criteria.storageLocationId = m_storageCombo->currentData().toInt();
 
-    criteria.limit = ResultsPerPage;
+    const int resultsPerPage = UserSettings::instance().resultsPerPage();
 
-    criteria.offset = m_currentPage * ResultsPerPage;
+    criteria.limit = resultsPerPage;
+
+    criteria.offset = m_currentPage * resultsPerPage;
 
     InventoryRecordRepository repository;
 
@@ -573,7 +585,9 @@ void MyInventoryWidget::updatePagingControls()
 {
     m_previousButton->setEnabled(m_currentPage > 0);
 
-    m_nextButton->setEnabled(m_lastResultCount == ResultsPerPage);
+    const int resultsPerPage = UserSettings::instance().resultsPerPage();
+
+    m_nextButton->setEnabled(m_lastResultCount >= resultsPerPage);
 
     m_pageLabel->setText(QString("Page %1").arg(m_currentPage + 1));
 }
@@ -583,6 +597,13 @@ void MyInventoryWidget::refresh()
     m_currentPage = 0;
 
     loadStorageLocations();
+
+    searchInventory();
+}
+
+void MyInventoryWidget::settingsChanged()
+{
+    m_currentPage = 0;
 
     searchInventory();
 }

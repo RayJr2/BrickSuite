@@ -15,6 +15,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Gui
     Widgets
     Sql
+    Network
 )
 
 qt_standard_project_setup()
@@ -98,6 +99,15 @@ qt_add_executable(BrickSuite
     src/models/InventoryHistoryResult.h
     src/ui/inventory/InventoryHistoryDialog.h
     src/ui/inventory/InventoryHistoryDialog.cpp
+    src/settings/UserSettings.cpp src/settings/UserSettings.h
+    src/settings/ThemeManager.h
+    src/settings/ThemeManager.cpp
+    src/ui/settings/SettingsDialog.cpp src/ui/settings/SettingsDialog.h
+    src/import/RebrickableInventoryImportPreview.h
+    src/ui/inventory/InventoryImportPreviewDialog.h
+    src/ui/inventory/InventoryImportPreviewDialog.cpp
+    src/services/RebrickableApiClient.h
+    src/services/RebrickableApiClient.cpp
 
 )
 target_link_libraries(BrickSuite PRIVATE
@@ -105,6 +115,7 @@ target_link_libraries(BrickSuite PRIVATE
     Qt6::Gui
     Qt6::Widgets
     Qt6::Sql
+    Qt6::Network
 )
 
 set_target_properties(BrickSuite PROPERTIES

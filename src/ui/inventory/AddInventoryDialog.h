@@ -1,12 +1,15 @@
 #pragma once
 
 #include <QDialog>
+#include <QList>
 
 class WorkspaceContext;
 class QLabel;
 class QComboBox;
 class QSpinBox;
 class QDialogButtonBox;
+class QCheckBox;
+class RebrickableApiClient;
 
 class AddInventoryDialog : public QDialog
 {
@@ -19,10 +22,13 @@ public:
 
 private slots:
     void addInventory();
+    void showAllColorsToggled(bool checked);
 
 private:
     void loadPart();
-    void loadColors();
+    void loadAllColors();
+    void loadKnownColors();
+    void applyKnownColors();
     void loadStorageLocations();
 
     int m_partId = 0;
@@ -39,4 +45,12 @@ private:
     QSpinBox* m_quantitySpin = nullptr;
 
     QDialogButtonBox* m_buttonBox = nullptr;
+
+    QCheckBox* m_showAllColorsCheck = nullptr;
+
+    RebrickableApiClient* m_rebrickableApiClient = nullptr;
+
+    QList<int> m_knownRebrickableColorIds;
+
+    QString m_partNumber;
 };

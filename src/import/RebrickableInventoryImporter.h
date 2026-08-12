@@ -1,5 +1,7 @@
 #pragma once
 
+#include "RebrickableInventoryImportPreview.h"
+
 #include <QString>
 #include <QStringList>
 
@@ -31,6 +33,14 @@ public:
     bool importOwnedParts(const QString& filePath,
                           const ImportOptions& options,
                           ImportResult& result);
+
+    bool previewOwnedParts(const QString& filePath,
+                           const ImportOptions& options,
+                           RebrickableInventoryImportPreview& preview);
+
+    bool importPreview(const RebrickableInventoryImportPreview& preview,
+                       const ImportOptions& options,
+                       ImportResult& result);
 
 private:
     QStringList parseCsvLine(const QString& line) const;

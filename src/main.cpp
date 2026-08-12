@@ -1,6 +1,7 @@
 #include <QApplication>
 
 #include "app/Application.h"
+#include "settings/ThemeManager.h"
 
 int main(int argc, char *argv[])
 {
@@ -8,7 +9,9 @@ int main(int argc, char *argv[])
 
     QApplication::setApplicationName("BrickSuite");
     QApplication::setApplicationVersion("1.0.0");
-    QApplication::setOrganizationName("RF StateSide");
+    QApplication::setOrganizationName("RFStateSide");
+
+    ThemeManager::applySavedTheme(qtApplication);
 
     Application application;
 

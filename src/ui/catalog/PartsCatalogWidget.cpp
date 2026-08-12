@@ -6,6 +6,7 @@
 #include "../../models/PartSearchResult.h"
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/PartRepository.h"
+#include "../../settings/UserSettings.h"
 
 #include <QComboBox>
 #include <QHBoxLayout>
@@ -152,9 +153,11 @@ void PartsCatalogWidget::searchParts()
 
     criteria.categoryId = m_categoryCombo->currentData().toInt();
 
-    criteria.limit = ResultsPerPage;
+    const int resultsPerPage = UserSettings::instance().resultsPerPage();
 
-    criteria.offset = m_currentPage * ResultsPerPage;
+    criteria.limit = resultsPerPage;
+
+    criteria.offset = m_currentPage * resultsPerPage;
 
     PartRepository repository;
 
@@ -248,11 +251,20 @@ void PartsCatalogWidget::nextPage()
     }
 }
 
+void PartsCatalogWidget::settingsChanged()
+{
+    m_currentPage = 0;
+
+    searchParts();
+}
+
 void PartsCatalogWidget::updatePagingControls()
 {
     m_previousButton->setEnabled(m_currentPage > 0);
 
-    m_nextButton->setEnabled(m_lastResultCount == ResultsPerPage);
+    const int resultsPerPage = UserSettings::instance().resultsPerPage();
+
+    m_nextButton->setEnabled(m_lastResultCount >= resultsPerPage);
 
     m_pageLabel->setText(QString("Page %1").arg(m_currentPage + 1));
 }

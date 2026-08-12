@@ -420,7 +420,12 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
     return results;
 }
 
-bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record)
+bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
+                                                      const QString& movementType,
+                                                      const QString& referenceType,
+                                                      const QString& referenceId,
+                                                      const QString& notes,
+                                                      bool manageTransaction)
 {
     if (record.workspaceId() <= 0 || record.partId() <= 0 || record.colorId() <= 0
         || record.storageLocationId() <= 0 || record.quantity() <= 0) {
@@ -429,18 +434,17 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record)
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
-    if (!database.transaction()) {
-        qCritical() << "Unable to begin inventory add transaction:" << database.lastError().text();
+    if (manageTransaction) {
+        if (!database.transaction()) {
+            qCritical() << "Unable to begin inventory add transaction:"
+                        << database.lastError().text();
 
-        return false;
+            return false;
+        }
     }
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
-    //
-    // First determine whether this inventory combination
-    // already exists.
-    //
     QSqlQuery existingQuery(database);
 
     existingQuery.prepare(R"(
@@ -472,7 +476,9 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record)
     if (!existingQuery.exec()) {
         qCritical() << "Unable to check existing inventory:" << existingQuery.lastError().text();
 
-        database.rollback();
+        if (manageTransaction)
+            database.rollback();
+
         return false;
     }
 
@@ -509,7 +515,9 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record)
             qCritical() << "Unable to increase inventory quantity:"
                         << updateQuery.lastError().text();
 
-            database.rollback();
+            if (manageTransaction)
+                database.rollback();
+
             return false;
         }
 
@@ -567,16 +575,15 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record)
         if (!insertQuery.exec()) {
             qCritical() << "Unable to create inventory record:" << insertQuery.lastError().text();
 
-            database.rollback();
+            if (manageTransaction)
+                database.rollback();
+
             return false;
         }
 
         record.setId(insertQuery.lastInsertId().toInt());
     }
 
-    //
-    // Write the append-only movement ledger entry.
-    //
     InventoryMovement movement;
 
     movement.setWorkspaceId(record.workspaceId());
@@ -587,7 +594,13 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record)
 
     movement.setColorId(record.colorId());
 
-    movement.setMovementType(existingRecord ? "QuantityIncrease" : "InitialAdd");
+    // If the caller specifies an event type, use it.
+    // Otherwise retain normal manual-add behavior.
+    if (!movementType.trimmed().isEmpty()) {
+        movement.setMovementType(movementType.trimmed());
+    } else {
+        movement.setMovementType(existingRecord ? "QuantityIncrease" : "InitialAdd");
+    }
 
     movement.setQuantityChange(quantityAdded);
 
@@ -597,20 +610,31 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record)
 
     movement.setOwnershipType(record.ownershipType());
 
+    movement.setReferenceType(referenceType.trimmed());
+
+    movement.setReferenceId(referenceId.trimmed());
+
+    movement.setNotes(notes.trimmed());
+
     InventoryMovementRepository movementRepository;
 
     if (!movementRepository.create(movement)) {
         qCritical() << "Unable to create inventory movement.";
 
-        database.rollback();
+        if (manageTransaction)
+            database.rollback();
+
         return false;
     }
 
-    if (!database.commit()) {
-        qCritical() << "Unable to commit inventory add transaction:" << database.lastError().text();
+    if (manageTransaction) {
+        if (!database.commit()) {
+            qCritical() << "Unable to commit inventory add transaction:"
+                        << database.lastError().text();
 
-        database.rollback();
-        return false;
+            database.rollback();
+            return false;
+        }
     }
 
     if (!existingRecord) {
