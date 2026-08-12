@@ -89,6 +89,15 @@ qt_add_executable(BrickSuite
     src/ui/inventory/ImportInventoryDialog.cpp
     src/ui/inventory/EditInventoryDialog.h
     src/ui/inventory/EditInventoryDialog.cpp
+    src/models/InventoryMovement.h
+    src/models/InventoryMovement.cpp
+    src/repositories/InventoryMovementRepository.h
+    src/repositories/InventoryMovementRepository.cpp
+    src/ui/inventory/MoveInventoryDialog.h
+    src/ui/inventory/MoveInventoryDialog.cpp
+    src/models/InventoryHistoryResult.h
+    src/ui/inventory/InventoryHistoryDialog.h
+    src/ui/inventory/InventoryHistoryDialog.cpp
 
 )
 target_link_libraries(BrickSuite PRIVATE

@@ -90,6 +90,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 4;
     }
 
+    // Version 4 -> Version 5.
+    if (version == 4) {
+        if (!migrateVersion4ToVersion5(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 5)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 5;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -543,6 +558,124 @@ bool DatabaseSchema::migrateVersion3ToVersion4(QSqlDatabase& database)
         ADD COLUMN material TEXT
     )")) {
         qCritical() << "Unable to add material column to part table:" << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion4ToVersion5(QSqlDatabase& database)
+{
+    if (!createInventoryMovementTable(database))
+        return false;
+
+    if (!createInventoryMovementIndexes(database))
+        return false;
+
+    return true;
+}
+
+bool DatabaseSchema::createInventoryMovementTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS inventory_movement
+        (
+            id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            workspace_id             INTEGER NOT NULL,
+            inventory_record_id      INTEGER,
+
+            part_id                  INTEGER NOT NULL,
+            color_id                 INTEGER NOT NULL,
+
+            movement_type            TEXT NOT NULL,
+
+            quantity_change          INTEGER NOT NULL,
+
+            from_storage_location_id INTEGER,
+            to_storage_location_id   INTEGER,
+
+            condition                TEXT,
+            ownership_type           TEXT,
+
+            reference_type           TEXT,
+            reference_id             TEXT,
+
+            notes                    TEXT,
+
+            created_utc              TEXT NOT NULL,
+
+            FOREIGN KEY (workspace_id)
+                REFERENCES workspace(id),
+
+            FOREIGN KEY (inventory_record_id)
+                REFERENCES inventory_record(id),
+
+            FOREIGN KEY (part_id)
+                REFERENCES part(id),
+
+            FOREIGN KEY (color_id)
+                REFERENCES color(id),
+
+            FOREIGN KEY (from_storage_location_id)
+                REFERENCES storage_location(id),
+
+            FOREIGN KEY (to_storage_location_id)
+                REFERENCES storage_location(id)
+        )
+    )")) {
+        qCritical() << "Unable to create inventory_movement table:" << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::createInventoryMovementIndexes(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_inventory_movement_workspace
+        ON inventory_movement(workspace_id)
+    )")) {
+        qCritical() << "Unable to create movement workspace index:" << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_inventory_movement_part
+        ON inventory_movement(part_id)
+    )")) {
+        qCritical() << "Unable to create movement part index:" << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_inventory_movement_record
+        ON inventory_movement(inventory_record_id)
+    )")) {
+        qCritical() << "Unable to create movement inventory-record index:"
+                    << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_inventory_movement_created
+        ON inventory_movement(created_utc)
+    )")) {
+        qCritical() << "Unable to create movement date index:" << query.lastError().text();
 
         return false;
     }

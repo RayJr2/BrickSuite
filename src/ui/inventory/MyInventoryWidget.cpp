@@ -1,6 +1,8 @@
 #include "MyInventoryWidget.h"
 #include "EditInventoryDialog.h"
 #include "ImportInventoryDialog.h"
+#include "InventoryHistoryDialog.h"
+#include "MoveInventoryDialog.h"
 
 #include "../../app/WorkspaceContext.h"
 
@@ -38,10 +40,6 @@ MyInventoryWidget::MyInventoryWidget(
     auto* titleLabel =
         new QLabel("My Inventory", this);
 
-    m_editButton = new QPushButton("Edit Inventory", this);
-
-    m_editButton->setEnabled(false);
-
     m_importButton = new QPushButton("Import CSV", this);
 
     auto* titleLayout = new QHBoxLayout();
@@ -50,7 +48,6 @@ MyInventoryWidget::MyInventoryWidget(
 
     titleLayout->addStretch();
 
-    titleLayout->addWidget(m_editButton);
     titleLayout->addWidget(m_importButton);
 
     auto* filterLayout =
@@ -288,12 +285,6 @@ MyInventoryWidget::MyInventoryWidget(
         this,
         &MyInventoryWidget::workspaceChanged);
 
-    connect(m_resultsTable, &QTableWidget::itemSelectionChanged, this, [this]() {
-        m_editButton->setEnabled(m_resultsTable->currentRow() >= 0);
-    });
-
-    connect(m_editButton, &QPushButton::clicked, this, &MyInventoryWidget::editInventory);
-
     loadCategories();
     loadColors();
 
@@ -465,18 +456,26 @@ void MyInventoryWidget::searchInventory()
 
         actionCombo->addItem("Edit", "edit");
 
+        actionCombo->addItem("Move", "move");
+
+        actionCombo->addItem("View History", "history");
+
         // Future actions can be added here:
         //
-        // actionCombo->addItem("Move", "move");
-        // actionCombo->addItem("View History", "history");
-        // actionCombo->addItem("Allocate to Build", "allocate");
+        // actionCombo->addItem(
+        //     "Allocate to Build",
+        //     "allocate");
 
         const int inventoryRecordId = result.inventoryRecordId;
+
+        const int partId = result.partId;
+
+        const int colorId = result.colorId;
 
         connect(actionCombo,
                 &QComboBox::currentIndexChanged,
                 this,
-                [this, actionCombo, inventoryRecordId](int index) {
+                [this, actionCombo, inventoryRecordId, partId, colorId](int index) {
                     if (index <= 0)
                         return;
 
@@ -488,9 +487,20 @@ void MyInventoryWidget::searchInventory()
                         if (dialog.exec() == QDialog::Accepted) {
                             refresh();
                         }
+                    } else if (action == "move") {
+                        MoveInventoryDialog dialog(inventoryRecordId, m_workspaceContext, this);
+
+                        if (dialog.exec() == QDialog::Accepted) {
+                            refresh();
+                        }
+                    } else if (action == "history") {
+                        InventoryHistoryDialog dialog(partId, colorId, m_workspaceContext, this);
+
+                        dialog.exec();
                     }
 
-                    // Return the control to its neutral state.
+                    // Return the action control
+                    // to its neutral state.
                     actionCombo->setCurrentIndex(0);
                 });
 
@@ -528,8 +538,6 @@ void MyInventoryWidget::searchInventory()
 
         m_resultLabel->setText(QString("Showing results %1 - %2.").arg(firstResult).arg(lastResult));
     }
-
-    m_editButton->setEnabled(false);
 
     updatePagingControls();
 }
@@ -595,28 +603,4 @@ void MyInventoryWidget::importCsv()
 QString MyInventoryWidget::storagePathForId(int storageLocationId) const
 {
     return m_storagePathById.value(storageLocationId);
-}
-
-void MyInventoryWidget::editInventory()
-{
-    const int row = m_resultsTable->currentRow();
-
-    if (row < 0)
-        return;
-
-    QTableWidgetItem* item = m_resultsTable->item(row, 0);
-
-    if (!item)
-        return;
-
-    const int inventoryRecordId = item->data(Qt::UserRole).toInt();
-
-    if (inventoryRecordId <= 0)
-        return;
-
-    EditInventoryDialog dialog(inventoryRecordId, m_workspaceContext, this);
-
-    if (dialog.exec() == QDialog::Accepted) {
-        refresh();
-    }
 }

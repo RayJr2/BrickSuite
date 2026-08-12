@@ -27,7 +27,6 @@ private slots:
     void previousPage();
     void nextPage();
     void importCsv();
-    void editInventory();
 
 private:
     void loadCategories();
@@ -61,6 +60,4 @@ private:
     QPushButton* m_importButton = nullptr;
 
     QHash<int, QString> m_storagePathById;
-
-    QPushButton* m_editButton = nullptr;
 };

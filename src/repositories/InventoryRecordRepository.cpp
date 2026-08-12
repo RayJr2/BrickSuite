@@ -2,6 +2,9 @@
 
 #include "../database/DatabaseManager.h"
 
+#include "../models/InventoryMovement.h"
+#include "InventoryMovementRepository.h"
+
 #include <QDateTime>
 #include <QDebug>
 #include <QSqlError>
@@ -297,6 +300,7 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
             ON sl.id = ir.storage_location_id
 
         WHERE ir.workspace_id = :workspace_id
+            AND ir.quantity > 0
     )";
 
     const QString searchText = criteria.searchText.trimmed();
@@ -425,101 +429,18 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record)
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin inventory add transaction:" << database.lastError().text();
+
+        return false;
+    }
+
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
-    QSqlQuery query(database);
-
-    query.prepare(R"(
-        INSERT INTO inventory_record
-        (
-            workspace_id,
-            part_id,
-            color_id,
-            storage_location_id,
-            condition,
-            ownership_type,
-            quantity,
-            created_utc,
-            modified_utc
-        )
-        VALUES
-        (
-            :workspace_id,
-            :part_id,
-            :color_id,
-            :storage_location_id,
-            :condition,
-            :ownership_type,
-            :quantity,
-            :created_utc,
-            :modified_utc
-        )
-
-        ON CONFLICT
-        (
-            workspace_id,
-            part_id,
-            color_id,
-            storage_location_id,
-            condition,
-            ownership_type
-        )
-        DO UPDATE SET
-            quantity =
-                inventory_record.quantity
-                + excluded.quantity,
-
-            modified_utc =
-                excluded.modified_utc
-    )");
-
-    query.bindValue(":workspace_id", record.workspaceId());
-
-    query.bindValue(":part_id", record.partId());
-
-    query.bindValue(":color_id", record.colorId());
-
-    query.bindValue(":storage_location_id", record.storageLocationId());
-
-    query.bindValue(":condition", record.condition().trimmed());
-
-    query.bindValue(":ownership_type", record.ownershipType().trimmed());
-
-    query.bindValue(":quantity", record.quantity());
-
-    query.bindValue(":created_utc", now.toString(Qt::ISODateWithMs));
-
-    query.bindValue(":modified_utc", now.toString(Qt::ISODateWithMs));
-
-    if (!query.exec()) {
-        qCritical() << "Unable to add inventory quantity:" << query.lastError().text();
-
-        return false;
-    }
-
-    record.setModifiedUtc(now);
-
-    return true;
-}
-
-bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
-{
-    if (record.id() <= 0 || record.workspaceId() <= 0 || record.partId() <= 0
-        || record.colorId() <= 0 || record.storageLocationId() <= 0 || record.quantity() < 0) {
-        return false;
-    }
-
-    QSqlDatabase database = DatabaseManager::instance().database();
-
-    if (!database.transaction()) {
-        qCritical() << "Unable to begin inventory update transaction:"
-                    << database.lastError().text();
-
-        return false;
-    }
-
-    // Look for another record that already represents
-    // the destination combination.
+    //
+    // First determine whether this inventory combination
+    // already exists.
+    //
     QSqlQuery existingQuery(database);
 
     existingQuery.prepare(R"(
@@ -533,7 +454,6 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
           AND storage_location_id = :storage_location_id
           AND condition = :condition
           AND ownership_type = :ownership_type
-          AND id <> :id
         LIMIT 1
     )");
 
@@ -549,22 +469,267 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
 
     existingQuery.bindValue(":ownership_type", record.ownershipType().trimmed());
 
-    existingQuery.bindValue(":id", record.id());
-
     if (!existingQuery.exec()) {
-        qCritical() << "Unable to check inventory merge destination:"
-                    << existingQuery.lastError().text();
+        qCritical() << "Unable to check existing inventory:" << existingQuery.lastError().text();
 
         database.rollback();
         return false;
     }
 
-    const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+    const int quantityAdded = record.quantity();
+
+    bool existingRecord = false;
 
     if (existingQuery.next()) {
-        const int destinationId = existingQuery.value("id").toInt();
+        existingRecord = true;
 
-        const int destinationQuantity = existingQuery.value("quantity").toInt();
+        const int inventoryRecordId = existingQuery.value("id").toInt();
+
+        const int existingQuantity = existingQuery.value("quantity").toInt();
+
+        const int newQuantity = existingQuantity + quantityAdded;
+
+        QSqlQuery updateQuery(database);
+
+        updateQuery.prepare(R"(
+            UPDATE inventory_record
+            SET
+                quantity = :quantity,
+                modified_utc = :modified_utc
+            WHERE id = :id
+        )");
+
+        updateQuery.bindValue(":quantity", newQuantity);
+
+        updateQuery.bindValue(":modified_utc", now.toString(Qt::ISODateWithMs));
+
+        updateQuery.bindValue(":id", inventoryRecordId);
+
+        if (!updateQuery.exec()) {
+            qCritical() << "Unable to increase inventory quantity:"
+                        << updateQuery.lastError().text();
+
+            database.rollback();
+            return false;
+        }
+
+        record.setId(inventoryRecordId);
+
+        record.setQuantity(newQuantity);
+    } else {
+        QSqlQuery insertQuery(database);
+
+        insertQuery.prepare(R"(
+            INSERT INTO inventory_record
+            (
+                workspace_id,
+                part_id,
+                color_id,
+                storage_location_id,
+                condition,
+                ownership_type,
+                quantity,
+                created_utc,
+                modified_utc
+            )
+            VALUES
+            (
+                :workspace_id,
+                :part_id,
+                :color_id,
+                :storage_location_id,
+                :condition,
+                :ownership_type,
+                :quantity,
+                :created_utc,
+                :modified_utc
+            )
+        )");
+
+        insertQuery.bindValue(":workspace_id", record.workspaceId());
+
+        insertQuery.bindValue(":part_id", record.partId());
+
+        insertQuery.bindValue(":color_id", record.colorId());
+
+        insertQuery.bindValue(":storage_location_id", record.storageLocationId());
+
+        insertQuery.bindValue(":condition", record.condition().trimmed());
+
+        insertQuery.bindValue(":ownership_type", record.ownershipType().trimmed());
+
+        insertQuery.bindValue(":quantity", quantityAdded);
+
+        insertQuery.bindValue(":created_utc", now.toString(Qt::ISODateWithMs));
+
+        insertQuery.bindValue(":modified_utc", now.toString(Qt::ISODateWithMs));
+
+        if (!insertQuery.exec()) {
+            qCritical() << "Unable to create inventory record:" << insertQuery.lastError().text();
+
+            database.rollback();
+            return false;
+        }
+
+        record.setId(insertQuery.lastInsertId().toInt());
+    }
+
+    //
+    // Write the append-only movement ledger entry.
+    //
+    InventoryMovement movement;
+
+    movement.setWorkspaceId(record.workspaceId());
+
+    movement.setInventoryRecordId(record.id());
+
+    movement.setPartId(record.partId());
+
+    movement.setColorId(record.colorId());
+
+    movement.setMovementType(existingRecord ? "QuantityIncrease" : "InitialAdd");
+
+    movement.setQuantityChange(quantityAdded);
+
+    movement.setToStorageLocationId(record.storageLocationId());
+
+    movement.setCondition(record.condition());
+
+    movement.setOwnershipType(record.ownershipType());
+
+    InventoryMovementRepository movementRepository;
+
+    if (!movementRepository.create(movement)) {
+        qCritical() << "Unable to create inventory movement.";
+
+        database.rollback();
+        return false;
+    }
+
+    if (!database.commit()) {
+        qCritical() << "Unable to commit inventory add transaction:" << database.lastError().text();
+
+        database.rollback();
+        return false;
+    }
+
+    if (!existingRecord) {
+        record.setCreatedUtc(now);
+    }
+
+    record.setModifiedUtc(now);
+
+    return true;
+}
+
+bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
+{
+    if (record.id() <= 0 || record.workspaceId() <= 0 || record.partId() <= 0
+        || record.colorId() <= 0 || record.storageLocationId() <= 0 || record.quantity() <= 0) {
+        return false;
+    }
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin inventory edit transaction:" << database.lastError().text();
+
+        return false;
+    }
+
+    //
+    // Load original record.
+    //
+    QSqlQuery originalQuery(database);
+
+    originalQuery.prepare(R"(
+        SELECT
+            id,
+            workspace_id,
+            part_id,
+            color_id,
+            storage_location_id,
+            condition,
+            ownership_type,
+            quantity
+        FROM inventory_record
+        WHERE id = :id
+    )");
+
+    originalQuery.bindValue(":id", record.id());
+
+    if (!originalQuery.exec() || !originalQuery.next()) {
+        qCritical() << "Unable to load original inventory record:"
+                    << originalQuery.lastError().text();
+
+        database.rollback();
+        return false;
+    }
+
+    const int originalColorId = originalQuery.value("color_id").toInt();
+
+    const int originalStorageLocationId = originalQuery.value("storage_location_id").toInt();
+
+    const QString originalCondition = originalQuery.value("condition").toString();
+
+    const QString originalOwnershipType = originalQuery.value("ownership_type").toString();
+
+    const int originalQuantity = originalQuery.value("quantity").toInt();
+
+    const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+
+    //
+    // Check whether the edited combination collides
+    // with another existing inventory record.
+    //
+    QSqlQuery destinationQuery(database);
+
+    destinationQuery.prepare(R"(
+        SELECT
+            id,
+            quantity
+        FROM inventory_record
+        WHERE workspace_id = :workspace_id
+          AND part_id = :part_id
+          AND color_id = :color_id
+          AND storage_location_id = :storage_location_id
+          AND condition = :condition
+          AND ownership_type = :ownership_type
+          AND id <> :id
+        LIMIT 1
+    )");
+
+    destinationQuery.bindValue(":workspace_id", record.workspaceId());
+
+    destinationQuery.bindValue(":part_id", record.partId());
+
+    destinationQuery.bindValue(":color_id", record.colorId());
+
+    destinationQuery.bindValue(":storage_location_id", record.storageLocationId());
+
+    destinationQuery.bindValue(":condition", record.condition().trimmed());
+
+    destinationQuery.bindValue(":ownership_type", record.ownershipType().trimmed());
+
+    destinationQuery.bindValue(":id", record.id());
+
+    if (!destinationQuery.exec()) {
+        qCritical() << "Unable to check inventory edit destination:"
+                    << destinationQuery.lastError().text();
+
+        database.rollback();
+        return false;
+    }
+
+    bool merged = false;
+    int finalRecordId = record.id();
+
+    if (destinationQuery.next()) {
+        merged = true;
+
+        const int destinationId = destinationQuery.value("id").toInt();
+
+        const int destinationQuantity = destinationQuery.value("quantity").toInt();
 
         const int mergedQuantity = destinationQuantity + record.quantity();
 
@@ -591,24 +756,36 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
             return false;
         }
 
-        QSqlQuery deleteQuery(database);
+        //
+        // Keep the source record for history, but set
+        // quantity to zero instead of deleting it.
+        //
+        QSqlQuery zeroSourceQuery(database);
 
-        deleteQuery.prepare(R"(
-            DELETE FROM inventory_record
+        zeroSourceQuery.prepare(R"(
+            UPDATE inventory_record
+            SET
+                quantity = 0,
+                modified_utc = :modified_utc
             WHERE id = :id
         )");
 
-        deleteQuery.bindValue(":id", record.id());
+        zeroSourceQuery.bindValue(":modified_utc", now);
 
-        if (!deleteQuery.exec()) {
-            qCritical() << "Unable to remove merged inventory record:"
-                        << deleteQuery.lastError().text();
+        zeroSourceQuery.bindValue(":id", record.id());
+
+        if (!zeroSourceQuery.exec()) {
+            qCritical() << "Unable to zero merged source inventory:"
+                        << zeroSourceQuery.lastError().text();
 
             database.rollback();
             return false;
         }
 
+        finalRecordId = destinationId;
+
         record.setId(destinationId);
+
         record.setQuantity(mergedQuantity);
     } else {
         QSqlQuery updateQuery(database);
@@ -647,8 +824,139 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
         }
     }
 
+    InventoryMovementRepository movementRepository;
+
+    auto createMovement = [&](const QString& movementType,
+                              int quantityChange,
+                              int colorId,
+                              const QString& notes) -> bool {
+        InventoryMovement movement;
+
+        movement.setWorkspaceId(record.workspaceId());
+
+        movement.setInventoryRecordId(finalRecordId);
+
+        movement.setPartId(record.partId());
+
+        movement.setColorId(colorId);
+
+        movement.setMovementType(movementType);
+
+        movement.setQuantityChange(quantityChange);
+
+        movement.setToStorageLocationId(record.storageLocationId());
+
+        movement.setCondition(record.condition());
+
+        movement.setOwnershipType(record.ownershipType());
+
+        movement.setNotes(notes);
+
+        return movementRepository.create(movement);
+    };
+
+    //
+    // Quantity adjustment history.
+    //
+    if (record.quantity() != originalQuantity && !merged) {
+        const int difference = record.quantity() - originalQuantity;
+
+        const QString movementType = difference > 0 ? "QuantityIncrease" : "QuantityDecrease";
+
+        if (!createMovement(movementType, difference, record.colorId(), QString())) {
+            database.rollback();
+            return false;
+        }
+    }
+
+    //
+    // Color change.
+    //
+    if (record.colorId() != originalColorId) {
+        if (!createMovement("ColorChange",
+                            0,
+                            record.colorId(),
+                            QString("Color ID %1 -> %2").arg(originalColorId).arg(record.colorId()))) {
+            database.rollback();
+            return false;
+        }
+    }
+
+    //
+    // Condition change.
+    //
+    if (record.condition() != originalCondition) {
+        if (!createMovement("ConditionChange",
+                            0,
+                            record.colorId(),
+                            QString("%1 -> %2").arg(originalCondition).arg(record.condition()))) {
+            database.rollback();
+            return false;
+        }
+    }
+
+    //
+    // Ownership change.
+    //
+    if (record.ownershipType() != originalOwnershipType) {
+        if (!createMovement("OwnershipChange",
+                            0,
+                            record.colorId(),
+                            QString("%1 -> %2")
+                                .arg(originalOwnershipType)
+                                .arg(record.ownershipType()))) {
+            database.rollback();
+            return false;
+        }
+    }
+
+    //
+    // If Storage somehow changed through Edit,
+    // record it clearly, although we'll soon remove
+    // Storage from Edit and require Move instead.
+    //
+    if (record.storageLocationId() != originalStorageLocationId) {
+        InventoryMovement movement;
+
+        movement.setWorkspaceId(record.workspaceId());
+
+        movement.setInventoryRecordId(finalRecordId);
+
+        movement.setPartId(record.partId());
+
+        movement.setColorId(record.colorId());
+
+        movement.setMovementType("Move");
+
+        movement.setQuantityChange(record.quantity());
+
+        movement.setFromStorageLocationId(originalStorageLocationId);
+
+        movement.setToStorageLocationId(record.storageLocationId());
+
+        movement.setCondition(record.condition());
+
+        movement.setOwnershipType(record.ownershipType());
+
+        if (!movementRepository.create(movement)) {
+            database.rollback();
+            return false;
+        }
+    }
+
+    if (merged) {
+        if (!createMovement("Merge",
+                            record.quantity(),
+                            record.colorId(),
+                            "Inventory record merged with existing destination record.")) {
+            database.rollback();
+            return false;
+        }
+    }
+
     if (!database.commit()) {
-        qCritical() << "Unable to commit inventory update:" << database.lastError().text();
+        qCritical() << "Unable to commit inventory edit transaction:"
+                    << database.lastError().text();
 
         database.rollback();
         return false;
@@ -682,4 +990,316 @@ bool InventoryRecordRepository::remove(int inventoryRecordId)
     }
 
     return query.numRowsAffected() > 0;
+}
+
+bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
+                                              int destinationStorageLocationId,
+                                              int quantityToMove)
+{
+    if (inventoryRecordId <= 0 || destinationStorageLocationId <= 0 || quantityToMove <= 0) {
+        return false;
+    }
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin inventory move transaction:" << database.lastError().text();
+
+        return false;
+    }
+
+    //
+    // Load the source inventory record.
+    //
+    QSqlQuery sourceQuery(database);
+
+    sourceQuery.prepare(R"(
+        SELECT
+            id,
+            workspace_id,
+            part_id,
+            color_id,
+            storage_location_id,
+            condition,
+            ownership_type,
+            quantity
+        FROM inventory_record
+        WHERE id = :id
+    )");
+
+    sourceQuery.bindValue(":id", inventoryRecordId);
+
+    if (!sourceQuery.exec() || !sourceQuery.next()) {
+        qCritical() << "Unable to load source inventory record:" << sourceQuery.lastError().text();
+
+        database.rollback();
+        return false;
+    }
+
+    const int workspaceId = sourceQuery.value("workspace_id").toInt();
+
+    const int partId = sourceQuery.value("part_id").toInt();
+
+    const int colorId = sourceQuery.value("color_id").toInt();
+
+    const int sourceStorageLocationId = sourceQuery.value("storage_location_id").toInt();
+
+    const QString condition = sourceQuery.value("condition").toString();
+
+    const QString ownershipType = sourceQuery.value("ownership_type").toString();
+
+    const int sourceQuantity = sourceQuery.value("quantity").toInt();
+
+    if (destinationStorageLocationId == sourceStorageLocationId) {
+        qWarning() << "Source and destination storage locations are identical.";
+
+        database.rollback();
+        return false;
+    }
+
+    if (quantityToMove > sourceQuantity) {
+        qWarning() << "Cannot move more inventory than is available.";
+
+        database.rollback();
+        return false;
+    }
+
+    //
+    // Make sure the destination storage location
+    // belongs to the same workspace.
+    //
+    QSqlQuery destinationLocationQuery(database);
+
+    destinationLocationQuery.prepare(R"(
+        SELECT id
+        FROM storage_location
+        WHERE id = :id
+          AND workspace_id = :workspace_id
+          AND is_active = 1
+    )");
+
+    destinationLocationQuery.bindValue(":id", destinationStorageLocationId);
+
+    destinationLocationQuery.bindValue(":workspace_id", workspaceId);
+
+    if (!destinationLocationQuery.exec() || !destinationLocationQuery.next()) {
+        qCritical() << "Invalid destination storage location.";
+
+        database.rollback();
+        return false;
+    }
+
+    const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+
+    //
+    // Look for an existing destination record with
+    // the exact same inventory attributes.
+    //
+    QSqlQuery destinationQuery(database);
+
+    destinationQuery.prepare(R"(
+        SELECT
+            id,
+            quantity
+        FROM inventory_record
+        WHERE workspace_id = :workspace_id
+          AND part_id = :part_id
+          AND color_id = :color_id
+          AND storage_location_id = :storage_location_id
+          AND condition = :condition
+          AND ownership_type = :ownership_type
+          AND id <> :source_id
+        LIMIT 1
+    )");
+
+    destinationQuery.bindValue(":workspace_id", workspaceId);
+
+    destinationQuery.bindValue(":part_id", partId);
+
+    destinationQuery.bindValue(":color_id", colorId);
+
+    destinationQuery.bindValue(":storage_location_id", destinationStorageLocationId);
+
+    destinationQuery.bindValue(":condition", condition);
+
+    destinationQuery.bindValue(":ownership_type", ownershipType);
+
+    destinationQuery.bindValue(":source_id", inventoryRecordId);
+
+    if (!destinationQuery.exec()) {
+        qCritical() << "Unable to query move destination:" << destinationQuery.lastError().text();
+
+        database.rollback();
+        return false;
+    }
+
+    int destinationRecordId = 0;
+
+    if (destinationQuery.next()) {
+        destinationRecordId = destinationQuery.value("id").toInt();
+
+        const int destinationQuantity = destinationQuery.value("quantity").toInt();
+
+        QSqlQuery updateDestinationQuery(database);
+
+        updateDestinationQuery.prepare(R"(
+            UPDATE inventory_record
+            SET
+                quantity = :quantity,
+                modified_utc = :modified_utc
+            WHERE id = :id
+        )");
+
+        updateDestinationQuery.bindValue(":quantity", destinationQuantity + quantityToMove);
+
+        updateDestinationQuery.bindValue(":modified_utc", now);
+
+        updateDestinationQuery.bindValue(":id", destinationRecordId);
+
+        if (!updateDestinationQuery.exec()) {
+            qCritical() << "Unable to update destination inventory:"
+                        << updateDestinationQuery.lastError().text();
+
+            database.rollback();
+            return false;
+        }
+    } else {
+        //
+        // No destination record exists, so create one.
+        //
+        QSqlQuery insertDestinationQuery(database);
+
+        insertDestinationQuery.prepare(R"(
+            INSERT INTO inventory_record
+            (
+                workspace_id,
+                part_id,
+                color_id,
+                storage_location_id,
+                condition,
+                ownership_type,
+                quantity,
+                created_utc,
+                modified_utc
+            )
+            VALUES
+            (
+                :workspace_id,
+                :part_id,
+                :color_id,
+                :storage_location_id,
+                :condition,
+                :ownership_type,
+                :quantity,
+                :created_utc,
+                :modified_utc
+            )
+        )");
+
+        insertDestinationQuery.bindValue(":workspace_id", workspaceId);
+
+        insertDestinationQuery.bindValue(":part_id", partId);
+
+        insertDestinationQuery.bindValue(":color_id", colorId);
+
+        insertDestinationQuery.bindValue(":storage_location_id", destinationStorageLocationId);
+
+        insertDestinationQuery.bindValue(":condition", condition);
+
+        insertDestinationQuery.bindValue(":ownership_type", ownershipType);
+
+        insertDestinationQuery.bindValue(":quantity", quantityToMove);
+
+        insertDestinationQuery.bindValue(":created_utc", now);
+
+        insertDestinationQuery.bindValue(":modified_utc", now);
+
+        if (!insertDestinationQuery.exec()) {
+            qCritical() << "Unable to create destination inventory:"
+                        << insertDestinationQuery.lastError().text();
+
+            database.rollback();
+            return false;
+        }
+
+        destinationRecordId = insertDestinationQuery.lastInsertId().toInt();
+    }
+
+    //
+    // Reduce the source quantity.
+    // A full move leaves the historical source record
+    // at quantity zero rather than deleting it.
+    //
+    const int remainingQuantity = sourceQuantity - quantityToMove;
+
+    QSqlQuery updateSourceQuery(database);
+
+    updateSourceQuery.prepare(R"(
+        UPDATE inventory_record
+        SET
+            quantity = :quantity,
+            modified_utc = :modified_utc
+        WHERE id = :id
+    )");
+
+    updateSourceQuery.bindValue(":quantity", remainingQuantity);
+
+    updateSourceQuery.bindValue(":modified_utc", now);
+
+    updateSourceQuery.bindValue(":id", inventoryRecordId);
+
+    if (!updateSourceQuery.exec()) {
+        qCritical() << "Unable to update source inventory:" << updateSourceQuery.lastError().text();
+
+        database.rollback();
+        return false;
+    }
+
+    //
+    // Record the movement.
+    //
+    InventoryMovement movement;
+
+    movement.setWorkspaceId(workspaceId);
+
+    // Keep the movement attached to the source record.
+    // The source record remains in the database even when
+    // its quantity reaches zero.
+    movement.setInventoryRecordId(inventoryRecordId);
+
+    movement.setPartId(partId);
+
+    movement.setColorId(colorId);
+
+    movement.setMovementType("Move");
+
+    // For a Move event, quantity_change represents
+    // the quantity affected by the movement.
+    movement.setQuantityChange(quantityToMove);
+
+    movement.setFromStorageLocationId(sourceStorageLocationId);
+
+    movement.setToStorageLocationId(destinationStorageLocationId);
+
+    movement.setCondition(condition);
+
+    movement.setOwnershipType(ownershipType);
+
+    InventoryMovementRepository movementRepository;
+
+    if (!movementRepository.create(movement)) {
+        qCritical() << "Unable to record inventory movement.";
+
+        database.rollback();
+        return false;
+    }
+
+    if (!database.commit()) {
+        qCritical() << "Unable to commit inventory move:" << database.lastError().text();
+
+        database.rollback();
+        return false;
+    }
+
+    return true;
 }

@@ -30,6 +30,8 @@ public:
 
     bool remove(int inventoryRecordId);
 
+    bool moveInventory(int inventoryRecordId, int destinationStorageLocationId, int quantityToMove);
+
 private:
     InventoryRecord inventoryRecordFromQuery(const QSqlQuery& query) const;
 };
