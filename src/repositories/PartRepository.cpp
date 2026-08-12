@@ -7,6 +7,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QVariant>
+#include <QtGlobal>
 
 bool PartRepository::create(Part& part)
 {
@@ -268,4 +269,101 @@ Part PartRepository::partFromQuery(const QSqlQuery& query) const
         QDateTime::fromString(query.value("modified_utc").toString(), Qt::ISODateWithMs));
 
     return part;
+}
+
+QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteria) const
+{
+    QList<PartSearchResult> results;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QString sql = R"(
+        SELECT
+            p.id,
+            p.part_number,
+            p.name,
+            p.part_category_id,
+            p.rebrickable_part_id,
+            p.material,
+            p.is_active,
+            p.created_utc,
+            p.modified_utc,
+
+            pc.name AS category_name
+
+        FROM part p
+
+        LEFT JOIN part_category pc
+            ON pc.id = p.part_category_id
+
+        WHERE p.is_active = 1
+    )";
+
+    const QString searchText = criteria.searchText.trimmed();
+
+    if (!searchText.isEmpty()) {
+        sql += R"(
+            AND
+            (
+                p.part_number LIKE :search
+                OR p.name LIKE :search
+            )
+        )";
+    }
+
+    if (criteria.categoryId > 0) {
+        sql += R"(
+            AND p.part_category_id = :category_id
+        )";
+    }
+
+    sql += R"(
+        ORDER BY
+            p.part_number
+
+        LIMIT :limit
+        OFFSET :offset
+    )";
+
+    QSqlQuery query(database);
+
+    if (!query.prepare(sql)) {
+        qCritical() << "Unable to prepare part search:" << query.lastError().text();
+
+        return results;
+    }
+
+    if (!searchText.isEmpty()) {
+        query.bindValue(":search", "%" + searchText + "%");
+    }
+
+    if (criteria.categoryId > 0) {
+        query.bindValue(":category_id", criteria.categoryId);
+    }
+
+    const int safeLimit = qBound(1, criteria.limit, 500);
+
+    const int safeOffset = qMax(0, criteria.offset);
+
+    query.bindValue(":limit", safeLimit);
+
+    query.bindValue(":offset", safeOffset);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to search parts:" << query.lastError().text();
+
+        return results;
+    }
+
+    while (query.next()) {
+        PartSearchResult result;
+
+        result.part = partFromQuery(query);
+
+        result.categoryName = query.value("category_name").toString();
+
+        results.append(result);
+    }
+
+    return results;
 }

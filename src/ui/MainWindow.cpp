@@ -3,6 +3,9 @@
 #include "../app/WorkspaceContext.h"
 #include "../models/Workspace.h"
 #include "../repositories/WorkspaceRepository.h"
+#include "catalog/PartsCatalogWidget.h"
+#include "inventory/AddInventoryDialog.h"
+#include "inventory/MyInventoryWidget.h"
 #include "storage/StorageWidget.h"
 
 #include <QHBoxLayout>
@@ -12,6 +15,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStatusBar>
+#include <QTabWidget>
 #include <QTextEdit>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -23,55 +27,50 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     setWindowTitle("BrickSuite");
     resize(1200, 800);
 
-    auto* centralWidget = new QWidget(this);
-    auto* mainLayout = new QHBoxLayout(centralWidget);
+    m_tabWidget = new QTabWidget(this);
 
-    // Left side: workspace list
-    auto* listLayout = new QVBoxLayout();
+    // Workspace tab
+    QWidget* workspaceTab = createWorkspaceTab();
 
-    auto* workspaceLabel = new QLabel("Workspaces", centralWidget);
+    // Storage tab
+    m_storageWidget = new StorageWidget(m_workspaceContext, m_tabWidget);
 
-    m_workspaceList = new QListWidget(centralWidget);
+    // Parts Catalog tab
+    m_partsCatalogWidget = new PartsCatalogWidget(m_tabWidget);
 
-    listLayout->addWidget(workspaceLabel);
-    listLayout->addWidget(m_workspaceList);
+    // My Inventory tab
+    m_myInventoryWidget = new MyInventoryWidget(m_workspaceContext, m_tabWidget);
 
-    m_storageWidget = new StorageWidget(m_workspaceContext, centralWidget);
-
-    // Right side: create workspace
-    auto* formLayout = new QVBoxLayout();
-
-    auto* nameLabel = new QLabel("Workspace Name", centralWidget);
-
-    m_nameEdit = new QLineEdit(centralWidget);
-
-    auto* descriptionLabel = new QLabel("Description", centralWidget);
-
-    m_descriptionEdit = new QTextEdit(centralWidget);
-
-    m_addButton = new QPushButton("Add Workspace", centralWidget);
-
-    formLayout->addWidget(nameLabel);
-    formLayout->addWidget(m_nameEdit);
-
-    formLayout->addWidget(descriptionLabel);
-    formLayout->addWidget(m_descriptionEdit);
-
-    formLayout->addWidget(m_addButton);
-    formLayout->addStretch();
-
-    mainLayout->addLayout(listLayout, 1);
-    mainLayout->addLayout(formLayout, 1);
-    mainLayout->addWidget(m_storageWidget, 2);
-
-    setCentralWidget(centralWidget);
-
-    connect(m_addButton, &QPushButton::clicked, this, &MainWindow::addWorkspace);
-
-    connect(m_workspaceList,
-            &QListWidget::itemSelectionChanged,
+    connect(m_partsCatalogWidget,
+            &PartsCatalogWidget::addPartToInventoryRequested,
             this,
-            &MainWindow::workspaceSelected);
+            [this](int partId) {
+                if (!m_workspaceContext.hasCurrentWorkspace()) {
+                    QMessageBox::warning(this,
+                                         "BrickSuite",
+                                         "Select a workspace before adding inventory.");
+
+                    return;
+                }
+
+                AddInventoryDialog dialog(partId, m_workspaceContext, this);
+
+                if (dialog.exec() == QDialog::Accepted) {
+                    m_myInventoryWidget->refresh();
+
+                    statusBar()->showMessage("Inventory updated.", 5000);
+                }
+            });
+
+    m_tabWidget->addTab(workspaceTab, "Workspace");
+
+    m_tabWidget->addTab(m_storageWidget, "Storage");
+
+    m_tabWidget->addTab(m_partsCatalogWidget, "Parts Catalog");
+
+    m_tabWidget->addTab(m_myInventoryWidget, "My Inventory");
+
+    setCentralWidget(m_tabWidget);
 
     loadWorkspaces();
 
@@ -158,4 +157,60 @@ void MainWindow::addWorkspace()
     loadWorkspaces();
 
     statusBar()->showMessage(QString("Workspace created: %1").arg(workspace.name()), 5000);
+}
+
+QWidget* MainWindow::createWorkspaceTab()
+{
+    auto* tab = new QWidget(m_tabWidget);
+
+    auto* mainLayout = new QHBoxLayout(tab);
+
+    // Left side: workspace list
+    auto* listLayout = new QVBoxLayout();
+
+    auto* workspaceLabel = new QLabel("Workspaces", tab);
+
+    m_workspaceList = new QListWidget(tab);
+
+    listLayout->addWidget(workspaceLabel);
+
+    listLayout->addWidget(m_workspaceList);
+
+    // Right side: workspace details
+    auto* formLayout = new QVBoxLayout();
+
+    auto* nameLabel = new QLabel("Workspace Name", tab);
+
+    m_nameEdit = new QLineEdit(tab);
+
+    auto* descriptionLabel = new QLabel("Description", tab);
+
+    m_descriptionEdit = new QTextEdit(tab);
+
+    m_addButton = new QPushButton("Add Workspace", tab);
+
+    formLayout->addWidget(nameLabel);
+
+    formLayout->addWidget(m_nameEdit);
+
+    formLayout->addWidget(descriptionLabel);
+
+    formLayout->addWidget(m_descriptionEdit);
+
+    formLayout->addWidget(m_addButton);
+
+    formLayout->addStretch();
+
+    mainLayout->addLayout(listLayout, 1);
+
+    mainLayout->addLayout(formLayout, 2);
+
+    connect(m_addButton, &QPushButton::clicked, this, &MainWindow::addWorkspace);
+
+    connect(m_workspaceList,
+            &QListWidget::itemSelectionChanged,
+            this,
+            &MainWindow::workspaceSelected);
+
+    return tab;
 }

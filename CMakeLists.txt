@@ -65,6 +65,31 @@ qt_add_executable(BrickSuite
     src/repositories/PartRepository.cpp
     src/repositories/InventoryRecordRepository.h
     src/repositories/InventoryRecordRepository.cpp
+    src/models/Color.h
+    src/models/Color.cpp
+    src/repositories/ColorRepository.h
+    src/repositories/ColorRepository.cpp
+    src/models/PartCategory.h
+    src/models/PartCategory.cpp
+    src/repositories/PartCategoryRepository.h
+    src/repositories/PartCategoryRepository.cpp
+    src/models/PartSearchCriteria.h
+    src/ui/catalog/PartsCatalogWidget.cpp
+    src/ui/catalog/PartsCatalogWidget.h
+    src/models/PartSearchResult.h
+    src/models/InventorySearchCriteria.h
+    src/models/InventorySearchResult.h
+    src/ui/inventory/MyInventoryWidget.cpp
+    src/ui/inventory/MyInventoryWidget.h
+    src/ui/inventory/AddInventoryDialog.h
+    src/ui/inventory/AddInventoryDialog.cpp
+    src/import/RebrickableInventoryImporter.h
+    src/import/RebrickableInventoryImporter.cpp
+    src/ui/inventory/ImportInventoryDialog.h
+    src/ui/inventory/ImportInventoryDialog.cpp
+    src/ui/inventory/EditInventoryDialog.h
+    src/ui/inventory/EditInventoryDialog.cpp
+
 )
 target_link_libraries(BrickSuite PRIVATE
     Qt6::Core

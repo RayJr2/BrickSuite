@@ -2,12 +2,17 @@
 
 #include <QMainWindow>
 
+class WorkspaceContext;
 class QListWidget;
 class QLineEdit;
 class QTextEdit;
 class QPushButton;
-class WorkspaceContext;
+class QTabWidget;
+class QWidget;
+
 class StorageWidget;
+class PartsCatalogWidget;
+class MyInventoryWidget;
 
 class MainWindow : public QMainWindow
 {
@@ -22,8 +27,11 @@ private slots:
 
 private:
     void loadWorkspaces();
+    QWidget* createWorkspaceTab();
 
     WorkspaceContext& m_workspaceContext;
+
+    QTabWidget* m_tabWidget = nullptr;
 
     QListWidget* m_workspaceList = nullptr;
     QLineEdit* m_nameEdit = nullptr;
@@ -31,4 +39,6 @@ private:
     QPushButton* m_addButton = nullptr;
 
     StorageWidget* m_storageWidget = nullptr;
+    PartsCatalogWidget* m_partsCatalogWidget = nullptr;
+    MyInventoryWidget* m_myInventoryWidget = nullptr;
 };
