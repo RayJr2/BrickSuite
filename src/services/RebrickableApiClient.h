@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QHash>
 #include <QList>
 #include <QObject>
@@ -82,6 +83,10 @@ public:
 
     void getPartDetails(const QString& partNumber, const QString& apiKey);
 
+    static bool isSessionBlocked();
+
+    static QString sessionBlockReason();
+
 signals:
     void connectionTestFinished(const RebrickableApiClient::ConnectionResult& result);
 
@@ -93,6 +98,13 @@ private:
     void handleConnectionTestReply(QNetworkReply* reply);
 
     QNetworkAccessManager* m_networkManager = nullptr;
+
+    static bool detectCloudflareIpBan(const QByteArray& responseData, QString& reason);
+
+    static void tripSessionCircuitBreaker(const QString& reason);
+
+    static bool s_sessionBlocked;
+    static QString s_sessionBlockReason;
 };
 
 Q_DECLARE_METATYPE(RebrickableApiClient::ConnectionResult)

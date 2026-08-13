@@ -4,6 +4,8 @@
 #include "InventoryHistoryDialog.h"
 #include "MoveInventoryDialog.h"
 
+#include "../parts/PartDetailsDialog.h"
+
 #include "../../app/WorkspaceContext.h"
 #include "../../settings/UserSettings.h"
 
@@ -525,11 +527,9 @@ void MyInventoryWidget::searchInventory()
         auto* actionCombo = new QComboBox(m_resultsTable);
 
         actionCombo->addItem("Actions...");
-
+        actionCombo->addItem("Details", "details");
         actionCombo->addItem("Edit", "edit");
-
         actionCombo->addItem("Move", "move");
-
         actionCombo->addItem("View History", "history");
 
         // Future actions can be added here:
@@ -553,7 +553,11 @@ void MyInventoryWidget::searchInventory()
 
                     const QString action = actionCombo->itemData(index).toString();
 
-                    if (action == "edit") {
+                    if (action == "details") {
+                        PartDetailsDialog dialog(partId, this);
+
+                        dialog.exec();
+                    } else if (action == "edit") {
                         EditInventoryDialog dialog(inventoryRecordId, m_workspaceContext, this);
 
                         if (dialog.exec() == QDialog::Accepted) {
@@ -608,15 +612,6 @@ void MyInventoryWidget::searchInventory()
             // imageReady().
             //
             m_partImageService->requestPartImage(partNumber, QString());
-        } else if (!apiKey.isEmpty() && !m_partDetailsRequested.contains(partNumber)) {
-            //
-            // No cached image yet.
-            // Ask Rebrickable for the part details
-            // so we can obtain part_img_url.
-            //
-            m_partDetailsRequested.insert(partNumber);
-
-            m_rebrickableApiClient->getPartDetails(partNumber, apiKey);
         }
 
         ++row;

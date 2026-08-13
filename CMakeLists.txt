@@ -109,6 +109,8 @@ qt_add_executable(BrickSuite
     src/services/RebrickableApiClient.h
     src/services/RebrickableApiClient.cpp
     src/services/images/PartImageService.cpp src/services/images/PartImageService.h
+    src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
+    src/ui/helpers/ColorComboHelper.cpp src/ui/helpers/ColorComboHelper.h
 
 )
 target_link_libraries(BrickSuite PRIVATE
@@ -122,3 +124,15 @@ target_link_libraries(BrickSuite PRIVATE
 set_target_properties(BrickSuite PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
+
+set(BRICKSUITE_REBRICKABLE_API_BLOCKED ON)
+
+if (BRICKSUITE_REBRICKABLE_API_BLOCKED)
+    target_compile_definitions(BrickSuite PRIVATE
+        BRICKSUITE_REBRICKABLE_API_BLOCKED=1
+    )
+else()
+    target_compile_definitions(BrickSuite PRIVATE
+        BRICKSUITE_REBRICKABLE_API_BLOCKED=0
+    )
+endif()

@@ -9,6 +9,7 @@
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/images/PartImageService.h"
 #include "../../settings/UserSettings.h"
+#include "../parts/PartDetailsDialog.h"
 
 #include <QComboBox>
 #include <QHBoxLayout>
@@ -267,13 +268,36 @@ void PartsCatalogWidget::searchParts()
 
         auto* materialItem = new QTableWidgetItem(part.material());
 
-        auto* actionButton = new QPushButton("Add to Inventory", m_resultsTable);
+        auto* actionCombo = new QComboBox(m_resultsTable);
+
+        actionCombo->addItem("Actions...");
+
+        actionCombo->addItem("Details", "details");
+
+        actionCombo->addItem("Add to Inventory", "add");
 
         const int partId = part.id();
 
-        connect(actionButton, &QPushButton::clicked, this, [this, partId]() {
-            emit addPartToInventoryRequested(partId);
-        });
+        connect(actionCombo,
+                &QComboBox::currentIndexChanged,
+                this,
+                [this, actionCombo, partId](int index) {
+                    if (index <= 0)
+                        return;
+
+                    const QString action = actionCombo->itemData(index).toString();
+
+                    if (action == "details") {
+                        PartDetailsDialog dialog(partId, this);
+
+                        dialog.exec();
+                    } else if (action == "add") {
+                        emit addPartToInventoryRequested(partId);
+                    }
+
+                    // Return to neutral state.
+                    actionCombo->setCurrentIndex(0);
+                });
 
         m_resultsTable->setItem(row, 0, imageItem);
 
@@ -285,7 +309,7 @@ void PartsCatalogWidget::searchParts()
 
         m_resultsTable->setItem(row, 4, materialItem);
 
-        m_resultsTable->setCellWidget(row, 5, actionButton);
+        m_resultsTable->setCellWidget(row, 5, actionCombo);
 
         //
         // Resolve thumbnail.
@@ -298,14 +322,6 @@ void PartsCatalogWidget::searchParts()
             // imageReady() when the file is already cached.
             //
             m_partImageService->requestPartImage(partNumber, QString());
-        } else if (!apiKey.isEmpty() && !m_partDetailsRequested.contains(partNumber)) {
-            //
-            // We do not yet know the image URL.
-            // Ask Rebrickable for part details first.
-            //
-            m_partDetailsRequested.insert(partNumber);
-
-            m_rebrickableApiClient->getPartDetails(partNumber, apiKey);
         }
 
         ++row;

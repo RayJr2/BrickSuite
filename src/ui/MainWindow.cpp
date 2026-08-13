@@ -1,11 +1,14 @@
 #include "MainWindow.h"
 
 #include "../app/WorkspaceContext.h"
+#include "../models/Part.h"
 #include "../models/Workspace.h"
+#include "../repositories/PartRepository.h"
 #include "../repositories/WorkspaceRepository.h"
 #include "../services/RebrickableApiClient.h"
 #include "../services/images/PartImageService.h"
 #include "../settings/UserSettings.h"
+#include "../ui/parts/PartDetailsDialog.h"
 #include "catalog/PartsCatalogWidget.h"
 #include "inventory/AddInventoryDialog.h"
 #include "inventory/MyInventoryWidget.h"
@@ -27,6 +30,7 @@
 #include <QTextEdit>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <optional>
 
 MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     : QMainWindow(parent)
@@ -110,6 +114,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     auto* rebrickableMenu = testMenu->addMenu("Rebrickable API");
 
     auto* partDetailsAction = rebrickableMenu->addAction("Part Details");
+
+    auto* partDetailsDialogAction = rebrickableMenu->addAction("Part Details Dialog");
 
     connect(partDetailsAction, &QAction::triggered, this, [this]() {
         const QString apiKey = UserSettings::instance().rebrickableApiKey();
@@ -238,6 +244,24 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
                 });
 
         apiClient->getPartDetails("3001", apiKey);
+    });
+
+    connect(partDetailsDialogAction, &QAction::triggered, this, [this]() {
+        PartRepository repository;
+
+        const std::optional<Part> part = repository.getByPartNumber("3001");
+
+        if (!part) {
+            QMessageBox::warning(this,
+                                 "Part Details Test",
+                                 "Unable to locate part 3001 in the BrickSuite catalog.");
+
+            return;
+        }
+
+        PartDetailsDialog dialog(part->id(), this);
+
+        dialog.exec();
     });
 
     statusBar()->showMessage("BrickSuite Version 1.0");

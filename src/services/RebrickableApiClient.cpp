@@ -9,6 +9,20 @@
 #include <QNetworkRequest>
 #include <QUrl>
 
+bool RebrickableApiClient::s_sessionBlocked =
+#if BRICKSUITE_REBRICKABLE_API_BLOCKED
+    true;
+#else
+    false;
+#endif
+
+QString RebrickableApiClient::s_sessionBlockReason =
+#if BRICKSUITE_REBRICKABLE_API_BLOCKED
+    "Rebrickable API access is disabled by the BrickSuite build configuration.";
+#else
+    QString();
+#endif
+
 RebrickableApiClient::RebrickableApiClient(QObject* parent)
     : QObject(parent)
 {
@@ -17,6 +31,19 @@ RebrickableApiClient::RebrickableApiClient(QObject* parent)
 
 void RebrickableApiClient::testConnection(const QString& apiKey)
 {
+    if (isSessionBlocked()) {
+        ConnectionResult result;
+
+        result.success = false;
+        result.httpStatusCode = 403;
+
+        result.message = sessionBlockReason();
+
+        emit connectionTestFinished(result);
+
+        return;
+    }
+
     const QString trimmedApiKey = apiKey.trimmed();
 
     if (trimmedApiKey.isEmpty()) {
@@ -55,6 +82,20 @@ void RebrickableApiClient::handleConnectionTestReply(QNetworkReply* reply)
 
     const QByteArray responseData = reply->readAll();
 
+    QString circuitBreakerReason;
+
+    if (result.httpStatusCode == 403 && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
+        tripSessionCircuitBreaker(circuitBreakerReason);
+
+        result.message = sessionBlockReason();
+
+        reply->deleteLater();
+
+        emit connectionTestFinished(result);
+
+        return;
+    }
+
     if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
         const QJsonDocument document = QJsonDocument::fromJson(responseData);
 
@@ -91,6 +132,20 @@ void RebrickableApiClient::handleConnectionTestReply(QNetworkReply* reply)
 
 void RebrickableApiClient::getPartColors(const QString& partNumber, const QString& apiKey)
 {
+    if (isSessionBlocked()) {
+        PartColorsResult result;
+
+        result.success = false;
+        result.httpStatusCode = 403;
+        result.partNumber = partNumber.trimmed();
+
+        result.message = sessionBlockReason();
+
+        emit partColorsFinished(result);
+
+        return;
+    }
+
     const QString trimmedPartNumber = partNumber.trimmed();
 
     const QString trimmedApiKey = apiKey.trimmed();
@@ -130,6 +185,21 @@ void RebrickableApiClient::getPartColors(const QString& partNumber, const QStrin
         }
 
         const QByteArray responseData = reply->readAll();
+
+        QString circuitBreakerReason;
+
+        if (result.httpStatusCode == 403
+            && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
+            tripSessionCircuitBreaker(circuitBreakerReason);
+
+            result.message = sessionBlockReason();
+
+            reply->deleteLater();
+
+            emit partColorsFinished(result);
+
+            return;
+        }
 
         if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
             const QJsonDocument document = QJsonDocument::fromJson(responseData);
@@ -178,6 +248,21 @@ void RebrickableApiClient::getPartColors(const QString& partNumber, const QStrin
 
 void RebrickableApiClient::getPartDetails(const QString& partNumber, const QString& apiKey)
 {
+    if (isSessionBlocked()) {
+        PartDetailsResult result;
+
+        result.success = false;
+        result.httpStatusCode = 403;
+
+        result.part.partNumber = partNumber.trimmed();
+
+        result.message = sessionBlockReason();
+
+        emit partDetailsFinished(result);
+
+        return;
+    }
+
     const QString trimmedPartNumber = partNumber.trimmed();
 
     const QString trimmedApiKey = apiKey.trimmed();
@@ -194,7 +279,8 @@ void RebrickableApiClient::getPartDetails(const QString& partNumber, const QStri
         return;
     }
 
-    const QUrl url(QString("https://rebrickable.com/api/v3/lego/parts/%1/")
+    const QUrl url(QString("https://rebrickable.com/api/v3/lego/parts/%1/"
+                           "?inc_part_details=1")
                        .arg(QUrl::toPercentEncoding(trimmedPartNumber)));
 
     QNetworkRequest request(url);
@@ -217,6 +303,21 @@ void RebrickableApiClient::getPartDetails(const QString& partNumber, const QStri
         }
 
         const QByteArray responseData = reply->readAll();
+
+        QString circuitBreakerReason;
+
+        if (result.httpStatusCode == 403
+            && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
+            tripSessionCircuitBreaker(circuitBreakerReason);
+
+            result.message = sessionBlockReason();
+
+            reply->deleteLater();
+
+            emit partDetailsFinished(result);
+
+            return;
+        }
 
         if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
             const QJsonDocument document = QJsonDocument::fromJson(responseData);
@@ -316,4 +417,76 @@ void RebrickableApiClient::getPartDetails(const QString& partNumber, const QStri
 
         emit partDetailsFinished(result);
     });
+}
+
+bool RebrickableApiClient::isSessionBlocked()
+{
+    return s_sessionBlocked;
+}
+
+QString RebrickableApiClient::sessionBlockReason()
+{
+    return s_sessionBlockReason;
+}
+
+void RebrickableApiClient::tripSessionCircuitBreaker(const QString& reason)
+{
+    s_sessionBlocked = true;
+
+    s_sessionBlockReason = reason.trimmed();
+
+    if (s_sessionBlockReason.isEmpty()) {
+        s_sessionBlockReason = "Rebrickable access has been disabled "
+                               "for this BrickSuite session.";
+    }
+}
+
+bool RebrickableApiClient::detectCloudflareIpBan(const QByteArray& responseData, QString& reason)
+{
+    if (responseData.isEmpty())
+        return false;
+
+    QJsonParseError parseError;
+
+    const QJsonDocument document = QJsonDocument::fromJson(responseData, &parseError);
+
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        return false;
+    }
+
+    const QJsonObject root = document.object();
+
+    const int errorCode = root.value("error_code").toInt();
+
+    const QString errorName = root.value("error_name").toString();
+
+    const bool cloudflareError = root.value("cloudflare_error").toBool();
+
+    if (errorCode != 1006 && errorName.compare("ip_banned", Qt::CaseInsensitive) != 0) {
+        return false;
+    }
+
+    if (!cloudflareError && errorCode != 1006) {
+        return false;
+    }
+
+    const QString detail = root.value("detail").toString();
+
+    const QString rayId = root.value("ray_id").toString();
+
+    reason = "Rebrickable access is blocked for the "
+             "current network/IP address.";
+
+    if (!detail.isEmpty()) {
+        reason += QString("\n\n%1").arg(detail);
+    }
+
+    if (!rayId.isEmpty()) {
+        reason += QString("\n\nCloudflare Ray ID: %1").arg(rayId);
+    }
+
+    reason += "\n\nBrickSuite will not make any more "
+              "Rebrickable API requests during this session.";
+
+    return true;
 }

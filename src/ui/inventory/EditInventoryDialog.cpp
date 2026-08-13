@@ -15,6 +15,8 @@
 #include "../../services/RebrickableApiClient.h"
 #include "../../settings/UserSettings.h"
 
+#include "../helpers/ColorComboHelper.h"
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -128,7 +130,7 @@ void EditInventoryDialog::loadAllColors()
     const QList<Color> colors = repository.getAll();
 
     for (const Color& color : colors) {
-        m_colorCombo->addItem(color.name(), color.id());
+        ColorComboHelper::addColorItem(m_colorCombo, color.name(), color.id(), color.rgb());
     }
 
     m_colorCombo->setEnabled(true);
@@ -280,7 +282,7 @@ void EditInventoryDialog::applyKnownColors()
             continue;
         }
 
-        m_colorCombo->addItem(color.name(), color.id());
+        ColorComboHelper::addColorItem(m_colorCombo, color.name(), color.id(), color.rgb());
 
         if (currentColor) {
             originalColorAdded = true;
