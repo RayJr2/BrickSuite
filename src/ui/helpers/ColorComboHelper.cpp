@@ -34,9 +34,6 @@ int ColorComboHelper::addColorItem(
     if (!sourceColor.isValid())
         return index;
 
-    if (!sourceColor.isValid())
-        return index;
-
     const QColor backgroundColor =
         comboBox->palette().color(
             QPalette::Base);

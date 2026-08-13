@@ -277,6 +277,7 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
 
             c.id AS color_id,
             c.name AS color_name,
+            c.rgb AS color_rgb,
 
             sl.id AS storage_location_id,
             sl.name AS storage_location_name,
@@ -403,6 +404,8 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
         result.colorId = query.value("color_id").toInt();
 
         result.colorName = query.value("color_name").toString();
+
+        result.colorRgb = query.value("color_rgb").toString();
 
         result.storageLocationId = query.value("storage_location_id").toInt();
 

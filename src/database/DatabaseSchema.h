@@ -5,11 +5,11 @@
 class DatabaseSchema
 {
 public:
+    static constexpr int CurrentSchemaVersion = 5;
+
     static bool initialize(QSqlDatabase& database);
 
 private:
-    static constexpr int CurrentSchemaVersion = 5;
-
     static bool createSchemaVersionTable(QSqlDatabase& database);
     static bool getSchemaVersion(QSqlDatabase& database, int& version);
 

@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "../app/WorkspaceContext.h"
+#include "../database/DatabaseManager.h"
 #include "../models/Part.h"
 #include "../models/Workspace.h"
 #include "../repositories/PartRepository.h"
@@ -16,7 +17,10 @@
 #include "storage/StorageWidget.h"
 
 #include <QAction>
+#include <QDateTime>
 #include <QDebug>
+#include <QDir>
+#include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -25,6 +29,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QTextEdit>
@@ -87,6 +92,185 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     loadWorkspaces();
 
     /***** Menu bar *****/
+
+    // File menu
+    auto* fileMenu = menuBar()->addMenu("File");
+
+    auto* backupDatabaseAction = fileMenu->addAction("Backup Database...");
+
+    auto* restoreDatabaseAction = fileMenu->addAction("Restore Database...");
+
+    connect(backupDatabaseAction, &QAction::triggered, this, [this]() {
+        const QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
+
+        const QString defaultFileName = QString("BrickSuite_Backup_%1.db").arg(timestamp);
+
+        QString initialDirectory = QStandardPaths::writableLocation(
+            QStandardPaths::DocumentsLocation);
+
+        if (initialDirectory.isEmpty()) {
+            initialDirectory = QDir::homePath();
+        }
+
+        const QString defaultPath = QDir(initialDirectory).filePath(defaultFileName);
+
+        const QString backupPath = QFileDialog::getSaveFileName(this,
+                                                                "Backup BrickSuite Database",
+                                                                defaultPath,
+                                                                "SQLite Database (*.db)");
+
+        if (backupPath.isEmpty())
+            return;
+
+        QString finalBackupPath = backupPath;
+
+        if (!finalBackupPath.endsWith(".db", Qt::CaseInsensitive)) {
+            finalBackupPath += ".db";
+        }
+
+        QString errorMessage;
+
+        if (!DatabaseManager::instance().backupDatabase(finalBackupPath, &errorMessage)) {
+            QMessageBox::critical(this,
+                                  "BrickSuite Database Backup",
+                                  QString("The database backup could not be created.\n\n%1")
+                                      .arg(errorMessage));
+
+            return;
+        }
+
+        // Verify the backup
+        QString verificationError;
+
+        if (!DatabaseManager::instance().verifyDatabaseBackup(finalBackupPath, &verificationError)) {
+            QMessageBox::warning(this,
+                                 "BrickSuite Database Backup",
+                                 QString("The database backup was created, "
+                                         "but verification failed.\n\n%1\n\n"
+                                         "Backup file:\n%2")
+                                     .arg(verificationError, finalBackupPath));
+
+            return;
+        }
+
+        QMessageBox::information(this,
+                                 "BrickSuite Database Backup",
+                                 QString("Database backup created and verified successfully.\n\n%1")
+                                     .arg(finalBackupPath));
+
+        statusBar()->showMessage("Database backup created.", 5000);
+    });
+
+    connect(restoreDatabaseAction, &QAction::triggered, this, [this]() {
+        const QString backupPath = QFileDialog::getOpenFileName(this,
+                                                                "Restore BrickSuite Database",
+                                                                QString(),
+                                                                "SQLite Database (*.db)");
+
+        if (backupPath.isEmpty())
+            return;
+
+        //
+        // Verify the selected backup before asking
+        // the user to confirm the restore.
+        //
+        QString verificationError;
+
+        if (!DatabaseManager::instance().verifyDatabaseBackup(backupPath, &verificationError)) {
+            QMessageBox::critical(this,
+                                  "BrickSuite Database Restore",
+                                  QString("The selected backup is not a valid "
+                                          "BrickSuite database.\n\n%1")
+                                      .arg(verificationError));
+
+            return;
+        }
+
+        const QMessageBox::StandardButton response
+            = QMessageBox::warning(this,
+                                   "Restore BrickSuite Database",
+                                   QString("The selected backup has been verified.\n\n"
+                                           "Restoring it will replace the current "
+                                           "BrickSuite database.\n\n"
+                                           "BrickSuite will automatically create and "
+                                           "verify a pre-restore safety backup first.\n\n"
+                                           "Restore from:\n%1\n\n"
+                                           "Do you want to continue?")
+                                       .arg(backupPath),
+                                   QMessageBox::Yes | QMessageBox::No,
+                                   QMessageBox::No);
+
+        if (response != QMessageBox::Yes)
+            return;
+
+        //
+        // Clear the current workspace before replacing
+        // the underlying database.
+        //
+        m_workspaceContext.clearCurrentWorkspace();
+
+        QString restoreError;
+
+        if (!DatabaseManager::instance().restoreDatabase(backupPath, &restoreError)) {
+            //
+            // Reload the workspace list from whichever
+            // database DatabaseManager recovered to.
+            //
+            loadWorkspaces();
+
+            QMessageBox::critical(this,
+                                  "BrickSuite Database Restore",
+                                  QString("The database could not be restored.\n\n%1")
+                                      .arg(restoreError));
+
+            return;
+        }
+
+        //
+        // The restored database is now open.
+        //
+        // Clear any details left from the old workspace
+        // before reloading the workspace list.
+        //
+        m_nameEdit->clear();
+        m_descriptionEdit->clear();
+
+        loadWorkspaces();
+
+        //
+        // loadWorkspaces() may select the user's saved
+        // default workspace or the only workspace.
+        //
+        // That selection will cause workspaceSelected()
+        // to update WorkspaceContext, which in turn
+        // refreshes widgets listening to
+        // currentWorkspaceChanged().
+        //
+        if (!m_workspaceList->currentItem()) {
+            m_workspaceContext.clearCurrentWorkspace();
+
+            //
+            // Explicit refresh for widgets that do not
+            // depend solely on workspace selection.
+            //
+            if (m_partsCatalogWidget) {
+                m_partsCatalogWidget->settingsChanged();
+            }
+
+            if (m_myInventoryWidget) {
+                m_myInventoryWidget->refresh();
+            }
+        }
+
+        QMessageBox::information(this,
+                                 "BrickSuite Database Restore",
+                                 QString("Database restored successfully.\n\n"
+                                         "Source backup:\n%1")
+                                     .arg(backupPath));
+
+        statusBar()->showMessage("Database restored successfully.", 5000);
+    });
+
     // Edit menu
     auto* editMenu = menuBar()->addMenu("Edit");
 

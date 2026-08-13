@@ -15,6 +15,7 @@ struct InventorySearchResult
 
     int colorId = 0;
     QString colorName;
+    QString colorRgb;
 
     int storageLocationId = 0;
     QString storageLocationName;

@@ -23,6 +23,9 @@
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/images/PartImageService.h"
 
+#include "../helpers/ColorComboHelper.h"
+
+#include <QColor>
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QHash>
@@ -31,6 +34,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QPalette>
 #include <QPixmap>
 #include <QPushButton>
 #include <QTableWidget>
@@ -509,6 +513,23 @@ void MyInventoryWidget::searchInventory()
         auto* categoryItem = new QTableWidgetItem(result.categoryName);
 
         auto* colorItem = new QTableWidgetItem(result.colorName);
+
+        QString normalizedRgb = result.colorRgb.trimmed();
+
+        if (!normalizedRgb.isEmpty() && !normalizedRgb.startsWith('#')) {
+            normalizedRgb.prepend('#');
+        }
+
+        const QColor sourceColor(normalizedRgb);
+
+        if (sourceColor.isValid()) {
+            const QColor backgroundColor = m_resultsTable->palette().color(QPalette::Base);
+
+            const QColor displayColor = ColorComboHelper::readableColor(sourceColor,
+                                                                        backgroundColor);
+
+            colorItem->setForeground(displayColor);
+        }
 
         auto* quantityItem = new QTableWidgetItem(QString::number(result.quantity));
 
