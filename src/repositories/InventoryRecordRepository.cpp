@@ -1330,3 +1330,44 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
 
     return true;
 }
+
+int InventoryRecordRepository::totalQuantityForPartColor(int workspaceId,
+                                                         int partId,
+                                                         int colorId) const
+{
+    if (workspaceId <= 0 || partId <= 0 || colorId <= 0) {
+        return 0;
+    }
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QSqlQuery query(database);
+
+    query.prepare(R"(
+        SELECT
+            COALESCE(
+                SUM(quantity),
+                0)
+        FROM inventory_record
+        WHERE workspace_id = :workspace_id
+          AND part_id = :part_id
+          AND color_id = :color_id
+    )");
+
+    query.bindValue(":workspace_id", workspaceId);
+
+    query.bindValue(":part_id", partId);
+
+    query.bindValue(":color_id", colorId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to calculate inventory quantity:" << query.lastError().text();
+
+        return 0;
+    }
+
+    if (!query.next())
+        return 0;
+
+    return query.value(0).toInt();
+}

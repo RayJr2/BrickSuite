@@ -111,6 +111,21 @@ qt_add_executable(BrickSuite
     src/services/images/PartImageService.cpp src/services/images/PartImageService.h
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
     src/ui/helpers/ColorComboHelper.cpp src/ui/helpers/ColorComboHelper.h
+    src/models/Build.h
+    src/models/Build.cpp
+    src/repositories/BuildRepository.h
+    src/repositories/BuildRepository.cpp
+    src/ui/builds/BuildsWidget.cpp src/ui/builds/BuildsWidget.h
+    src/models/BuildRequirement.h
+    src/models/BuildRequirement.cpp
+    src/repositories/BuildRequirementRepository.h
+    src/repositories/BuildRequirementRepository.cpp
+    src/ui/builds/EditBuildRequirementDialog.h
+    src/ui/builds/EditBuildRequirementDialog.cpp
+    src/models/BuildAllocation.h
+    src/models/BuildAllocation.cpp
+    src/repositories/BuildAllocationRepository.h
+    src/repositories/BuildAllocationRepository.cpp
 
 )
 target_link_libraries(BrickSuite PRIVATE

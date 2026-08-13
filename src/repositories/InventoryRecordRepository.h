@@ -37,6 +37,8 @@ public:
 
     bool moveInventory(int inventoryRecordId, int destinationStorageLocationId, int quantityToMove);
 
+    int totalQuantityForPartColor(int workspaceId, int partId, int colorId) const;
+
 private:
     InventoryRecord inventoryRecordFromQuery(const QSqlQuery& query) const;
 };

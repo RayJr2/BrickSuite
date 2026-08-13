@@ -105,6 +105,36 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 5;
     }
 
+    // Version 5 -> Version 6.
+    if (version == 5) {
+        if (!migrateVersion5ToVersion6(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 6)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 6;
+    }
+
+    // Version 6 -> Version 7.
+    if (version == 6) {
+        if (!migrateVersion6ToVersion7(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 7)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 7;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -676,6 +706,266 @@ bool DatabaseSchema::createInventoryMovementIndexes(QSqlDatabase& database)
         ON inventory_movement(created_utc)
     )")) {
         qCritical() << "Unable to create movement date index:" << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion5ToVersion6(QSqlDatabase& database)
+{
+    if (!createBuildTable(database))
+        return false;
+
+    if (!createBuildRequirementTable(database))
+        return false;
+
+    if (!createBuildAllocationTable(database))
+        return false;
+
+    if (!createBuildIndexes(database))
+        return false;
+
+    return true;
+}
+
+bool DatabaseSchema::createBuildTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS build
+        (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            workspace_id  INTEGER NOT NULL,
+
+            build_type    TEXT NOT NULL,
+            name          TEXT NOT NULL,
+
+            set_number    TEXT,
+
+            status        TEXT NOT NULL DEFAULT 'Planned',
+
+            notes         TEXT,
+
+            created_utc   TEXT NOT NULL,
+            modified_utc  TEXT NOT NULL,
+
+            FOREIGN KEY (workspace_id)
+                REFERENCES workspace(id),
+
+            CHECK
+            (
+                build_type IN
+                (
+                    'Set',
+                    'MOC'
+                )
+            ),
+
+            CHECK
+            (
+                status IN
+                (
+                    'Planned',
+                    'Pulling',
+                    'Complete',
+                    'Disassembled'
+                )
+            )
+        )
+    )")) {
+        qCritical() << "Unable to create build table:" << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::createBuildRequirementTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS build_requirement
+        (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            build_id           INTEGER NOT NULL,
+
+            part_id            INTEGER NOT NULL,
+            color_id           INTEGER NOT NULL,
+
+            quantity_required  INTEGER NOT NULL,
+
+            is_spare           INTEGER NOT NULL DEFAULT 0,
+
+            created_utc        TEXT NOT NULL,
+            modified_utc       TEXT NOT NULL,
+
+            FOREIGN KEY (build_id)
+                REFERENCES build(id),
+
+            FOREIGN KEY (part_id)
+                REFERENCES part(id),
+
+            FOREIGN KEY (color_id)
+                REFERENCES color(id),
+
+            CHECK(quantity_required > 0),
+
+            UNIQUE
+            (
+                build_id,
+                part_id,
+                color_id,
+                is_spare
+            )
+        )
+    )")) {
+        qCritical() << "Unable to create build_requirement table:" << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::createBuildAllocationTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS build_allocation
+        (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            build_id             INTEGER NOT NULL,
+
+            inventory_record_id  INTEGER NOT NULL,
+
+            part_id              INTEGER NOT NULL,
+            color_id             INTEGER NOT NULL,
+
+            storage_location_id  INTEGER NOT NULL,
+
+            quantity_allocated   INTEGER NOT NULL,
+
+            created_utc          TEXT NOT NULL,
+            modified_utc         TEXT NOT NULL,
+
+            FOREIGN KEY (build_id)
+                REFERENCES build(id),
+
+            FOREIGN KEY (inventory_record_id)
+                REFERENCES inventory_record(id),
+
+            FOREIGN KEY (part_id)
+                REFERENCES part(id),
+
+            FOREIGN KEY (color_id)
+                REFERENCES color(id),
+
+            FOREIGN KEY (storage_location_id)
+                REFERENCES storage_location(id),
+
+            CHECK(quantity_allocated > 0),
+
+            UNIQUE
+            (
+                build_id,
+                inventory_record_id
+            )
+        )
+    )")) {
+        qCritical() << "Unable to create build_allocation table:" << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::createBuildIndexes(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_build_workspace
+        ON build(workspace_id)
+    )")) {
+        qCritical() << "Unable to create build workspace index:" << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_build_requirement_build
+        ON build_requirement(build_id)
+    )")) {
+        qCritical() << "Unable to create build requirement index:" << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_build_requirement_part_color
+        ON build_requirement(part_id, color_id)
+    )")) {
+        qCritical() << "Unable to create build requirement part/color index:"
+                    << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_build_allocation_build
+        ON build_allocation(build_id)
+    )")) {
+        qCritical() << "Unable to create build allocation index:" << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_build_allocation_inventory
+        ON build_allocation(inventory_record_id)
+    )")) {
+        qCritical() << "Unable to create build allocation inventory index:"
+                    << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion6ToVersion7(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        ALTER TABLE build
+        ADD COLUMN inventory_mode TEXT NOT NULL DEFAULT 'Stock'
+        CHECK
+        (
+            inventory_mode IN
+            (
+                'Stock',
+                'CompleteSet'
+            )
+        )
+    )")) {
+        qCritical() << "Unable to add inventory_mode column to build table:"
+                    << query.lastError().text();
 
         return false;
     }

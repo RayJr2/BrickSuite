@@ -1,0 +1,881 @@
+#include "BuildsWidget.h"
+
+#include "../../app/WorkspaceContext.h"
+#include "EditBuildRequirementDialog.h"
+
+#include "../../models/Build.h"
+#include "../../models/BuildRequirement.h"
+#include "../../models/Color.h"
+#include "../../models/Part.h"
+
+#include "../../repositories/BuildAllocationRepository.h"
+#include "../../repositories/BuildRepository.h"
+#include "../../repositories/BuildRequirementRepository.h"
+#include "../../repositories/ColorRepository.h"
+#include "../../repositories/InventoryRecordRepository.h"
+#include "../../repositories/PartRepository.h"
+
+#include "../../ui/helpers/ColorComboHelper.h"
+
+#include <QCheckBox>
+#include <QColor>
+#include <QComboBox>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QPalette>
+#include <QPushButton>
+#include <QSpinBox>
+#include <QTableWidget>
+#include <QTableWidgetItem>
+#include <QTextEdit>
+#include <QVBoxLayout>
+
+BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
+    : QWidget(parent)
+    , m_workspaceContext(workspaceContext)
+{
+    auto* mainLayout = new QVBoxLayout(this);
+
+    auto* titleLabel = new QLabel("Builds", this);
+
+    mainLayout->addWidget(titleLabel);
+
+    //
+    // ------------------------------------------------------------
+    // New Build
+    // ------------------------------------------------------------
+    //
+    // The group is checkable so it can collapse when an existing
+    // build is selected. The user can reopen it whenever another
+    // build needs to be created.
+    //
+    m_newBuildGroup = new QGroupBox("New Build", this);
+
+    m_newBuildGroup->setCheckable(true);
+
+    m_newBuildGroup->setChecked(true);
+
+    auto* newBuildGroupLayout = new QVBoxLayout(m_newBuildGroup);
+
+    m_newBuildContent = new QWidget(m_newBuildGroup);
+
+    auto* formLayout = new QFormLayout(m_newBuildContent);
+
+    m_typeCombo = new QComboBox(m_newBuildContent);
+
+    m_typeCombo->addItem("Set", "Set");
+
+    m_typeCombo->addItem("MOC", "MOC");
+
+    m_setNumberEdit = new QLineEdit(m_newBuildContent);
+
+    m_setNumberEdit->setPlaceholderText("Example: 1234-1");
+
+    m_inventoryModeCombo = new QComboBox(m_newBuildContent);
+
+    m_inventoryModeCombo->addItem("Build from Stock", "Stock");
+
+    m_inventoryModeCombo->addItem("Complete Set", "CompleteSet");
+
+    m_nameEdit = new QLineEdit(m_newBuildContent);
+
+    m_statusCombo = new QComboBox(m_newBuildContent);
+
+    m_statusCombo->addItem("Planned", "Planned");
+
+    m_statusCombo->addItem("Pulling", "Pulling");
+
+    m_statusCombo->addItem("Complete", "Complete");
+
+    m_statusCombo->addItem("Disassembled", "Disassembled");
+
+    m_notesEdit = new QTextEdit(m_newBuildContent);
+
+    m_notesEdit->setMaximumHeight(70);
+
+    m_addButton = new QPushButton("Add Build", m_newBuildContent);
+
+    formLayout->addRow("Type:", m_typeCombo);
+
+    formLayout->addRow("Set Number:", m_setNumberEdit);
+
+    formLayout->addRow("Inventory Mode:", m_inventoryModeCombo);
+
+    formLayout->addRow("Name:", m_nameEdit);
+
+    formLayout->addRow("Status:", m_statusCombo);
+
+    formLayout->addRow("Notes:", m_notesEdit);
+
+    formLayout->addRow(QString(), m_addButton);
+
+    newBuildGroupLayout->addWidget(m_newBuildContent);
+
+    //
+    // Important:
+    // Add the GROUP to the main layout, not m_newBuildContent.
+    //
+    mainLayout->addWidget(m_newBuildGroup);
+
+    connect(m_newBuildGroup, &QGroupBox::toggled, m_newBuildContent, &QWidget::setVisible);
+
+    //
+    // ------------------------------------------------------------
+    // Existing Builds
+    // ------------------------------------------------------------
+    //
+    auto* existingGroup = new QGroupBox("Builds", this);
+
+    auto* existingLayout = new QVBoxLayout(existingGroup);
+
+    m_buildsTable = new QTableWidget(existingGroup);
+
+    m_buildsTable->setColumnCount(6);
+
+    m_buildsTable->setHorizontalHeaderLabels(QStringList() << "Type"
+                                                           << "Set #"
+                                                           << "Inventory Mode"
+                                                           << "Name"
+                                                           << "Status"
+                                                           << "Notes");
+
+    m_buildsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
+    m_buildsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+
+    m_buildsTable->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    m_buildsTable->verticalHeader()->setVisible(false);
+
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
+
+    existingLayout->addWidget(m_buildsTable);
+
+    //
+    // Builds table receives some flexible height,
+    // but less than requirements.
+    //
+    mainLayout->addWidget(existingGroup, 1);
+
+    //
+    // ------------------------------------------------------------
+    // Build Requirements
+    // ------------------------------------------------------------
+    //
+    auto* requirementsGroup = new QGroupBox("Build Requirements", this);
+
+    auto* requirementsLayout = new QVBoxLayout(requirementsGroup);
+
+    m_requirementsLabel = new QLabel("Select a build to view its requirements.", requirementsGroup);
+
+    requirementsLayout->addWidget(m_requirementsLabel);
+
+    //
+    // Compact horizontal requirement entry row.
+    //
+    auto* requirementEntryLayout = new QHBoxLayout();
+
+    m_partNumberEdit = new QLineEdit(requirementsGroup);
+
+    m_partNumberEdit->setPlaceholderText("Example: 3001");
+
+    m_colorCombo = new QComboBox(requirementsGroup);
+
+    m_quantitySpin = new QSpinBox(requirementsGroup);
+
+    m_quantitySpin->setRange(1, 99999);
+
+    m_quantitySpin->setValue(1);
+
+    m_spareCheck = new QCheckBox("Spare", requirementsGroup);
+
+    m_addRequirementButton = new QPushButton("Add Requirement", requirementsGroup);
+
+    requirementEntryLayout->addWidget(new QLabel("Part #:", requirementsGroup));
+
+    requirementEntryLayout->addWidget(m_partNumberEdit, 2);
+
+    requirementEntryLayout->addWidget(new QLabel("Color:", requirementsGroup));
+
+    requirementEntryLayout->addWidget(m_colorCombo, 2);
+
+    requirementEntryLayout->addWidget(new QLabel("Qty:", requirementsGroup));
+
+    requirementEntryLayout->addWidget(m_quantitySpin);
+
+    requirementEntryLayout->addWidget(m_spareCheck);
+
+    requirementEntryLayout->addWidget(m_addRequirementButton);
+
+    requirementsLayout->addLayout(requirementEntryLayout);
+
+    //
+    // Requirements table.
+    //
+    m_requirementsTable = new QTableWidget(requirementsGroup);
+
+    m_requirementsTable->setColumnCount(11);
+
+    m_requirementsTable->setHorizontalHeaderLabels(QStringList() << "Part #"
+                                                                 << "Name"
+                                                                 << "Color"
+                                                                 << "Required"
+                                                                 << "Owned"
+                                                                 << "This Build"
+                                                                 << "Other Builds"
+                                                                 << "Available"
+                                                                 << "Missing"
+                                                                 << "Spare"
+                                                                 << "Action");
+
+    m_requirementsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
+    m_requirementsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+
+    m_requirementsTable->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    m_requirementsTable->verticalHeader()->setVisible(false);
+
+    m_requirementsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+
+    m_requirementsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+
+    m_requirementsTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+
+    for (int column = 3; column <= 10; ++column) {
+        m_requirementsTable->horizontalHeader()->setSectionResizeMode(column,
+                                                                      QHeaderView::ResizeToContents);
+    }
+
+    requirementsLayout->addWidget(m_requirementsTable, 1);
+
+    //
+    // Requirements are the primary working area,
+    // so give them most of the available vertical space.
+    //
+    mainLayout->addWidget(requirementsGroup, 3);
+
+    //
+    // Bottom status.
+    //
+    m_statusLabel = new QLabel(this);
+
+    mainLayout->addWidget(m_statusLabel);
+
+    //
+    // ------------------------------------------------------------
+    // Connections
+    // ------------------------------------------------------------
+    //
+    connect(m_addButton, &QPushButton::clicked, this, &BuildsWidget::addBuild);
+
+    connect(&m_workspaceContext,
+            &WorkspaceContext::currentWorkspaceChanged,
+            this,
+            &BuildsWidget::workspaceChanged);
+
+    connect(m_typeCombo, &QComboBox::currentIndexChanged, this, [this]() {
+        const bool isSet = m_typeCombo->currentData().toString() == "Set";
+
+        m_setNumberEdit->setEnabled(isSet && m_workspaceContext.hasCurrentWorkspace());
+
+        if (!isSet) {
+            m_setNumberEdit->clear();
+        }
+    });
+
+    connect(m_buildsTable,
+            &QTableWidget::itemSelectionChanged,
+            this,
+            &BuildsWidget::buildSelectionChanged);
+
+    connect(m_addRequirementButton, &QPushButton::clicked, this, &BuildsWidget::addRequirement);
+
+    connect(m_partNumberEdit, &QLineEdit::returnPressed, this, &BuildsWidget::addRequirement);
+
+    loadColors();
+
+    workspaceChanged(m_workspaceContext.currentWorkspaceId());
+
+    updateRequirementUiState();
+}
+
+void BuildsWidget::workspaceChanged(int workspaceId)
+{
+    Q_UNUSED(workspaceId);
+
+    m_selectedBuildId = 0;
+
+    loadBuilds();
+
+    loadRequirements();
+
+    updateUiState();
+
+    updateRequirementUiState();
+}
+
+void BuildsWidget::refresh()
+{
+    loadBuilds();
+
+    loadRequirements();
+
+    updateUiState();
+
+    updateRequirementUiState();
+}
+
+void BuildsWidget::loadBuilds()
+{
+    m_buildsTable->setRowCount(0);
+
+    if (!m_workspaceContext.hasCurrentWorkspace()) {
+        m_statusLabel->setText("Select a workspace to view builds.");
+
+        return;
+    }
+
+    BuildRepository repository;
+
+    const QList<Build> builds = repository.getByWorkspace(m_workspaceContext.currentWorkspaceId());
+
+    int row = 0;
+
+    for (const Build& build : builds) {
+        m_buildsTable->insertRow(row);
+
+        auto* typeItem = new QTableWidgetItem(build.buildType());
+
+        auto* setNumberItem = new QTableWidgetItem(build.setNumber());
+
+        QString inventoryModeText;
+
+        if (build.inventoryMode() == "CompleteSet") {
+            inventoryModeText = "Complete Set";
+        } else {
+            inventoryModeText = "Build from Stock";
+        }
+
+        auto* inventoryModeItem = new QTableWidgetItem(inventoryModeText);
+
+        auto* nameItem = new QTableWidgetItem(build.name());
+
+        auto* statusItem = new QTableWidgetItem(build.status());
+
+        auto* notesItem = new QTableWidgetItem(build.notes());
+
+        //
+        // Store Build ID on the Name item.
+        //
+        nameItem->setData(Qt::UserRole, build.id());
+
+        m_buildsTable->setItem(row, 0, typeItem);
+
+        m_buildsTable->setItem(row, 1, setNumberItem);
+
+        m_buildsTable->setItem(row, 2, inventoryModeItem);
+
+        m_buildsTable->setItem(row, 3, nameItem);
+
+        m_buildsTable->setItem(row, 4, statusItem);
+
+        m_buildsTable->setItem(row, 5, notesItem);
+
+        ++row;
+    }
+
+    if (builds.isEmpty()) {
+        m_statusLabel->setText("No builds have been created.");
+    } else {
+        m_statusLabel->setText(QString("%1 build(s).").arg(builds.size()));
+    }
+}
+
+void BuildsWidget::addBuild()
+{
+    if (!m_workspaceContext.hasCurrentWorkspace()) {
+        QMessageBox::warning(this, "BrickSuite", "Select a workspace before creating a build.");
+
+        return;
+    }
+
+    const QString buildType = m_typeCombo->currentData().toString();
+
+    const QString setNumber = m_setNumberEdit->text().trimmed();
+
+    const QString inventoryMode = m_inventoryModeCombo->currentData().toString();
+
+    const QString name = m_nameEdit->text().trimmed();
+
+    const QString status = m_statusCombo->currentData().toString();
+
+    const QString notes = m_notesEdit->toPlainText().trimmed();
+
+    if (name.isEmpty()) {
+        QMessageBox::warning(this, "BrickSuite", "Enter a name for the build.");
+
+        return;
+    }
+
+    if (buildType == "Set" && setNumber.isEmpty()) {
+        QMessageBox::warning(this, "BrickSuite", "Enter a set number for a Set build.");
+
+        return;
+    }
+
+    Build build;
+
+    build.setWorkspaceId(m_workspaceContext.currentWorkspaceId());
+
+    build.setBuildType(buildType);
+
+    build.setSetNumber(setNumber);
+
+    build.setInventoryMode(inventoryMode);
+
+    build.setName(name);
+
+    build.setStatus(status);
+
+    build.setNotes(notes);
+
+    BuildRepository repository;
+
+    if (!repository.create(build)) {
+        QMessageBox::critical(this, "BrickSuite", "Unable to create the build.");
+
+        return;
+    }
+
+    m_setNumberEdit->clear();
+    m_inventoryModeCombo->setCurrentIndex(0);
+    m_nameEdit->clear();
+    m_notesEdit->clear();
+
+    m_statusCombo->setCurrentIndex(0);
+
+    loadBuilds();
+
+    QMessageBox::information(this,
+                             "BrickSuite",
+                             QString("Build \"%1\" created successfully.").arg(build.name()));
+}
+
+void BuildsWidget::updateUiState()
+{
+    const bool enabled = m_workspaceContext.hasCurrentWorkspace();
+
+    m_typeCombo->setEnabled(enabled);
+
+    const bool isSet = m_typeCombo->currentData().toString() == "Set";
+
+    m_setNumberEdit->setEnabled(enabled && isSet);
+
+    m_inventoryModeCombo->setEnabled(enabled);
+
+    m_nameEdit->setEnabled(enabled);
+
+    m_statusCombo->setEnabled(enabled);
+
+    m_notesEdit->setEnabled(enabled);
+
+    m_addButton->setEnabled(enabled);
+
+    m_newBuildGroup->setEnabled(enabled);
+}
+
+void BuildsWidget::loadColors()
+{
+    m_colorCombo->clear();
+
+    ColorRepository repository;
+
+    const QList<Color> colors = repository.getAll();
+
+    for (const Color& color : colors) {
+        ColorComboHelper::addColorItem(m_colorCombo, color.name(), color.id(), color.rgb());
+    }
+}
+
+void BuildsWidget::buildSelectionChanged()
+{
+    m_selectedBuildId = 0;
+
+    const int row = m_buildsTable->currentRow();
+
+    if (row < 0) {
+        loadRequirements();
+
+        updateRequirementUiState();
+
+        return;
+    }
+
+    QTableWidgetItem* nameItem = m_buildsTable->item(row, 3);
+
+    m_selectedBuildId = nameItem->data(Qt::UserRole).toInt();
+
+    loadRequirements();
+
+    updateRequirementUiState();
+
+    //
+    // Once an existing Build is selected, collapse
+    // the creation form and give the workspace to
+    // the requirements area.
+    //
+    if (m_selectedBuildId > 0) {
+        m_newBuildGroup->setChecked(false);
+    }
+}
+
+void BuildsWidget::loadRequirements()
+{
+    m_requirementsTable->setRowCount(0);
+
+    if (m_selectedBuildId <= 0) {
+        m_requirementsLabel->setText("Select a build to view its requirements.");
+
+        return;
+    }
+
+    //
+    // Show selected Build identity.
+    //
+    const int buildRow = m_buildsTable->currentRow();
+
+    QString buildDescription;
+
+    if (buildRow >= 0) {
+        QTableWidgetItem* setNumberItem = m_buildsTable->item(buildRow, 1);
+
+        QTableWidgetItem* nameItem = m_buildsTable->item(buildRow, 3);
+
+        const QString setNumber = setNumberItem ? setNumberItem->text() : QString();
+
+        const QString name = nameItem ? nameItem->text() : QString();
+
+        if (!setNumber.isEmpty()) {
+            buildDescription = QString("%1 — %2").arg(setNumber, name);
+        } else {
+            buildDescription = name;
+        }
+    }
+
+    m_requirementsLabel->setText(QString("Requirements for: %1").arg(buildDescription));
+
+    BuildRequirementRepository requirementRepository;
+
+    const QList<BuildRequirement> requirements = requirementRepository.getByBuild(m_selectedBuildId);
+
+    PartRepository partRepository;
+
+    ColorRepository colorRepository;
+
+    InventoryRecordRepository inventoryRepository;
+
+    BuildAllocationRepository allocationRepository;
+
+    int row = 0;
+
+    for (const BuildRequirement& requirement : requirements) {
+        const std::optional<Part> part = partRepository.getById(requirement.partId());
+
+        const std::optional<Color> color = colorRepository.getById(requirement.colorId());
+
+        m_requirementsTable->insertRow(row);
+
+        const QString partNumber = part ? part->partNumber() : QString();
+
+        const QString partName = part ? part->name() : QString("(Part unavailable)");
+
+        const QString colorName = color ? color->name() : QString("(Color unavailable)");
+
+        auto* partNumberItem = new QTableWidgetItem(partNumber);
+
+        partNumberItem->setData(Qt::UserRole, requirement.id());
+
+        auto* nameItem = new QTableWidgetItem(partName);
+
+        auto* colorItem = new QTableWidgetItem(colorName);
+
+        //
+        // Color text using the existing contrast helper.
+        //
+        if (color) {
+            QString normalizedRgb = color->rgb().trimmed();
+
+            if (!normalizedRgb.isEmpty() && !normalizedRgb.startsWith('#')) {
+                normalizedRgb.prepend('#');
+            }
+
+            const QColor sourceColor(normalizedRgb);
+
+            if (sourceColor.isValid()) {
+                const QColor backgroundColor = m_requirementsTable->palette().color(QPalette::Base);
+
+                colorItem->setForeground(
+                    ColorComboHelper::readableColor(sourceColor, backgroundColor));
+            }
+        }
+
+        const int workspaceId = m_workspaceContext.currentWorkspaceId();
+
+        const int owned = inventoryRepository.totalQuantityForPartColor(workspaceId,
+                                                                        requirement.partId(),
+                                                                        requirement.colorId());
+
+        //
+        // Total quantity committed to any Build
+        // in this workspace.
+        //
+        const int totalAllocated = allocationRepository
+                                       .totalAllocatedForPartColor(workspaceId,
+                                                                   requirement.partId(),
+                                                                   requirement.colorId());
+
+        //
+        // Quantity already committed specifically
+        // to the currently selected Build.
+        //
+        const int thisBuildAllocated
+            = allocationRepository.totalAllocatedForPartColorForBuild(m_selectedBuildId,
+                                                                      requirement.partId(),
+                                                                      requirement.colorId());
+
+        //
+        // Anything allocated elsewhere is still owned,
+        // but is not available to this Build.
+        //
+        const int otherBuildsAllocated = qMax(totalAllocated - thisBuildAllocated, 0);
+
+        //
+        // Available means physically owned and not
+        // committed to any Build.
+        //
+        const int available = qMax(owned - totalAllocated, 0);
+
+        //
+        // Spare requirements are informational / optional.
+        //
+        // They do not make the Build incomplete and therefore
+        // never contribute to Missing by default.
+        //
+        const int missing = requirement.isSpare() ? 0
+                                                  : qMax(requirement.quantityRequired()
+                                                             - thisBuildAllocated - available,
+                                                         0);
+
+        auto* requiredItem = new QTableWidgetItem(QString::number(requirement.quantityRequired()));
+
+        auto* ownedItem = new QTableWidgetItem(QString::number(owned));
+
+        auto* thisBuildItem = new QTableWidgetItem(QString::number(thisBuildAllocated));
+
+        auto* otherBuildsItem = new QTableWidgetItem(QString::number(otherBuildsAllocated));
+
+        auto* availableItem = new QTableWidgetItem(QString::number(available));
+
+        auto* missingItem = new QTableWidgetItem(QString::number(missing));
+
+        auto* spareItem = new QTableWidgetItem(requirement.isSpare() ? "Yes" : "No");
+
+        auto* actionCombo = new QComboBox(m_requirementsTable);
+
+        actionCombo->addItem("Actions...");
+
+        actionCombo->addItem("Edit", "edit");
+
+        actionCombo->addItem("Delete", "delete");
+
+        const int requirementId = requirement.id();
+
+        connect(actionCombo,
+                &QComboBox::currentIndexChanged,
+                this,
+                [this, actionCombo, requirementId](int index) {
+                    if (index <= 0)
+                        return;
+
+                    const QString action = actionCombo->itemData(index).toString();
+
+                    if (action == "edit") {
+                        EditBuildRequirementDialog dialog(requirementId, this);
+
+                        if (dialog.exec() == QDialog::Accepted) {
+                            loadRequirements();
+
+                            return;
+                        }
+                    } else if (action == "delete") {
+                        const QMessageBox::StandardButton response
+                            = QMessageBox::warning(this,
+                                                   "Delete Build Requirement",
+                                                   "Delete this requirement from the build?",
+                                                   QMessageBox::Yes | QMessageBox::No,
+                                                   QMessageBox::No);
+
+                        if (response == QMessageBox::Yes) {
+                            BuildRequirementRepository repository;
+
+                            if (!repository.remove(requirementId)) {
+                                QMessageBox::critical(this,
+                                                      "BrickSuite",
+                                                      "Unable to delete the build requirement.");
+                            } else {
+                                loadRequirements();
+
+                                return;
+                            }
+                        }
+                    }
+
+                    actionCombo->setCurrentIndex(0);
+                });
+
+        requiredItem->setTextAlignment(Qt::AlignCenter);
+
+        ownedItem->setTextAlignment(Qt::AlignCenter);
+
+        thisBuildItem->setTextAlignment(Qt::AlignCenter);
+
+        otherBuildsItem->setTextAlignment(Qt::AlignCenter);
+
+        availableItem->setTextAlignment(Qt::AlignCenter);
+
+        missingItem->setTextAlignment(Qt::AlignCenter);
+
+        spareItem->setTextAlignment(Qt::AlignCenter);
+
+        m_requirementsTable->setItem(row, 0, partNumberItem);
+
+        m_requirementsTable->setItem(row, 1, nameItem);
+
+        m_requirementsTable->setItem(row, 2, colorItem);
+
+        m_requirementsTable->setItem(row, 3, requiredItem);
+
+        m_requirementsTable->setItem(row, 4, ownedItem);
+
+        m_requirementsTable->setItem(row, 5, thisBuildItem);
+
+        m_requirementsTable->setItem(row, 6, otherBuildsItem);
+
+        m_requirementsTable->setItem(row, 7, availableItem);
+
+        m_requirementsTable->setItem(row, 8, missingItem);
+
+        m_requirementsTable->setItem(row, 9, spareItem);
+
+        m_requirementsTable->setCellWidget(row, 10, actionCombo);
+
+        ++row;
+    }
+}
+
+void BuildsWidget::addRequirement()
+{
+    if (m_selectedBuildId <= 0) {
+        QMessageBox::warning(this, "BrickSuite", "Select a build before adding a requirement.");
+
+        return;
+    }
+
+    const QString partNumber = m_partNumberEdit->text().trimmed();
+
+    if (partNumber.isEmpty()) {
+        QMessageBox::warning(this, "BrickSuite", "Enter a part number.");
+
+        return;
+    }
+
+    PartRepository partRepository;
+
+    const std::optional<Part> part = partRepository.getByPartNumber(partNumber);
+
+    if (!part) {
+        QMessageBox::warning(this,
+                             "BrickSuite",
+                             QString("Part %1 was not found in the "
+                                     "BrickSuite Parts Catalog.")
+                                 .arg(partNumber));
+
+        return;
+    }
+
+    const int colorId = m_colorCombo->currentData().toInt();
+
+    if (colorId <= 0) {
+        QMessageBox::warning(this, "BrickSuite", "Select a valid color.");
+
+        return;
+    }
+
+    BuildRequirement requirement;
+
+    requirement.setBuildId(m_selectedBuildId);
+
+    requirement.setPartId(part->id());
+
+    requirement.setColorId(colorId);
+
+    requirement.setQuantityRequired(m_quantitySpin->value());
+
+    requirement.setIsSpare(m_spareCheck->isChecked());
+
+    BuildRequirementRepository repository;
+
+    if (!repository.create(requirement)) {
+        QMessageBox::critical(this,
+                              "BrickSuite",
+                              QString("Unable to add the requirement.\n\n"
+                                      "The same Part / Color / Spare "
+                                      "combination may already exist "
+                                      "for this build."));
+
+        return;
+    }
+
+    m_partNumberEdit->clear();
+
+    m_quantitySpin->setValue(1);
+
+    m_spareCheck->setChecked(false);
+
+    m_partNumberEdit->setFocus();
+
+    loadRequirements();
+}
+
+void BuildsWidget::updateRequirementUiState()
+{
+    const bool enabled = m_workspaceContext.hasCurrentWorkspace() && m_selectedBuildId > 0;
+
+    m_partNumberEdit->setEnabled(enabled);
+
+    m_colorCombo->setEnabled(enabled);
+
+    m_quantitySpin->setEnabled(enabled);
+
+    m_spareCheck->setEnabled(enabled);
+
+    m_addRequirementButton->setEnabled(enabled);
+
+    m_requirementsTable->setEnabled(enabled);
+}

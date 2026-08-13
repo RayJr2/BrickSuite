@@ -10,6 +10,7 @@
 #include "../services/images/PartImageService.h"
 #include "../settings/UserSettings.h"
 #include "../ui/parts/PartDetailsDialog.h"
+#include "builds/BuildsWidget.h"
 #include "catalog/PartsCatalogWidget.h"
 #include "inventory/AddInventoryDialog.h"
 #include "inventory/MyInventoryWidget.h"
@@ -58,6 +59,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     // My Inventory tab
     m_myInventoryWidget = new MyInventoryWidget(m_workspaceContext, m_tabWidget);
 
+    // Builds tab
+    m_buildsWidget = new BuildsWidget(m_workspaceContext, m_tabWidget);
+
     connect(m_partsCatalogWidget,
             &PartsCatalogWidget::addPartToInventoryRequested,
             this,
@@ -86,6 +90,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     m_tabWidget->addTab(m_partsCatalogWidget, "Parts Catalog");
 
     m_tabWidget->addTab(m_myInventoryWidget, "My Inventory");
+
+    m_tabWidget->addTab(m_buildsWidget, "Builds");
 
     setCentralWidget(m_tabWidget);
 
