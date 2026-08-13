@@ -3,6 +3,8 @@
 #include "../app/WorkspaceContext.h"
 #include "../models/Workspace.h"
 #include "../repositories/WorkspaceRepository.h"
+#include "../services/RebrickableApiClient.h"
+#include "../services/images/PartImageService.h"
 #include "../settings/UserSettings.h"
 #include "catalog/PartsCatalogWidget.h"
 #include "inventory/AddInventoryDialog.h"
@@ -11,6 +13,7 @@
 #include "storage/StorageWidget.h"
 
 #include <QAction>
+#include <QDebug>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -79,7 +82,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     loadWorkspaces();
 
-    // Menu bar
+    /***** Menu bar *****/
+    // Edit menu
     auto* editMenu = menuBar()->addMenu("Edit");
 
     auto* settingsAction = editMenu->addAction("Settings...");
@@ -98,6 +102,142 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
         });
 
         dialog.exec();
+    });
+
+    // Test menu
+    auto* testMenu = menuBar()->addMenu("Test");
+
+    auto* rebrickableMenu = testMenu->addMenu("Rebrickable API");
+
+    auto* partDetailsAction = rebrickableMenu->addAction("Part Details");
+
+    connect(partDetailsAction, &QAction::triggered, this, [this]() {
+        const QString apiKey = UserSettings::instance().rebrickableApiKey();
+
+        if (apiKey.isEmpty()) {
+            QMessageBox::warning(this,
+                                 "Rebrickable API Test",
+                                 "No Rebrickable API key is configured.");
+
+            return;
+        }
+
+        auto* apiClient = new RebrickableApiClient(this);
+
+        connect(apiClient,
+                &RebrickableApiClient::partDetailsFinished,
+                this,
+                [this, apiClient](const RebrickableApiClient::PartDetailsResult& result) {
+                    if (!result.success) {
+                        QMessageBox::warning(this, "Rebrickable API Test", result.message);
+
+                        apiClient->deleteLater();
+
+                        return;
+                    }
+
+                    qDebug() << "Part:" << result.part.partNumber << result.part.name;
+
+                    qDebug() << "Years:" << result.part.yearFrom << "-" << result.part.yearTo;
+
+                    qDebug() << "Image:" << result.part.partImageUrl;
+
+                    qDebug() << "Molds:" << result.part.molds;
+
+                    qDebug() << "Alternates:" << result.part.alternates;
+
+                    qDebug() << "Print count:" << result.part.prints.size();
+
+                    qDebug() << "External IDs:" << result.part.externalIds;
+
+                    QMessageBox::information(this,
+                                             "Rebrickable API Test",
+                                             QString("Part details retrieved successfully.\n\n"
+                                                     "Part: %1\n"
+                                                     "Name: %2\n"
+                                                     "Years: %3 - %4\n"
+                                                     "Molds: %5\n"
+                                                     "Alternates: %6\n"
+                                                     "Prints: %7")
+                                                 .arg(result.part.partNumber)
+                                                 .arg(result.part.name)
+                                                 .arg(result.part.yearFrom)
+                                                 .arg(result.part.yearTo)
+                                                 .arg(result.part.molds.size())
+                                                 .arg(result.part.alternates.size())
+                                                 .arg(result.part.prints.size()));
+
+                    apiClient->deleteLater();
+                });
+
+        apiClient->getPartDetails("3001", apiKey);
+    });
+
+    auto* partImageAction = rebrickableMenu->addAction("Part Image");
+
+    connect(partImageAction, &QAction::triggered, this, [this]() {
+        const QString apiKey = UserSettings::instance().rebrickableApiKey();
+
+        if (apiKey.isEmpty()) {
+            QMessageBox::warning(this,
+                                 "Rebrickable API Test",
+                                 "No Rebrickable API key is configured.");
+
+            return;
+        }
+
+        auto* apiClient = new RebrickableApiClient(this);
+
+        connect(apiClient,
+                &RebrickableApiClient::partDetailsFinished,
+                this,
+                [this, apiClient](const RebrickableApiClient::PartDetailsResult& result) {
+                    if (!result.success) {
+                        QMessageBox::warning(this, "Part Image Test", result.message);
+
+                        apiClient->deleteLater();
+
+                        return;
+                    }
+
+                    auto* imageService = new PartImageService(this);
+
+                    connect(imageService,
+                            &PartImageService::imageReady,
+                            this,
+                            [this, imageService](const QString& partNumber,
+                                                 const QString& imagePath) {
+                                QMessageBox::information(this,
+                                                         "Part Image Test",
+                                                         QString(
+                                                             "Part image cached successfully.\n\n"
+                                                             "Part: %1\n"
+                                                             "Path: %2")
+                                                             .arg(partNumber)
+                                                             .arg(imagePath));
+
+                                imageService->deleteLater();
+                            });
+
+                    connect(imageService,
+                            &PartImageService::imageFailed,
+                            this,
+                            [this, imageService](const QString& partNumber, const QString& message) {
+                                QMessageBox::warning(this,
+                                                     "Part Image Test",
+                                                     QString("Part: %1\n\n%2")
+                                                         .arg(partNumber)
+                                                         .arg(message));
+
+                                imageService->deleteLater();
+                            });
+
+                    imageService->requestPartImage(result.part.partNumber, result.part.partImageUrl);
+
+                    apiClient->deleteLater();
+                });
+
+        apiClient->getPartDetails("3001", apiKey);
     });
 
     statusBar()->showMessage("BrickSuite Version 1.0");

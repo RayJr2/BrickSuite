@@ -6,13 +6,17 @@
 #include "../../models/PartSearchResult.h"
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/PartRepository.h"
+#include "../../services/RebrickableApiClient.h"
+#include "../../services/images/PartImageService.h"
 #include "../../settings/UserSettings.h"
 
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPixmap>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -49,9 +53,10 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
 
     m_resultsTable = new QTableWidget(this);
 
-    m_resultsTable->setColumnCount(5);
+    m_resultsTable->setColumnCount(6);
 
-    m_resultsTable->setHorizontalHeaderLabels(QStringList() << "Part #"
+    m_resultsTable->setHorizontalHeaderLabels(QStringList() << "Image"
+                                                            << "Part #"
                                                             << "Name"
                                                             << "Category"
                                                             << "Material"
@@ -69,13 +74,22 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
 
     m_resultsTable->horizontalHeader()->setStretchLastSection(false);
 
-    m_resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
 
-    m_resultsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_resultsTable->setColumnWidth(0, 56);
 
-    m_resultsTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
 
     m_resultsTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+
+    m_resultsTable->setIconSize(QSize(44, 44));
+    m_resultsTable->verticalHeader()->setDefaultSectionSize(52);
 
     // Pagination controls
     m_previousButton = new QPushButton("Previous", this);
@@ -104,6 +118,11 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
 
     mainLayout->addLayout(pagingLayout);
 
+    // Initialize services
+    m_partImageService = new PartImageService(this);
+
+    m_rebrickableApiClient = new RebrickableApiClient(this);
+
     connect(m_searchButton, &QPushButton::clicked, this, [this]() {
         m_currentPage = 0;
         searchParts();
@@ -122,6 +141,52 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
     connect(m_previousButton, &QPushButton::clicked, this, &PartsCatalogWidget::previousPage);
 
     connect(m_nextButton, &QPushButton::clicked, this, &PartsCatalogWidget::nextPage);
+
+    connect(m_partImageService,
+            &PartImageService::imageReady,
+            this,
+            [this](const QString& partNumber, const QString& imagePath) {
+                if (!m_rowByPartNumber.contains(partNumber))
+                    return;
+
+                const int row = m_rowByPartNumber.value(partNumber);
+
+                QPixmap pixmap(imagePath);
+
+                if (pixmap.isNull())
+                    return;
+
+                const QPixmap thumbnail = pixmap.scaled(44,
+                                                        44,
+                                                        Qt::KeepAspectRatio,
+                                                        Qt::SmoothTransformation);
+
+                QTableWidgetItem* item = m_resultsTable->item(row, 0);
+
+                if (!item) {
+                    item = new QTableWidgetItem();
+
+                    m_resultsTable->setItem(row, 0, item);
+                }
+
+                item->setIcon(QIcon(thumbnail));
+            });
+
+    connect(m_rebrickableApiClient,
+            &RebrickableApiClient::partDetailsFinished,
+            this,
+            [this](const RebrickableApiClient::PartDetailsResult& result) {
+                m_partDetailsRequested.remove(result.part.partNumber);
+
+                if (!result.success)
+                    return;
+
+                if (result.part.partImageUrl.isEmpty())
+                    return;
+
+                m_partImageService->requestPartImage(result.part.partNumber,
+                                                     result.part.partImageUrl);
+            });
 
     loadCategories();
 
@@ -167,14 +232,32 @@ void PartsCatalogWidget::searchParts()
 
     m_resultsTable->setRowCount(0);
 
+    m_rowByPartNumber.clear();
+    m_partDetailsRequested.clear();
+
+    const QString apiKey = UserSettings::instance().rebrickableApiKey();
+
     int row = 0;
 
     for (const PartSearchResult& result : results) {
         const Part& part = result.part;
 
+        const QString partNumber = part.partNumber();
+
         m_resultsTable->insertRow(row);
 
-        auto* partNumberItem = new QTableWidgetItem(part.partNumber());
+        //
+        // Remember which table row belongs
+        // to this part number so the imageReady()
+        // signal can update the correct row later.
+        //
+        m_rowByPartNumber.insert(partNumber, row);
+
+        auto* imageItem = new QTableWidgetItem();
+
+        imageItem->setTextAlignment(Qt::AlignCenter);
+
+        auto* partNumberItem = new QTableWidgetItem(partNumber);
 
         partNumberItem->setData(Qt::UserRole, part.id());
 
@@ -184,23 +267,46 @@ void PartsCatalogWidget::searchParts()
 
         auto* materialItem = new QTableWidgetItem(part.material());
 
-        auto* addButton = new QPushButton("Add to Inventory", m_resultsTable);
+        auto* actionButton = new QPushButton("Add to Inventory", m_resultsTable);
 
         const int partId = part.id();
 
-        connect(addButton, &QPushButton::clicked, this, [this, partId]() {
+        connect(actionButton, &QPushButton::clicked, this, [this, partId]() {
             emit addPartToInventoryRequested(partId);
         });
 
-        m_resultsTable->setItem(row, 0, partNumberItem);
+        m_resultsTable->setItem(row, 0, imageItem);
 
-        m_resultsTable->setItem(row, 1, nameItem);
+        m_resultsTable->setItem(row, 1, partNumberItem);
 
-        m_resultsTable->setItem(row, 2, categoryItem);
+        m_resultsTable->setItem(row, 2, nameItem);
 
-        m_resultsTable->setItem(row, 3, materialItem);
+        m_resultsTable->setItem(row, 3, categoryItem);
 
-        m_resultsTable->setCellWidget(row, 4, addButton);
+        m_resultsTable->setItem(row, 4, materialItem);
+
+        m_resultsTable->setCellWidget(row, 5, actionButton);
+
+        //
+        // Resolve thumbnail.
+        //
+        const QString cachedPath = m_partImageService->cachedImagePath(partNumber);
+
+        if (!cachedPath.isEmpty()) {
+            //
+            // requestPartImage() will immediately emit
+            // imageReady() when the file is already cached.
+            //
+            m_partImageService->requestPartImage(partNumber, QString());
+        } else if (!apiKey.isEmpty() && !m_partDetailsRequested.contains(partNumber)) {
+            //
+            // We do not yet know the image URL.
+            // Ask Rebrickable for part details first.
+            //
+            m_partDetailsRequested.insert(partNumber);
+
+            m_rebrickableApiClient->getPartDetails(partNumber, apiKey);
+        }
 
         ++row;
     }

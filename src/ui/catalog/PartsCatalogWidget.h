@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QHash>
+#include <QSet>
 #include <QWidget>
 
 class QComboBox;
@@ -7,6 +9,8 @@ class QLineEdit;
 class QPushButton;
 class QTableWidget;
 class QLabel;
+class PartImageService;
+class RebrickableApiClient;
 
 class PartsCatalogWidget : public QWidget
 {
@@ -43,4 +47,10 @@ private:
     QPushButton* m_previousButton = nullptr;
     QPushButton* m_nextButton = nullptr;
     QLabel* m_pageLabel = nullptr;
+
+    PartImageService* m_partImageService = nullptr;
+    RebrickableApiClient* m_rebrickableApiClient = nullptr;
+
+    QHash<QString, int> m_rowByPartNumber;
+    QSet<QString> m_partDetailsRequested;
 };

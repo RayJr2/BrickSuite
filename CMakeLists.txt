@@ -108,6 +108,7 @@ qt_add_executable(BrickSuite
     src/ui/inventory/InventoryImportPreviewDialog.cpp
     src/services/RebrickableApiClient.h
     src/services/RebrickableApiClient.cpp
+    src/services/images/PartImageService.cpp src/services/images/PartImageService.h
 
 )
 target_link_libraries(BrickSuite PRIVATE

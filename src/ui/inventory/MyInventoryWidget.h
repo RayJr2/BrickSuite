@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QHash>
+#include <QList>
+#include <QSet>
 #include <QWidget>
 
 class WorkspaceContext;
@@ -9,6 +11,8 @@ class QLineEdit;
 class QPushButton;
 class QTableWidget;
 class QLabel;
+class PartImageService;
+class RebrickableApiClient;
 
 class MyInventoryWidget : public QWidget
 {
@@ -61,4 +65,10 @@ private:
     QPushButton* m_importButton = nullptr;
 
     QHash<int, QString> m_storagePathById;
+
+    PartImageService* m_partImageService = nullptr;
+    RebrickableApiClient* m_rebrickableApiClient = nullptr;
+
+    QHash<QString, QList<int>> m_rowsByPartNumber;
+    QSet<QString> m_partDetailsRequested;
 };

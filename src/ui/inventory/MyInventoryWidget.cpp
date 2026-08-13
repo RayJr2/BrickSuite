@@ -18,13 +18,18 @@
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
+#include "../../services/RebrickableApiClient.h"
+#include "../../services/images/PartImageService.h"
+
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QHash>
 #include <QHeaderView>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QPixmap>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -120,9 +125,10 @@ MyInventoryWidget::MyInventoryWidget(
     m_resultsTable =
         new QTableWidget(this);
 
-    m_resultsTable->setColumnCount(9);
+    m_resultsTable->setColumnCount(10);
 
-    m_resultsTable->setHorizontalHeaderLabels(QStringList() << "Part #"
+    m_resultsTable->setHorizontalHeaderLabels(QStringList() << "Image"
+                                                            << "Part #"
                                                             << "Name"
                                                             << "Category"
                                                             << "Color"
@@ -147,52 +153,34 @@ MyInventoryWidget::MyInventoryWidget(
     m_resultsTable->horizontalHeader()
         ->setStretchLastSection(false);
 
-    m_resultsTable->horizontalHeader()
-        ->setSectionResizeMode(
-            0,
-            QHeaderView::ResizeToContents);
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
 
-    m_resultsTable->horizontalHeader()
-        ->setSectionResizeMode(
-            1,
-            QHeaderView::Stretch);
+    m_resultsTable->setIconSize(QSize(44, 44));
 
-    m_resultsTable->horizontalHeader()
-        ->setSectionResizeMode(
-            2,
-            QHeaderView::ResizeToContents);
+    m_resultsTable->verticalHeader()->setDefaultSectionSize(52);
+    m_resultsTable->setColumnWidth(0, 56);
 
-    m_resultsTable->horizontalHeader()
-        ->setSectionResizeMode(
-            3,
-            QHeaderView::ResizeToContents);
+    m_resultsTable->verticalHeader()->setDefaultSectionSize(52);
 
-    m_resultsTable->horizontalHeader()
-        ->setSectionResizeMode(
-            4,
-            QHeaderView::ResizeToContents);
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 
-    m_resultsTable->horizontalHeader()
-        ->setSectionResizeMode(
-            5,
-            QHeaderView::Stretch);
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
 
-    m_resultsTable->horizontalHeader()
-        ->setSectionResizeMode(
-            6,
-            QHeaderView::ResizeToContents);
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
 
-    m_resultsTable->horizontalHeader()
-        ->setSectionResizeMode(
-            7,
-            QHeaderView::ResizeToContents);
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Stretch);
+
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(7, QHeaderView::ResizeToContents);
 
     m_resultsTable->horizontalHeader()->setSectionResizeMode(8, QHeaderView::ResizeToContents);
 
-    m_previousButton =
-        new QPushButton(
-            "Previous",
-            this);
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(9, QHeaderView::ResizeToContents);
+
+    m_previousButton = new QPushButton("Previous", this);
 
     m_nextButton =
         new QPushButton(
@@ -229,6 +217,10 @@ MyInventoryWidget::MyInventoryWidget(
 
     mainLayout->addLayout(
         pagingLayout);
+
+    // Initialize the PartImageService & RebrickableApiClient
+    m_partImageService = new PartImageService(this);
+    m_rebrickableApiClient = new RebrickableApiClient(this);
 
     connect(m_importButton, &QPushButton::clicked, this, &MyInventoryWidget::importCsv);
 
@@ -294,6 +286,56 @@ MyInventoryWidget::MyInventoryWidget(
         &WorkspaceContext::currentWorkspaceChanged,
         this,
         &MyInventoryWidget::workspaceChanged);
+
+    connect(m_partImageService,
+            &PartImageService::imageReady,
+            this,
+            [this](const QString& partNumber, const QString& imagePath) {
+                if (!m_rowsByPartNumber.contains(partNumber)) {
+                    return;
+                }
+
+                QPixmap pixmap(imagePath);
+
+                if (pixmap.isNull())
+                    return;
+
+                const QPixmap thumbnail = pixmap.scaled(44,
+                                                        44,
+                                                        Qt::KeepAspectRatio,
+                                                        Qt::SmoothTransformation);
+
+                const QList<int> rows = m_rowsByPartNumber.value(partNumber);
+
+                for (const int row : rows) {
+                    QTableWidgetItem* item = m_resultsTable->item(row, 0);
+
+                    if (!item) {
+                        item = new QTableWidgetItem();
+
+                        m_resultsTable->setItem(row, 0, item);
+                    }
+
+                    item->setIcon(QIcon(thumbnail));
+                }
+            });
+
+    connect(m_rebrickableApiClient,
+            &RebrickableApiClient::partDetailsFinished,
+            this,
+            [this](const RebrickableApiClient::PartDetailsResult& result) {
+                if (!result.success)
+                    return;
+
+                if (result.part.partNumber.isEmpty())
+                    return;
+
+                if (result.part.partImageUrl.isEmpty())
+                    return;
+
+                m_partImageService->requestPartImage(result.part.partNumber,
+                                                     result.part.partImageUrl);
+            });
 
     loadCategories();
     loadColors();
@@ -399,6 +441,9 @@ void MyInventoryWidget::searchInventory()
 {
     m_resultsTable->setRowCount(0);
 
+    m_rowsByPartNumber.clear();
+    m_partDetailsRequested.clear();
+
     if (!m_workspaceContext.hasCurrentWorkspace()) {
         m_lastResultCount = 0;
 
@@ -433,12 +478,27 @@ void MyInventoryWidget::searchInventory()
 
     m_lastResultCount = results.size();
 
+    const QString apiKey = UserSettings::instance().rebrickableApiKey();
+
     int row = 0;
 
     for (const InventorySearchResult& result : results) {
         m_resultsTable->insertRow(row);
 
-        auto* partNumberItem = new QTableWidgetItem(result.partNumber);
+        const QString partNumber = result.partNumber;
+
+        //
+        // The same part number may appear on several
+        // inventory rows because of different colors,
+        // locations, conditions, etc.
+        //
+        m_rowsByPartNumber[partNumber].append(row);
+
+        auto* imageItem = new QTableWidgetItem();
+
+        imageItem->setTextAlignment(Qt::AlignCenter);
+
+        auto* partNumberItem = new QTableWidgetItem(partNumber);
 
         partNumberItem->setData(Qt::UserRole, result.inventoryRecordId);
 
@@ -516,23 +576,48 @@ void MyInventoryWidget::searchInventory()
                     actionCombo->setCurrentIndex(0);
                 });
 
-        m_resultsTable->setItem(row, 0, partNumberItem);
+        m_resultsTable->setItem(row, 0, imageItem);
 
-        m_resultsTable->setItem(row, 1, nameItem);
+        m_resultsTable->setItem(row, 1, partNumberItem);
 
-        m_resultsTable->setItem(row, 2, categoryItem);
+        m_resultsTable->setItem(row, 2, nameItem);
 
-        m_resultsTable->setItem(row, 3, colorItem);
+        m_resultsTable->setItem(row, 3, categoryItem);
 
-        m_resultsTable->setItem(row, 4, quantityItem);
+        m_resultsTable->setItem(row, 4, colorItem);
 
-        m_resultsTable->setItem(row, 5, storageItem);
+        m_resultsTable->setItem(row, 5, quantityItem);
 
-        m_resultsTable->setItem(row, 6, conditionItem);
+        m_resultsTable->setItem(row, 6, storageItem);
 
-        m_resultsTable->setItem(row, 7, ownershipItem);
+        m_resultsTable->setItem(row, 7, conditionItem);
 
-        m_resultsTable->setCellWidget(row, 8, actionCombo);
+        m_resultsTable->setItem(row, 8, ownershipItem);
+
+        m_resultsTable->setCellWidget(row, 9, actionCombo);
+
+        //
+        // Resolve generic part thumbnail.
+        //
+        const QString cachedPath = m_partImageService->cachedImagePath(partNumber);
+
+        if (!cachedPath.isEmpty()) {
+            //
+            // Cached image exists.
+            // requestPartImage() immediately emits
+            // imageReady().
+            //
+            m_partImageService->requestPartImage(partNumber, QString());
+        } else if (!apiKey.isEmpty() && !m_partDetailsRequested.contains(partNumber)) {
+            //
+            // No cached image yet.
+            // Ask Rebrickable for the part details
+            // so we can obtain part_img_url.
+            //
+            m_partDetailsRequested.insert(partNumber);
+
+            m_rebrickableApiClient->getPartDetails(partNumber, apiKey);
+        }
 
         ++row;
     }
