@@ -147,6 +147,8 @@ qt_add_executable(BrickSuite
     src/services/images/SetImageService.cpp
     src/ui/catalog/SetDetailsDialog.h
     src/ui/catalog/SetDetailsDialog.cpp
+    src/import/RebrickablePartCatalogImporter.h
+    src/import/RebrickablePartCatalogImporter.cpp
 
 )
 target_link_libraries(BrickSuite PRIVATE

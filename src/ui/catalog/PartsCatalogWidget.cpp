@@ -1,5 +1,6 @@
 #include "PartsCatalogWidget.h"
 
+#include "../../import/RebrickablePartCatalogImporter.h"
 #include "../../models/Part.h"
 #include "../../models/PartCategory.h"
 #include "../../models/PartSearchCriteria.h"
@@ -12,11 +13,13 @@
 #include "../parts/PartDetailsDialog.h"
 
 #include <QComboBox>
+#include <QFileDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
 #include <QTableWidget>
@@ -28,7 +31,17 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
 {
     auto* mainLayout = new QVBoxLayout(this);
 
+    auto* titleLayout = new QHBoxLayout();
+
     auto* titleLabel = new QLabel("Parts Catalog", this);
+
+    m_importPartsButton = new QPushButton("Import Rebrickable parts.csv", this);
+
+    mainLayout->addLayout(titleLayout);
+
+    titleLayout->addStretch();
+
+    titleLayout->addWidget(m_importPartsButton);
 
     auto* filterLayout = new QHBoxLayout();
 
@@ -188,6 +201,8 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
                 m_partImageService->requestPartImage(result.part.partNumber,
                                                      result.part.partImageUrl);
             });
+
+    connect(m_importPartsButton, &QPushButton::clicked, this, &PartsCatalogWidget::importPartsCsv);
 
     loadCategories();
 
@@ -389,4 +404,66 @@ void PartsCatalogWidget::updatePagingControls()
     m_nextButton->setEnabled(m_lastResultCount >= resultsPerPage);
 
     m_pageLabel->setText(QString("Page %1").arg(m_currentPage + 1));
+}
+
+void PartsCatalogWidget::importPartsCsv()
+{
+    const QString fileName = QFileDialog::getOpenFileName(this,
+                                                          "Import Rebrickable parts.csv",
+                                                          QString(),
+                                                          "CSV Files (*.csv)");
+
+    if (fileName.isEmpty())
+        return;
+
+    const QMessageBox::StandardButton response
+        = QMessageBox::question(this,
+                                "Import Parts Catalog",
+                                "Import/update the BrickSuite Parts Catalog "
+                                "from this Rebrickable parts.csv file?\n\n"
+                                "New Parts will be added and changed provider "
+                                "data will be updated.\n\n"
+                                "Parts already in BrickSuite will not be "
+                                "deleted if they are absent from the CSV.",
+                                QMessageBox::Yes | QMessageBox::No,
+                                QMessageBox::No);
+
+    if (response != QMessageBox::Yes)
+        return;
+
+    RebrickablePartCatalogImporter importer;
+
+    const RebrickablePartCatalogImporter::Result result = importer.importFile(fileName);
+
+    if (!result.success) {
+        QMessageBox::critical(this, "Import Parts Catalog", result.message);
+
+        return;
+    }
+
+    QMessageBox::information(this,
+                             "Import Parts Catalog",
+                             QString("Parts Catalog import completed.\n\n"
+                                     "Rows Read: %1\n"
+                                     "New: %2\n"
+                                     "Updated: %3\n"
+                                     "Unchanged: %4\n"
+                                     "Skipped: %5")
+                                 .arg(result.rowsRead)
+                                 .arg(result.inserted)
+                                 .arg(result.updated)
+                                 .arg(result.unchanged)
+                                 .arg(result.skipped));
+
+    //
+    // Categories do not normally change during a
+    // parts.csv import, but reloading the combo keeps
+    // the page completely synchronized with local
+    // reference data.
+    //
+    loadCategories();
+
+    m_currentPage = 0;
+
+    searchParts();
 }

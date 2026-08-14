@@ -19,6 +19,7 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
+#include <qheaderview.h>
 
 StorageWidget::StorageWidget(
     WorkspaceContext& workspaceContext,
@@ -33,6 +34,8 @@ StorageWidget::StorageWidget(
     m_tree = new QTreeWidget(this);
 
     m_tree->setColumnCount(2);
+    // Set auto fit content
+    m_tree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_tree->setHeaderLabels(
         QStringList() << "Location" << "Type");
 
