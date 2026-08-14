@@ -51,11 +51,19 @@ AllocateBuildRequirementDialog::AllocateBuildRequirementDialog(int workspaceId,
 
     m_requiredLabel = new QLabel(this);
 
+    m_pulledLabel = new QLabel(this);
+
+    m_remainingLabel = new QLabel(this);
+
     formLayout->addRow("Part:", m_partLabel);
 
     formLayout->addRow("Color:", m_colorLabel);
 
     formLayout->addRow("Required:", m_requiredLabel);
+
+    formLayout->addRow("Pulled:", m_pulledLabel);
+
+    formLayout->addRow("Remaining:", m_remainingLabel);
 
     mainLayout->addLayout(formLayout);
 
@@ -154,6 +162,10 @@ bool AllocateBuildRequirementDialog::loadRequirement()
 
     m_quantityRequired = requirement->quantityRequired();
 
+    m_quantityPulled = requirement->quantityPulled();
+
+    m_quantityRemaining = qMax(m_quantityRequired - m_quantityPulled, 0);
+
     m_isSpare = requirement->isSpare();
 
     if (m_isSpare) {
@@ -186,6 +198,21 @@ bool AllocateBuildRequirementDialog::loadRequirement()
     }
 
     m_requiredLabel->setText(QString::number(m_quantityRequired));
+
+    m_requiredLabel->setText(QString::number(m_quantityRequired));
+
+    m_pulledLabel->setText(QString::number(m_quantityPulled));
+
+    m_remainingLabel->setText(QString::number(m_quantityRemaining));
+
+    if (m_quantityRemaining <= 0) {
+        QMessageBox::information(this,
+                                 "Allocate Requirement",
+                                 "This Build Requirement has already "
+                                 "been completely pulled.");
+
+        return false;
+    }
 
     return true;
 }
@@ -305,22 +332,22 @@ void AllocateBuildRequirementDialog::updateSummary()
         proposedAllocation += row.allocationSpin->value();
     }
 
-    const int remaining = qMax(m_quantityRequired - proposedAllocation, 0);
+    const int stillNeeded = qMax(m_quantityRemaining - proposedAllocation, 0);
 
-    const int overAllocated = qMax(proposedAllocation - m_quantityRequired, 0);
+    const bool overAllocated = proposedAllocation > m_quantityRemaining;
 
     m_summaryLabel->setText(QString("Required: %1     "
-                                    "This Build Allocation: %2     "
-                                    "Remaining Missing: %3")
+                                    "Pulled: %2     "
+                                    "Remaining: %3     "
+                                    "This Build Allocation: %4     "
+                                    "Still Needed: %5")
                                 .arg(m_quantityRequired)
+                                .arg(m_quantityPulled)
+                                .arg(m_quantityRemaining)
                                 .arg(proposedAllocation)
-                                .arg(remaining));
+                                .arg(stillNeeded));
 
-    //
-    // We do not permit a Build to reserve more
-    // than this requirement actually needs.
-    //
-    m_saveButton->setEnabled(overAllocated == 0);
+    m_saveButton->setEnabled(!overAllocated);
 }
 
 QString AllocateBuildRequirementDialog::storageLocationName(int storageLocationId) const
@@ -352,11 +379,11 @@ void AllocateBuildRequirementDialog::saveAllocations()
         proposedTotal += row.allocationSpin->value();
     }
 
-    if (proposedTotal > m_quantityRequired) {
+    if ((proposedTotal > m_quantityRemaining)) {
         QMessageBox::warning(this,
                              "Allocate Requirement",
                              "The proposed allocation exceeds "
-                             "the quantity required.");
+                             "the remaining quantity required.");
 
         return;
     }

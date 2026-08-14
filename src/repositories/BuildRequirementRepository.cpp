@@ -10,7 +10,8 @@
 bool BuildRequirementRepository::create(BuildRequirement& requirement)
 {
     if (requirement.buildId() <= 0 || requirement.partId() <= 0 || requirement.colorId() <= 0
-        || requirement.quantityRequired() <= 0) {
+        || requirement.quantityRequired() <= 0 || requirement.quantityPulled() < 0
+        || requirement.quantityPulled() > requirement.quantityRequired()) {
         return false;
     }
 
@@ -21,27 +22,29 @@ bool BuildRequirementRepository::create(BuildRequirement& requirement)
     QSqlQuery query(database);
 
     query.prepare(R"(
-        INSERT INTO build_requirement
-        (
-            build_id,
-            part_id,
-            color_id,
-            quantity_required,
-            is_spare,
-            created_utc,
-            modified_utc
-        )
-        VALUES
-        (
-            :build_id,
-            :part_id,
-            :color_id,
-            :quantity_required,
-            :is_spare,
-            :created_utc,
-            :modified_utc
-        )
-    )");
+    INSERT INTO build_requirement
+    (
+        build_id,
+        part_id,
+        color_id,
+        quantity_required,
+        quantity_pulled,
+        is_spare,
+        created_utc,
+        modified_utc
+    )
+    VALUES
+    (
+        :build_id,
+        :part_id,
+        :color_id,
+        :quantity_required,
+        :quantity_pulled,
+        :is_spare,
+        :created_utc,
+        :modified_utc
+    )
+)");
 
     query.bindValue(":build_id", requirement.buildId());
 
@@ -50,6 +53,8 @@ bool BuildRequirementRepository::create(BuildRequirement& requirement)
     query.bindValue(":color_id", requirement.colorId());
 
     query.bindValue(":quantity_required", requirement.quantityRequired());
+
+    query.bindValue(":quantity_pulled", requirement.quantityPulled());
 
     query.bindValue(":is_spare", requirement.isSpare() ? 1 : 0);
 
@@ -87,6 +92,7 @@ std::optional<BuildRequirement> BuildRequirementRepository::getById(int id) cons
             part_id,
             color_id,
             quantity_required,
+            quantity_pulled,
             is_spare,
             created_utc,
             modified_utc
@@ -126,6 +132,7 @@ QList<BuildRequirement> BuildRequirementRepository::getByBuild(int buildId) cons
             part_id,
             color_id,
             quantity_required,
+            quantity_pulled,
             is_spare,
             created_utc,
             modified_utc
@@ -155,7 +162,9 @@ QList<BuildRequirement> BuildRequirementRepository::getByBuild(int buildId) cons
 bool BuildRequirementRepository::update(BuildRequirement& requirement)
 {
     if (requirement.id() <= 0 || requirement.buildId() <= 0 || requirement.partId() <= 0
-        || requirement.colorId() <= 0 || requirement.quantityRequired() <= 0) {
+        || requirement.colorId() <= 0 || requirement.quantityRequired() <= 0
+        || requirement.quantityPulled() < 0
+        || requirement.quantityPulled() > requirement.quantityRequired()) {
         return false;
     }
 
@@ -172,6 +181,7 @@ bool BuildRequirementRepository::update(BuildRequirement& requirement)
             part_id = :part_id,
             color_id = :color_id,
             quantity_required = :quantity_required,
+            quantity_pulled = :quantity_pulled,
             is_spare = :is_spare,
             modified_utc = :modified_utc
         WHERE id = :id
@@ -184,6 +194,8 @@ bool BuildRequirementRepository::update(BuildRequirement& requirement)
     query.bindValue(":color_id", requirement.colorId());
 
     query.bindValue(":quantity_required", requirement.quantityRequired());
+
+    query.bindValue(":quantity_pulled", requirement.quantityPulled());
 
     query.bindValue(":is_spare", requirement.isSpare() ? 1 : 0);
 
@@ -273,6 +285,8 @@ BuildRequirement BuildRequirementRepository::requirementFromQuery(const QSqlQuer
 
     requirement.setQuantityRequired(query.value("quantity_required").toInt());
 
+    requirement.setQuantityPulled(query.value("quantity_pulled").toInt());
+
     requirement.setIsSpare(query.value("is_spare").toInt() != 0);
 
     requirement.setCreatedUtc(
@@ -282,4 +296,58 @@ BuildRequirement BuildRequirementRepository::requirementFromQuery(const QSqlQuer
         QDateTime::fromString(query.value("modified_utc").toString(), Qt::ISODateWithMs));
 
     return requirement;
+}
+
+std::optional<BuildRequirement> BuildRequirementRepository::getByBuildPartColor(int buildId,
+                                                                                int partId,
+                                                                                int colorId,
+                                                                                bool isSpare) const
+{
+    if (buildId <= 0 || partId <= 0 || colorId <= 0) {
+        return std::nullopt;
+    }
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QSqlQuery query(database);
+
+    query.prepare(R"(
+        SELECT
+            id,
+            build_id,
+            part_id,
+            color_id,
+            quantity_required,
+            quantity_pulled,
+            is_spare,
+            created_utc,
+            modified_utc
+        FROM build_requirement
+        WHERE build_id = :build_id
+          AND part_id = :part_id
+          AND color_id = :color_id
+          AND is_spare = :is_spare
+        LIMIT 1
+    )");
+
+    query.bindValue(":build_id", buildId);
+
+    query.bindValue(":part_id", partId);
+
+    query.bindValue(":color_id", colorId);
+
+    query.bindValue(":is_spare", isSpare ? 1 : 0);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to retrieve Build Requirement "
+                       "by Build/Part/Color:"
+                    << query.lastError().text();
+
+        return std::nullopt;
+    }
+
+    if (!query.next())
+        return std::nullopt;
+
+    return requirementFromQuery(query);
 }

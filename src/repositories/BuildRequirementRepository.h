@@ -22,6 +22,11 @@ public:
 
     bool removeAllForBuild(int buildId);
 
+    std::optional<BuildRequirement> getByBuildPartColor(int buildId,
+                                                        int partId,
+                                                        int colorId,
+                                                        bool isSpare) const;
+
 private:
     BuildRequirement requirementFromQuery(const QSqlQuery& query) const;
 };

@@ -135,6 +135,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 7;
     }
 
+    // Version 7 -> Version 8.
+    if (version == 7) {
+        if (!migrateVersion7ToVersion8(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 8)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 8;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -965,6 +980,71 @@ bool DatabaseSchema::migrateVersion6ToVersion7(QSqlDatabase& database)
         )
     )")) {
         qCritical() << "Unable to add inventory_mode column to build table:"
+                    << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion7ToVersion8(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    //
+    // Persist how many pieces of each Build Requirement
+    // have actually been physically pulled.
+    //
+    if (!query.exec(R"(
+        ALTER TABLE build_requirement
+        ADD COLUMN quantity_pulled INTEGER NOT NULL DEFAULT 0
+        CHECK(quantity_pulled >= 0)
+    )")) {
+        qCritical() << "Unable to add quantity_pulled to build_requirement:"
+                    << query.lastError().text();
+
+        return false;
+    }
+
+    //
+    // Backfill previously reconciled BuildPull movements.
+    //
+    // This preserves pulls already performed before schema v8.
+    // Spare requirements are excluded because BrickSuite does
+    // not allocate/pull spares by default.
+    //
+    if (!query.exec(R"(
+        UPDATE build_requirement
+        SET quantity_pulled =
+            MIN
+            (
+                quantity_required,
+
+                COALESCE
+                (
+                    (
+                        SELECT
+                            SUM(-im.quantity_change)
+
+                        FROM inventory_movement im
+
+                        WHERE im.movement_type = 'BuildPull'
+                          AND im.reference_type = 'Build'
+                          AND CAST(im.reference_id AS INTEGER)
+                              = build_requirement.build_id
+                          AND im.part_id
+                              = build_requirement.part_id
+                          AND im.color_id
+                              = build_requirement.color_id
+                          AND im.quantity_change < 0
+                    ),
+                    0
+                )
+            )
+        WHERE is_spare = 0
+    )")) {
+        qCritical() << "Unable to backfill Build Requirement pulled quantities:"
                     << query.lastError().text();
 
         return false;

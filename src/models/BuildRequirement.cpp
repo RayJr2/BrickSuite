@@ -1,5 +1,7 @@
 #include "BuildRequirement.h"
 
+#include <QtGlobal>
+
 int BuildRequirement::id() const
 {
     return m_id;
@@ -78,4 +80,14 @@ QDateTime BuildRequirement::modifiedUtc() const
 void BuildRequirement::setModifiedUtc(const QDateTime& modifiedUtc)
 {
     m_modifiedUtc = modifiedUtc;
+}
+
+int BuildRequirement::quantityPulled() const
+{
+    return m_quantityPulled;
+}
+
+void BuildRequirement::setQuantityPulled(int quantityPulled)
+{
+    m_quantityPulled = qMax(quantityPulled, 0);
 }

@@ -130,6 +130,8 @@ qt_add_executable(BrickSuite
     src/ui/builds/SetImportPreviewDialog.cpp
     src/ui/builds/AllocateBuildRequirementDialog.h
     src/ui/builds/AllocateBuildRequirementDialog.cpp
+    src/ui/builds/ImportPullListDialog.h
+    src/ui/builds/ImportPullListDialog.cpp
 
 )
 target_link_libraries(BrickSuite PRIVATE

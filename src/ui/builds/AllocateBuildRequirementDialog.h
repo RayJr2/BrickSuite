@@ -49,12 +49,16 @@ private:
     int m_colorId = 0;
 
     int m_quantityRequired = 0;
+    int m_quantityPulled = 0;
+    int m_quantityRemaining = 0;
 
     bool m_isSpare = false;
 
     QLabel* m_partLabel = nullptr;
     QLabel* m_colorLabel = nullptr;
     QLabel* m_requiredLabel = nullptr;
+    QLabel* m_pulledLabel = nullptr;
+    QLabel* m_remainingLabel = nullptr;
     QLabel* m_summaryLabel = nullptr;
 
     QTableWidget* m_table = nullptr;

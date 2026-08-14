@@ -3,6 +3,7 @@
 #include "../../app/WorkspaceContext.h"
 #include "AllocateBuildRequirementDialog.h"
 #include "EditBuildRequirementDialog.h"
+#include "ImportPullListDialog.h"
 #include "SetImportPreviewDialog.h"
 
 #include "../../models/Build.h"
@@ -16,12 +17,15 @@
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/PartRepository.h"
+#include "../../repositories/StorageLocationRepository.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
 
 #include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
+#include <QFile>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -35,6 +39,7 @@
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTextEdit>
+#include <QTextStream>
 #include <QVBoxLayout>
 
 BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
@@ -189,9 +194,15 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_loadSetFromRebrickableButton = new QPushButton("Load Set from Rebrickable", requirementsGroup);
 
+    m_exportPullListButton = new QPushButton("Export Pull List CSV", requirementsGroup);
+    m_importPullListButton = new QPushButton("Import Pull List CSV", requirementsGroup);
+
     requirementsHeaderLayout->addWidget(m_requirementsLabel, 1);
 
     requirementsHeaderLayout->addWidget(m_loadSetFromRebrickableButton);
+
+    requirementsHeaderLayout->addWidget(m_exportPullListButton);
+    requirementsHeaderLayout->addWidget(m_importPullListButton);
 
     requirementsLayout->addLayout(requirementsHeaderLayout);
 
@@ -239,12 +250,14 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     //
     m_requirementsTable = new QTableWidget(requirementsGroup);
 
-    m_requirementsTable->setColumnCount(11);
+    m_requirementsTable->setColumnCount(13);
 
     m_requirementsTable->setHorizontalHeaderLabels(QStringList() << "Part #"
                                                                  << "Name"
                                                                  << "Color"
                                                                  << "Required"
+                                                                 << "Pulled"
+                                                                 << "Remaining"
                                                                  << "Owned"
                                                                  << "This Build"
                                                                  << "Other Builds"
@@ -267,7 +280,7 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_requirementsTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
 
-    for (int column = 3; column <= 10; ++column) {
+    for (int column = 3; column <= 13; ++column) {
         m_requirementsTable->horizontalHeader()->setSectionResizeMode(column,
                                                                       QHeaderView::ResizeToContents);
     }
@@ -293,6 +306,9 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     // ------------------------------------------------------------
     //
     connect(m_addButton, &QPushButton::clicked, this, &BuildsWidget::addBuild);
+
+    connect(m_exportPullListButton, &QPushButton::clicked, this, &BuildsWidget::exportPullList);
+    connect(m_importPullListButton, &QPushButton::clicked, this, &BuildsWidget::importPullList);
 
     connect(&m_workspaceContext,
             &WorkspaceContext::currentWorkspaceChanged,
@@ -695,6 +711,10 @@ void BuildsWidget::loadRequirements()
                                                                         requirement.partId(),
                                                                         requirement.colorId());
 
+        const int quantityPulled = requirement.quantityPulled();
+
+        const int remainingRequired = qMax(requirement.quantityRequired() - quantityPulled, 0);
+
         //
         // Total quantity committed to any Build
         // in this workspace.
@@ -731,12 +751,15 @@ void BuildsWidget::loadRequirements()
         // They do not make the Build incomplete and therefore
         // never contribute to Missing by default.
         //
-        const int missing = requirement.isSpare() ? 0
-                                                  : qMax(requirement.quantityRequired()
-                                                             - thisBuildAllocated - available,
-                                                         0);
+        const int missing = requirement.isSpare()
+                                ? 0
+                                : qMax(remainingRequired - thisBuildAllocated - available, 0);
 
         auto* requiredItem = new QTableWidgetItem(QString::number(requirement.quantityRequired()));
+
+        auto* pulledItem = new QTableWidgetItem(QString::number(quantityPulled));
+
+        auto* remainingItem = new QTableWidgetItem(QString::number(remainingRequired));
 
         auto* ownedItem = new QTableWidgetItem(QString::number(owned));
 
@@ -857,18 +880,15 @@ void BuildsWidget::loadRequirements()
                 });
 
         requiredItem->setTextAlignment(Qt::AlignCenter);
-
         ownedItem->setTextAlignment(Qt::AlignCenter);
-
         thisBuildItem->setTextAlignment(Qt::AlignCenter);
-
         otherBuildsItem->setTextAlignment(Qt::AlignCenter);
-
         availableItem->setTextAlignment(Qt::AlignCenter);
-
         missingItem->setTextAlignment(Qt::AlignCenter);
-
         spareItem->setTextAlignment(Qt::AlignCenter);
+        requiredItem->setTextAlignment(Qt::AlignCenter);
+        pulledItem->setTextAlignment(Qt::AlignCenter);
+        remainingItem->setTextAlignment(Qt::AlignCenter);
 
         m_requirementsTable->setItem(row, 0, partNumberItem);
 
@@ -878,19 +898,23 @@ void BuildsWidget::loadRequirements()
 
         m_requirementsTable->setItem(row, 3, requiredItem);
 
-        m_requirementsTable->setItem(row, 4, ownedItem);
+        m_requirementsTable->setItem(row, 4, pulledItem);
 
-        m_requirementsTable->setItem(row, 5, thisBuildItem);
+        m_requirementsTable->setItem(row, 5, remainingItem);
 
-        m_requirementsTable->setItem(row, 6, otherBuildsItem);
+        m_requirementsTable->setItem(row, 6, ownedItem);
 
-        m_requirementsTable->setItem(row, 7, availableItem);
+        m_requirementsTable->setItem(row, 7, thisBuildItem);
 
-        m_requirementsTable->setItem(row, 8, missingItem);
+        m_requirementsTable->setItem(row, 8, otherBuildsItem);
 
-        m_requirementsTable->setItem(row, 9, spareItem);
+        m_requirementsTable->setItem(row, 9, availableItem);
 
-        m_requirementsTable->setCellWidget(row, 10, actionCombo);
+        m_requirementsTable->setItem(row, 10, missingItem);
+
+        m_requirementsTable->setItem(row, 11, spareItem);
+
+        m_requirementsTable->setCellWidget(row, 12, actionCombo);
 
         ++row;
     }
@@ -987,6 +1011,7 @@ void BuildsWidget::updateRequirementUiState()
     m_requirementsTable->setEnabled(enabled);
 
     bool canLoadSet = false;
+    bool canExportPullList = false;
 
     if (enabled) {
         BuildRepository repository;
@@ -998,5 +1023,223 @@ void BuildsWidget::updateRequirementUiState()
         }
     }
 
+    if (enabled) {
+        BuildRepository buildRepository;
+
+        const std::optional<Build> build = buildRepository.getById(m_selectedBuildId);
+
+        if (build) {
+            canExportPullList = build->inventoryMode() == "Stock";
+        }
+    }
+
+    m_exportPullListButton->setEnabled(canExportPullList);
+    m_importPullListButton->setEnabled(canExportPullList);
+
     m_loadSetFromRebrickableButton->setEnabled(canLoadSet);
+}
+
+void BuildsWidget::exportPullList()
+{
+    if (m_selectedBuildId <= 0) {
+        QMessageBox::warning(this, "Export Pull List", "Select a Build first.");
+
+        return;
+    }
+
+    BuildRepository buildRepository;
+
+    const std::optional<Build> build = buildRepository.getById(m_selectedBuildId);
+
+    if (!build) {
+        QMessageBox::critical(this, "Export Pull List", "Unable to load the selected Build.");
+
+        return;
+    }
+
+    if (build->inventoryMode() != "Stock") {
+        QMessageBox::information(this,
+                                 "Export Pull List",
+                                 "Pull Lists are available only for "
+                                 "Build from Stock.");
+
+        return;
+    }
+
+    BuildAllocationRepository allocationRepository;
+
+    const QList<BuildAllocation> allocations = allocationRepository.getByBuild(m_selectedBuildId);
+
+    if (allocations.isEmpty()) {
+        QMessageBox::information(this,
+                                 "Export Pull List",
+                                 "This Build does not have any allocated "
+                                 "inventory to export.");
+
+        return;
+    }
+
+    QString defaultName;
+
+    if (!build->setNumber().trimmed().isEmpty()) {
+        defaultName = QString("BrickSuite_Pull_%1.csv").arg(build->setNumber().trimmed());
+    } else {
+        QString safeName = build->name().trimmed();
+
+        safeName.replace(QRegularExpression(R"([^A-Za-z0-9_-]+)"), "_");
+
+        defaultName = QString("BrickSuite_Pull_%1.csv").arg(safeName);
+    }
+
+    const QString fileName = QFileDialog::getSaveFileName(this,
+                                                          "Export Pull List CSV",
+                                                          defaultName,
+                                                          "CSV Files (*.csv)");
+
+    if (fileName.isEmpty())
+        return;
+
+    QFile file(fileName);
+
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this,
+                              "Export Pull List",
+                              QString("Unable to create:\n\n%1").arg(fileName));
+
+        return;
+    }
+
+    QTextStream stream(&file);
+
+    //
+    // UTF-8 BOM helps Excel recognize UTF-8 CSV
+    // correctly on Windows.
+    //
+    stream << QChar(0xFEFF);
+
+    auto csvValue = [](QString value) {
+        value.replace("\"", "\"\"");
+
+        return QString("\"%1\"").arg(value);
+    };
+
+    //
+    // One row per exact Build Allocation / storage
+    // record. Quantity Pulled is deliberately blank
+    // for the user to complete during the physical pull.
+    //
+    stream << "Build,"
+           << "Set Number,"
+           << "Part Number,"
+           << "Part Name,"
+           << "Color,"
+           << "Storage Location,"
+           << "Quantity Allocated,"
+           << "Quantity Pulled"
+           << "\n";
+
+    PartRepository partRepository;
+    ColorRepository colorRepository;
+    StorageLocationRepository storageRepository;
+
+    int rowsWritten = 0;
+
+    for (const BuildAllocation& allocation : allocations) {
+        const std::optional<Part> part = partRepository.getById(allocation.partId());
+
+        const std::optional<Color> color = colorRepository.getById(allocation.colorId());
+
+        //
+        // Build the complete storage path by walking
+        // from the allocated location back to its root.
+        //
+        QStringList pathParts;
+
+        int currentLocationId = allocation.storageLocationId();
+
+        int safetyCount = 0;
+
+        while (currentLocationId > 0 && safetyCount < 100) {
+            const std::optional<StorageLocation> location = storageRepository.getById(
+                currentLocationId);
+
+            if (!location)
+                break;
+
+            pathParts.prepend(location->name());
+
+            currentLocationId = location->parentLocationId();
+
+            ++safetyCount;
+        }
+
+        QString storagePath = pathParts.join(" / ");
+
+        if (storagePath.isEmpty()) {
+            storagePath = QString("Location %1").arg(allocation.storageLocationId());
+        }
+
+        const QString partNumber = part ? part->partNumber() : QString::number(allocation.partId());
+
+        const QString partName = part ? part->name() : QString();
+
+        const QString colorName = color ? color->name() : QString::number(allocation.colorId());
+
+        stream << csvValue(build->name()) << "," << csvValue(build->setNumber()) << ","
+               << csvValue(partNumber) << "," << csvValue(partName) << "," << csvValue(colorName)
+               << "," << csvValue(storagePath) << "," << allocation.quantityAllocated() << ","
+               << ""
+               << "\n";
+
+        ++rowsWritten;
+    }
+
+    file.close();
+
+    QMessageBox::information(this,
+                             "Export Pull List",
+                             QString("Pull List exported successfully.\n\n"
+                                     "Rows: %1\n"
+                                     "File:\n%2")
+                                 .arg(rowsWritten)
+                                 .arg(fileName));
+}
+
+void BuildsWidget::importPullList()
+{
+    if (m_selectedBuildId <= 0) {
+        QMessageBox::warning(this, "Import Pull List", "Select a Build first.");
+
+        return;
+    }
+
+    BuildRepository repository;
+
+    const std::optional<Build> build = repository.getById(m_selectedBuildId);
+
+    if (!build)
+        return;
+
+    if (build->inventoryMode() != "Stock") {
+        QMessageBox::information(this,
+                                 "Import Pull List",
+                                 "Pull List reconciliation is available "
+                                 "only for Build from Stock.");
+
+        return;
+    }
+
+    const QString fileName = QFileDialog::getOpenFileName(this,
+                                                          "Import Pull List CSV",
+                                                          QString(),
+                                                          "CSV Files (*.csv)");
+
+    if (fileName.isEmpty())
+        return;
+
+    ImportPullListDialog dialog(m_selectedBuildId, fileName, this);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        loadRequirements();
+    }
 }

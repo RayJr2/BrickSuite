@@ -22,6 +22,9 @@ public:
     int quantityRequired() const;
     void setQuantityRequired(int quantityRequired);
 
+    int quantityPulled() const;
+    void setQuantityPulled(int quantityPulled);
+
     bool isSpare() const;
     void setIsSpare(bool isSpare);
 
@@ -36,7 +39,9 @@ private:
     int m_buildId = 0;
     int m_partId = 0;
     int m_colorId = 0;
+
     int m_quantityRequired = 0;
+    int m_quantityPulled = 0;
 
     bool m_isSpare = false;
 

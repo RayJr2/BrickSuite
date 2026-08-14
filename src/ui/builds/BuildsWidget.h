@@ -41,6 +41,8 @@ private:
     void loadRequirements();
     void loadColors();
     void updateRequirementUiState();
+    void exportPullList();
+    void importPullList();
 
     WorkspaceContext& m_workspaceContext;
 
@@ -68,6 +70,8 @@ private:
     QPushButton* m_addRequirementButton = nullptr;
 
     QPushButton* m_loadSetFromRebrickableButton = nullptr;
+    QPushButton* m_exportPullListButton = nullptr;
+    QPushButton* m_importPullListButton = nullptr;
 
     QTableWidget* m_requirementsTable = nullptr;
 
