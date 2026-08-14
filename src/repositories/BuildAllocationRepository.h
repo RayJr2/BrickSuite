@@ -28,6 +28,10 @@ public:
 
     int totalAllocatedForPartColorForBuild(int buildId, int partId, int colorId) const;
 
+    int totalAllocatedForInventoryRecord(int inventoryRecordId) const;
+
+    int totalAllocatedForInventoryRecordForBuild(int inventoryRecordId, int buildId) const;
+
 private:
     BuildAllocation allocationFromQuery(const QSqlQuery& query) const;
 };

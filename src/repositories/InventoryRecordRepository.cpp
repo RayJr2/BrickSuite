@@ -1371,3 +1371,61 @@ int InventoryRecordRepository::totalQuantityForPartColor(int workspaceId,
 
     return query.value(0).toInt();
 }
+
+QList<InventoryRecord> InventoryRecordRepository::getByPartColor(int workspaceId,
+                                                                 int partId,
+                                                                 int colorId) const
+{
+    QList<InventoryRecord> records;
+
+    if (workspaceId <= 0 || partId <= 0 || colorId <= 0) {
+        return records;
+    }
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QSqlQuery query(database);
+
+    query.prepare(R"(
+        SELECT
+            id,
+            workspace_id,
+            part_id,
+            color_id,
+            storage_location_id,
+            condition,
+            ownership_type,
+            quantity,
+            created_utc,
+            modified_utc
+        FROM inventory_record
+        WHERE workspace_id = :workspace_id
+          AND part_id = :part_id
+          AND color_id = :color_id
+          AND quantity > 0
+        ORDER BY
+            storage_location_id,
+            condition,
+            ownership_type
+    )");
+
+    query.bindValue(":workspace_id", workspaceId);
+
+    query.bindValue(":part_id", partId);
+
+    query.bindValue(":color_id", colorId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to retrieve inventory records "
+                       "for Part/Color:"
+                    << query.lastError().text();
+
+        return records;
+    }
+
+    while (query.next()) {
+        records.append(inventoryRecordFromQuery(query));
+    }
+
+    return records;
+}

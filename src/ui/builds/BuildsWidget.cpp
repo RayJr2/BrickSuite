@@ -1,6 +1,7 @@
 #include "BuildsWidget.h"
 
 #include "../../app/WorkspaceContext.h"
+#include "AllocateBuildRequirementDialog.h"
 #include "EditBuildRequirementDialog.h"
 #include "SetImportPreviewDialog.h"
 
@@ -752,17 +753,17 @@ void BuildsWidget::loadRequirements()
         auto* actionCombo = new QComboBox(m_requirementsTable);
 
         actionCombo->addItem("Actions...");
-
         actionCombo->addItem("Edit", "edit");
-
         actionCombo->addItem("Delete", "delete");
+        actionCombo->addItem("Allocate...", "allocate");
 
         const int requirementId = requirement.id();
+        const bool requirementIsSpare = requirement.isSpare();
 
         connect(actionCombo,
                 &QComboBox::currentIndexChanged,
                 this,
-                [this, actionCombo, requirementId](int index) {
+                [this, actionCombo, requirementId, requirementIsSpare](int index) {
                     if (index <= 0)
                         return;
 
@@ -796,6 +797,59 @@ void BuildsWidget::loadRequirements()
 
                                 return;
                             }
+                        }
+                    } else if (action == "allocate") {
+                        //
+                        // Spare requirements are informational and
+                        // are not allocated automatically.
+                        //
+                        if (requirementIsSpare) {
+                            QMessageBox::information(this,
+                                                     "Allocate Requirement",
+                                                     "Spare requirements are optional and "
+                                                     "are not allocated from workshop "
+                                                     "inventory by default.");
+
+                            actionCombo->setCurrentIndex(0);
+
+                            return;
+                        }
+
+                        BuildRepository buildRepository;
+
+                        const std::optional<Build> build = buildRepository.getById(
+                            m_selectedBuildId);
+
+                        if (!build) {
+                            QMessageBox::warning(this,
+                                                 "Allocate Requirement",
+                                                 "Unable to load the selected Build.");
+
+                            actionCombo->setCurrentIndex(0);
+
+                            return;
+                        }
+
+                        if (build->inventoryMode() != "Stock") {
+                            QMessageBox::information(this,
+                                                     "Allocate Requirement",
+                                                     "Inventory allocation is available "
+                                                     "only for Build from Stock.");
+
+                            actionCombo->setCurrentIndex(0);
+
+                            return;
+                        }
+
+                        AllocateBuildRequirementDialog dialog(m_workspaceContext.currentWorkspaceId(),
+                                                              m_selectedBuildId,
+                                                              requirementId,
+                                                              this);
+
+                        if (dialog.exec() == QDialog::Accepted) {
+                            loadRequirements();
+
+                            return;
                         }
                     }
 

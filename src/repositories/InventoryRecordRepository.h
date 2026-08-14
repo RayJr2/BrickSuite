@@ -39,6 +39,8 @@ public:
 
     int totalQuantityForPartColor(int workspaceId, int partId, int colorId) const;
 
+    QList<InventoryRecord> getByPartColor(int workspaceId, int partId, int colorId) const;
+
 private:
     InventoryRecord inventoryRecordFromQuery(const QSqlQuery& query) const;
 };

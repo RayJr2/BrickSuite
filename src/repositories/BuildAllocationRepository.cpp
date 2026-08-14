@@ -419,3 +419,79 @@ BuildAllocation BuildAllocationRepository::allocationFromQuery(const QSqlQuery& 
 
     return allocation;
 }
+
+int BuildAllocationRepository::totalAllocatedForInventoryRecord(int inventoryRecordId) const
+{
+    if (inventoryRecordId <= 0)
+        return 0;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QSqlQuery query(database);
+
+    query.prepare(R"(
+        SELECT
+            COALESCE(
+                SUM(quantity_allocated),
+                0)
+        FROM build_allocation
+        WHERE inventory_record_id =
+            :inventory_record_id
+    )");
+
+    query.bindValue(":inventory_record_id", inventoryRecordId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to calculate inventory-record "
+                       "allocation:"
+                    << query.lastError().text();
+
+        return 0;
+    }
+
+    if (!query.next())
+        return 0;
+
+    return query.value(0).toInt();
+}
+
+int BuildAllocationRepository::totalAllocatedForInventoryRecordForBuild(int inventoryRecordId,
+                                                                        int buildId) const
+{
+    if (inventoryRecordId <= 0 || buildId <= 0) {
+        return 0;
+    }
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QSqlQuery query(database);
+
+    query.prepare(R"(
+        SELECT
+            COALESCE(
+                SUM(quantity_allocated),
+                0)
+        FROM build_allocation
+        WHERE inventory_record_id =
+            :inventory_record_id
+          AND build_id =
+            :build_id
+    )");
+
+    query.bindValue(":inventory_record_id", inventoryRecordId);
+
+    query.bindValue(":build_id", buildId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to calculate Build allocation "
+                       "for inventory record:"
+                    << query.lastError().text();
+
+        return 0;
+    }
+
+    if (!query.next())
+        return 0;
+
+    return query.value(0).toInt();
+}
