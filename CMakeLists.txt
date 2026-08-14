@@ -149,6 +149,8 @@ qt_add_executable(BrickSuite
     src/ui/catalog/SetDetailsDialog.cpp
     src/import/RebrickablePartCatalogImporter.h
     src/import/RebrickablePartCatalogImporter.cpp
+    src/ui/builds/DisassembleSetDialog.h
+    src/ui/builds/DisassembleSetDialog.cpp
 
 )
 target_link_libraries(BrickSuite PRIVATE

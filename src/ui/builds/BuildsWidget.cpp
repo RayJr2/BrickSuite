@@ -2,6 +2,7 @@
 
 #include "../../app/WorkspaceContext.h"
 #include "AllocateBuildRequirementDialog.h"
+#include "DisassembleSetDialog.h"
 #include "EditBuildDialog.h"
 #include "EditBuildRequirementDialog.h"
 #include "ImportPullListDialog.h"
@@ -99,8 +100,6 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     m_statusCombo->addItem("Pulling", "Pulling");
 
     m_statusCombo->addItem("Complete", "Complete");
-
-    m_statusCombo->addItem("Disassembled", "Disassembled");
 
     m_notesEdit = new QTextEdit(m_newBuildContent);
 
@@ -460,6 +459,10 @@ void BuildsWidget::loadBuilds()
 
         actionCombo->addItem("Edit Build...", "edit");
 
+        if (build.inventoryMode() == "CompleteSet" && build.status() == "Complete") {
+            actionCombo->addItem("Disassemble Set...", "disassemble");
+        }
+
         //
         // Store Build ID on the Name item.
         //
@@ -505,6 +508,18 @@ void BuildsWidget::loadBuilds()
                             // selected.
                             //
                             selectBuild(buildId);
+                        }
+                    } else if (action == "disassemble") {
+                        DisassembleSetDialog dialog(buildId, this);
+
+                        if (dialog.exec() == QDialog::Accepted) {
+                            //
+                            // Refresh the Build Status and the
+                            // requirement calculations.
+                            //
+                            selectBuild(buildId);
+
+                            return;
                         }
                     }
                 });
