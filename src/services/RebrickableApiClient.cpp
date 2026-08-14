@@ -1,5 +1,9 @@
 #include "RebrickableApiClient.h"
 
+#include "../settings/UserSettings.h"
+
+#include <QCoreApplication>
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -7,6 +11,8 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPointer>
+#include <QTimer>
 #include <QUrl>
 
 bool RebrickableApiClient::s_sessionBlocked =
@@ -22,6 +28,12 @@ QString RebrickableApiClient::s_sessionBlockReason =
 #else
     QString();
 #endif
+
+QQueue<RebrickableApiClient::QueuedRequest> RebrickableApiClient::s_requestQueue;
+
+QElapsedTimer RebrickableApiClient::s_lastRequestTimer;
+
+QTimer* RebrickableApiClient::s_requestTimer = nullptr;
 
 RebrickableApiClient::RebrickableApiClient(QObject* parent)
     : QObject(parent)
@@ -63,11 +75,18 @@ void RebrickableApiClient::testConnection(const QString& apiKey)
 
     request.setHeader(QNetworkRequest::UserAgentHeader, "BrickSuite/1.0");
 
-    QNetworkReply* reply = m_networkManager->get(request);
+    enqueueGet(
+        request,
+        [this](QNetworkReply* reply) { handleConnectionTestReply(reply); },
+        [this]() {
+            ConnectionResult result;
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        handleConnectionTestReply(reply);
-    });
+            result.success = false;
+            result.httpStatusCode = 403;
+            result.message = sessionBlockReason();
+
+            emit connectionTestFinished(result);
+        });
 }
 
 void RebrickableApiClient::handleConnectionTestReply(QNetworkReply* reply)
@@ -86,6 +105,22 @@ void RebrickableApiClient::handleConnectionTestReply(QNetworkReply* reply)
 
     if (result.httpStatusCode == 403 && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
         tripSessionCircuitBreaker(circuitBreakerReason);
+
+        result.message = sessionBlockReason();
+
+        reply->deleteLater();
+
+        emit connectionTestFinished(result);
+
+        return;
+    }
+
+    //
+    // Rebrickable specifically warns clients not
+    // to continue sending requests after HTTP 429.
+    //
+    if (result.httpStatusCode == 429) {
+        handle429();
 
         result.message = sessionBlockReason();
 
@@ -116,9 +151,6 @@ void RebrickableApiClient::handleConnectionTestReply(QNetworkReply* reply)
         result.message = "Rebrickable rejected the API key.";
     } else if (result.httpStatusCode == 403) {
         result.message = "Rebrickable denied access to this request.";
-    } else if (result.httpStatusCode == 429) {
-        result.message = "Rebrickable is temporarily throttling API requests. "
-                         "Please wait and try again.";
     } else if (reply->error() != QNetworkReply::NoError) {
         result.message = QString("Unable to connect to Rebrickable: %1").arg(reply->errorString());
     } else {
@@ -137,6 +169,7 @@ void RebrickableApiClient::getPartColors(const QString& partNumber, const QStrin
 
         result.success = false;
         result.httpStatusCode = 403;
+
         result.partNumber = partNumber.trimmed();
 
         result.message = sessionBlockReason();
@@ -171,79 +204,115 @@ void RebrickableApiClient::getPartColors(const QString& partNumber, const QStrin
 
     request.setHeader(QNetworkRequest::UserAgentHeader, "BrickSuite/1.0");
 
-    QNetworkReply* reply = m_networkManager->get(request);
+    enqueueGet(
+        request,
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply, trimmedPartNumber, trimmedApiKey]() {
-        PartColorsResult result;
+        //
+        // Actual reply handler.
+        //
+        [this, trimmedPartNumber](QNetworkReply* reply) {
+            PartColorsResult result;
 
-        result.partNumber = trimmedPartNumber;
+            result.partNumber = trimmedPartNumber;
 
-        const QVariant statusAttribute = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+            const QVariant statusAttribute = reply->attribute(
+                QNetworkRequest::HttpStatusCodeAttribute);
 
-        if (statusAttribute.isValid()) {
-            result.httpStatusCode = statusAttribute.toInt();
-        }
+            if (statusAttribute.isValid()) {
+                result.httpStatusCode = statusAttribute.toInt();
+            }
 
-        const QByteArray responseData = reply->readAll();
+            const QByteArray responseData = reply->readAll();
 
-        QString circuitBreakerReason;
+            QString circuitBreakerReason;
 
-        if (result.httpStatusCode == 403
-            && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
-            tripSessionCircuitBreaker(circuitBreakerReason);
+            if (result.httpStatusCode == 403
+                && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
+                tripSessionCircuitBreaker(circuitBreakerReason);
 
-            result.message = sessionBlockReason();
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+
+                emit partColorsFinished(result);
+
+                return;
+            }
+
+            if (result.httpStatusCode == 429) {
+                handle429();
+
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+
+                emit partColorsFinished(result);
+
+                return;
+            }
+
+            if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
+                const QJsonDocument document = QJsonDocument::fromJson(responseData);
+
+                if (document.isObject()) {
+                    const QJsonObject root = document.object();
+
+                    const QJsonArray results = root.value("results").toArray();
+
+                    for (const QJsonValue& value : results) {
+                        if (!value.isObject())
+                            continue;
+
+                        const QJsonObject object = value.toObject();
+
+                        PartColor color;
+
+                        color.rebrickableColorId = object.value("color_id").toInt();
+
+                        color.name = object.value("color_name").toString();
+
+                        result.colors.append(color);
+                    }
+
+                    result.success = true;
+
+                    result.message = QString("%1 known colors found.").arg(result.colors.size());
+                } else {
+                    result.message = "Rebrickable returned an unexpected response.";
+                }
+            } else if (result.httpStatusCode == 401) {
+                result.message = "Rebrickable rejected the API key.";
+            } else if (result.httpStatusCode == 404) {
+                result.message = "The part was not found on Rebrickable.";
+            } else if (reply->error() != QNetworkReply::NoError) {
+                result.message = QString("Unable to retrieve part colors: %1")
+                                     .arg(reply->errorString());
+            } else {
+                result.message = QString("Rebrickable returned HTTP status %1.")
+                                     .arg(result.httpStatusCode);
+            }
 
             reply->deleteLater();
 
             emit partColorsFinished(result);
+        },
 
-            return;
-        }
+        //
+        // Called if the circuit breaker trips
+        // while this request is still waiting.
+        //
+        [this, trimmedPartNumber]() {
+            PartColorsResult result;
 
-        if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
-            const QJsonDocument document = QJsonDocument::fromJson(responseData);
+            result.success = false;
+            result.httpStatusCode = 403;
 
-            if (document.isObject()) {
-                const QJsonObject root = document.object();
+            result.partNumber = trimmedPartNumber;
 
-                const QJsonArray results = root.value("results").toArray();
+            result.message = sessionBlockReason();
 
-                for (const QJsonValue& value : results) {
-                    if (!value.isObject())
-                        continue;
-
-                    const QJsonObject object = value.toObject();
-
-                    PartColor color;
-
-                    color.rebrickableColorId = object.value("color_id").toInt();
-
-                    color.name = object.value("color_name").toString();
-
-                    result.colors.append(color);
-                }
-
-                result.success = true;
-
-                result.message = QString("%1 known colors found.").arg(result.colors.size());
-            } else {
-                result.message = "Rebrickable returned an unexpected response.";
-            }
-        } else if (result.httpStatusCode == 401) {
-            result.message = "Rebrickable rejected the API key.";
-        } else if (result.httpStatusCode == 404) {
-            result.message = "The part was not found on Rebrickable.";
-        } else if (result.httpStatusCode == 429) {
-            result.message = "Rebrickable is temporarily throttling requests.";
-        } else {
-            result.message = QString("Unable to retrieve part colors: %1").arg(reply->errorString());
-        }
-
-        reply->deleteLater();
-
-        emit partColorsFinished(result);
-    });
+            emit partColorsFinished(result);
+        });
 }
 
 void RebrickableApiClient::getPartDetails(const QString& partNumber, const QString& apiKey)
@@ -289,134 +358,168 @@ void RebrickableApiClient::getPartDetails(const QString& partNumber, const QStri
 
     request.setHeader(QNetworkRequest::UserAgentHeader, "BrickSuite/1.0");
 
-    QNetworkReply* reply = m_networkManager->get(request);
+    enqueueGet(
+        request,
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply, trimmedPartNumber]() {
-        PartDetailsResult result;
+        //
+        // Actual reply handler.
+        //
+        [this, trimmedPartNumber](QNetworkReply* reply) {
+            PartDetailsResult result;
 
-        result.part.partNumber = trimmedPartNumber;
+            result.part.partNumber = trimmedPartNumber;
 
-        const QVariant statusAttribute = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+            const QVariant statusAttribute = reply->attribute(
+                QNetworkRequest::HttpStatusCodeAttribute);
 
-        if (statusAttribute.isValid()) {
-            result.httpStatusCode = statusAttribute.toInt();
-        }
+            if (statusAttribute.isValid()) {
+                result.httpStatusCode = statusAttribute.toInt();
+            }
 
-        const QByteArray responseData = reply->readAll();
+            const QByteArray responseData = reply->readAll();
 
-        QString circuitBreakerReason;
+            QString circuitBreakerReason;
 
-        if (result.httpStatusCode == 403
-            && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
-            tripSessionCircuitBreaker(circuitBreakerReason);
+            if (result.httpStatusCode == 403
+                && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
+                tripSessionCircuitBreaker(circuitBreakerReason);
 
-            result.message = sessionBlockReason();
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+
+                emit partDetailsFinished(result);
+
+                return;
+            }
+
+            if (result.httpStatusCode == 429) {
+                handle429();
+
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+
+                emit partDetailsFinished(result);
+
+                return;
+            }
+
+            if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
+                const QJsonDocument document = QJsonDocument::fromJson(responseData);
+
+                if (!document.isObject()) {
+                    result.message = "Rebrickable returned an unexpected response.";
+                } else {
+                    const QJsonObject root = document.object();
+
+                    PartDetails details;
+
+                    details.partNumber = root.value("part_num").toString();
+
+                    details.name = root.value("name").toString();
+
+                    details.partCategoryId = root.value("part_cat_id").toInt();
+
+                    details.yearFrom = root.value("year_from").toInt();
+
+                    details.yearTo = root.value("year_to").toInt();
+
+                    details.partUrl = root.value("part_url").toString();
+
+                    details.partImageUrl = root.value("part_img_url").toString();
+
+                    //
+                    // Prints
+                    //
+                    const QJsonArray prints = root.value("prints").toArray();
+
+                    for (const QJsonValue& value : prints) {
+                        details.prints.append(value.toString());
+                    }
+
+                    //
+                    // Molds
+                    //
+                    const QJsonArray molds = root.value("molds").toArray();
+
+                    for (const QJsonValue& value : molds) {
+                        details.molds.append(value.toString());
+                    }
+
+                    //
+                    // Alternates
+                    //
+                    const QJsonArray alternates = root.value("alternates").toArray();
+
+                    for (const QJsonValue& value : alternates) {
+                        details.alternates.append(value.toString());
+                    }
+
+                    //
+                    // External IDs
+                    //
+                    const QJsonObject externalIds = root.value("external_ids").toObject();
+
+                    for (auto it = externalIds.constBegin(); it != externalIds.constEnd(); ++it) {
+                        QStringList ids;
+
+                        const QJsonArray values = it.value().toArray();
+
+                        for (const QJsonValue& value : values) {
+                            ids.append(value.toString());
+                        }
+
+                        details.externalIds.insert(it.key(), ids);
+                    }
+
+                    //
+                    // print_of may be null.
+                    //
+                    if (!root.value("print_of").isNull()) {
+                        details.printOf = root.value("print_of").toString();
+                    }
+
+                    result.part = details;
+
+                    result.success = true;
+
+                    result.message = QString("Part details retrieved for %1.")
+                                         .arg(details.partNumber);
+                }
+            } else if (result.httpStatusCode == 401) {
+                result.message = "Rebrickable rejected the API key.";
+            } else if (result.httpStatusCode == 404) {
+                result.message = "The part was not found on Rebrickable.";
+            } else if (reply->error() != QNetworkReply::NoError) {
+                result.message = QString("Unable to retrieve part details: %1")
+                                     .arg(reply->errorString());
+            } else {
+                result.message = QString("Rebrickable returned HTTP status %1.")
+                                     .arg(result.httpStatusCode);
+            }
 
             reply->deleteLater();
 
             emit partDetailsFinished(result);
+        },
 
-            return;
-        }
+        //
+        // Called if this request is queued and another
+        // request trips the circuit breaker first.
+        //
+        [this, trimmedPartNumber]() {
+            PartDetailsResult result;
 
-        if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
-            const QJsonDocument document = QJsonDocument::fromJson(responseData);
+            result.success = false;
+            result.httpStatusCode = 403;
 
-            if (!document.isObject()) {
-                result.message = "Rebrickable returned an unexpected response.";
-            } else {
-                const QJsonObject root = document.object();
+            result.part.partNumber = trimmedPartNumber;
 
-                PartDetails details;
+            result.message = sessionBlockReason();
 
-                details.partNumber = root.value("part_num").toString();
-
-                details.name = root.value("name").toString();
-
-                details.partCategoryId = root.value("part_cat_id").toInt();
-
-                details.yearFrom = root.value("year_from").toInt();
-
-                details.yearTo = root.value("year_to").toInt();
-
-                details.partUrl = root.value("part_url").toString();
-
-                details.partImageUrl = root.value("part_img_url").toString();
-
-                //
-                // Prints
-                //
-                const QJsonArray prints = root.value("prints").toArray();
-
-                for (const QJsonValue& value : prints) {
-                    details.prints.append(value.toString());
-                }
-
-                //
-                // Molds
-                //
-                const QJsonArray molds = root.value("molds").toArray();
-
-                for (const QJsonValue& value : molds) {
-                    details.molds.append(value.toString());
-                }
-
-                //
-                // Alternates
-                //
-                const QJsonArray alternates = root.value("alternates").toArray();
-
-                for (const QJsonValue& value : alternates) {
-                    details.alternates.append(value.toString());
-                }
-
-                //
-                // External IDs
-                //
-                const QJsonObject externalIds = root.value("external_ids").toObject();
-
-                for (auto it = externalIds.constBegin(); it != externalIds.constEnd(); ++it) {
-                    QStringList ids;
-
-                    const QJsonArray values = it.value().toArray();
-
-                    for (const QJsonValue& value : values) {
-                        ids.append(value.toString());
-                    }
-
-                    details.externalIds.insert(it.key(), ids);
-                }
-
-                //
-                // print_of may be null.
-                //
-                if (!root.value("print_of").isNull()) {
-                    details.printOf = root.value("print_of").toString();
-                }
-
-                result.part = details;
-
-                result.success = true;
-
-                result.message = QString("Part details retrieved for %1.").arg(details.partNumber);
-            }
-        } else if (result.httpStatusCode == 401) {
-            result.message = "Rebrickable rejected the API key.";
-        } else if (result.httpStatusCode == 404) {
-            result.message = "The part was not found on Rebrickable.";
-        } else if (result.httpStatusCode == 429) {
-            result.message = "Rebrickable is temporarily throttling requests.";
-        } else if (reply->error() != QNetworkReply::NoError) {
-            result.message = QString("Unable to retrieve part details: %1").arg(reply->errorString());
-        } else {
-            result.message = QString("Rebrickable returned HTTP status %1.")
-                                 .arg(result.httpStatusCode);
-        }
-
-        reply->deleteLater();
-
-        emit partDetailsFinished(result);
-    });
+            emit partDetailsFinished(result);
+        });
 }
 
 bool RebrickableApiClient::isSessionBlocked()
@@ -489,4 +592,480 @@ bool RebrickableApiClient::detectCloudflareIpBan(const QByteArray& responseData,
               "Rebrickable API requests during this session.";
 
     return true;
+}
+
+void RebrickableApiClient::ensureRequestTimer()
+{
+    if (s_requestTimer)
+        return;
+
+    s_requestTimer = new QTimer(QCoreApplication::instance());
+
+    s_requestTimer->setSingleShot(true);
+
+    QObject::connect(s_requestTimer, &QTimer::timeout, []() {
+        RebrickableApiClient::processRequestQueue();
+    });
+}
+
+void RebrickableApiClient::enqueueRequest(QueuedRequest request)
+{
+    ensureRequestTimer();
+
+    s_requestQueue.enqueue(std::move(request));
+
+    processRequestQueue();
+}
+
+void RebrickableApiClient::processRequestQueue()
+{
+    ensureRequestTimer();
+
+    if (s_requestQueue.isEmpty())
+        return;
+
+    //
+    // If the circuit breaker has tripped, drain the
+    // queue without making network requests.
+    //
+    // Each queued request knows how to report the
+    // blocked condition to its caller.
+    //
+    if (isSessionBlocked()) {
+        while (!s_requestQueue.isEmpty()) {
+            QueuedRequest request = s_requestQueue.dequeue();
+
+            request();
+        }
+
+        return;
+    }
+
+    const int minimumIntervalMs = UserSettings::instance().rebrickableMinimumRequestIntervalMs();
+
+    if (s_lastRequestTimer.isValid()) {
+        const qint64 elapsedMs = s_lastRequestTimer.elapsed();
+
+        if (elapsedMs < minimumIntervalMs) {
+            const int remainingMs = minimumIntervalMs - static_cast<int>(elapsedMs);
+
+            s_requestTimer->start(remainingMs);
+
+            return;
+        }
+    }
+
+    QueuedRequest request = s_requestQueue.dequeue();
+
+    if (s_lastRequestTimer.isValid()) {
+        s_lastRequestTimer.restart();
+    } else {
+        s_lastRequestTimer.start();
+    }
+
+    request();
+
+    if (!s_requestQueue.isEmpty()) {
+        s_requestTimer->start(minimumIntervalMs);
+    }
+}
+
+void RebrickableApiClient::enqueueGet(const QNetworkRequest& request,
+                                      ReplyHandler replyHandler,
+                                      std::function<void()> blockedHandler)
+{
+    QPointer<RebrickableApiClient> self(this);
+
+    enqueueRequest([self,
+                    request,
+                    replyHandler = std::move(replyHandler),
+                    blockedHandler = std::move(blockedHandler)]() mutable {
+        if (!self)
+            return;
+
+        //
+        // The circuit breaker may have tripped while
+        // this request was waiting in the queue.
+        //
+        if (isSessionBlocked()) {
+            if (blockedHandler)
+                blockedHandler();
+
+            return;
+        }
+
+        qInfo() << "Rebrickable API GET dispatched:"
+                << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
+                << request.url().toString();
+
+        QNetworkReply* reply = self->m_networkManager->get(request);
+
+        QObject::connect(reply,
+                         &QNetworkReply::finished,
+                         self,
+                         [self, reply, replyHandler = std::move(replyHandler)]() mutable {
+                             if (!self) {
+                                 reply->deleteLater();
+                                 return;
+                             }
+
+                             replyHandler(reply);
+                         });
+    });
+}
+
+void RebrickableApiClient::handle429()
+{
+    tripSessionCircuitBreaker("Rebrickable returned HTTP 429 because the API "
+                              "request rate was throttled.\n\n"
+                              "BrickSuite will not automatically retry the request "
+                              "and will not make any more Rebrickable API requests "
+                              "during this session.");
+}
+
+void RebrickableApiClient::getSetDetails(const QString& setNumber, const QString& apiKey)
+{
+    const QString trimmedSetNumber = setNumber.trimmed();
+
+    if (isSessionBlocked()) {
+        SetDetailsResult result;
+
+        result.success = false;
+        result.httpStatusCode = 403;
+        result.set.setNumber = trimmedSetNumber;
+
+        result.message = sessionBlockReason();
+
+        emit setDetailsFinished(result);
+
+        return;
+    }
+
+    const QString trimmedApiKey = apiKey.trimmed();
+
+    if (trimmedSetNumber.isEmpty() || trimmedApiKey.isEmpty()) {
+        SetDetailsResult result;
+
+        result.set.setNumber = trimmedSetNumber;
+
+        result.message = "Set number or Rebrickable API key is missing.";
+
+        emit setDetailsFinished(result);
+
+        return;
+    }
+
+    const QUrl url(QString("https://rebrickable.com/api/v3/lego/sets/%1/")
+                       .arg(QUrl::toPercentEncoding(trimmedSetNumber)));
+
+    QNetworkRequest request(url);
+
+    request.setRawHeader("Authorization", QString("key %1").arg(trimmedApiKey).toUtf8());
+
+    request.setHeader(QNetworkRequest::UserAgentHeader, "BrickSuite/1.0");
+
+    enqueueGet(
+        request,
+
+        [this, trimmedSetNumber](QNetworkReply* reply) {
+            SetDetailsResult result;
+
+            result.set.setNumber = trimmedSetNumber;
+
+            const QVariant statusAttribute = reply->attribute(
+                QNetworkRequest::HttpStatusCodeAttribute);
+
+            if (statusAttribute.isValid()) {
+                result.httpStatusCode = statusAttribute.toInt();
+            }
+
+            const QByteArray responseData = reply->readAll();
+
+            QString circuitBreakerReason;
+
+            if (result.httpStatusCode == 403
+                && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
+                tripSessionCircuitBreaker(circuitBreakerReason);
+
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+
+                emit setDetailsFinished(result);
+
+                return;
+            }
+
+            if (result.httpStatusCode == 429) {
+                handle429();
+
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+
+                emit setDetailsFinished(result);
+
+                return;
+            }
+
+            if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
+                const QJsonDocument document = QJsonDocument::fromJson(responseData);
+
+                if (!document.isObject()) {
+                    result.message = "Rebrickable returned an unexpected "
+                                     "Set Details response.";
+                } else {
+                    const QJsonObject root = document.object();
+
+                    SetDetails details;
+
+                    details.setNumber = root.value("set_num").toString();
+
+                    details.name = root.value("name").toString();
+
+                    details.year = root.value("year").toInt();
+
+                    details.themeId = root.value("theme_id").toInt();
+
+                    details.numberOfParts = root.value("num_parts").toInt();
+
+                    details.setImageUrl = root.value("set_img_url").toString();
+
+                    details.setUrl = root.value("set_url").toString();
+
+                    details.lastModifiedUtc = root.value("last_modified_dt").toString();
+
+                    result.set = details;
+
+                    result.success = true;
+
+                    result.message = QString("Set details retrieved for %1.").arg(details.setNumber);
+                }
+            } else if (result.httpStatusCode == 401) {
+                result.message = "Rebrickable rejected the API key.";
+            } else if (result.httpStatusCode == 404) {
+                result.message = QString("Set %1 was not found on Rebrickable.")
+                                     .arg(trimmedSetNumber);
+            } else if (reply->error() != QNetworkReply::NoError) {
+                result.message = QString("Unable to retrieve Set Details: %1")
+                                     .arg(reply->errorString());
+            } else {
+                result.message = QString("Rebrickable returned HTTP status %1.")
+                                     .arg(result.httpStatusCode);
+            }
+
+            reply->deleteLater();
+
+            emit setDetailsFinished(result);
+        },
+
+        [this, trimmedSetNumber]() {
+            SetDetailsResult result;
+
+            result.success = false;
+            result.httpStatusCode = 403;
+
+            result.set.setNumber = trimmedSetNumber;
+
+            result.message = sessionBlockReason();
+
+            emit setDetailsFinished(result);
+        });
+}
+
+void RebrickableApiClient::getSetParts(const QString& setNumber, const QString& apiKey)
+{
+    const QString trimmedSetNumber = setNumber.trimmed();
+
+    if (isSessionBlocked()) {
+        SetPartsResult result;
+
+        result.success = false;
+        result.httpStatusCode = 403;
+        result.setNumber = trimmedSetNumber;
+
+        result.message = sessionBlockReason();
+
+        emit setPartsFinished(result);
+
+        return;
+    }
+
+    const QString trimmedApiKey = apiKey.trimmed();
+
+    if (trimmedSetNumber.isEmpty() || trimmedApiKey.isEmpty()) {
+        SetPartsResult result;
+
+        result.setNumber = trimmedSetNumber;
+
+        result.message = "Set number or Rebrickable API key is missing.";
+
+        emit setPartsFinished(result);
+
+        return;
+    }
+
+    const QUrl url(QString("https://rebrickable.com/api/v3/lego/sets/"
+                           "%1/parts/?page=1&page_size=500")
+                       .arg(QUrl::toPercentEncoding(trimmedSetNumber)));
+
+    QNetworkRequest request(url);
+
+    request.setRawHeader("Authorization", QString("key %1").arg(trimmedApiKey).toUtf8());
+
+    request.setHeader(QNetworkRequest::UserAgentHeader, "BrickSuite/1.0");
+
+    enqueueGet(
+        request,
+
+        [this, trimmedSetNumber](QNetworkReply* reply) {
+            SetPartsResult result;
+
+            result.setNumber = trimmedSetNumber;
+
+            const QVariant statusAttribute = reply->attribute(
+                QNetworkRequest::HttpStatusCodeAttribute);
+
+            if (statusAttribute.isValid()) {
+                result.httpStatusCode = statusAttribute.toInt();
+            }
+
+            const QByteArray responseData = reply->readAll();
+
+            QString circuitBreakerReason;
+
+            if (result.httpStatusCode == 403
+                && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
+                tripSessionCircuitBreaker(circuitBreakerReason);
+
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+
+                emit setPartsFinished(result);
+
+                return;
+            }
+
+            if (result.httpStatusCode == 429) {
+                handle429();
+
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+
+                emit setPartsFinished(result);
+
+                return;
+            }
+
+            if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
+                const QJsonDocument document = QJsonDocument::fromJson(responseData);
+
+                if (!document.isObject()) {
+                    result.message = "Rebrickable returned an unexpected "
+                                     "Set Parts response.";
+                } else {
+                    const QJsonObject root = document.object();
+
+                    result.totalCount = root.value("count").toInt();
+
+                    if (!root.value("next").isNull()) {
+                        result.nextUrl = root.value("next").toString();
+                    }
+
+                    if (!root.value("previous").isNull()) {
+                        result.previousUrl = root.value("previous").toString();
+                    }
+
+                    const QJsonArray results = root.value("results").toArray();
+
+                    for (const QJsonValue& value : results) {
+                        if (!value.isObject())
+                            continue;
+
+                        const QJsonObject object = value.toObject();
+
+                        const QJsonObject partObject = object.value("part").toObject();
+
+                        const QJsonObject colorObject = object.value("color").toObject();
+
+                        SetPart setPart;
+
+                        //
+                        // Rebrickable returned both id and
+                        // inv_part_id with the same value in
+                        // the supplied sample. We retain
+                        // inv_part_id because that is the
+                        // explicit provider inventory-part ID.
+                        //
+                        setPart.inventoryPartId = object.value("inv_part_id").toInt();
+
+                        setPart.setNumber = object.value("set_num").toString();
+
+                        setPart.partNumber = partObject.value("part_num").toString();
+
+                        setPart.partName = partObject.value("name").toString();
+
+                        setPart.partCategoryId = partObject.value("part_cat_id").toInt();
+
+                        setPart.partUrl = partObject.value("part_url").toString();
+
+                        setPart.partImageUrl = partObject.value("part_img_url").toString();
+
+                        setPart.rebrickableColorId = colorObject.value("id").toInt();
+
+                        setPart.colorName = colorObject.value("name").toString();
+
+                        setPart.colorRgb = colorObject.value("rgb").toString();
+
+                        setPart.colorIsTransparent = colorObject.value("is_trans").toBool();
+
+                        setPart.quantity = object.value("quantity").toInt();
+
+                        setPart.isSpare = object.value("is_spare").toBool();
+
+                        setPart.elementId = object.value("element_id").toString();
+
+                        setPart.numberOfSets = object.value("num_sets").toInt();
+
+                        result.parts.append(setPart);
+                    }
+
+                    result.success = true;
+
+                    result.message = QString("%1 Set Part rows retrieved "
+                                             "for %2.")
+                                         .arg(result.parts.size())
+                                         .arg(trimmedSetNumber);
+                }
+            } else if (result.httpStatusCode == 401) {
+                result.message = "Rebrickable rejected the API key.";
+            } else if (result.httpStatusCode == 404) {
+                result.message = QString("Set %1 was not found on Rebrickable.")
+                                     .arg(trimmedSetNumber);
+            } else if (reply->error() != QNetworkReply::NoError) {
+                result.message = QString("Unable to retrieve Set Parts: %1")
+                                     .arg(reply->errorString());
+            } else {
+                result.message = QString("Rebrickable returned HTTP status %1.")
+                                     .arg(result.httpStatusCode);
+            }
+
+            reply->deleteLater();
+
+            emit setPartsFinished(result);
+        },
+
+        [this, trimmedSetNumber]() {
+            SetPartsResult result;
+
+            result.success = false;
+            result.httpStatusCode = 403;
+            result.setNumber = trimmedSetNumber;
+
+            result.message = sessionBlockReason();
+
+            emit setPartsFinished(result);
+        });
 }

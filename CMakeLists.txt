@@ -126,6 +126,8 @@ qt_add_executable(BrickSuite
     src/models/BuildAllocation.cpp
     src/repositories/BuildAllocationRepository.h
     src/repositories/BuildAllocationRepository.cpp
+    src/ui/builds/SetImportPreviewDialog.h
+    src/ui/builds/SetImportPreviewDialog.cpp
 
 )
 target_link_libraries(BrickSuite PRIVATE
@@ -140,7 +142,7 @@ set_target_properties(BrickSuite PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
-set(BRICKSUITE_REBRICKABLE_API_BLOCKED ON)
+set(BRICKSUITE_REBRICKABLE_API_BLOCKED OFF)
 
 if (BRICKSUITE_REBRICKABLE_API_BLOCKED)
     target_compile_definitions(BrickSuite PRIVATE

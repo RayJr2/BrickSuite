@@ -24,6 +24,14 @@ public:
     QString rebrickableApiKey() const;
     void setRebrickableApiKey(const QString& apiKey);
 
+    static constexpr int DefaultRebrickableRequestIntervalMs = 1250;
+    static constexpr int MinimumRebrickableRequestIntervalMs = 1000;
+    static constexpr int MaximumRebrickableRequestIntervalMs = 60000;
+
+    int rebrickableMinimumRequestIntervalMs() const;
+
+    void setRebrickableMinimumRequestIntervalMs(int intervalMs);
+
 private:
     UserSettings() = default;
 

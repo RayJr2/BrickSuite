@@ -67,6 +67,8 @@ private:
 
     QPushButton* m_addRequirementButton = nullptr;
 
+    QPushButton* m_loadSetFromRebrickableButton = nullptr;
+
     QTableWidget* m_requirementsTable = nullptr;
 
     QGroupBox* m_newBuildGroup = nullptr;

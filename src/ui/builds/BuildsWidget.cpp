@@ -2,6 +2,7 @@
 
 #include "../../app/WorkspaceContext.h"
 #include "EditBuildRequirementDialog.h"
+#include "SetImportPreviewDialog.h"
 
 #include "../../models/Build.h"
 #include "../../models/BuildRequirement.h"
@@ -181,9 +182,17 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     auto* requirementsLayout = new QVBoxLayout(requirementsGroup);
 
+    auto* requirementsHeaderLayout = new QHBoxLayout();
+
     m_requirementsLabel = new QLabel("Select a build to view its requirements.", requirementsGroup);
 
-    requirementsLayout->addWidget(m_requirementsLabel);
+    m_loadSetFromRebrickableButton = new QPushButton("Load Set from Rebrickable", requirementsGroup);
+
+    requirementsHeaderLayout->addWidget(m_requirementsLabel, 1);
+
+    requirementsHeaderLayout->addWidget(m_loadSetFromRebrickableButton);
+
+    requirementsLayout->addLayout(requirementsHeaderLayout);
 
     //
     // Compact horizontal requirement entry row.
@@ -307,6 +316,50 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     connect(m_addRequirementButton, &QPushButton::clicked, this, &BuildsWidget::addRequirement);
 
     connect(m_partNumberEdit, &QLineEdit::returnPressed, this, &BuildsWidget::addRequirement);
+
+    connect(m_loadSetFromRebrickableButton, &QPushButton::clicked, this, [this]() {
+        if (m_selectedBuildId <= 0) {
+            QMessageBox::warning(this, "Set Import Preview", "Select a Set build first.");
+
+            return;
+        }
+
+        BuildRepository repository;
+
+        const std::optional<Build> build = repository.getById(m_selectedBuildId);
+
+        if (!build) {
+            QMessageBox::warning(this, "Set Import Preview", "Unable to load the selected Build.");
+
+            return;
+        }
+
+        if (build->buildType() != "Set") {
+            QMessageBox::information(this,
+                                     "Set Import Preview",
+                                     "Rebrickable Set import is only available "
+                                     "for Set builds.");
+
+            return;
+        }
+
+        const QString setNumber = build->setNumber().trimmed();
+
+        if (setNumber.isEmpty()) {
+            QMessageBox::warning(this,
+                                 "Set Import Preview",
+                                 "The selected Set build does not have "
+                                 "a Set Number.");
+
+            return;
+        }
+
+        SetImportPreviewDialog dialog(build->id(), setNumber, this);
+
+        if (dialog.exec() == QDialog::Accepted) {
+            loadRequirements();
+        }
+    });
 
     loadColors();
 
@@ -878,4 +931,18 @@ void BuildsWidget::updateRequirementUiState()
     m_addRequirementButton->setEnabled(enabled);
 
     m_requirementsTable->setEnabled(enabled);
+
+    bool canLoadSet = false;
+
+    if (enabled) {
+        BuildRepository repository;
+
+        const std::optional<Build> build = repository.getById(m_selectedBuildId);
+
+        if (build) {
+            canLoadSet = build->buildType() == "Set" && !build->setNumber().trimmed().isEmpty();
+        }
+    }
+
+    m_loadSetFromRebrickableButton->setEnabled(canLoadSet);
 }

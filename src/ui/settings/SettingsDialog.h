@@ -9,6 +9,8 @@ class QLineEdit;
 class QCheckBox;
 class QPushButton;
 class QTabWidget;
+class QSpinBox;
+
 class RebrickableApiClient;
 
 class SettingsDialog : public QDialog
@@ -49,6 +51,7 @@ private:
     QLineEdit* m_apiKeyEdit = nullptr;
     QCheckBox* m_showApiKeyCheck = nullptr;
     QPushButton* m_testConnectionButton = nullptr;
+    QSpinBox* m_rebrickableRequestIntervalSpin = nullptr;
 
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
 

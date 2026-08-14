@@ -1,0 +1,13 @@
+Get details for a specific Set.
+https://rebrickable.com/api/v3/lego/sets/77244-1/
+Response:
+{
+  "set_num": "77244-1",
+  "name": "Mercedes-AMG F1 W15 Race Car",
+  "year": 2025,
+  "theme_id": 601,
+  "num_parts": 267,
+  "set_img_url": "https://cdn.rebrickable.com/media/sets/77244-1/148260.jpg",
+  "set_url": "https://rebrickable.com/sets/77244-1/mercedes-amg-f1-w15-race-car/",
+  "last_modified_dt": "2024-11-22T05:33:19.023192Z"
+}

@@ -17,6 +17,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QTabWidget>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -105,6 +106,7 @@ void SettingsDialog::loadSettings()
     }
 
     m_apiKeyEdit->setText(settings.rebrickableApiKey());
+    m_rebrickableRequestIntervalSpin->setValue(settings.rebrickableMinimumRequestIntervalMs());
 }
 
 void SettingsDialog::saveSettings()
@@ -126,6 +128,9 @@ void SettingsDialog::saveSettings()
     settings.setTheme(theme);
 
     settings.setRebrickableApiKey(apiKey);
+
+    const int rebrickableRequestIntervalMs = m_rebrickableRequestIntervalSpin->value();
+    settings.setRebrickableMinimumRequestIntervalMs(rebrickableRequestIntervalMs);
 
     if (QApplication* application = qobject_cast<QApplication*>(QApplication::instance())) {
         ThemeManager::applyTheme(*application, theme);
@@ -212,6 +217,17 @@ void SettingsDialog::buildRebrickableTab()
 
     m_showApiKeyCheck = new QCheckBox("Show API key", apiGroup);
 
+    m_rebrickableRequestIntervalSpin = new QSpinBox(apiGroup);
+
+    m_rebrickableRequestIntervalSpin->setRange(UserSettings::MinimumRebrickableRequestIntervalMs,
+                                               UserSettings::MaximumRebrickableRequestIntervalMs);
+
+    m_rebrickableRequestIntervalSpin->setSingleStep(250);
+
+    m_rebrickableRequestIntervalSpin->setSuffix(" ms");
+
+    m_rebrickableRequestIntervalSpin->setToolTip("Minimum time between Rebrickable API requests.");
+
     m_testConnectionButton = new QPushButton("Test Connection", apiGroup);
 
     connect(m_testConnectionButton,
@@ -223,10 +239,17 @@ void SettingsDialog::buildRebrickableTab()
 
     apiLayout->addRow(QString(), m_showApiKeyCheck);
 
+    apiLayout->addRow("Minimum Request Interval:", m_rebrickableRequestIntervalSpin);
+
     apiLayout->addRow(QString(), m_testConnectionButton);
 
-    auto* noteLabel = new QLabel("The API key is stored in your local "
-                                 "BrickSuite user settings.",
+    auto* noteLabel = new QLabel("BrickSuite throttles all Rebrickable API requests "
+                                 "through a shared request queue.\n\n"
+                                 "Bulk catalog operations should use Rebrickable "
+                                 "download files rather than repeated API requests.\n\n"
+                                 "HTTP 429 responses indicate throttling. BrickSuite "
+                                 "will stop further Rebrickable API requests for the "
+                                 "current session if a 429 response is received.",
                                  apiGroup);
 
     noteLabel->setWordWrap(true);

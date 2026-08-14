@@ -307,6 +307,16 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     auto* partDetailsDialogAction = rebrickableMenu->addAction("Part Details Dialog");
 
+    auto* partImageAction = rebrickableMenu->addAction("Part Image");
+
+    auto* setDetailsAction = rebrickableMenu->addAction("Set Details");
+
+    auto* setPartsAction = rebrickableMenu->addAction("Set Parts");
+
+    rebrickableMenu->addSeparator();
+
+    auto* throttleTestAction = rebrickableMenu->addAction("Throttle Test");
+
     connect(partDetailsAction, &QAction::triggered, this, [this]() {
         const QString apiKey = UserSettings::instance().rebrickableApiKey();
 
@@ -368,8 +378,6 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
         apiClient->getPartDetails("3001", apiKey);
     });
-
-    auto* partImageAction = rebrickableMenu->addAction("Part Image");
 
     connect(partImageAction, &QAction::triggered, this, [this]() {
         const QString apiKey = UserSettings::instance().rebrickableApiKey();
@@ -452,6 +460,238 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
         PartDetailsDialog dialog(part->id(), this);
 
         dialog.exec();
+    });
+
+    connect(throttleTestAction, &QAction::triggered, this, [this]() {
+        const QString apiKey = UserSettings::instance().rebrickableApiKey();
+
+        if (apiKey.isEmpty()) {
+            QMessageBox::warning(this,
+                                 "Rebrickable Throttle Test",
+                                 "No Rebrickable API key is configured.");
+
+            return;
+        }
+
+        if (RebrickableApiClient::isSessionBlocked()) {
+            QMessageBox::warning(this,
+                                 "Rebrickable Throttle Test",
+                                 RebrickableApiClient::sessionBlockReason());
+
+            return;
+        }
+
+        const int intervalMs = UserSettings::instance().rebrickableMinimumRequestIntervalMs();
+
+        const QMessageBox::StandardButton response
+            = QMessageBox::question(this,
+                                    "Rebrickable Throttle Test",
+                                    QString("This test will queue 3 Rebrickable API "
+                                            "requests immediately.\n\n"
+                                            "BrickSuite should dispatch them no faster "
+                                            "than the configured minimum interval of "
+                                            "%1 ms.\n\n"
+                                            "Continue?")
+                                        .arg(intervalMs),
+                                    QMessageBox::Yes | QMessageBox::No,
+                                    QMessageBox::No);
+
+        if (response != QMessageBox::Yes)
+            return;
+
+        auto* apiClient = new RebrickableApiClient(this);
+
+        auto* completedCount = new int(0);
+
+        connect(apiClient,
+                &RebrickableApiClient::partDetailsFinished,
+                this,
+                [this, apiClient, completedCount, intervalMs](
+                    const RebrickableApiClient::PartDetailsResult& result) {
+                    ++(*completedCount);
+
+                    qDebug() << "Throttle test result" << *completedCount << ":"
+                             << result.part.partNumber << "HTTP" << result.httpStatusCode
+                             << "Success" << result.success;
+
+                    if (!result.success) {
+                        qWarning() << "Throttle test request failed:" << result.message;
+                    }
+
+                    if (*completedCount < 3)
+                        return;
+
+                    const bool sessionBlocked = RebrickableApiClient::isSessionBlocked();
+
+                    QString message;
+
+                    if (sessionBlocked) {
+                        message = QString("Throttle test completed, but the "
+                                          "Rebrickable circuit breaker was "
+                                          "tripped.\n\n%1")
+                                      .arg(RebrickableApiClient::sessionBlockReason());
+                    } else {
+                        message = QString("Throttle test completed.\n\n"
+                                          "3 API requests were queued.\n"
+                                          "Configured minimum interval: %1 ms\n\n"
+                                          "Check the Application Output for the "
+                                          "'Rebrickable API GET dispatched' "
+                                          "timestamps.")
+                                      .arg(intervalMs);
+                    }
+
+                    QMessageBox::information(this, "Rebrickable Throttle Test", message);
+
+                    delete completedCount;
+
+                    apiClient->deleteLater();
+                });
+
+        //
+        // These calls are intentionally made back-to-back.
+        // RebrickableApiClient must serialize their actual
+        // network dispatch through its shared request queue.
+        //
+        apiClient->getPartDetails("3001", apiKey);
+
+        apiClient->getPartDetails("3002", apiKey);
+
+        apiClient->getPartDetails("3003", apiKey);
+    });
+
+    connect(setDetailsAction, &QAction::triggered, this, [this]() {
+        const QString apiKey = UserSettings::instance().rebrickableApiKey();
+
+        if (apiKey.isEmpty()) {
+            QMessageBox::warning(this,
+                                 "Rebrickable Set Details",
+                                 "No Rebrickable API key is configured.");
+
+            return;
+        }
+
+        auto* apiClient = new RebrickableApiClient(this);
+
+        connect(apiClient,
+                &RebrickableApiClient::setDetailsFinished,
+                this,
+                [this, apiClient](const RebrickableApiClient::SetDetailsResult& result) {
+                    if (!result.success) {
+                        QMessageBox::warning(this, "Rebrickable Set Details", result.message);
+
+                        apiClient->deleteLater();
+
+                        return;
+                    }
+
+                    qDebug() << "Set:" << result.set.setNumber;
+
+                    qDebug() << "Name:" << result.set.name;
+
+                    qDebug() << "Year:" << result.set.year;
+
+                    qDebug() << "Theme:" << result.set.themeId;
+
+                    qDebug() << "Parts:" << result.set.numberOfParts;
+
+                    qDebug() << "Image:" << result.set.setImageUrl;
+
+                    QMessageBox::information(this,
+                                             "Rebrickable Set Details",
+                                             QString("Set: %1\n"
+                                                     "Name: %2\n"
+                                                     "Year: %3\n"
+                                                     "Theme ID: %4\n"
+                                                     "Parts: %5")
+                                                 .arg(result.set.setNumber)
+                                                 .arg(result.set.name)
+                                                 .arg(result.set.year)
+                                                 .arg(result.set.themeId)
+                                                 .arg(result.set.numberOfParts));
+
+                    apiClient->deleteLater();
+                });
+
+        apiClient->getSetDetails("77244-1", apiKey);
+    });
+
+    connect(setPartsAction, &QAction::triggered, this, [this]() {
+        const QString apiKey = UserSettings::instance().rebrickableApiKey();
+
+        if (apiKey.isEmpty()) {
+            QMessageBox::warning(this,
+                                 "Rebrickable Set Parts",
+                                 "No Rebrickable API key is configured.");
+
+            return;
+        }
+
+        auto* apiClient = new RebrickableApiClient(this);
+
+        connect(apiClient,
+                &RebrickableApiClient::setPartsFinished,
+                this,
+                [this, apiClient](const RebrickableApiClient::SetPartsResult& result) {
+                    if (!result.success) {
+                        QMessageBox::warning(this, "Rebrickable Set Parts", result.message);
+
+                        apiClient->deleteLater();
+
+                        return;
+                    }
+
+                    int regularRows = 0;
+                    int spareRows = 0;
+
+                    int regularQuantity = 0;
+                    int spareQuantity = 0;
+
+                    for (const auto& part : result.parts) {
+                        if (part.isSpare) {
+                            ++spareRows;
+                            spareQuantity += part.quantity;
+                        } else {
+                            ++regularRows;
+                            regularQuantity += part.quantity;
+                        }
+
+                        qDebug() << part.partNumber << part.colorName << "Qty" << part.quantity
+                                 << "Spare" << part.isSpare;
+                    }
+
+                    qDebug() << "Set Parts count:" << result.totalCount;
+
+                    qDebug() << "Rows returned:" << result.parts.size();
+
+                    qDebug() << "Regular quantity:" << regularQuantity;
+
+                    qDebug() << "Spare quantity:" << spareQuantity;
+
+                    qDebug() << "Next URL:" << result.nextUrl;
+
+                    QMessageBox::information(this,
+                                             "Rebrickable Set Parts",
+                                             QString("Set: %1\n\n"
+                                                     "API row count: %2\n"
+                                                     "Rows returned: %3\n\n"
+                                                     "Regular rows: %4\n"
+                                                     "Regular pieces: %5\n\n"
+                                                     "Spare rows: %6\n"
+                                                     "Spare pieces: %7\n\n"
+                                                     "More pages: %8")
+                                                 .arg(result.setNumber)
+                                                 .arg(result.totalCount)
+                                                 .arg(result.parts.size())
+                                                 .arg(regularRows)
+                                                 .arg(regularQuantity)
+                                                 .arg(spareRows)
+                                                 .arg(spareQuantity)
+                                                 .arg(result.nextUrl.isEmpty() ? "No" : "Yes"));
+
+                    apiClient->deleteLater();
+                });
+
+        apiClient->getSetParts("77244-1", apiKey);
     });
 
     statusBar()->showMessage("BrickSuite Version 1.0");

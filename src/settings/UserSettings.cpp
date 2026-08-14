@@ -16,6 +16,8 @@ constexpr auto kResultsPerPageKey = "ResultsPerPage";
 constexpr auto kDefaultWorkspaceIdKey = "DefaultWorkspaceId";
 
 constexpr auto kRebrickableApiKey = "ApiKey";
+
+constexpr auto kRebrickableMinimumRequestIntervalMsKey = "MinimumRequestIntervalMs";
 } // namespace
 
 UserSettings& UserSettings::instance()
@@ -139,6 +141,45 @@ void UserSettings::setRebrickableApiKey(const QString& apiKey)
     settings.beginGroup(kGroupRebrickable);
 
     settings.setValue(kRebrickableApiKey, apiKey.trimmed());
+
+    settings.endGroup();
+}
+
+int UserSettings::rebrickableMinimumRequestIntervalMs() const
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupRebrickable);
+
+    int value = settings
+                    .value(kRebrickableMinimumRequestIntervalMsKey,
+                           DefaultRebrickableRequestIntervalMs)
+                    .toInt();
+
+    settings.endGroup();
+
+    if (value < MinimumRebrickableRequestIntervalMs)
+        value = MinimumRebrickableRequestIntervalMs;
+
+    if (value > MaximumRebrickableRequestIntervalMs)
+        value = MaximumRebrickableRequestIntervalMs;
+
+    return value;
+}
+
+void UserSettings::setRebrickableMinimumRequestIntervalMs(int intervalMs)
+{
+    if (intervalMs < MinimumRebrickableRequestIntervalMs)
+        intervalMs = MinimumRebrickableRequestIntervalMs;
+
+    if (intervalMs > MaximumRebrickableRequestIntervalMs)
+        intervalMs = MaximumRebrickableRequestIntervalMs;
+
+    QSettings settings;
+
+    settings.beginGroup(kGroupRebrickable);
+
+    settings.setValue(kRebrickableMinimumRequestIntervalMsKey, intervalMs);
 
     settings.endGroup();
 }
