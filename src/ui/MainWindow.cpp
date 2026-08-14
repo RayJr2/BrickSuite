@@ -2,13 +2,21 @@
 
 #include "../app/WorkspaceContext.h"
 #include "../database/DatabaseManager.h"
+
+#include "../models/Build.h"
 #include "../models/Part.h"
+#include "../models/SetCatalogItem.h"
 #include "../models/Workspace.h"
+
+#include "../repositories/BuildRepository.h"
 #include "../repositories/PartRepository.h"
+#include "../repositories/SetCatalogRepository.h"
 #include "../repositories/WorkspaceRepository.h"
+
 #include "../services/RebrickableApiClient.h"
 #include "../services/images/PartImageService.h"
 #include "../settings/UserSettings.h"
+
 #include "../ui/parts/PartDetailsDialog.h"
 #include "builds/BuildsWidget.h"
 #include "catalog/PartsCatalogWidget.h"
@@ -59,6 +67,98 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     // Sets Catalog tab
     m_setsCatalogWidget = new SetsCatalogWidget(m_tabWidget);
+
+    connect(m_setsCatalogWidget,
+            &SetsCatalogWidget::createBuildRequested,
+            this,
+            [this](int setCatalogId, const QString& inventoryMode) {
+                if (!m_workspaceContext.hasCurrentWorkspace()) {
+                    QMessageBox::warning(this,
+                                         "Create Build",
+                                         "Select a workspace before creating "
+                                         "a Build from the Sets Catalog.");
+
+                    return;
+                }
+
+                SetCatalogRepository setRepository;
+
+                const std::optional<SetCatalogItem> set = setRepository.getById(setCatalogId);
+
+                if (!set) {
+                    QMessageBox::critical(this,
+                                          "Create Build",
+                                          "Unable to load the selected "
+                                          "Sets Catalog record.");
+
+                    return;
+                }
+
+                QString modeText;
+
+                if (inventoryMode == "Stock") {
+                    modeText = "Build from Stock";
+                } else if (inventoryMode == "CompleteSet") {
+                    modeText = "Complete Set";
+                } else {
+                    QMessageBox::critical(this,
+                                          "Create Build",
+                                          "The requested Inventory Mode "
+                                          "is invalid.");
+
+                    return;
+                }
+
+                const QMessageBox::StandardButton response
+                    = QMessageBox::question(this,
+                                            "Create Build",
+                                            QString("Create this Build?\n\n"
+                                                    "Set: %1\n"
+                                                    "Name: %2\n"
+                                                    "Inventory Mode: %3\n\n"
+                                                    "The new Build will be created "
+                                                    "with status Planned.")
+                                                .arg(set->setNumber())
+                                                .arg(set->name())
+                                                .arg(modeText),
+                                            QMessageBox::Yes | QMessageBox::No,
+                                            QMessageBox::Yes);
+
+                if (response != QMessageBox::Yes)
+                    return;
+
+                Build build;
+
+                build.setWorkspaceId(m_workspaceContext.currentWorkspaceId());
+
+                build.setBuildType("Set");
+
+                build.setSetNumber(set->setNumber());
+
+                build.setName(set->name());
+
+                build.setInventoryMode(inventoryMode);
+
+                build.setStatus("Planned");
+
+                BuildRepository buildRepository;
+
+                if (!buildRepository.create(build)) {
+                    QMessageBox::critical(this, "Create Build", "Unable to create the Build.");
+
+                    return;
+                }
+
+                //
+                // Move directly into the existing Build
+                // workflow and select the new record.
+                //
+                m_tabWidget->setCurrentWidget(m_buildsWidget);
+
+                m_buildsWidget->selectBuild(build.id());
+
+                statusBar()->showMessage(QString("Build created: %1").arg(build.name()), 5000);
+            });
 
     // My Inventory tab
     m_myInventoryWidget = new MyInventoryWidget(m_workspaceContext, m_tabWidget);

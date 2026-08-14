@@ -25,6 +25,7 @@ public:
         QWidget* parent = nullptr);
 
     void refresh();
+    void selectBuild(int buildId);
 
 private slots:
     void workspaceChanged(

@@ -1,4 +1,5 @@
 #include "SetsCatalogWidget.h"
+#include "SetDetailsDialog.h"
 
 #include "../../import/RebrickableSetCatalogImporter.h"
 
@@ -66,13 +67,14 @@ SetsCatalogWidget::SetsCatalogWidget(QWidget* parent)
 
     m_resultsTable = new QTableWidget(this);
 
-    m_resultsTable->setColumnCount(5);
+    m_resultsTable->setColumnCount(6);
 
     m_resultsTable->setHorizontalHeaderLabels(QStringList() << "Set #"
                                                             << "Name"
                                                             << "Year"
                                                             << "Theme ID"
-                                                            << "Parts");
+                                                            << "Parts"
+                                                            << "Action");
 
     m_resultsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
@@ -86,7 +88,7 @@ SetsCatalogWidget::SetsCatalogWidget(QWidget* parent)
 
     m_resultsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
 
-    for (int column = 2; column <= 4; ++column) {
+    for (int column = 2; column <= 5; ++column) {
         m_resultsTable->horizontalHeader()->setSectionResizeMode(column,
                                                                  QHeaderView::ResizeToContents);
     }
@@ -232,6 +234,16 @@ void SetsCatalogWidget::searchSets()
 
         auto* partsItem = new QTableWidgetItem(QString::number(set.numberOfParts()));
 
+        auto* actionCombo = new QComboBox(m_resultsTable);
+
+        actionCombo->addItem("Actions...", QString());
+
+        actionCombo->addItem("Details...", "details");
+
+        actionCombo->addItem("Create Build from Stock", "Stock");
+
+        actionCombo->addItem("Add as Complete Set", "CompleteSet");
+
         yearItem->setTextAlignment(Qt::AlignCenter);
 
         themeItem->setTextAlignment(Qt::AlignCenter);
@@ -248,9 +260,41 @@ void SetsCatalogWidget::searchSets()
 
         m_resultsTable->setItem(row, 4, partsItem);
 
-        ++row;
-    }
+        m_resultsTable->setCellWidget(row, 5, actionCombo);
 
+        const int setCatalogId = set.id();
+
+        connect(actionCombo,
+                &QComboBox::currentIndexChanged,
+                this,
+                [this, actionCombo, setCatalogId](int index) {
+                    if (index <= 0)
+                        return;
+
+                    const QString action = actionCombo->itemData(index).toString();
+
+                    actionCombo->setCurrentIndex(0);
+
+                    if (action == "details") {
+                        SetDetailsDialog dialog(setCatalogId, this);
+
+                        dialog.exec();
+
+                        return;
+                    }
+
+                    if (action == "Stock" || action == "CompleteSet") {
+                        emit createBuildRequested(setCatalogId, action);
+                    }
+                });
+
+        ++row;
+    } // <-- closes the for loop
+
+    //
+    // These operate on the complete result set,
+    // so they belong outside the for loop.
+    //
     if (results.isEmpty()) {
         m_resultLabel->setText(m_currentPage > 0 ? "No more matching sets."
                                                  : "No matching sets found.");
@@ -264,7 +308,6 @@ void SetsCatalogWidget::searchSets()
 
     updatePagingControls();
 }
-
 void SetsCatalogWidget::previousPage()
 {
     if (m_currentPage <= 0)

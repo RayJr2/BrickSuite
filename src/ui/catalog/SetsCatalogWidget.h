@@ -23,6 +23,9 @@ private slots:
     void nextPage();
     void importSetsCsv();
 
+signals:
+    void createBuildRequested(int setCatalogId, const QString& inventoryMode);
+
 private:
     void loadYears();
     void updatePagingControls();

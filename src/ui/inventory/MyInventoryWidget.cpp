@@ -50,8 +50,7 @@ MyInventoryWidget::MyInventoryWidget(
     auto* mainLayout =
         new QVBoxLayout(this);
 
-    auto* titleLabel =
-        new QLabel("My Inventory", this);
+    auto* titleLabel = new QLabel("My Loose Inventory", this);
 
     m_importButton = new QPushButton("Import CSV", this);
 

@@ -2,6 +2,7 @@
 
 #include "../../app/WorkspaceContext.h"
 #include "AllocateBuildRequirementDialog.h"
+#include "EditBuildDialog.h"
 #include "EditBuildRequirementDialog.h"
 #include "ImportPullListDialog.h"
 #include "SetImportPreviewDialog.h"
@@ -142,14 +143,15 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_buildsTable = new QTableWidget(existingGroup);
 
-    m_buildsTable->setColumnCount(6);
+    m_buildsTable->setColumnCount(7);
 
     m_buildsTable->setHorizontalHeaderLabels(QStringList() << "Type"
                                                            << "Set #"
                                                            << "Inventory Mode"
                                                            << "Name"
                                                            << "Status"
-                                                           << "Notes");
+                                                           << "Notes"
+                                                           << "Action");
 
     m_buildsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
@@ -170,6 +172,8 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     m_buildsTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
 
     m_buildsTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
+
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
 
     existingLayout->addWidget(m_buildsTable);
 
@@ -450,6 +454,12 @@ void BuildsWidget::loadBuilds()
 
         auto* notesItem = new QTableWidgetItem(build.notes());
 
+        auto* actionCombo = new QComboBox(m_buildsTable);
+
+        actionCombo->addItem("Actions...", QString());
+
+        actionCombo->addItem("Edit Build...", "edit");
+
         //
         // Store Build ID on the Name item.
         //
@@ -466,6 +476,38 @@ void BuildsWidget::loadBuilds()
         m_buildsTable->setItem(row, 4, statusItem);
 
         m_buildsTable->setItem(row, 5, notesItem);
+
+        m_buildsTable->setCellWidget(row, 6, actionCombo);
+
+        const int buildId = build.id();
+
+        connect(actionCombo,
+                &QComboBox::currentIndexChanged,
+                this,
+                [this, actionCombo, buildId](int index) {
+                    if (index <= 0)
+                        return;
+
+                    const QString action = actionCombo->itemData(index).toString();
+
+                    //
+                    // Reset immediately so the same action
+                    // can be selected again later.
+                    //
+                    actionCombo->setCurrentIndex(0);
+
+                    if (action == "edit") {
+                        EditBuildDialog dialog(buildId, this);
+
+                        if (dialog.exec() == QDialog::Accepted) {
+                            //
+                            // Reload and keep the edited Build
+                            // selected.
+                            //
+                            selectBuild(buildId);
+                        }
+                    }
+                });
 
         ++row;
     }
@@ -1241,5 +1283,33 @@ void BuildsWidget::importPullList()
 
     if (dialog.exec() == QDialog::Accepted) {
         loadRequirements();
+    }
+}
+
+void BuildsWidget::selectBuild(int buildId)
+{
+    if (buildId <= 0)
+        return;
+
+    loadBuilds();
+
+    for (int row = 0; row < m_buildsTable->rowCount(); ++row) {
+        QTableWidgetItem* nameItem = m_buildsTable->item(row, 3);
+
+        if (!nameItem)
+            continue;
+
+        const int rowBuildId = nameItem->data(Qt::UserRole).toInt();
+
+        if (rowBuildId != buildId)
+            continue;
+
+        m_buildsTable->setCurrentCell(row, 3);
+
+        m_buildsTable->selectRow(row);
+
+        m_buildsTable->scrollToItem(nameItem, QAbstractItemView::PositionAtCenter);
+
+        return;
     }
 }
