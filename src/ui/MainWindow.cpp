@@ -12,6 +12,7 @@
 #include "../ui/parts/PartDetailsDialog.h"
 #include "builds/BuildsWidget.h"
 #include "catalog/PartsCatalogWidget.h"
+#include "catalog/SetsCatalogWidget.h"
 #include "inventory/AddInventoryDialog.h"
 #include "inventory/MyInventoryWidget.h"
 #include "settings/SettingsDialog.h"
@@ -56,6 +57,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     // Parts Catalog tab
     m_partsCatalogWidget = new PartsCatalogWidget(m_tabWidget);
 
+    // Sets Catalog tab
+    m_setsCatalogWidget = new SetsCatalogWidget(m_tabWidget);
+
     // My Inventory tab
     m_myInventoryWidget = new MyInventoryWidget(m_workspaceContext, m_tabWidget);
 
@@ -88,6 +92,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     m_tabWidget->addTab(m_storageWidget, "Storage");
 
     m_tabWidget->addTab(m_partsCatalogWidget, "Parts Catalog");
+
+    m_tabWidget->addTab(m_setsCatalogWidget, "Sets Catalog");
 
     m_tabWidget->addTab(m_myInventoryWidget, "My Inventory");
 

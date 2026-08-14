@@ -150,6 +150,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 8;
     }
 
+    // Version 8 -> Version 9.
+    if (version == 8) {
+        if (!migrateVersion8ToVersion9(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 9)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 9;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -1046,6 +1061,71 @@ bool DatabaseSchema::migrateVersion7ToVersion8(QSqlDatabase& database)
     )")) {
         qCritical() << "Unable to backfill Build Requirement pulled quantities:"
                     << query.lastError().text();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion8ToVersion9(QSqlDatabase& database)
+{
+    return createSetCatalogTable(database);
+}
+
+bool DatabaseSchema::createSetCatalogTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS set_catalog
+        (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_number   TEXT NOT NULL UNIQUE,
+            name         TEXT NOT NULL,
+            year         INTEGER NOT NULL DEFAULT 0,
+            theme_id     INTEGER NOT NULL DEFAULT 0,
+            num_parts    INTEGER NOT NULL DEFAULT 0,
+            image_url    TEXT,
+            created_utc  TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+
+            CHECK(year >= 0),
+            CHECK(theme_id >= 0),
+            CHECK(num_parts >= 0)
+        )
+    )")) {
+        qCritical() << "Unable to create set_catalog table:" << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_set_catalog_number
+        ON set_catalog(set_number)
+    )")) {
+        qCritical() << "Unable to create set number index:" << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_set_catalog_year
+        ON set_catalog(year)
+    )")) {
+        qCritical() << "Unable to create set year index:" << query.lastError().text();
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_set_catalog_theme
+        ON set_catalog(theme_id)
+    )")) {
+        qCritical() << "Unable to create set theme index:" << query.lastError().text();
 
         return false;
     }

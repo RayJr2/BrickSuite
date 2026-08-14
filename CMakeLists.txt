@@ -132,6 +132,15 @@ qt_add_executable(BrickSuite
     src/ui/builds/AllocateBuildRequirementDialog.cpp
     src/ui/builds/ImportPullListDialog.h
     src/ui/builds/ImportPullListDialog.cpp
+    src/models/SetCatalogItem.h
+    src/models/SetCatalogItem.cpp
+    src/models/SetCatalogSearchCriteria.h
+    src/repositories/SetCatalogRepository.h
+    src/repositories/SetCatalogRepository.cpp
+    src/import/RebrickableSetCatalogImporter.h
+    src/import/RebrickableSetCatalogImporter.cpp
+    src/ui/catalog/SetsCatalogWidget.h
+    src/ui/catalog/SetsCatalogWidget.cpp
 
 )
 target_link_libraries(BrickSuite PRIVATE

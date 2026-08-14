@@ -14,6 +14,7 @@ class StorageWidget;
 class PartsCatalogWidget;
 class MyInventoryWidget;
 class BuildsWidget;
+class SetsCatalogWidget;
 
 class MainWindow : public QMainWindow
 {
@@ -43,4 +44,5 @@ private:
     PartsCatalogWidget* m_partsCatalogWidget = nullptr;
     MyInventoryWidget* m_myInventoryWidget = nullptr;
     BuildsWidget* m_buildsWidget = nullptr;
+    SetsCatalogWidget* m_setsCatalogWidget = nullptr;
 };
