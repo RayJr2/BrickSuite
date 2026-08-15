@@ -42,6 +42,7 @@ private:
     void loadColors();
     void loadStorageLocations();
     void updatePagingControls();
+    void addPart();
 
     QString storagePathForId(int storageLocationId) const;
 
@@ -67,6 +68,8 @@ private:
     QLabel* m_pageLabel = nullptr;
 
     QPushButton* m_importButton = nullptr;
+
+    QPushButton* m_addPartButton = nullptr;
 
     QHash<int, QString> m_storagePathById;
 

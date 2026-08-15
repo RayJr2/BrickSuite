@@ -367,3 +367,65 @@ QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteri
 
     return results;
 }
+
+QList<Part> PartRepository::searchForInventoryEntry(const QString& searchText, int limit) const
+{
+    QList<Part> parts;
+
+    const QString trimmed = searchText.trimmed();
+
+    if (trimmed.isEmpty())
+        return parts;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QSqlQuery query(database);
+
+    query.prepare(R"(
+        SELECT
+            id,
+            part_number,
+            name,
+            part_category_id,
+            rebrickable_part_id,
+            material,
+            is_active,
+            created_utc,
+            modified_utc
+        FROM part
+        WHERE is_active = 1
+          AND
+          (
+              part_number LIKE :search
+              OR name LIKE :search
+          )
+        ORDER BY
+            CASE
+                WHEN part_number = :exact THEN 0
+                WHEN part_number LIKE :prefix THEN 1
+                ELSE 2
+            END,
+            part_number
+        LIMIT :limit
+    )");
+
+    query.bindValue(":search", "%" + trimmed + "%");
+
+    query.bindValue(":exact", trimmed);
+
+    query.bindValue(":prefix", trimmed + "%");
+
+    query.bindValue(":limit", qBound(1, limit, 50));
+
+    if (!query.exec()) {
+        qCritical() << "Unable to search parts for inventory entry:" << query.lastError().text();
+
+        return parts;
+    }
+
+    while (query.next()) {
+        parts.append(partFromQuery(query));
+    }
+
+    return parts;
+}

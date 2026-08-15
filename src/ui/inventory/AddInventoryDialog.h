@@ -2,6 +2,7 @@
 
 #include <QDialog>
 #include <QList>
+#include <QModelIndex>
 
 class WorkspaceContext;
 class QLabel;
@@ -10,6 +11,10 @@ class QSpinBox;
 class QDialogButtonBox;
 class QCheckBox;
 class RebrickableApiClient;
+class QLineEdit;
+class QCompleter;
+class QStandardItemModel;
+class QTimer;
 
 class AddInventoryDialog : public QDialog
 {
@@ -20,6 +25,10 @@ public:
                                 WorkspaceContext& workspaceContext,
                                 QWidget* parent = nullptr);
 
+    explicit AddInventoryDialog(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
+
+    bool inventoryWasAdded() const;
+
 private slots:
     void addInventory();
     void showAllColorsToggled(bool checked);
@@ -28,8 +37,15 @@ private:
     void loadPart();
     void loadAllColors();
     void loadKnownColors();
-    void applyKnownColors();
+    void applyKnownColors(int preferredColorId = 0);
     void loadStorageLocations();
+
+    void initializeUi();
+    void configureForSelectedPart();
+    void clearPartSelection();
+    void updatePartSearch();
+    void selectSearchResult(const QModelIndex& index);
+    void updateAddButtonState();
 
     int m_partId = 0;
 
@@ -53,4 +69,16 @@ private:
     QList<int> m_knownRebrickableColorIds;
 
     QString m_partNumber;
+
+    QLineEdit* m_partSearchEdit = nullptr;
+    QCompleter* m_partCompleter = nullptr;
+    QStandardItemModel* m_partSearchModel = nullptr;
+    QTimer* m_partSearchTimer = nullptr;
+
+    QCheckBox* m_keepOpenCheck = nullptr;
+
+    bool m_quickEntryMode = false;
+    bool m_inventoryWasAdded = false;
+
+    int m_quickEntryColorId = 0;
 };

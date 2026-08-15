@@ -1,4 +1,5 @@
 #include "MyInventoryWidget.h"
+#include "AddInventoryDialog.h"
 #include "EditInventoryDialog.h"
 #include "ImportInventoryDialog.h"
 #include "InventoryHistoryDialog.h"
@@ -52,6 +53,8 @@ MyInventoryWidget::MyInventoryWidget(
 
     auto* titleLabel = new QLabel("My Loose Inventory", this);
 
+    m_addPartButton = new QPushButton("Add Part...", this);
+
     m_importButton = new QPushButton("Import CSV", this);
 
     auto* titleLayout = new QHBoxLayout();
@@ -59,6 +62,8 @@ MyInventoryWidget::MyInventoryWidget(
     titleLayout->addWidget(titleLabel);
 
     titleLayout->addStretch();
+
+    titleLayout->addWidget(m_addPartButton);
 
     titleLayout->addWidget(m_importButton);
 
@@ -227,6 +232,8 @@ MyInventoryWidget::MyInventoryWidget(
     m_partImageService = new PartImageService(this);
     m_rebrickableApiClient = new RebrickableApiClient(this);
 
+    connect(m_addPartButton, &QPushButton::clicked, this, &MyInventoryWidget::addPart);
+
     connect(m_importButton, &QPushButton::clicked, this, &MyInventoryWidget::importCsv);
 
     connect(m_searchButton, &QPushButton::clicked, this, [this]() {
@@ -296,9 +303,8 @@ MyInventoryWidget::MyInventoryWidget(
             &PartImageService::imageReady,
             this,
             [this](const QString& partNumber, const QString& imagePath) {
-                if (!m_rowsByPartNumber.contains(partNumber)) {
+                if (!m_rowsByPartNumber.contains(partNumber))
                     return;
-                }
 
                 QPixmap pixmap(imagePath);
 
@@ -313,6 +319,18 @@ MyInventoryWidget::MyInventoryWidget(
                 const QList<int> rows = m_rowsByPartNumber.value(partNumber);
 
                 for (const int row : rows) {
+                    //
+                    // A real Part+Color image always wins.
+                    // Never overwrite it with the generic
+                    // Parts Catalog image.
+                    //
+                    if (m_rowsWithColorImage.contains(row))
+                        continue;
+
+                    if (row < 0 || row >= m_resultsTable->rowCount()) {
+                        continue;
+                    }
+
                     QTableWidgetItem* item = m_resultsTable->item(row, 0);
 
                     if (!item) {
@@ -366,6 +384,7 @@ void MyInventoryWidget::workspaceChanged(int workspaceId)
 
     searchInventory();
 
+    m_addPartButton->setEnabled(m_workspaceContext.hasCurrentWorkspace());
     m_importButton->setEnabled(m_workspaceContext.hasCurrentWorkspace());
 }
 
@@ -453,6 +472,7 @@ void MyInventoryWidget::searchInventory()
 
     m_rowsByPartNumber.clear();
     m_rowsByPartColor.clear();
+    m_rowsWithColorImage.clear();
     m_partDetailsRequested.clear();
 
     if (!m_workspaceContext.hasCurrentWorkspace()) {
@@ -656,6 +676,12 @@ void MyInventoryWidget::searchInventory()
                 = m_partImageService->cachedPartColorImagePath(partNumber, rebrickableColorId);
 
             if (!colorCachedPath.isEmpty()) {
+                //
+                // Protect this row from a later generic-image
+                // callback for the same Part Number.
+                //
+                m_rowsWithColorImage.insert(row);
+
                 m_partImageService->requestPartColorImage(partNumber, rebrickableColorId, QString());
 
                 colorImageLoaded = true;
@@ -790,13 +816,16 @@ void MyInventoryWidget::updatePartColorImage(const QString& partNumber,
     const QList<int> rows = m_rowsByPartColor.value(key);
 
     for (const int row : rows) {
-        //
-        // Protect against the table changing between
-        // the background download and this update.
-        //
         if (row < 0 || row >= m_resultsTable->rowCount()) {
             continue;
         }
+
+        //
+        // From this point forward this row owns an
+        // actual Part+Color image. A generic image must
+        // never replace it.
+        //
+        m_rowsWithColorImage.insert(row);
 
         QTableWidgetItem* item = m_resultsTable->item(row, 0);
 
@@ -807,5 +836,25 @@ void MyInventoryWidget::updatePartColorImage(const QString& partNumber,
         }
 
         item->setIcon(QIcon(thumbnail));
+    }
+}
+
+void MyInventoryWidget::addPart()
+{
+    if (!m_workspaceContext.hasCurrentWorkspace()) {
+        return;
+    }
+
+    AddInventoryDialog dialog(m_workspaceContext, this);
+
+    dialog.exec();
+
+    //
+    // Multiple items may have been entered while
+    // Keep Open was enabled. Refresh only once when
+    // the rapid-entry session finishes.
+    //
+    if (dialog.inventoryWasAdded()) {
+        searchInventory();
     }
 }
