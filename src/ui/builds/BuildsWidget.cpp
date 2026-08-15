@@ -21,6 +21,8 @@
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
+#include "../../services/builds/MissingPartsService.h"
+
 #include "../../ui/helpers/ColorComboHelper.h"
 
 #include <QCheckBox>
@@ -37,6 +39,7 @@
 #include <QMessageBox>
 #include <QPalette>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QSpinBox>
 #include <QSplitter>
@@ -196,6 +199,8 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_loadSetFromRebrickableButton = new QPushButton("Load Set from Rebrickable", requirementsGroup);
 
+    m_exportMissingPartsButton = new QPushButton("Export Missing Parts CSV", requirementsGroup);
+
     m_exportPullListButton = new QPushButton("Export Pull List CSV", requirementsGroup);
     m_importPullListButton = new QPushButton("Import Pull List CSV", requirementsGroup);
 
@@ -203,7 +208,10 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     requirementsHeaderLayout->addWidget(m_loadSetFromRebrickableButton);
 
+    requirementsHeaderLayout->addWidget(m_exportMissingPartsButton);
+
     requirementsHeaderLayout->addWidget(m_exportPullListButton);
+
     requirementsHeaderLayout->addWidget(m_importPullListButton);
 
     requirementsLayout->addLayout(requirementsHeaderLayout);
@@ -363,6 +371,11 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     // ------------------------------------------------------------
     //
     connect(m_addButton, &QPushButton::clicked, this, &BuildsWidget::addBuild);
+
+    connect(m_exportMissingPartsButton,
+            &QPushButton::clicked,
+            this,
+            &BuildsWidget::exportMissingParts);
 
     connect(m_exportPullListButton, &QPushButton::clicked, this, &BuildsWidget::exportPullList);
     connect(m_importPullListButton, &QPushButton::clicked, this, &BuildsWidget::importPullList);
@@ -1281,6 +1294,7 @@ void BuildsWidget::updateRequirementUiState()
 
     bool canLoadSet = false;
     bool canExportPullList = false;
+    bool canExportMissingParts = false;
 
     if (enabled) {
         BuildRepository repository;
@@ -1289,21 +1303,18 @@ void BuildsWidget::updateRequirementUiState()
 
         if (build) {
             canLoadSet = build->buildType() == "Set" && !build->setNumber().trimmed().isEmpty();
-        }
-    }
 
-    if (enabled) {
-        BuildRepository buildRepository;
-
-        const std::optional<Build> build = buildRepository.getById(m_selectedBuildId);
-
-        if (build) {
             canExportPullList = build->inventoryMode() == "Stock";
+
+            canExportMissingParts = build->inventoryMode() == "Stock";
         }
     }
 
     m_exportPullListButton->setEnabled(canExportPullList);
+
     m_importPullListButton->setEnabled(canExportPullList);
+
+    m_exportMissingPartsButton->setEnabled(canExportMissingParts);
 
     m_loadSetFromRebrickableButton->setEnabled(canLoadSet);
 }
@@ -1539,4 +1550,128 @@ void BuildsWidget::selectBuild(int buildId)
 
         return;
     }
+}
+
+void BuildsWidget::exportMissingParts()
+{
+    if (m_selectedBuildId <= 0) {
+        QMessageBox::warning(this, "Export Missing Parts", "Select a Build first.");
+
+        return;
+    }
+
+    BuildRepository buildRepository;
+
+    const std::optional<Build> build = buildRepository.getById(m_selectedBuildId);
+
+    if (!build) {
+        QMessageBox::critical(this, "Export Missing Parts", "Unable to load the selected Build.");
+
+        return;
+    }
+
+    if (build->inventoryMode() != "Stock") {
+        QMessageBox::information(this,
+                                 "Export Missing Parts",
+                                 "Missing Parts Lists are available only "
+                                 "for Build from Stock.");
+
+        return;
+    }
+
+    MissingPartsService service;
+
+    const QList<MissingPartsService::MissingPart> missingParts
+        = service.getMissingParts(m_workspaceContext.currentWorkspaceId(), m_selectedBuildId);
+
+    if (missingParts.isEmpty()) {
+        QMessageBox::information(this,
+                                 "Export Missing Parts",
+                                 "This Build currently has no missing "
+                                 "non-spare parts.");
+
+        return;
+    }
+
+    QString defaultName;
+
+    if (!build->setNumber().trimmed().isEmpty()) {
+        defaultName = QString("BrickSuite_Missing_%1.csv").arg(build->setNumber().trimmed());
+    } else {
+        QString safeName = build->name().trimmed();
+
+        safeName.replace(QRegularExpression(R"([^A-Za-z0-9_-]+)"), "_");
+
+        defaultName = QString("BrickSuite_Missing_%1.csv").arg(safeName);
+    }
+
+    const QString fileName = QFileDialog::getSaveFileName(this,
+                                                          "Export Missing Parts CSV",
+                                                          defaultName,
+                                                          "CSV Files (*.csv)");
+
+    if (fileName.isEmpty())
+        return;
+
+    QFile file(fileName);
+
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this,
+                              "Export Missing Parts",
+                              QString("Unable to create:\n\n%1").arg(fileName));
+
+        return;
+    }
+
+    QTextStream stream(&file);
+
+    //
+    // UTF-8 BOM helps Excel recognize UTF-8
+    // correctly on Windows.
+    //
+    stream << QChar(0xFEFF);
+
+    auto csvValue = [](QString value) {
+        value.replace("\"", "\"\"");
+
+        return QString("\"%1\"").arg(value);
+    };
+
+    //
+    // Provider-neutral v1 acquisition list.
+    //
+    stream << "Build,"
+           << "Set Number,"
+           << "Part Number,"
+           << "Part Name,"
+           << "Color,"
+           << "Required,"
+           << "Pulled,"
+           << "Remaining,"
+           << "Available,"
+           << "Missing"
+           << "\n";
+
+    int totalPiecesMissing = 0;
+
+    for (const MissingPartsService::MissingPart& item : missingParts) {
+        stream << csvValue(build->name()) << "," << csvValue(build->setNumber()) << ","
+               << csvValue(item.partNumber) << "," << csvValue(item.partName) << ","
+               << csvValue(item.colorName) << "," << item.required << "," << item.pulled << ","
+               << item.remaining << "," << item.available << "," << item.missing << "\n";
+
+        totalPiecesMissing += item.missing;
+    }
+
+    file.close();
+
+    QMessageBox::information(this,
+                             "Export Missing Parts",
+                             QString("Missing Parts List exported successfully.\n\n"
+                                     "Part/Color Rows: %1\n"
+                                     "Pieces Missing: %2\n"
+                                     "File:\n%3")
+                                 .arg(missingParts.size())
+                                 .arg(totalPiecesMissing)
+                                 .arg(fileName));
 }

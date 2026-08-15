@@ -151,6 +151,7 @@ qt_add_executable(BrickSuite
     src/import/RebrickablePartCatalogImporter.cpp
     src/ui/builds/DisassembleSetDialog.h
     src/ui/builds/DisassembleSetDialog.cpp
+    src/services/builds/MissingPartsService.cpp src/services/builds/MissingPartsService.h
 
 )
 target_link_libraries(BrickSuite PRIVATE
