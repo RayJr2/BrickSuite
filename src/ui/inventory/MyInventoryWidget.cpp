@@ -328,37 +328,7 @@ MyInventoryWidget::MyInventoryWidget(
     connect(m_partImageService,
             &PartImageService::partColorImageReady,
             this,
-            [this](const QString& partNumber, int rebrickableColorId, const QString& imagePath) {
-                const QString key = partColorKey(partNumber, rebrickableColorId);
-
-                if (!m_rowsByPartColor.contains(key)) {
-                    return;
-                }
-
-                QPixmap pixmap(imagePath);
-
-                if (pixmap.isNull())
-                    return;
-
-                const QPixmap thumbnail = pixmap.scaled(44,
-                                                        44,
-                                                        Qt::KeepAspectRatio,
-                                                        Qt::SmoothTransformation);
-
-                const QList<int> rows = m_rowsByPartColor.value(key);
-
-                for (const int row : rows) {
-                    QTableWidgetItem* item = m_resultsTable->item(row, 0);
-
-                    if (!item) {
-                        item = new QTableWidgetItem();
-
-                        m_resultsTable->setItem(row, 0, item);
-                    }
-
-                    item->setIcon(QIcon(thumbnail));
-                }
-            });
+            &MyInventoryWidget::updatePartColorImage);
 
     connect(m_rebrickableApiClient,
             &RebrickableApiClient::partDetailsFinished,
@@ -795,4 +765,47 @@ QString MyInventoryWidget::storagePathForId(int storageLocationId) const
 QString MyInventoryWidget::partColorKey(const QString& partNumber, int rebrickableColorId) const
 {
     return QString("%1|%2").arg(partNumber.trimmed()).arg(rebrickableColorId);
+}
+
+void MyInventoryWidget::updatePartColorImage(const QString& partNumber,
+                                             int rebrickableColorId,
+                                             const QString& imagePath)
+{
+    const QString key = partColorKey(partNumber, rebrickableColorId);
+
+    //
+    // The newly cached Part/Color is not on the
+    // currently displayed inventory page.
+    //
+    if (!m_rowsByPartColor.contains(key))
+        return;
+
+    QPixmap pixmap(imagePath);
+
+    if (pixmap.isNull())
+        return;
+
+    const QPixmap thumbnail = pixmap.scaled(44, 44, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+    const QList<int> rows = m_rowsByPartColor.value(key);
+
+    for (const int row : rows) {
+        //
+        // Protect against the table changing between
+        // the background download and this update.
+        //
+        if (row < 0 || row >= m_resultsTable->rowCount()) {
+            continue;
+        }
+
+        QTableWidgetItem* item = m_resultsTable->item(row, 0);
+
+        if (!item) {
+            item = new QTableWidgetItem();
+
+            m_resultsTable->setItem(row, 0, item);
+        }
+
+        item->setIcon(QIcon(thumbnail));
+    }
 }

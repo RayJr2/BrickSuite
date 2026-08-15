@@ -212,6 +212,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     m_backgroundPartColorImageCacheService
         = new BackgroundPartColorImageCacheService(m_workspaceContext, this);
 
+    connect(m_backgroundPartColorImageCacheService,
+            &BackgroundPartColorImageCacheService::partColorImageCached,
+            m_myInventoryWidget,
+            &MyInventoryWidget::updatePartColorImage);
+
     m_backgroundPartColorImageCacheService->start();
 
     /***** Menu bar *****/

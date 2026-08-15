@@ -26,6 +26,10 @@ public:
     void refresh();
     void settingsChanged();
 
+    void updatePartColorImage(const QString& partNumber,
+                              int rebrickableColorId,
+                              const QString& imagePath);
+
 private slots:
     void workspaceChanged(int workspaceId);
     void searchInventory();
