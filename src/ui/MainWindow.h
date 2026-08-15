@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+class QCloseEvent;
 
 class WorkspaceContext;
 class QListWidget;
@@ -23,6 +24,9 @@ class MainWindow : public QMainWindow
 
 public:
     explicit MainWindow(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
 
 private slots:
     void addWorkspace();

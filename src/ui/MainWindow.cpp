@@ -29,10 +29,12 @@
 #include "storage/StorageWidget.h"
 
 #include <QAction>
+#include <QCloseEvent>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
 #include <QFileDialog>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -41,6 +43,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScreen>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -48,6 +51,28 @@
 #include <QVBoxLayout>
 #include <QWidget>
 #include <optional>
+
+namespace {
+
+bool windowIsVisibleOnAnyScreen(const QRect& windowGeometry)
+{
+    const QList<QScreen*> screens = QGuiApplication::screens();
+
+    for (QScreen* screen : screens) {
+        if (!screen)
+            continue;
+
+        const QRect available = screen->availableGeometry();
+
+        if (available.intersects(windowGeometry)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+} // namespace
 
 MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     : QMainWindow(parent)
@@ -919,7 +944,59 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
         apiClient->getPartColorDetails(partNumber, rebrickableColorId, apiKey);
     });
 
+    //
+    // Restore the Main Window geometry and state from
+    // the previous BrickSuite session.
+    //
+    // The existing 1200 x 800 size remains the
+    // first-run fallback.
+    //
+    const QByteArray savedGeometry = UserSettings::instance().mainWindowGeometry();
+
+    if (!savedGeometry.isEmpty()) {
+        restoreGeometry(savedGeometry);
+    }
+
+    const QByteArray savedState = UserSettings::instance().mainWindowState();
+
+    if (!savedState.isEmpty()) {
+        restoreState(savedState);
+    }
+
+    //
+    // A previously used monitor may no longer exist.
+    //
+    // Example:
+    //   BrickSuite was closed on an external monitor,
+    //   then reopened with only the laptop display.
+    //
+    // If the restored window does not intersect any
+    // currently available screen, move it to the
+    // primary screen.
+    //
+    if (!windowIsVisibleOnAnyScreen(frameGeometry())) {
+        QScreen* primaryScreen = QGuiApplication::primaryScreen();
+
+        if (primaryScreen) {
+            const QRect available = primaryScreen->availableGeometry();
+
+            resize(qMin(width(), available.width()), qMin(height(), available.height()));
+
+            move(available.x() + (available.width() - width()) / 2,
+                 available.y() + (available.height() - height()) / 2);
+        }
+    }
+
     statusBar()->showMessage("BrickSuite Version 1.0");
+}
+
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    UserSettings::instance().setMainWindowGeometry(saveGeometry());
+
+    UserSettings::instance().setMainWindowState(saveState());
+
+    QMainWindow::closeEvent(event);
 }
 
 void MainWindow::loadWorkspaces()

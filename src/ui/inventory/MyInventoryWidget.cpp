@@ -3,6 +3,8 @@
 #include "EditInventoryDialog.h"
 #include "ImportInventoryDialog.h"
 #include "InventoryHistoryDialog.h"
+#include "LostInventoryDialog.h"
+#include "MarkLostInventoryDialog.h"
 #include "MoveInventoryDialog.h"
 
 #include "../parts/PartDetailsDialog.h"
@@ -54,6 +56,7 @@ MyInventoryWidget::MyInventoryWidget(
     auto* titleLabel = new QLabel("My Loose Inventory", this);
 
     m_addPartButton = new QPushButton("Add Part...", this);
+    m_lostInventoryButton = new QPushButton("Lost Inventory...", this);
 
     m_importButton = new QPushButton("Import CSV", this);
 
@@ -64,6 +67,8 @@ MyInventoryWidget::MyInventoryWidget(
     titleLayout->addStretch();
 
     titleLayout->addWidget(m_addPartButton);
+
+    titleLayout->addWidget(m_lostInventoryButton);
 
     titleLayout->addWidget(m_importButton);
 
@@ -234,6 +239,11 @@ MyInventoryWidget::MyInventoryWidget(
 
     connect(m_addPartButton, &QPushButton::clicked, this, &MyInventoryWidget::addPart);
 
+    connect(m_lostInventoryButton,
+            &QPushButton::clicked,
+            this,
+            &MyInventoryWidget::showLostInventory);
+
     connect(m_importButton, &QPushButton::clicked, this, &MyInventoryWidget::importCsv);
 
     connect(m_searchButton, &QPushButton::clicked, this, [this]() {
@@ -385,6 +395,7 @@ void MyInventoryWidget::workspaceChanged(int workspaceId)
     searchInventory();
 
     m_addPartButton->setEnabled(m_workspaceContext.hasCurrentWorkspace());
+    m_lostInventoryButton->setEnabled(m_workspaceContext.hasCurrentWorkspace());
     m_importButton->setEnabled(m_workspaceContext.hasCurrentWorkspace());
 }
 
@@ -592,6 +603,7 @@ void MyInventoryWidget::searchInventory()
         actionCombo->addItem("Details", "details");
         actionCombo->addItem("Edit", "edit");
         actionCombo->addItem("Move", "move");
+        actionCombo->addItem("Mark Lost...", "lost");
         actionCombo->addItem("View History", "history");
 
         // Future actions can be added here:
@@ -630,6 +642,18 @@ void MyInventoryWidget::searchInventory()
 
                         if (dialog.exec() == QDialog::Accepted) {
                             refresh();
+                        }
+                    } else if (action == "lost") {
+                        MarkLostInventoryDialog dialog(inventoryRecordId, this);
+
+                        if (dialog.exec() == QDialog::Accepted) {
+                            //
+                            // Keep the current filters/page and simply
+                            // reload the current inventory view.
+                            //
+                            searchInventory();
+
+                            return;
                         }
                     } else if (action == "history") {
                         InventoryHistoryDialog dialog(partId, colorId, m_workspaceContext, this);
@@ -857,4 +881,21 @@ void MyInventoryWidget::addPart()
     if (dialog.inventoryWasAdded()) {
         searchInventory();
     }
+}
+
+void MyInventoryWidget::showLostInventory()
+{
+    if (!m_workspaceContext.hasCurrentWorkspace()) {
+        return;
+    }
+
+    LostInventoryDialog dialog(m_workspaceContext, this);
+
+    dialog.exec();
+
+    //
+    // Found operations may have returned pieces
+    // to loose inventory.
+    //
+    searchInventory();
 }

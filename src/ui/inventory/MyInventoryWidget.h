@@ -43,6 +43,7 @@ private:
     void loadStorageLocations();
     void updatePagingControls();
     void addPart();
+    void showLostInventory();
 
     QString storagePathForId(int storageLocationId) const;
 
@@ -81,4 +82,7 @@ private:
 
     QString partColorKey(const QString& partNumber, int rebrickableColorId) const;
     QHash<QString, QList<int>> m_rowsByPartColor;
+    QSet<int> m_rowsWithColorImage;
+
+    QPushButton* m_lostInventoryButton = nullptr;
 };

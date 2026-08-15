@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QString>
 
 class UserSettings
@@ -17,6 +18,12 @@ public:
 
     int defaultWorkspaceId() const;
     void setDefaultWorkspaceId(int workspaceId);
+
+    QByteArray mainWindowGeometry() const;
+    void setMainWindowGeometry(const QByteArray& geometry);
+
+    QByteArray mainWindowState() const;
+    void setMainWindowState(const QByteArray& state);
 
     static QString themeToString(Theme theme);
     static Theme themeFromString(const QString& value);

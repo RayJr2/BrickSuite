@@ -18,6 +18,12 @@ constexpr auto kDefaultWorkspaceIdKey = "DefaultWorkspaceId";
 constexpr auto kRebrickableApiKey = "ApiKey";
 
 constexpr auto kRebrickableMinimumRequestIntervalMsKey = "MinimumRequestIntervalMs";
+
+constexpr auto kGroupMainWindow = "MainWindow";
+
+constexpr auto kMainWindowGeometryKey = "Geometry";
+constexpr auto kMainWindowStateKey = "State";
+
 } // namespace
 
 UserSettings& UserSettings::instance()
@@ -210,4 +216,52 @@ UserSettings::Theme UserSettings::themeFromString(const QString& value)
     }
 
     return Theme::System;
+}
+
+QByteArray UserSettings::mainWindowGeometry() const
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupMainWindow);
+
+    const QByteArray geometry = settings.value(kMainWindowGeometryKey).toByteArray();
+
+    settings.endGroup();
+
+    return geometry;
+}
+
+void UserSettings::setMainWindowGeometry(const QByteArray& geometry)
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupMainWindow);
+
+    settings.setValue(kMainWindowGeometryKey, geometry);
+
+    settings.endGroup();
+}
+
+QByteArray UserSettings::mainWindowState() const
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupMainWindow);
+
+    const QByteArray state = settings.value(kMainWindowStateKey).toByteArray();
+
+    settings.endGroup();
+
+    return state;
+}
+
+void UserSettings::setMainWindowState(const QByteArray& state)
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupMainWindow);
+
+    settings.setValue(kMainWindowStateKey, state);
+
+    settings.endGroup();
 }

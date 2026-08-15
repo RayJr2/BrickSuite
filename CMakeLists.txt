@@ -156,6 +156,15 @@ qt_add_executable(BrickSuite
     src/import/RebrickableMocCsvImporter.cpp
     src/services/images/BackgroundPartColorImageCacheService.h
     src/services/images/BackgroundPartColorImageCacheService.cpp
+    src/ui/inventory/MarkLostInventoryDialog.h
+    src/ui/inventory/MarkLostInventoryDialog.cpp
+    src/models/LostInventoryItem.h
+    src/repositories/LostInventoryRepository.h
+    src/repositories/LostInventoryRepository.cpp
+    src/ui/inventory/FoundInventoryDialog.h
+    src/ui/inventory/FoundInventoryDialog.cpp
+    src/ui/inventory/LostInventoryDialog.h
+    src/ui/inventory/LostInventoryDialog.cpp
 
 )
 target_link_libraries(BrickSuite PRIVATE

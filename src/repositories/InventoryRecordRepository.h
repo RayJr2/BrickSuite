@@ -41,6 +41,17 @@ public:
 
     QList<InventoryRecord> getByPartColor(int workspaceId, int partId, int colorId) const;
 
+    bool markLost(int inventoryRecordId, int quantityLost, const QString& notes = QString());
+
+    bool markFound(int workspaceId,
+                   int partId,
+                   int colorId,
+                   int quantityFound,
+                   int destinationStorageLocationId,
+                   const QString& condition,
+                   const QString& ownershipType,
+                   const QString& notes = QString());
+
 private:
     InventoryRecord inventoryRecordFromQuery(const QSqlQuery& query) const;
 };

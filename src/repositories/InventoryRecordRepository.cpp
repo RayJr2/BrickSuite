@@ -1429,3 +1429,266 @@ QList<InventoryRecord> InventoryRecordRepository::getByPartColor(int workspaceId
 
     return records;
 }
+
+bool InventoryRecordRepository::markLost(int inventoryRecordId,
+                                         int quantityLost,
+                                         const QString& notes)
+{
+    if (inventoryRecordId <= 0 || quantityLost <= 0) {
+        return false;
+    }
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin Lost inventory transaction:" << database.lastError().text();
+
+        return false;
+    }
+
+    //
+    // Reload the current inventory record inside
+    // the transaction so quantity is revalidated
+    // against current database state.
+    //
+    QSqlQuery query(database);
+
+    query.prepare(R"(
+        SELECT
+            id,
+            workspace_id,
+            part_id,
+            color_id,
+            storage_location_id,
+            condition,
+            ownership_type,
+            quantity
+        FROM inventory_record
+        WHERE id = :id
+    )");
+
+    query.bindValue(":id", inventoryRecordId);
+
+    if (!query.exec() || !query.next()) {
+        qCritical() << "Unable to load inventory record "
+                       "for Lost operation:"
+                    << query.lastError().text();
+
+        database.rollback();
+
+        return false;
+    }
+
+    const int workspaceId = query.value("workspace_id").toInt();
+
+    const int partId = query.value("part_id").toInt();
+
+    const int colorId = query.value("color_id").toInt();
+
+    const int storageLocationId = query.value("storage_location_id").toInt();
+
+    const QString condition = query.value("condition").toString();
+
+    const QString ownershipType = query.value("ownership_type").toString();
+
+    const int currentQuantity = query.value("quantity").toInt();
+
+    if (currentQuantity <= 0 || quantityLost > currentQuantity) {
+        database.rollback();
+
+        return false;
+    }
+
+    const int newQuantity = currentQuantity - quantityLost;
+
+    const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+
+    QSqlQuery updateQuery(database);
+
+    updateQuery.prepare(R"(
+        UPDATE inventory_record
+        SET
+            quantity = :quantity,
+            modified_utc = :modified_utc
+        WHERE id = :id
+    )");
+
+    updateQuery.bindValue(":quantity", newQuantity);
+
+    updateQuery.bindValue(":modified_utc", now);
+
+    updateQuery.bindValue(":id", inventoryRecordId);
+
+    if (!updateQuery.exec() || updateQuery.numRowsAffected() <= 0) {
+        qCritical() << "Unable to reduce inventory "
+                       "for Lost operation:"
+                    << updateQuery.lastError().text();
+
+        database.rollback();
+
+        return false;
+    }
+
+    InventoryMovement movement;
+
+    movement.setWorkspaceId(workspaceId);
+
+    movement.setInventoryRecordId(inventoryRecordId);
+
+    movement.setPartId(partId);
+
+    movement.setColorId(colorId);
+
+    movement.setMovementType("Lost");
+
+    //
+    // Lost inventory leaves physical loose stock.
+    //
+    movement.setQuantityChange(-quantityLost);
+
+    movement.setFromStorageLocationId(storageLocationId);
+
+    movement.setCondition(condition);
+
+    movement.setOwnershipType(ownershipType);
+
+    movement.setNotes(notes.trimmed());
+
+    InventoryMovementRepository movementRepository;
+
+    if (!movementRepository.create(movement)) {
+        qCritical() << "Unable to create Lost inventory movement.";
+
+        database.rollback();
+
+        return false;
+    }
+
+    if (!database.commit()) {
+        qCritical() << "Unable to commit Lost inventory transaction:"
+                    << database.lastError().text();
+
+        database.rollback();
+
+        return false;
+    }
+
+    return true;
+}
+
+bool InventoryRecordRepository::markFound(int workspaceId,
+                                          int partId,
+                                          int colorId,
+                                          int quantityFound,
+                                          int destinationStorageLocationId,
+                                          const QString& condition,
+                                          const QString& ownershipType,
+                                          const QString& notes)
+{
+    if (workspaceId <= 0 || partId <= 0 || colorId <= 0 || quantityFound <= 0
+        || destinationStorageLocationId <= 0) {
+        return false;
+    }
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin Found inventory transaction:"
+                    << database.lastError().text();
+
+        return false;
+    }
+
+    //
+    // Recalculate outstanding lost quantity inside
+    // the transaction so Found can never exceed Lost.
+    //
+    QSqlQuery lostQuery(database);
+
+    lostQuery.prepare(R"(
+        SELECT
+            COALESCE(
+                SUM(
+                    CASE
+                        WHEN movement_type = 'Lost'
+                            THEN -quantity_change
+
+                        WHEN movement_type = 'Found'
+                            THEN -quantity_change
+
+                        ELSE 0
+                    END
+                ),
+                0
+            )
+        FROM inventory_movement
+        WHERE workspace_id = :workspace_id
+          AND part_id = :part_id
+          AND color_id = :color_id
+          AND movement_type IN ('Lost', 'Found')
+    )");
+
+    lostQuery.bindValue(":workspace_id", workspaceId);
+
+    lostQuery.bindValue(":part_id", partId);
+
+    lostQuery.bindValue(":color_id", colorId);
+
+    if (!lostQuery.exec() || !lostQuery.next()) {
+        qCritical() << "Unable to validate outstanding "
+                       "lost quantity:"
+                    << lostQuery.lastError().text();
+
+        database.rollback();
+
+        return false;
+    }
+
+    const int outstandingLost = lostQuery.value(0).toInt();
+
+    if (outstandingLost <= 0 || quantityFound > outstandingLost) {
+        database.rollback();
+
+        return false;
+    }
+
+    InventoryRecord record;
+
+    record.setWorkspaceId(workspaceId);
+
+    record.setPartId(partId);
+
+    record.setColorId(colorId);
+
+    record.setStorageLocationId(destinationStorageLocationId);
+
+    record.setCondition(condition.trimmed());
+
+    record.setOwnershipType(ownershipType.trimmed());
+
+    record.setQuantity(quantityFound);
+
+    //
+    // Reuse BrickSuite's normal merge behavior.
+    //
+    // This also creates the Found movement with:
+    //   Quantity Change = +quantityFound
+    //   To Location     = destination
+    //
+    if (!addOrIncreaseQuantity(record, "Found", QString(), QString(), notes.trimmed(), false)) {
+        database.rollback();
+
+        return false;
+    }
+
+    if (!database.commit()) {
+        qCritical() << "Unable to commit Found inventory transaction:"
+                    << database.lastError().text();
+
+        database.rollback();
+
+        return false;
+    }
+
+    return true;
+}
