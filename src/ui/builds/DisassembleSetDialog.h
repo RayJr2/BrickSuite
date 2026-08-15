@@ -23,7 +23,7 @@ private:
         int partId = 0;
         int colorId = 0;
 
-        int setQuantity = 0;
+        int sourceQuantity = 0;
         bool isSpare = false;
 
         QSpinBox* quantitySpin = nullptr;
@@ -47,6 +47,9 @@ private:
 
     QString m_buildName;
     QString m_setNumber;
+
+    QString m_inventoryMode;
+    QString m_disassemblyLabel;
 
     QLabel* m_buildLabel = nullptr;
     QLabel* m_summaryLabel = nullptr;

@@ -155,22 +155,23 @@ bool DisassembleSetDialog::loadBuild()
     const std::optional<Build> build = repository.getById(m_buildId);
 
     if (!build) {
-        QMessageBox::critical(this, "Disassemble Set", "Unable to load the selected Build.");
+        QMessageBox::critical(this, "Disassemble Build", "Unable to load the selected Build.");
 
         return false;
     }
 
-    if (build->buildType() != "Set" || build->inventoryMode() != "CompleteSet") {
+    if (build->status() != "Complete") {
         QMessageBox::warning(this,
-                             "Disassemble Set",
-                             "Only Complete Set builds can be "
-                             "disassembled into loose inventory.");
+                             "Disassemble Build",
+                             "Only completed Builds can be disassembled.");
 
         return false;
     }
 
-    if (build->status() == "Disassembled") {
-        QMessageBox::information(this, "Disassemble Set", "This Set has already been disassembled.");
+    if (build->inventoryMode() != "CompleteSet" && build->inventoryMode() != "Stock") {
+        QMessageBox::warning(this,
+                             "Disassemble Build",
+                             "This Build has an unsupported Inventory Mode.");
 
         return false;
     }
@@ -181,7 +182,32 @@ bool DisassembleSetDialog::loadBuild()
 
     m_setNumber = build->setNumber();
 
-    m_buildLabel->setText(QString("%1 — %2").arg(m_setNumber, m_buildName));
+    m_inventoryMode = build->inventoryMode();
+
+    if (m_inventoryMode == "CompleteSet") {
+        m_disassemblyLabel = "Complete Set";
+
+        setWindowTitle("Disassemble Complete Set");
+
+        m_disassembleButton->setText("Disassemble Set");
+    } else {
+        m_disassemblyLabel = build->buildType() == "MOC" ? "MOC Build" : "Build from Stock";
+
+        setWindowTitle(build->buildType() == "MOC" ? "Disassemble MOC" : "Disassemble Build");
+
+        m_disassembleButton->setText(build->buildType() == "MOC" ? "Disassemble MOC"
+                                                                 : "Disassemble Build");
+    }
+
+    QString buildText;
+
+    if (!m_setNumber.trimmed().isEmpty()) {
+        buildText = QString("%1 — %2").arg(m_setNumber, m_buildName);
+    } else {
+        buildText = m_buildName;
+    }
+
+    m_buildLabel->setText(buildText);
 
     return true;
 }
@@ -272,16 +298,30 @@ bool DisassembleSetDialog::loadRequirements()
     const QList<BuildRequirement> requirements = requirementRepository.getByBuild(m_buildId);
 
     if (requirements.isEmpty()) {
-        QMessageBox::warning(this,
-                             "Disassemble Set",
-                             "This Complete Set does not have a parts list.\n\n"
-                             "Use Load Set from Rebrickable first, then "
-                             "disassemble the Set.");
+        QMessageBox::warning(this, "Disassemble Build", "This Build does not have a parts list.");
 
         return false;
     }
 
+    //
+    // Column 3 represents the source quantity being
+    // returned to loose inventory.
+    //
+    // Complete Set:
+    //     use the published Set requirement quantity.
+    //
+    // Build from Stock / MOC:
+    //     use only the quantity actually pulled into
+    //     the Build.
+    //
+    if (m_inventoryMode == "CompleteSet") {
+        m_table->setHorizontalHeaderItem(3, new QTableWidgetItem("Set Qty"));
+    } else {
+        m_table->setHorizontalHeaderItem(3, new QTableWidgetItem("Pulled Qty"));
+    }
+
     PartRepository partRepository;
+
     ColorRepository colorRepository;
 
     m_table->setRowCount(0);
@@ -291,6 +331,22 @@ bool DisassembleSetDialog::loadRequirements()
     int tableRow = 0;
 
     for (const BuildRequirement& requirement : requirements) {
+        //
+        // Determine how many pieces physically belong
+        // to the source being disassembled.
+        //
+        const int sourceQuantity = m_inventoryMode == "CompleteSet" ? requirement.quantityRequired()
+                                                                    : requirement.quantityPulled();
+
+        //
+        // A Build-from-Stock row that was never pulled
+        // does not physically exist in the completed
+        // Build, so there is nothing to return.
+        //
+        if (m_inventoryMode == "Stock" && sourceQuantity <= 0) {
+            continue;
+        }
+
         const std::optional<Part> part = partRepository.getById(requirement.partId());
 
         const std::optional<Color> color = colorRepository.getById(requirement.colorId());
@@ -305,20 +361,20 @@ bool DisassembleSetDialog::loadRequirements()
         auto* colorItem = new QTableWidgetItem(color ? color->name()
                                                      : QString::number(requirement.colorId()));
 
-        auto* setQuantityItem = new QTableWidgetItem(
-            QString::number(requirement.quantityRequired()));
+        auto* sourceQuantityItem = new QTableWidgetItem(QString::number(sourceQuantity));
 
         auto* spareItem = new QTableWidgetItem(requirement.isSpare() ? "Yes" : "No");
 
         auto* quantitySpin = new QSpinBox(m_table);
 
-        quantitySpin->setRange(0, requirement.quantityRequired());
+        quantitySpin->setRange(0, sourceQuantity);
 
         //
-        // Default assumption: the physical Set
-        // contains the published quantity.
+        // Default assumption:
+        // everything physically present in the
+        // Build/Set is returned to loose inventory.
         //
-        quantitySpin->setValue(requirement.quantityRequired());
+        quantitySpin->setValue(sourceQuantity);
 
         quantitySpin->setAlignment(Qt::AlignCenter);
 
@@ -326,7 +382,7 @@ bool DisassembleSetDialog::loadRequirements()
 
         populateLocationCombo(destinationCombo);
 
-        setQuantityItem->setTextAlignment(Qt::AlignCenter);
+        sourceQuantityItem->setTextAlignment(Qt::AlignCenter);
 
         spareItem->setTextAlignment(Qt::AlignCenter);
 
@@ -336,7 +392,7 @@ bool DisassembleSetDialog::loadRequirements()
 
         m_table->setItem(tableRow, 2, colorItem);
 
-        m_table->setItem(tableRow, 3, setQuantityItem);
+        m_table->setItem(tableRow, 3, sourceQuantityItem);
 
         m_table->setItem(tableRow, 4, spareItem);
 
@@ -352,7 +408,7 @@ bool DisassembleSetDialog::loadRequirements()
 
         row.colorId = requirement.colorId();
 
-        row.setQuantity = requirement.quantityRequired();
+        row.sourceQuantity = sourceQuantity;
 
         row.isSpare = requirement.isSpare();
 
@@ -369,6 +425,23 @@ bool DisassembleSetDialog::loadRequirements()
         });
 
         ++tableRow;
+    }
+
+    //
+    // A completed Build-from-Stock should normally
+    // contain pulled pieces. If it does not, there
+    // is nothing for this dialog to return.
+    //
+    if (m_rows.isEmpty()) {
+        QMessageBox::information(this,
+                                 "Disassemble Build",
+                                 m_inventoryMode == "CompleteSet"
+                                     ? "This Complete Set does not contain "
+                                       "any requirements to disassemble."
+                                     : "This completed Build does not contain "
+                                       "any pulled pieces to return to loose inventory.");
+
+        return false;
     }
 
     return true;
@@ -483,22 +556,31 @@ void DisassembleSetDialog::disassembleSet()
         ++rowsReturned;
     }
 
+    const QString operationName = m_inventoryMode == "CompleteSet"
+                                      ? "Complete Set"
+                                      : (m_inventoryMode == "Stock"
+                                                 && !m_setNumber.trimmed().isEmpty()
+                                             ? "Build"
+                                             : "Build");
+
     const QMessageBox::StandardButton response
         = QMessageBox::question(this,
-                                "Disassemble Complete Set",
-                                QString("Disassemble this Complete Set?\n\n"
-                                        "%1\n"
-                                        "Set: %2\n\n"
-                                        "Part/Color rows returned: %3\n"
-                                        "Loose pieces added: %4\n\n"
+                                "Disassemble Build",
+                                QString("Disassemble this %1?\n\n"
+                                        "%2%3\n\n"
+                                        "Part/Color rows returned: %4\n"
+                                        "Loose pieces added: %5\n\n"
                                         "The selected quantities will be added "
                                         "to My Loose Inventory at their chosen "
                                         "storage locations.\n\n"
                                         "Inventory movement history will be "
                                         "recorded and the Build Status will "
                                         "be changed to Disassembled.")
+                                    .arg(operationName)
                                     .arg(m_buildName)
-                                    .arg(m_setNumber)
+                                    .arg(m_setNumber.trimmed().isEmpty()
+                                             ? QString()
+                                             : QString("\nReference: %1").arg(m_setNumber))
                                     .arg(rowsReturned)
                                     .arg(totalReturned),
                                 QMessageBox::Yes | QMessageBox::No,
@@ -519,6 +601,7 @@ void DisassembleSetDialog::disassembleSet()
     }
 
     InventoryRecordRepository inventoryRepository;
+    BuildRequirementRepository requirementRepository;
 
     for (const RowData& row : m_rows) {
         const int quantity = row.quantitySpin->value();
@@ -572,11 +655,20 @@ void DisassembleSetDialog::disassembleSet()
 
         const QString requirementType = row.isSpare ? "spare" : "regular";
 
-        const QString notes = QString("Disassembled from %1 (%2), "
-                                      "%3 Set requirement.")
-                                  .arg(m_buildName)
-                                  .arg(m_setNumber)
-                                  .arg(requirementType);
+        QString notes;
+
+        if (m_inventoryMode == "CompleteSet") {
+            notes = QString("Disassembled from %1 (%2), "
+                            "%3 Complete Set requirement.")
+                        .arg(m_buildName)
+                        .arg(m_setNumber)
+                        .arg(requirementType);
+        } else {
+            notes = QString("Returned from completed Build %1%2.")
+                        .arg(m_buildName)
+                        .arg(m_setNumber.trimmed().isEmpty() ? QString()
+                                                             : QString(" (%1)").arg(m_setNumber));
+        }
 
         //
         // manageTransaction=false because this entire
@@ -585,8 +677,11 @@ void DisassembleSetDialog::disassembleSet()
         // addOrIncreaseQuantity() will still create
         // the InventoryMovement record.
         //
+        const QString movementType = m_inventoryMode == "CompleteSet" ? "SetDisassembly"
+                                                                      : "BuildDisassembly";
+
         if (!inventoryRepository.addOrIncreaseQuantity(record,
-                                                       "SetDisassembly",
+                                                       movementType,
                                                        "Build",
                                                        QString::number(m_buildId),
                                                        notes,
@@ -600,6 +695,51 @@ void DisassembleSetDialog::disassembleSet()
                                   "No changes were saved.");
 
             return;
+        }
+
+        if (m_inventoryMode == "Stock") {
+            const std::optional<BuildRequirement> requirement = requirementRepository.getById(
+                row.requirementId);
+
+            if (!requirement) {
+                database.rollback();
+
+                QMessageBox::critical(this,
+                                      "Disassemble Build",
+                                      "Unable to reload the Build Requirement.\n\n"
+                                      "No changes were saved.");
+
+                return;
+            }
+
+            //
+            // Reduce Pulled by the quantity actually returned
+            // to loose inventory.
+            //
+            // Normally a complete disassembly will return the
+            // entire Pulled quantity, resulting in Pulled = 0.
+            //
+            // If the user returns fewer pieces, the difference
+            // remains associated with the Build.
+            //
+            const int remainingPulled = qMax(requirement->quantityPulled()
+                                                 - row.quantitySpin->value(),
+                                             0);
+
+            BuildRequirement updatedRequirement = *requirement;
+
+            updatedRequirement.setQuantityPulled(remainingPulled);
+
+            if (!requirementRepository.update(updatedRequirement)) {
+                database.rollback();
+
+                QMessageBox::critical(this,
+                                      "Disassemble Build",
+                                      "Unable to update the pulled quantity.\n\n"
+                                      "No changes were saved.");
+
+                return;
+            }
         }
     }
 
@@ -647,10 +787,11 @@ void DisassembleSetDialog::disassembleSet()
     }
 
     QMessageBox::information(this,
-                             "Disassemble Set",
-                             QString("Set disassembled successfully.\n\n"
-                                     "%1 loose pieces were added to "
+                             "Disassemble Build",
+                             QString("%1 disassembled successfully.\n\n"
+                                     "%2 loose pieces were added to "
                                      "My Loose Inventory.")
+                                 .arg(m_disassemblyLabel)
                                  .arg(totalReturned));
 
     accept();

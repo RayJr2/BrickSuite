@@ -14,6 +14,7 @@ class QCheckBox;
 class QSpinBox;
 class QGroupBox;
 class QWidget;
+class QSplitter;
 
 class BuildsWidget : public QWidget
 {
@@ -57,6 +58,7 @@ private:
     QPushButton* m_addButton = nullptr;
 
     QTableWidget* m_buildsTable = nullptr;
+    QSplitter* m_buildsRequirementsSplitter = nullptr;
     QLabel* m_statusLabel = nullptr;
 
     int m_selectedBuildId = 0;

@@ -694,9 +694,9 @@ void RebrickableApiClient::enqueueGet(const QNetworkRequest& request,
             return;
         }
 
-        qInfo() << "Rebrickable API GET dispatched:"
-                << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
-                << request.url().toString();
+        //qInfo() << "Rebrickable API GET dispatched:"
+        //        << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
+        //        << request.url().toString();
 
         QNetworkReply* reply = self->m_networkManager->get(request);
 

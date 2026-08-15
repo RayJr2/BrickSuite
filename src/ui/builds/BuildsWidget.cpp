@@ -37,7 +37,9 @@
 #include <QMessageBox>
 #include <QPalette>
 #include <QPushButton>
+#include <QSettings>
 #include <QSpinBox>
+#include <QSplitter>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTextEdit>
@@ -174,13 +176,10 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_buildsTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
 
+    //
+    // Add the Builds table to its group layout.
+    //
     existingLayout->addWidget(m_buildsTable);
-
-    //
-    // Builds table receives some flexible height,
-    // but less than requirements.
-    //
-    mainLayout->addWidget(existingGroup, 1);
 
     //
     // ------------------------------------------------------------
@@ -291,10 +290,65 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     requirementsLayout->addWidget(m_requirementsTable, 1);
 
     //
-    // Requirements are the primary working area,
-    // so give them most of the available vertical space.
+    // ------------------------------------------------------------
+    // Builds / Requirements vertical splitter
+    // ------------------------------------------------------------
     //
-    mainLayout->addWidget(requirementsGroup, 3);
+    // The user can resize the middle Builds area and lower
+    // Build Requirements area depending on the current task.
+    //
+    m_buildsRequirementsSplitter = new QSplitter(Qt::Vertical, this);
+
+    m_buildsRequirementsSplitter->addWidget(existingGroup);
+
+    m_buildsRequirementsSplitter->addWidget(requirementsGroup);
+
+    //
+    // Both sections remain usable and cannot be collapsed
+    // completely by dragging the splitter.
+    //
+    m_buildsRequirementsSplitter->setCollapsible(0, false);
+
+    m_buildsRequirementsSplitter->setCollapsible(1, false);
+
+    //
+    // Initial preference: Requirements gets more room,
+    // matching the previous 1:3 layout.
+    //
+    m_buildsRequirementsSplitter->setStretchFactor(0, 1);
+
+    m_buildsRequirementsSplitter->setStretchFactor(1, 3);
+
+    //
+    // Give the splitter a sensible default before restoring
+    // the user's previously saved position.
+    //
+    m_buildsRequirementsSplitter->setSizes(QList<int>() << 200 << 600);
+
+    mainLayout->addWidget(m_buildsRequirementsSplitter, 1);
+
+    //
+    // Restore the position from the previous BrickSuite
+    // session when available.
+    //
+    QSettings settings;
+
+    const QByteArray splitterState = settings.value("Builds/buildsRequirementsSplitterState")
+                                         .toByteArray();
+
+    if (!splitterState.isEmpty()) {
+        m_buildsRequirementsSplitter->restoreState(splitterState);
+    }
+
+    //
+    // Remember the position whenever the user moves it.
+    //
+    connect(m_buildsRequirementsSplitter, &QSplitter::splitterMoved, this, [this]() {
+        QSettings settings;
+
+        settings.setValue("Builds/buildsRequirementsSplitterState",
+                          m_buildsRequirementsSplitter->saveState());
+    });
 
     //
     // Bottom status.
@@ -459,6 +513,17 @@ void BuildsWidget::loadBuilds()
 
         actionCombo->addItem("Edit Build...", "edit");
 
+        if (build.inventoryMode() == "Stock" && build.status() != "Complete"
+            && build.status() != "Disassembled") {
+            actionCombo->addItem("Complete Build...", "complete");
+        }
+
+        if (build.inventoryMode() == "Stock" && build.status() == "Complete") {
+            actionCombo->addItem(build.buildType() == "MOC" ? "Disassemble MOC..."
+                                                            : "Disassemble Build...",
+                                 "disassemble");
+        }
+
         if (build.inventoryMode() == "CompleteSet" && build.status() == "Complete") {
             actionCombo->addItem("Disassemble Set...", "disassemble");
         }
@@ -509,6 +574,153 @@ void BuildsWidget::loadBuilds()
                             //
                             selectBuild(buildId);
                         }
+                    } else if (action == "complete") {
+                        BuildRepository buildRepository;
+
+                        std::optional<Build> build = buildRepository.getById(buildId);
+
+                        if (!build) {
+                            QMessageBox::critical(this,
+                                                  "Complete Build",
+                                                  "Unable to load the selected Build.");
+
+                            return;
+                        }
+
+                        BuildRequirementRepository requirementRepository;
+
+                        const QList<BuildRequirement> requirements = requirementRepository
+                                                                         .getByBuild(buildId);
+
+                        if (requirements.isEmpty()) {
+                            QMessageBox::information(this,
+                                                     "Complete Build",
+                                                     "This Build does not have any requirements.");
+
+                            return;
+                        }
+
+                        int regularRows = 0;
+                        int spareRows = 0;
+
+                        int regularRequired = 0;
+                        int regularPulled = 0;
+
+                        int spareRequired = 0;
+                        int sparePulled = 0;
+
+                        int incompleteRows = 0;
+
+                        for (const BuildRequirement& requirement : requirements) {
+                            if (requirement.isSpare()) {
+                                ++spareRows;
+
+                                spareRequired += requirement.quantityRequired();
+
+                                sparePulled += requirement.quantityPulled();
+
+                                continue;
+                            }
+
+                            ++regularRows;
+
+                            regularRequired += requirement.quantityRequired();
+
+                            regularPulled += requirement.quantityPulled();
+
+                            const int remaining = qMax(requirement.quantityRequired()
+                                                           - requirement.quantityPulled(),
+                                                       0);
+
+                            if (remaining > 0) {
+                                ++incompleteRows;
+                            }
+                        }
+
+                        if (regularRows <= 0) {
+                            QMessageBox::information(this,
+                                                     "Complete Build",
+                                                     "This Build does not have any regular "
+                                                     "requirements to complete.");
+
+                            return;
+                        }
+
+                        if (incompleteRows > 0) {
+                            QMessageBox::information(
+                                this,
+                                "Complete Build",
+                                QString("This Build is not ready to be marked Complete.\n\n"
+                                        "Regular Required: %1\n"
+                                        "Regular Pulled: %2\n"
+                                        "Remaining: %3\n"
+                                        "Incomplete Part/Color Rows: %4")
+                                    .arg(regularRequired)
+                                    .arg(regularPulled)
+                                    .arg(qMax(regularRequired - regularPulled, 0))
+                                    .arg(incompleteRows));
+
+                            return;
+                        }
+
+                        const int unpulledSpares = qMax(spareRequired - sparePulled, 0);
+
+                        QString message = QString("Mark this Build Complete?\n\n"
+                                                  "%1")
+                                              .arg(build->name());
+
+                        if (!build->setNumber().trimmed().isEmpty()) {
+                            message += QString("\nSet: %1").arg(build->setNumber());
+                        }
+
+                        message += QString("\n\nRegular Requirements: %1 rows"
+                                           "\nRegular Required: %2"
+                                           "\nRegular Pulled: %3")
+                                       .arg(regularRows)
+                                       .arg(regularRequired)
+                                       .arg(regularPulled);
+
+                        if (spareRows > 0) {
+                            message += QString("\n\nOptional Spare Rows: %1"
+                                               "\nSpare Required: %2"
+                                               "\nSpare Pulled: %3"
+                                               "\nSpare Not Pulled: %4")
+                                           .arg(spareRows)
+                                           .arg(spareRequired)
+                                           .arg(sparePulled)
+                                           .arg(unpulledSpares);
+                        }
+
+                        message += "\n\nAll non-spare requirements are fulfilled.";
+
+                        const QMessageBox::StandardButton response
+                            = QMessageBox::question(this,
+                                                    "Complete Build",
+                                                    message,
+                                                    QMessageBox::Yes | QMessageBox::No,
+                                                    QMessageBox::No);
+
+                        if (response != QMessageBox::Yes)
+                            return;
+
+                        build->setStatus("Complete");
+
+                        if (!buildRepository.update(*build)) {
+                            QMessageBox::critical(this,
+                                                  "Complete Build",
+                                                  "Unable to mark the Build Complete.");
+
+                            return;
+                        }
+
+                        selectBuild(buildId);
+
+                        QMessageBox::information(this,
+                                                 "Complete Build",
+                                                 QString("\"%1\" is now Complete.")
+                                                     .arg(build->name()));
+
+                        return;
                     } else if (action == "disassemble") {
                         DisassembleSetDialog dialog(buildId, this);
 
