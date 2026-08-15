@@ -29,7 +29,9 @@ QString RebrickableApiClient::s_sessionBlockReason =
     QString();
 #endif
 
-QQueue<RebrickableApiClient::QueuedRequest> RebrickableApiClient::s_requestQueue;
+QQueue<RebrickableApiClient::QueuedRequest> RebrickableApiClient::s_foregroundRequestQueue;
+
+QQueue<RebrickableApiClient::QueuedRequest> RebrickableApiClient::s_backgroundRequestQueue;
 
 QElapsedTimer RebrickableApiClient::s_lastRequestTimer;
 
@@ -312,6 +314,147 @@ void RebrickableApiClient::getPartColors(const QString& partNumber, const QStrin
             result.message = sessionBlockReason();
 
             emit partColorsFinished(result);
+        });
+}
+
+void RebrickableApiClient::getPartColorDetails(const QString& partNumber,
+                                               int rebrickableColorId,
+                                               const QString& apiKey,
+                                               RequestPriority priority)
+{
+    const QString trimmedPartNumber = partNumber.trimmed();
+
+    const QString trimmedApiKey = apiKey.trimmed();
+
+    PartColorDetailsResult initialResult;
+
+    initialResult.partColor.partNumber = trimmedPartNumber;
+
+    initialResult.partColor.rebrickableColorId = rebrickableColorId;
+
+    if (isSessionBlocked()) {
+        initialResult.httpStatusCode = 403;
+
+        initialResult.message = sessionBlockReason();
+
+        emit partColorDetailsFinished(initialResult);
+
+        return;
+    }
+
+    if (trimmedPartNumber.isEmpty() || rebrickableColorId < 0 || trimmedApiKey.isEmpty()) {
+        initialResult.message = "Part number, color ID, or Rebrickable "
+                                "API key is missing.";
+
+        emit partColorDetailsFinished(initialResult);
+
+        return;
+    }
+
+    const QUrl url(QString("https://rebrickable.com/api/v3/lego/"
+                           "parts/%1/colors/%2/")
+                       .arg(QString::fromUtf8(QUrl::toPercentEncoding(trimmedPartNumber)))
+                       .arg(rebrickableColorId));
+
+    QNetworkRequest request(url);
+
+    request.setRawHeader("Authorization", QString("key %1").arg(trimmedApiKey).toUtf8());
+
+    request.setHeader(QNetworkRequest::UserAgentHeader, "BrickSuite/1.0");
+
+    enqueueGet(
+        request,
+        [this, trimmedPartNumber, rebrickableColorId](QNetworkReply* reply) {
+            PartColorDetailsResult result;
+
+            result.partColor.partNumber = trimmedPartNumber;
+
+            result.partColor.rebrickableColorId = rebrickableColorId;
+
+            const QVariant statusAttribute = reply->attribute(
+                QNetworkRequest::HttpStatusCodeAttribute);
+
+            if (statusAttribute.isValid()) {
+                result.httpStatusCode = statusAttribute.toInt();
+            }
+
+            const QByteArray responseData = reply->readAll();
+
+            QString circuitBreakerReason;
+
+            if (result.httpStatusCode == 403
+                && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
+                tripSessionCircuitBreaker(circuitBreakerReason);
+
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+
+                emit partColorDetailsFinished(result);
+
+                return;
+            }
+
+            if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
+                const QJsonDocument document = QJsonDocument::fromJson(responseData);
+
+                if (!document.isObject()) {
+                    result.message = "Rebrickable returned an "
+                                     "unexpected Part Color response.";
+                } else {
+                    const QJsonObject root = document.object();
+
+                    result.partColor.partImageUrl = root.value("part_img_url").toString();
+
+                    result.success = true;
+
+                    result.message = QString("Part color details "
+                                             "retrieved for %1 / "
+                                             "color %2.")
+                                         .arg(trimmedPartNumber)
+                                         .arg(rebrickableColorId);
+                }
+            } else if (result.httpStatusCode == 401) {
+                result.message = "Rebrickable rejected the API key.";
+            } else if (result.httpStatusCode == 404) {
+                result.message = QString("Part %1 in Rebrickable "
+                                         "Color ID %2 was not found.")
+                                     .arg(trimmedPartNumber)
+                                     .arg(rebrickableColorId);
+            } else if (result.httpStatusCode == 429) {
+                handle429();
+
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+
+                emit partColorDetailsFinished(result);
+
+                return;
+            } else {
+                result.message = QString("Unable to retrieve Part "
+                                         "Color details: %1")
+                                     .arg(reply->errorString());
+            }
+
+            reply->deleteLater();
+
+            emit partColorDetailsFinished(result);
+        },
+        [this, trimmedPartNumber, rebrickableColorId]() {
+            PartColorDetailsResult result;
+
+            result.success = false;
+
+            result.httpStatusCode = 403;
+
+            result.partColor.partNumber = trimmedPartNumber;
+
+            result.partColor.rebrickableColorId = rebrickableColorId;
+
+            result.message = sessionBlockReason();
+
+            emit partColorDetailsFinished(result);
         });
 }
 
@@ -608,11 +751,15 @@ void RebrickableApiClient::ensureRequestTimer()
     });
 }
 
-void RebrickableApiClient::enqueueRequest(QueuedRequest request)
+void RebrickableApiClient::enqueueRequest(QueuedRequest request, RequestPriority priority)
 {
     ensureRequestTimer();
 
-    s_requestQueue.enqueue(std::move(request));
+    if (priority == RequestPriority::Background) {
+        s_backgroundRequestQueue.enqueue(std::move(request));
+    } else {
+        s_foregroundRequestQueue.enqueue(std::move(request));
+    }
 
     processRequestQueue();
 }
@@ -621,19 +768,25 @@ void RebrickableApiClient::processRequestQueue()
 {
     ensureRequestTimer();
 
-    if (s_requestQueue.isEmpty())
+    const bool queuesEmpty = s_foregroundRequestQueue.isEmpty()
+                             && s_backgroundRequestQueue.isEmpty();
+
+    if (queuesEmpty)
         return;
 
     //
-    // If the circuit breaker has tripped, drain the
-    // queue without making network requests.
-    //
-    // Each queued request knows how to report the
-    // blocked condition to its caller.
+    // If the circuit breaker has tripped, drain both
+    // queues without dispatching network requests.
     //
     if (isSessionBlocked()) {
-        while (!s_requestQueue.isEmpty()) {
-            QueuedRequest request = s_requestQueue.dequeue();
+        while (!s_foregroundRequestQueue.isEmpty()) {
+            QueuedRequest request = s_foregroundRequestQueue.dequeue();
+
+            request();
+        }
+
+        while (!s_backgroundRequestQueue.isEmpty()) {
+            QueuedRequest request = s_backgroundRequestQueue.dequeue();
 
             request();
         }
@@ -655,7 +808,16 @@ void RebrickableApiClient::processRequestQueue()
         }
     }
 
-    QueuedRequest request = s_requestQueue.dequeue();
+    //
+    // Interactive requests always win.
+    //
+    QueuedRequest request;
+
+    if (!s_foregroundRequestQueue.isEmpty()) {
+        request = s_foregroundRequestQueue.dequeue();
+    } else {
+        request = s_backgroundRequestQueue.dequeue();
+    }
 
     if (s_lastRequestTimer.isValid()) {
         s_lastRequestTimer.restart();
@@ -665,53 +827,48 @@ void RebrickableApiClient::processRequestQueue()
 
     request();
 
-    if (!s_requestQueue.isEmpty()) {
+    if (!s_foregroundRequestQueue.isEmpty() || !s_backgroundRequestQueue.isEmpty()) {
         s_requestTimer->start(minimumIntervalMs);
     }
 }
 
 void RebrickableApiClient::enqueueGet(const QNetworkRequest& request,
                                       ReplyHandler replyHandler,
-                                      std::function<void()> blockedHandler)
+                                      std::function<void()> blockedHandler,
+                                      RequestPriority priority)
 {
     QPointer<RebrickableApiClient> self(this);
 
-    enqueueRequest([self,
-                    request,
-                    replyHandler = std::move(replyHandler),
-                    blockedHandler = std::move(blockedHandler)]() mutable {
-        if (!self)
-            return;
+    enqueueRequest(
+        [self,
+         request,
+         replyHandler = std::move(replyHandler),
+         blockedHandler = std::move(blockedHandler)]() mutable {
+            if (!self)
+                return;
 
-        //
-        // The circuit breaker may have tripped while
-        // this request was waiting in the queue.
-        //
-        if (isSessionBlocked()) {
-            if (blockedHandler)
-                blockedHandler();
+            if (isSessionBlocked()) {
+                if (blockedHandler)
+                    blockedHandler();
 
-            return;
-        }
+                return;
+            }
 
-        //qInfo() << "Rebrickable API GET dispatched:"
-        //        << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
-        //        << request.url().toString();
+            QNetworkReply* reply = self->m_networkManager->get(request);
 
-        QNetworkReply* reply = self->m_networkManager->get(request);
+            QObject::connect(reply,
+                             &QNetworkReply::finished,
+                             self,
+                             [self, reply, replyHandler = std::move(replyHandler)]() mutable {
+                                 if (!self) {
+                                     reply->deleteLater();
+                                     return;
+                                 }
 
-        QObject::connect(reply,
-                         &QNetworkReply::finished,
-                         self,
-                         [self, reply, replyHandler = std::move(replyHandler)]() mutable {
-                             if (!self) {
-                                 reply->deleteLater();
-                                 return;
-                             }
-
-                             replyHandler(reply);
-                         });
-    });
+                                 replyHandler(reply);
+                             });
+        },
+        priority);
 }
 
 void RebrickableApiClient::handle429()

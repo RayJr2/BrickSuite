@@ -20,6 +20,8 @@ class RebrickableApiClient : public QObject
     Q_OBJECT
 
 public:
+    enum class RequestPriority { Foreground, Background };
+
     struct ConnectionResult
     {
         bool success = false;
@@ -78,6 +80,26 @@ public:
         QString message;
 
         PartDetails part;
+    };
+
+    struct PartColorDetails
+    {
+        QString partNumber;
+
+        int rebrickableColorId = 0;
+
+        QString partImageUrl;
+    };
+
+    struct PartColorDetailsResult
+    {
+        bool success = false;
+
+        int httpStatusCode = 0;
+
+        QString message;
+
+        PartColorDetails partColor;
     };
 
     struct SetDetails
@@ -164,6 +186,11 @@ public:
 
     void getSetParts(const QString& setNumber, const QString& apiKey);
 
+    void getPartColorDetails(const QString& partNumber,
+                             int rebrickableColorId,
+                             const QString& apiKey,
+                             RequestPriority priority = RequestPriority::Foreground);
+
     static bool isSessionBlocked();
 
     static QString sessionBlockReason();
@@ -178,6 +205,8 @@ signals:
     void setDetailsFinished(const RebrickableApiClient::SetDetailsResult& result);
 
     void setPartsFinished(const RebrickableApiClient::SetPartsResult& result);
+
+    void partColorDetailsFinished(const RebrickableApiClient::PartColorDetailsResult& result);
 
 private:
     void handleConnectionTestReply(QNetworkReply* reply);
@@ -197,17 +226,19 @@ private:
 
     void enqueueGet(const QNetworkRequest& request,
                     ReplyHandler replyHandler,
-                    std::function<void()> blockedHandler);
+                    std::function<void()> blockedHandler,
+                    RequestPriority priority = RequestPriority::Foreground);
 
-    static void enqueueRequest(QueuedRequest request);
+    static void enqueueRequest(QueuedRequest request, RequestPriority priority);
+
+    static QQueue<QueuedRequest> s_foregroundRequestQueue;
+    static QQueue<QueuedRequest> s_backgroundRequestQueue;
 
     static void processRequestQueue();
 
     static void ensureRequestTimer();
 
     static void handle429();
-
-    static QQueue<QueuedRequest> s_requestQueue;
 
     static QElapsedTimer s_lastRequestTimer;
 
@@ -223,3 +254,5 @@ Q_DECLARE_METATYPE(RebrickableApiClient::SetDetails)
 Q_DECLARE_METATYPE(RebrickableApiClient::SetDetailsResult)
 Q_DECLARE_METATYPE(RebrickableApiClient::SetPart)
 Q_DECLARE_METATYPE(RebrickableApiClient::SetPartsResult)
+Q_DECLARE_METATYPE(RebrickableApiClient::PartColorDetails)
+Q_DECLARE_METATYPE(RebrickableApiClient::PartColorDetailsResult)

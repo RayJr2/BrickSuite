@@ -154,6 +154,8 @@ qt_add_executable(BrickSuite
     src/services/builds/MissingPartsService.cpp src/services/builds/MissingPartsService.h
     src/import/RebrickableMocCsvImporter.h
     src/import/RebrickableMocCsvImporter.cpp
+    src/services/images/BackgroundPartColorImageCacheService.h
+    src/services/images/BackgroundPartColorImageCacheService.cpp
 
 )
 target_link_libraries(BrickSuite PRIVATE

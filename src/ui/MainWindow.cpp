@@ -14,7 +14,9 @@
 #include "../repositories/WorkspaceRepository.h"
 
 #include "../services/RebrickableApiClient.h"
+#include "../services/images/BackgroundPartColorImageCacheService.h"
 #include "../services/images/PartImageService.h"
+
 #include "../settings/UserSettings.h"
 
 #include "../ui/parts/PartDetailsDialog.h"
@@ -202,6 +204,15 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     setCentralWidget(m_tabWidget);
 
     loadWorkspaces();
+
+    //
+    // Slowly populate actual-color images for
+    // Part/Color combinations in My Loose Inventory.
+    //
+    m_backgroundPartColorImageCacheService
+        = new BackgroundPartColorImageCacheService(m_workspaceContext, this);
+
+    m_backgroundPartColorImageCacheService->start();
 
     /***** Menu bar *****/
 
@@ -418,6 +429,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     auto* setDetailsAction = rebrickableMenu->addAction("Set Details");
 
     auto* setPartsAction = rebrickableMenu->addAction("Set Parts");
+
+    auto* partColorImageAction = rebrickableMenu->addAction("Part Color Image");
 
     rebrickableMenu->addSeparator();
 
@@ -798,6 +811,107 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
                 });
 
         apiClient->getSetParts("77244-1", apiKey);
+    });
+
+    connect(partColorImageAction, &QAction::triggered, this, [this]() {
+        const QString apiKey = UserSettings::instance().rebrickableApiKey();
+
+        if (apiKey.isEmpty()) {
+            QMessageBox::warning(this,
+                                 "Part Color Image Test",
+                                 "No Rebrickable API key is configured.");
+
+            return;
+        }
+
+        //
+        // Change these two values if you want to
+        // test a specific Part/Color combination
+        // that exists in My Loose Inventory.
+        //
+        const QString partNumber = "3001";
+
+        const int rebrickableColorId = 14; //Yellow
+
+        auto* apiClient = new RebrickableApiClient(this);
+
+        connect(apiClient,
+                &RebrickableApiClient::partColorDetailsFinished,
+                this,
+                [this, apiClient](const RebrickableApiClient::PartColorDetailsResult& result) {
+                    if (!result.success) {
+                        QMessageBox::warning(this, "Part Color Image Test", result.message);
+
+                        apiClient->deleteLater();
+
+                        return;
+                    }
+
+                    if (result.partColor.partImageUrl.isEmpty()) {
+                        QMessageBox::warning(this,
+                                             "Part Color Image Test",
+                                             "Rebrickable returned no "
+                                             "Part Color image URL.");
+
+                        apiClient->deleteLater();
+
+                        return;
+                    }
+
+                    auto* imageService = new PartImageService(this);
+
+                    connect(imageService,
+                            &PartImageService::partColorImageReady,
+                            this,
+                            [this, imageService, apiClient](const QString& partNumber,
+                                                            int rebrickableColorId,
+                                                            const QString& imagePath) {
+                                QMessageBox::information(this,
+                                                         "Part Color Image Test",
+                                                         QString("Colored Part image "
+                                                                 "cached successfully.\n\n"
+                                                                 "Part: %1\n"
+                                                                 "Rebrickable Color ID: %2\n"
+                                                                 "Path:\n%3")
+                                                             .arg(partNumber)
+                                                             .arg(rebrickableColorId)
+                                                             .arg(imagePath));
+
+                                if (m_myInventoryWidget) {
+                                    m_myInventoryWidget->refresh();
+                                }
+
+                                imageService->deleteLater();
+
+                                apiClient->deleteLater();
+                            });
+
+                    connect(imageService,
+                            &PartImageService::partColorImageFailed,
+                            this,
+                            [this, imageService, apiClient](const QString& partNumber,
+                                                            int rebrickableColorId,
+                                                            const QString& message) {
+                                QMessageBox::warning(this,
+                                                     "Part Color Image Test",
+                                                     QString("Part: %1\n"
+                                                             "Color ID: %2\n\n"
+                                                             "%3")
+                                                         .arg(partNumber)
+                                                         .arg(rebrickableColorId)
+                                                         .arg(message));
+
+                                imageService->deleteLater();
+
+                                apiClient->deleteLater();
+                            });
+
+                    imageService->requestPartColorImage(result.partColor.partNumber,
+                                                        result.partColor.rebrickableColorId,
+                                                        result.partColor.partImageUrl);
+                });
+
+        apiClient->getPartColorDetails(partNumber, rebrickableColorId, apiKey);
     });
 
     statusBar()->showMessage("BrickSuite Version 1.0");

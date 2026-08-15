@@ -15,6 +15,7 @@ class PartsCatalogWidget;
 class MyInventoryWidget;
 class BuildsWidget;
 class SetsCatalogWidget;
+class BackgroundPartColorImageCacheService;
 
 class MainWindow : public QMainWindow
 {
@@ -45,4 +46,6 @@ private:
     MyInventoryWidget* m_myInventoryWidget = nullptr;
     BuildsWidget* m_buildsWidget = nullptr;
     SetsCatalogWidget* m_setsCatalogWidget = nullptr;
+
+    BackgroundPartColorImageCacheService* m_backgroundPartColorImageCacheService = nullptr;
 };

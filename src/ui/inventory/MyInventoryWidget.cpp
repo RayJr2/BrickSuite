@@ -325,6 +325,41 @@ MyInventoryWidget::MyInventoryWidget(
                 }
             });
 
+    connect(m_partImageService,
+            &PartImageService::partColorImageReady,
+            this,
+            [this](const QString& partNumber, int rebrickableColorId, const QString& imagePath) {
+                const QString key = partColorKey(partNumber, rebrickableColorId);
+
+                if (!m_rowsByPartColor.contains(key)) {
+                    return;
+                }
+
+                QPixmap pixmap(imagePath);
+
+                if (pixmap.isNull())
+                    return;
+
+                const QPixmap thumbnail = pixmap.scaled(44,
+                                                        44,
+                                                        Qt::KeepAspectRatio,
+                                                        Qt::SmoothTransformation);
+
+                const QList<int> rows = m_rowsByPartColor.value(key);
+
+                for (const int row : rows) {
+                    QTableWidgetItem* item = m_resultsTable->item(row, 0);
+
+                    if (!item) {
+                        item = new QTableWidgetItem();
+
+                        m_resultsTable->setItem(row, 0, item);
+                    }
+
+                    item->setIcon(QIcon(thumbnail));
+                }
+            });
+
     connect(m_rebrickableApiClient,
             &RebrickableApiClient::partDetailsFinished,
             this,
@@ -447,6 +482,7 @@ void MyInventoryWidget::searchInventory()
     m_resultsTable->setRowCount(0);
 
     m_rowsByPartNumber.clear();
+    m_rowsByPartColor.clear();
     m_partDetailsRequested.clear();
 
     if (!m_workspaceContext.hasCurrentWorkspace()) {
@@ -487,10 +523,26 @@ void MyInventoryWidget::searchInventory()
 
     int row = 0;
 
+    ColorRepository colorRepository;
+
     for (const InventorySearchResult& result : results) {
         m_resultsTable->insertRow(row);
 
         const QString partNumber = result.partNumber;
+
+        int rebrickableColorId = -1;
+
+        const std::optional<Color> color = colorRepository.getById(result.colorId);
+
+        if (color) {
+            rebrickableColorId = color->rebrickableId();
+        }
+
+        if (rebrickableColorId >= 0) {
+            const QString colorKey = partColorKey(partNumber, rebrickableColorId);
+
+            m_rowsByPartColor[colorKey].append(row);
+        }
 
         //
         // The same part number may appear on several
@@ -621,17 +673,31 @@ void MyInventoryWidget::searchInventory()
         m_resultsTable->setCellWidget(row, 9, actionCombo);
 
         //
-        // Resolve generic part thumbnail.
+        // My Loose Inventory prefers an actual Part+Color
+        // image when one is already cached.
         //
-        const QString cachedPath = m_partImageService->cachedImagePath(partNumber);
+        // Until the background worker fills that cache,
+        // fall back to the existing generic Part image.
+        //
+        bool colorImageLoaded = false;
 
-        if (!cachedPath.isEmpty()) {
-            //
-            // Cached image exists.
-            // requestPartImage() immediately emits
-            // imageReady().
-            //
-            m_partImageService->requestPartImage(partNumber, QString());
+        if (rebrickableColorId >= 0) {
+            const QString colorCachedPath
+                = m_partImageService->cachedPartColorImagePath(partNumber, rebrickableColorId);
+
+            if (!colorCachedPath.isEmpty()) {
+                m_partImageService->requestPartColorImage(partNumber, rebrickableColorId, QString());
+
+                colorImageLoaded = true;
+            }
+        }
+
+        if (!colorImageLoaded) {
+            const QString genericCachedPath = m_partImageService->cachedImagePath(partNumber);
+
+            if (!genericCachedPath.isEmpty()) {
+                m_partImageService->requestPartImage(partNumber, QString());
+            }
         }
 
         ++row;
@@ -724,4 +790,9 @@ void MyInventoryWidget::importCsv()
 QString MyInventoryWidget::storagePathForId(int storageLocationId) const
 {
     return m_storagePathById.value(storageLocationId);
+}
+
+QString MyInventoryWidget::partColorKey(const QString& partNumber, int rebrickableColorId) const
+{
+    return QString("%1|%2").arg(partNumber.trimmed()).arg(rebrickableColorId);
 }

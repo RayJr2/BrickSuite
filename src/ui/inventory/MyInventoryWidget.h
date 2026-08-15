@@ -71,4 +71,7 @@ private:
 
     QHash<QString, QList<int>> m_rowsByPartNumber;
     QSet<QString> m_partDetailsRequested;
+
+    QString partColorKey(const QString& partNumber, int rebrickableColorId) const;
+    QHash<QString, QList<int>> m_rowsByPartColor;
 };

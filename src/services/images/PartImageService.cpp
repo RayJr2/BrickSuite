@@ -270,3 +270,223 @@ void PartImageService::downloadImage(const QString& partNumber, const QString& i
         emit imageReady(partNumber, path);
     });
 }
+
+QString PartImageService::colorCacheDirectory() const
+{
+    const QString applicationDataPath = QStandardPaths::writableLocation(
+        QStandardPaths::AppLocalDataLocation);
+
+    const QString directoryPath = QDir(applicationDataPath).filePath("cache/parts/colors");
+
+    QDir directory;
+
+    if (!directory.exists(directoryPath)) {
+        directory.mkpath(directoryPath);
+    }
+
+    return directoryPath;
+}
+
+QString PartImageService::partColorKey(const QString& partNumber, int rebrickableColorId) const
+{
+    return QString("%1|%2").arg(safePartNumber(partNumber)).arg(rebrickableColorId);
+}
+
+QString PartImageService::colorCacheFilePath(const QString& partNumber,
+                                             int rebrickableColorId,
+                                             const QString& imageUrl) const
+{
+    QString extension;
+
+    if (!imageUrl.isEmpty()) {
+        const QUrl url(imageUrl);
+
+        extension = QFileInfo(url.path()).suffix().toLower();
+    }
+
+    if (extension.isEmpty()) {
+        extension = "jpg";
+    }
+
+    const QString fileName
+        = QString("%1_%2.%3").arg(safePartNumber(partNumber)).arg(rebrickableColorId).arg(extension);
+
+    return QDir(colorCacheDirectory()).filePath(fileName);
+}
+
+bool PartImageService::hasCachedPartColorImage(const QString& partNumber,
+                                               int rebrickableColorId) const
+{
+    return !cachedPartColorImagePath(partNumber, rebrickableColorId).isEmpty();
+}
+
+QString PartImageService::cachedPartColorImagePath(const QString& partNumber,
+                                                   int rebrickableColorId) const
+{
+    const QString key = partColorKey(partNumber, rebrickableColorId);
+
+    if (m_cachedColorPaths.contains(key)) {
+        return m_cachedColorPaths.value(key);
+    }
+
+    QDir directory(colorCacheDirectory());
+
+    const QString safe = safePartNumber(partNumber);
+
+    const QStringList matches = directory.entryList(QStringList()
+                                                        << QString("%1_%2.*").arg(safe).arg(
+                                                               rebrickableColorId),
+                                                    QDir::Files,
+                                                    QDir::Name);
+
+    if (matches.isEmpty())
+        return QString();
+
+    const QString path = directory.filePath(matches.first());
+
+    const_cast<PartImageService*>(this)->m_cachedColorPaths.insert(key, path);
+
+    return path;
+}
+
+void PartImageService::requestPartColorImage(const QString& partNumber,
+                                             int rebrickableColorId,
+                                             const QString& imageUrl)
+{
+    const QString trimmedPartNumber = partNumber.trimmed();
+
+    if (trimmedPartNumber.isEmpty()) {
+        emit partColorImageFailed(partNumber, rebrickableColorId, "Part number is empty.");
+
+        return;
+    }
+
+    if (rebrickableColorId < 0) {
+        emit partColorImageFailed(trimmedPartNumber,
+                                  rebrickableColorId,
+                                  "Invalid Rebrickable Color ID.");
+
+        return;
+    }
+
+    const QString cachedPath = cachedPartColorImagePath(trimmedPartNumber, rebrickableColorId);
+
+    if (!cachedPath.isEmpty()) {
+        emit partColorImageReady(trimmedPartNumber, rebrickableColorId, cachedPath);
+
+        return;
+    }
+
+    if (imageUrl.trimmed().isEmpty()) {
+        emit partColorImageFailed(trimmedPartNumber,
+                                  rebrickableColorId,
+                                  "Part color image URL is empty.");
+
+        return;
+    }
+
+    const QString key = partColorKey(trimmedPartNumber, rebrickableColorId);
+
+    if (m_pendingPartColors.contains(key)) {
+        return;
+    }
+
+    m_pendingPartColors.insert(key);
+
+    downloadPartColorImage(trimmedPartNumber, rebrickableColorId, imageUrl.trimmed());
+}
+
+void PartImageService::downloadPartColorImage(const QString& partNumber,
+                                              int rebrickableColorId,
+                                              const QString& imageUrl)
+{
+    const QUrl url(imageUrl);
+
+    const QString key = partColorKey(partNumber, rebrickableColorId);
+
+    if (!url.isValid()) {
+        m_pendingPartColors.remove(key);
+
+        emit partColorImageFailed(partNumber, rebrickableColorId, "Invalid Part Color image URL.");
+
+        return;
+    }
+
+    QNetworkRequest request(url);
+
+    request.setHeader(QNetworkRequest::UserAgentHeader, "BrickSuite/1.0");
+
+    QNetworkReply* reply = m_networkManager->get(request);
+
+    connect(reply,
+            &QNetworkReply::finished,
+            this,
+            [this, reply, partNumber, rebrickableColorId, imageUrl, key]() {
+                m_pendingPartColors.remove(key);
+
+                if (reply->error() != QNetworkReply::NoError) {
+                    const QString error = reply->errorString();
+
+                    reply->deleteLater();
+
+                    emit partColorImageFailed(partNumber,
+                                              rebrickableColorId,
+                                              QString("Unable to download "
+                                                      "Part Color image: %1")
+                                                  .arg(error));
+
+                    return;
+                }
+
+                const QByteArray imageData = reply->readAll();
+
+                reply->deleteLater();
+
+                if (imageData.isEmpty()) {
+                    emit partColorImageFailed(partNumber,
+                                              rebrickableColorId,
+                                              "Rebrickable returned an "
+                                              "empty Part Color image.");
+
+                    return;
+                }
+
+                const QString path = colorCacheFilePath(partNumber, rebrickableColorId, imageUrl);
+
+                QSaveFile file(path);
+
+                if (!file.open(QIODevice::WriteOnly)) {
+                    emit partColorImageFailed(partNumber,
+                                              rebrickableColorId,
+                                              QString("Unable to create cached "
+                                                      "Part Color image: %1")
+                                                  .arg(path));
+
+                    return;
+                }
+
+                if (file.write(imageData) != imageData.size()) {
+                    file.cancelWriting();
+
+                    emit partColorImageFailed(partNumber,
+                                              rebrickableColorId,
+                                              "Unable to write cached "
+                                              "Part Color image.");
+
+                    return;
+                }
+
+                if (!file.commit()) {
+                    emit partColorImageFailed(partNumber,
+                                              rebrickableColorId,
+                                              "Unable to commit cached "
+                                              "Part Color image.");
+
+                    return;
+                }
+
+                m_cachedColorPaths.insert(key, path);
+
+                emit partColorImageReady(partNumber, rebrickableColorId, path);
+            });
+}
