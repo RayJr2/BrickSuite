@@ -45,6 +45,7 @@ private:
     void updateRequirementUiState();
     void exportPullList();
     void importPullList();
+    void importMocPartsCsv();
     void exportMissingParts();
 
     WorkspaceContext& m_workspaceContext;
@@ -74,6 +75,7 @@ private:
     QPushButton* m_addRequirementButton = nullptr;
 
     QPushButton* m_loadSetFromRebrickableButton = nullptr;
+    QPushButton* m_importMocPartsButton = nullptr;
     QPushButton* m_exportMissingPartsButton = nullptr;
     QPushButton* m_exportPullListButton = nullptr;
     QPushButton* m_importPullListButton = nullptr;

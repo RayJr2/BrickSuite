@@ -21,6 +21,7 @@
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
+#include "../../import/RebrickableMocCsvImporter.h"
 #include "../../services/builds/MissingPartsService.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
@@ -199,6 +200,8 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_loadSetFromRebrickableButton = new QPushButton("Load Set from Rebrickable", requirementsGroup);
 
+    m_importMocPartsButton = new QPushButton("Import MOC Parts CSV", requirementsGroup);
+
     m_exportMissingPartsButton = new QPushButton("Export Missing Parts CSV", requirementsGroup);
 
     m_exportPullListButton = new QPushButton("Export Pull List CSV", requirementsGroup);
@@ -207,6 +210,8 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     requirementsHeaderLayout->addWidget(m_requirementsLabel, 1);
 
     requirementsHeaderLayout->addWidget(m_loadSetFromRebrickableButton);
+
+    requirementsHeaderLayout->addWidget(m_importMocPartsButton);
 
     requirementsHeaderLayout->addWidget(m_exportMissingPartsButton);
 
@@ -384,6 +389,8 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
             &WorkspaceContext::currentWorkspaceChanged,
             this,
             &BuildsWidget::workspaceChanged);
+
+    connect(m_importMocPartsButton, &QPushButton::clicked, this, &BuildsWidget::importMocPartsCsv);
 
     connect(m_typeCombo, &QComboBox::currentIndexChanged, this, [this]() {
         const bool isSet = m_typeCombo->currentData().toString() == "Set";
@@ -1295,6 +1302,7 @@ void BuildsWidget::updateRequirementUiState()
     bool canLoadSet = false;
     bool canExportPullList = false;
     bool canExportMissingParts = false;
+    bool canImportMoc = false;
 
     if (enabled) {
         BuildRepository repository;
@@ -1303,6 +1311,8 @@ void BuildsWidget::updateRequirementUiState()
 
         if (build) {
             canLoadSet = build->buildType() == "Set" && !build->setNumber().trimmed().isEmpty();
+
+            canImportMoc = build->buildType() == "MOC" && build->inventoryMode() == "Stock";
 
             canExportPullList = build->inventoryMode() == "Stock";
 
@@ -1313,6 +1323,8 @@ void BuildsWidget::updateRequirementUiState()
     m_exportPullListButton->setEnabled(canExportPullList);
 
     m_importPullListButton->setEnabled(canExportPullList);
+
+    m_importMocPartsButton->setEnabled(canImportMoc);
 
     m_exportMissingPartsButton->setEnabled(canExportMissingParts);
 
@@ -1674,4 +1686,101 @@ void BuildsWidget::exportMissingParts()
                                  .arg(missingParts.size())
                                  .arg(totalPiecesMissing)
                                  .arg(fileName));
+}
+
+void BuildsWidget::importMocPartsCsv()
+{
+    if (m_selectedBuildId <= 0) {
+        QMessageBox::warning(this, "Import MOC Parts", "Select a MOC Build first.");
+
+        return;
+    }
+
+    BuildRepository buildRepository;
+
+    const std::optional<Build> build = buildRepository.getById(m_selectedBuildId);
+
+    if (!build) {
+        QMessageBox::critical(this, "Import MOC Parts", "Unable to load the selected Build.");
+
+        return;
+    }
+
+    if (build->buildType() != "MOC") {
+        QMessageBox::information(this,
+                                 "Import MOC Parts",
+                                 "MOC parts import is available only "
+                                 "for MOC Builds.");
+
+        return;
+    }
+
+    if (build->inventoryMode() != "Stock") {
+        QMessageBox::information(this,
+                                 "Import MOC Parts",
+                                 "MOC requirements use the "
+                                 "Build from Stock inventory mode.");
+
+        return;
+    }
+
+    const QString fileName = QFileDialog::getOpenFileName(this,
+                                                          "Import Rebrickable MOC Parts CSV",
+                                                          QString(),
+                                                          "CSV Files (*.csv)");
+
+    if (fileName.isEmpty())
+        return;
+
+    BuildRequirementRepository requirementRepository;
+
+    const QList<BuildRequirement> existing = requirementRepository.getByBuild(m_selectedBuildId);
+
+    bool replaceExisting = false;
+
+    if (!existing.isEmpty()) {
+        const QMessageBox::StandardButton response
+            = QMessageBox::warning(this,
+                                   "Import MOC Parts",
+                                   QString("This MOC already has %1 Build "
+                                           "Requirement row(s).\n\n"
+                                           "Replace the existing requirements "
+                                           "with the selected Rebrickable MOC CSV?")
+                                       .arg(existing.size()),
+                                   QMessageBox::Yes | QMessageBox::No,
+                                   QMessageBox::No);
+
+        if (response != QMessageBox::Yes)
+            return;
+
+        replaceExisting = true;
+    }
+
+    RebrickableMocCsvImporter importer;
+
+    const RebrickableMocCsvImporter::Result result = importer.importFile(m_selectedBuildId,
+                                                                         fileName,
+                                                                         replaceExisting);
+
+    if (!result.success) {
+        QMessageBox::critical(this, "Import MOC Parts", result.message);
+
+        return;
+    }
+
+    loadRequirements();
+
+    QMessageBox::information(this,
+                             "Import MOC Parts",
+                             QString("MOC requirements imported successfully.\n\n"
+                                     "CSV Rows Read: %1\n"
+                                     "Requirement Rows: %2\n"
+                                     "Regular Pieces: %3\n"
+                                     "Spare Pieces: %4\n"
+                                     "Total Pieces: %5")
+                                 .arg(result.rowsRead)
+                                 .arg(result.requirementsCreated)
+                                 .arg(result.regularPieces)
+                                 .arg(result.sparePieces)
+                                 .arg(result.regularPieces + result.sparePieces));
 }
