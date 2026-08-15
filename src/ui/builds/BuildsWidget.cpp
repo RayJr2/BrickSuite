@@ -12,6 +12,7 @@
 #include "../../models/BuildRequirement.h"
 #include "../../models/Color.h"
 #include "../../models/Part.h"
+#include "../../models/SetCatalogItem.h"
 
 #include "../../repositories/BuildAllocationRepository.h"
 #include "../../repositories/BuildRepository.h"
@@ -19,6 +20,7 @@
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/PartRepository.h"
+#include "../../repositories/SetCatalogRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
 #include "../../import/RebrickableMocCsvImporter.h"
@@ -31,6 +33,7 @@
 #include <QComboBox>
 #include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -49,6 +52,62 @@
 #include <QTextEdit>
 #include <QTextStream>
 #include <QVBoxLayout>
+
+namespace {
+
+/***** Helpers *****/
+struct MocFileMetadata
+{
+    bool recognized = false;
+
+    QString mocNumber;
+    QString sourceSetNumber;
+};
+
+MocFileMetadata parseRebrickableMocFileName(const QString& fileName)
+{
+    MocFileMetadata metadata;
+
+    const QFileInfo fileInfo(fileName);
+
+    const QString baseName = fileInfo.completeBaseName();
+
+    //
+    // Expected Rebrickable alternate-build filename:
+    //
+    // rebrickable_parts_moc-227137-77239-cabrio.csv
+    //
+    // Capture:
+    //   1 = moc-227137
+    //   2 = 77239
+    //
+    const QRegularExpression expression(R"(^rebrickable_parts_(moc-\d+)-(\d+)(?:-|$))",
+                                        QRegularExpression::CaseInsensitiveOption);
+
+    const QRegularExpressionMatch match = expression.match(baseName);
+
+    if (!match.hasMatch())
+        return metadata;
+
+    metadata.mocNumber = match.captured(1).toUpper();
+
+    const QString sourceSetBase = match.captured(2);
+
+    if (!sourceSetBase.isEmpty()) {
+        //
+        // Alternate-build filenames contain the base
+        // Set number. Rebrickable's normal retail Set
+        // reference uses inventory suffix "-1".
+        //
+        metadata.sourceSetNumber = sourceSetBase + "-1";
+    }
+
+    metadata.recognized = true;
+
+    return metadata;
+}
+
+} // namespace
 
 BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     : QWidget(parent)
@@ -115,7 +174,9 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     formLayout->addRow("Type:", m_typeCombo);
 
-    formLayout->addRow("Set Number:", m_setNumberEdit);
+    auto* numberLabel = new QLabel("Set Number:", m_newBuildContent);
+
+    formLayout->addRow(numberLabel, m_setNumberEdit);
 
     formLayout->addRow("Inventory Mode:", m_inventoryModeCombo);
 
@@ -151,7 +212,7 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     m_buildsTable->setColumnCount(7);
 
     m_buildsTable->setHorizontalHeaderLabels(QStringList() << "Type"
-                                                           << "Set #"
+                                                           << "Set / MOC #"
                                                            << "Inventory Mode"
                                                            << "Name"
                                                            << "Status"
@@ -392,13 +453,32 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     connect(m_importMocPartsButton, &QPushButton::clicked, this, &BuildsWidget::importMocPartsCsv);
 
-    connect(m_typeCombo, &QComboBox::currentIndexChanged, this, [this]() {
-        const bool isSet = m_typeCombo->currentData().toString() == "Set";
+    connect(m_typeCombo, &QComboBox::currentIndexChanged, this, [this, numberLabel]() {
+        const QString buildType = m_typeCombo->currentData().toString();
 
-        m_setNumberEdit->setEnabled(isSet && m_workspaceContext.hasCurrentWorkspace());
+        const bool isSet = buildType == "Set";
 
-        if (!isSet) {
-            m_setNumberEdit->clear();
+        const bool isMoc = buildType == "MOC";
+
+        m_setNumberEdit->setEnabled(m_workspaceContext.hasCurrentWorkspace() && (isSet || isMoc));
+
+        if (isSet) {
+            numberLabel->setText("Set Number:");
+
+            m_setNumberEdit->setPlaceholderText("Example: 77239-1");
+        } else if (isMoc) {
+            numberLabel->setText("MOC Number:");
+
+            m_setNumberEdit->setPlaceholderText("Example: MOC-227137");
+
+            //
+            // MOCs are always built from stock.
+            //
+            const int stockIndex = m_inventoryModeCombo->findData("Stock");
+
+            if (stockIndex >= 0) {
+                m_inventoryModeCombo->setCurrentIndex(stockIndex);
+            }
         }
     });
 
@@ -793,7 +873,13 @@ void BuildsWidget::addBuild()
     }
 
     if (buildType == "Set" && setNumber.isEmpty()) {
-        QMessageBox::warning(this, "BrickSuite", "Enter a set number for a Set build.");
+        QMessageBox::warning(this, "BrickSuite", "Enter a Set Number for the Set Build.");
+
+        return;
+    }
+
+    if (buildType == "MOC" && setNumber.isEmpty()) {
+        QMessageBox::warning(this, "BrickSuite", "Enter a MOC Number for the MOC Build.");
 
         return;
     }
@@ -842,9 +928,11 @@ void BuildsWidget::updateUiState()
 
     m_typeCombo->setEnabled(enabled);
 
-    const bool isSet = m_typeCombo->currentData().toString() == "Set";
+    const QString buildType = m_typeCombo->currentData().toString();
 
-    m_setNumberEdit->setEnabled(enabled && isSet);
+    const bool hasNumberField = buildType == "Set" || buildType == "MOC";
+
+    m_setNumberEdit->setEnabled(enabled && hasNumberField);
 
     m_inventoryModeCombo->setEnabled(enabled);
 
@@ -1768,7 +1856,82 @@ void BuildsWidget::importMocPartsCsv()
         return;
     }
 
-    loadRequirements();
+    bool buildMetadataUpdated = false;
+
+    const MocFileMetadata metadata = parseRebrickableMocFileName(fileName);
+
+    if (metadata.recognized) {
+        BuildRepository repository;
+
+        std::optional<Build> updatedBuild = repository.getById(m_selectedBuildId);
+
+        if (updatedBuild) {
+            bool changed = false;
+
+            //
+            // Populate or correct the MOC reference from
+            // the Rebrickable export filename.
+            //
+            if (!metadata.mocNumber.isEmpty() && updatedBuild->setNumber() != metadata.mocNumber) {
+                updatedBuild->setSetNumber(metadata.mocNumber);
+
+                changed = true;
+            }
+
+            // Populate or append to the Notes field with the source Set reference from
+            // the Rebrickable export filename.
+            if (!metadata.sourceSetNumber.isEmpty()) {
+                QString alternateNote = QString("Alternate build from Set %1")
+                                            .arg(metadata.sourceSetNumber);
+
+                //
+                // Resolve the source Set through BrickSuite's
+                // local Sets Catalog when possible.
+                //
+                SetCatalogRepository setCatalogRepository;
+
+                const std::optional<SetCatalogItem> sourceSet = setCatalogRepository.getBySetNumber(
+                    metadata.sourceSetNumber);
+
+                if (sourceSet && !sourceSet->name().trimmed().isEmpty()) {
+                    alternateNote += QString(" — %1").arg(sourceSet->name().trimmed());
+                }
+
+                if (updatedBuild->notes().trimmed().isEmpty()) {
+                    updatedBuild->setNotes(alternateNote);
+
+                    changed = true;
+                } else if (!updatedBuild->notes().contains(alternateNote, Qt::CaseInsensitive)) {
+                    updatedBuild->setNotes(updatedBuild->notes().trimmed() + "\n" + alternateNote);
+
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                if (!repository.update(*updatedBuild)) {
+                    QMessageBox::warning(this,
+                                         "Import MOC Parts",
+                                         "The MOC requirements were imported, "
+                                         "but BrickSuite was unable to save the "
+                                         "metadata parsed from the CSV filename.");
+                } else {
+                    buildMetadataUpdated = true;
+                }
+            }
+        }
+    }
+
+    if (buildMetadataUpdated) {
+        //
+        // Reload the Builds table so the parsed
+        // MOC Number and Notes appear immediately,
+        // while keeping this MOC selected.
+        //
+        selectBuild(m_selectedBuildId);
+    } else {
+        loadRequirements();
+    }
 
     QMessageBox::information(this,
                              "Import MOC Parts",
