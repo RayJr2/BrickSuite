@@ -1522,6 +1522,9 @@ bool InventoryRecordRepository::markLost(int inventoryRecordId,
                                          const QString& notes)
 {
     if (inventoryRecordId <= 0 || quantityLost <= 0) {
+        qWarning() << "Lost inventory rejected due to invalid arguments."
+                   << "InventoryRecordId:" << inventoryRecordId
+                   << "QuantityLost:" << quantityLost;
         return false;
     }
 
@@ -1581,6 +1584,10 @@ bool InventoryRecordRepository::markLost(int inventoryRecordId,
     const int currentQuantity = query.value("quantity").toInt();
 
     if (currentQuantity <= 0 || quantityLost > currentQuantity) {
+        qWarning() << "Lost inventory rejected because requested quantity is invalid."
+                   << "InventoryRecordId:" << inventoryRecordId
+                   << "CurrentQuantity:" << currentQuantity
+                   << "QuantityLost:" << quantityLost;
         database.rollback();
 
         return false;
@@ -1660,6 +1667,13 @@ bool InventoryRecordRepository::markLost(int inventoryRecordId,
         return false;
     }
 
+    qInfo() << "Inventory marked Lost."
+            << "InventoryRecordId:" << inventoryRecordId
+            << "PartId:" << partId
+            << "ColorId:" << colorId
+            << "QuantityLost:" << quantityLost
+            << "RemainingQuantity:" << newQuantity;
+
     return true;
 }
 
@@ -1674,6 +1688,12 @@ bool InventoryRecordRepository::markFound(int workspaceId,
 {
     if (workspaceId <= 0 || partId <= 0 || colorId <= 0 || quantityFound <= 0
         || destinationStorageLocationId <= 0) {
+        qWarning() << "Found inventory rejected due to invalid arguments."
+                   << "WorkspaceId:" << workspaceId
+                   << "PartId:" << partId
+                   << "ColorId:" << colorId
+                   << "QuantityFound:" << quantityFound
+                   << "DestinationStorageLocationId:" << destinationStorageLocationId;
         return false;
     }
 
@@ -1734,6 +1754,11 @@ bool InventoryRecordRepository::markFound(int workspaceId,
     const int outstandingLost = lostQuery.value(0).toInt();
 
     if (outstandingLost <= 0 || quantityFound > outstandingLost) {
+        qWarning() << "Found inventory rejected because quantity exceeds outstanding Lost."
+                   << "PartId:" << partId
+                   << "ColorId:" << colorId
+                   << "OutstandingLost:" << outstandingLost
+                   << "QuantityFound:" << quantityFound;
         database.rollback();
 
         return false;
@@ -1776,6 +1801,14 @@ bool InventoryRecordRepository::markFound(int workspaceId,
 
         return false;
     }
+
+    qInfo() << "Lost inventory returned to loose inventory."
+            << "WorkspaceId:" << workspaceId
+            << "PartId:" << partId
+            << "ColorId:" << colorId
+            << "QuantityFound:" << quantityFound
+            << "DestinationStorageLocationId:" << destinationStorageLocationId
+            << "OutstandingAfterReturn:" << (outstandingLost - quantityFound);
 
     return true;
 }

@@ -7,6 +7,7 @@
 #include "../services/ReferenceDataSeeder.h"
 #include "../ui/MainWindow.h"
 
+#include <QDebug>
 #include <QMessageBox>
 
 Application::Application() = default;

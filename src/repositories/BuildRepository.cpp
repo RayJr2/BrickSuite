@@ -311,8 +311,11 @@ bool BuildRepository::update(Build& build)
         return false;
     }
 
-    if (query.numRowsAffected() <= 0)
+    if (query.numRowsAffected() <= 0) {
+        qWarning() << "Build update affected no rows."
+                   << "BuildId:" << build.id();
         return false;
+    }
 
     build.setModifiedUtc(now);
 

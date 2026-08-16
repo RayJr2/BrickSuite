@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -107,6 +108,8 @@ void RebrickableApiClient::handleConnectionTestReply(QNetworkReply* reply)
     QString circuitBreakerReason;
 
     if (result.httpStatusCode == 403 && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
+        qCritical() << "Rebrickable session circuit breaker triggered:"
+                    << circuitBreakerReason;
         tripSessionCircuitBreaker(circuitBreakerReason);
 
         result.message = sessionBlockReason();
@@ -123,6 +126,7 @@ void RebrickableApiClient::handleConnectionTestReply(QNetworkReply* reply)
     // to continue sending requests after HTTP 429.
     //
     if (result.httpStatusCode == 429) {
+        qCritical() << "Rebrickable returned HTTP 429 during connection test.";
         handle429();
 
         result.message = sessionBlockReason();
@@ -159,6 +163,11 @@ void RebrickableApiClient::handleConnectionTestReply(QNetworkReply* reply)
     } else {
         result.message = QString("Rebrickable returned HTTP status %1.").arg(result.httpStatusCode);
     }
+
+    qInfo() << "Rebrickable connection test completed."
+            << "Success:" << result.success
+            << "HTTP:" << result.httpStatusCode
+            << "Message:" << result.message;
 
     reply->deleteLater();
 

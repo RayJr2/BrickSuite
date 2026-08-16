@@ -95,12 +95,16 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
     };
 
     if (!m_database.isOpen()) {
-        setError("The BrickSuite database is not open.");
+        const QString message = "The BrickSuite database is not open.";
+        setError(message);
+        qWarning() << "Database backup rejected:" << message;
 
         return false;
     }
 
     const QString trimmedPath = backupPath.trimmed();
+
+    qInfo() << "Database backup requested:" << trimmedPath;
 
     if (trimmedPath.isEmpty()) {
         setError("No backup file was selected.");
@@ -114,8 +118,12 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
 
     if (!backupDirectory.exists()) {
         if (!backupDirectory.mkpath(".")) {
+            const QString message
+                = QString("Unable to create the backup directory: %1")
+                      .arg(backupDirectory.absolutePath());
             setError(QString("Unable to create the backup directory:\n%1")
                          .arg(backupDirectory.absolutePath()));
+            qCritical() << "Database backup failed:" << message;
 
             return false;
         }
@@ -155,8 +163,10 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
     if (!query.exec(sql)) {
         QFile::remove(temporaryPath);
 
+        const QString message = query.lastError().text();
         setError(
-            QString("Unable to create the database backup.\n\n%1").arg(query.lastError().text()));
+            QString("Unable to create the database backup.\n\n%1").arg(message));
+        qCritical() << "Database backup VACUUM INTO failed:" << message;
 
         return false;
     }
@@ -289,9 +299,14 @@ bool DatabaseManager::verifyDatabaseBackup(const QString& backupPath, QString* e
 
     if (!verified) {
         setError(verificationError);
+        qWarning() << "Database backup verification failed:"
+                   << trimmedPath
+                   << verificationError;
 
         return false;
     }
+
+    qInfo() << "Database backup verified:" << trimmedPath;
 
     return true;
 }
@@ -311,6 +326,8 @@ bool DatabaseManager::restoreDatabase(const QString& backupPath, QString* errorM
     };
 
     const QString trimmedBackupPath = backupPath.trimmed();
+
+    qInfo() << "Database restore requested:" << trimmedBackupPath;
 
     if (trimmedBackupPath.isEmpty()) {
         setError("No backup file was selected.");
@@ -333,6 +350,8 @@ bool DatabaseManager::restoreDatabase(const QString& backupPath, QString* errorM
 
     if (!verifyDatabaseBackup(trimmedBackupPath, &verificationError)) {
         setError(QString("The selected database backup is not valid.\n\n%1").arg(verificationError));
+        qWarning() << "Database restore rejected during verification:"
+                   << verificationError;
 
         return false;
     }
@@ -355,6 +374,8 @@ bool DatabaseManager::restoreDatabase(const QString& backupPath, QString* errorM
         setError(QString("Unable to create the automatic pre-restore "
                          "safety backup.\n\n%1")
                      .arg(backupError));
+        qCritical() << "Database restore stopped: unable to create safety backup:"
+                    << backupError;
 
         return false;
     }
@@ -398,6 +419,8 @@ bool DatabaseManager::restoreDatabase(const QString& backupPath, QString* errorM
         setError(QString("Unable to copy the selected backup "
                          "into the BrickSuite data folder.\n\n%1")
                      .arg(trimmedBackupPath));
+        qCritical() << "Database restore failed while copying selected backup:"
+                    << trimmedBackupPath;
 
         return false;
     }
