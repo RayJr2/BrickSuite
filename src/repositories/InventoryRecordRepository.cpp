@@ -423,6 +423,93 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
     return results;
 }
 
+
+int InventoryRecordRepository::count(const InventorySearchCriteria& criteria) const
+{
+    if (criteria.workspaceId <= 0)
+        return 0;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QString sql = R"(
+        SELECT COUNT(*)
+        FROM inventory_record ir
+
+        INNER JOIN part p
+            ON p.id = ir.part_id
+
+        WHERE ir.workspace_id = :workspace_id
+            AND ir.quantity > 0
+    )";
+
+    const QString searchText = criteria.searchText.trimmed();
+
+    if (!searchText.isEmpty()) {
+        sql += R"(
+            AND
+            (
+                p.part_number LIKE :search
+                OR p.name LIKE :search
+            )
+        )";
+    }
+
+    if (criteria.categoryId > 0) {
+        sql += R"(
+            AND p.part_category_id = :category_id
+        )";
+    }
+
+    if (criteria.colorId > 0) {
+        sql += R"(
+            AND ir.color_id = :color_id
+        )";
+    }
+
+    if (criteria.storageLocationId > 0) {
+        sql += R"(
+            AND ir.storage_location_id = :storage_location_id
+        )";
+    }
+
+    QSqlQuery query(database);
+
+    if (!query.prepare(sql)) {
+        qCritical() << "Unable to prepare inventory count:" << query.lastError().text();
+        return 0;
+    }
+
+    query.bindValue(":workspace_id", criteria.workspaceId);
+
+    if (!searchText.isEmpty()) {
+        query.bindValue(":search", "%" + searchText + "%");
+    }
+
+    if (criteria.categoryId > 0) {
+        query.bindValue(":category_id", criteria.categoryId);
+    }
+
+    if (criteria.colorId > 0) {
+        query.bindValue(":color_id", criteria.colorId);
+    }
+
+    if (criteria.storageLocationId > 0) {
+        query.bindValue(":storage_location_id", criteria.storageLocationId);
+    }
+
+    if (!query.exec()) {
+        qCritical() << "Unable to count matching inventory records:"
+                    << query.lastError().text();
+        return 0;
+    }
+
+    if (!query.next())
+        return 0;
+
+    return query.value(0).toInt();
+}
+
+
 bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
                                                       const QString& movementType,
                                                       const QString& referenceType,

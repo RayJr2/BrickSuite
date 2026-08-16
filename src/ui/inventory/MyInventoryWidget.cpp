@@ -529,6 +529,7 @@ void MyInventoryWidget::searchInventory()
 
     if (!m_workspaceContext.hasCurrentWorkspace()) {
         m_lastResultCount = 0;
+        m_totalResultCount = 0;
 
         m_resultLabel->setText("Select a workspace to view inventory.");
 
@@ -556,6 +557,22 @@ void MyInventoryWidget::searchInventory()
     criteria.offset = m_currentPage * resultsPerPage;
 
     InventoryRecordRepository repository;
+
+    m_totalResultCount = repository.count(criteria);
+
+    //
+    // If a data change leaves the current page beyond the new last page,
+    // clamp once before loading the results. This can happen after moving,
+    // losing, or editing the last record on a page.
+    //
+    const int totalPages = qMax(1,
+                                (m_totalResultCount + resultsPerPage - 1)
+                                    / resultsPerPage);
+
+    if (m_currentPage >= totalPages) {
+        m_currentPage = totalPages - 1;
+        criteria.offset = m_currentPage * resultsPerPage;
+    }
 
     const QList<InventorySearchResult> results = repository.search(criteria);
 
@@ -775,7 +792,11 @@ void MyInventoryWidget::searchInventory()
 
         const int lastResult = criteria.offset + results.size();
 
-        m_resultLabel->setText(QString("Showing results %1 - %2.").arg(firstResult).arg(lastResult));
+        m_resultLabel->setText(
+            QString("Showing results %1 - %2 of %3.")
+                .arg(firstResult)
+                .arg(lastResult)
+                .arg(m_totalResultCount));
     }
 
     updatePagingControls();
@@ -793,30 +814,34 @@ void MyInventoryWidget::previousPage()
 
 void MyInventoryWidget::nextPage()
 {
-    if (m_lastResultCount < ResultsPerPage) {
+    const int resultsPerPage = UserSettings::instance().resultsPerPage();
+    const int totalPages = qMax(1,
+                                (m_totalResultCount + resultsPerPage - 1)
+                                    / resultsPerPage);
+
+    if (m_currentPage + 1 >= totalPages)
         return;
-    }
 
     ++m_currentPage;
 
     searchInventory();
-
-    if (m_lastResultCount == 0) {
-        --m_currentPage;
-
-        searchInventory();
-    }
 }
 
 void MyInventoryWidget::updatePagingControls()
 {
-    m_previousButton->setEnabled(m_currentPage > 0);
-
     const int resultsPerPage = UserSettings::instance().resultsPerPage();
+    const int totalPages = qMax(1,
+                                (m_totalResultCount + resultsPerPage - 1)
+                                    / resultsPerPage);
+    const int displayPage = qMin(m_currentPage + 1, totalPages);
 
-    m_nextButton->setEnabled(m_lastResultCount >= resultsPerPage);
+    m_previousButton->setEnabled(m_currentPage > 0);
+    m_nextButton->setEnabled(m_currentPage + 1 < totalPages);
 
-    m_pageLabel->setText(QString("Page %1").arg(m_currentPage + 1));
+    m_pageLabel->setText(
+        QString("Page %1 of %2")
+            .arg(displayPage)
+            .arg(totalPages));
 }
 
 void MyInventoryWidget::refresh()
