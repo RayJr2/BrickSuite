@@ -12,21 +12,38 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         return false;
     }
 
-    if (!database.transaction()) {
-        qCritical() << "Unable to begin schema transaction:" << database.lastError().text();
-
-        return false;
-    }
-
+    //
+    // Read the current schema version before opening the normal migration
+    // transaction. Version 10 -> 11 may need to rebuild the Build table
+    // because SQLite cannot ALTER an existing CHECK constraint. That rebuild
+    // must temporarily disable foreign-key enforcement, which SQLite only
+    // permits outside a transaction.
+    //
     if (!createSchemaVersionTable(database)) {
-        database.rollback();
         return false;
     }
 
     int version = 0;
 
     if (!getSchemaVersion(database, version)) {
-        database.rollback();
+        return false;
+    }
+
+    //
+    // Existing Version 10 databases still have the original Build.status
+    // CHECK constraint. Upgrade them before the normal migration transaction.
+    //
+    if (version == 10) {
+        if (!migrateVersion10ToVersion11(database)) {
+            return false;
+        }
+
+        version = 11;
+    }
+
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin schema transaction:" << database.lastError().text();
+
         return false;
     }
 
@@ -163,6 +180,37 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         }
 
         version = 9;
+    }
+
+    // Version 9 -> Version 10.
+    if (version == 9) {
+        if (!migrateVersion9ToVersion10(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 10)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 10;
+    }
+
+    // Version 10 -> Version 11.
+    //
+    // A brand-new database created by this version already has Cancelled in
+    // the Build.status CHECK constraint, so this migration simply advances
+    // the schema version. Existing Version 10 databases are handled before
+    // the normal migration transaction above.
+    //
+    if (version == 10) {
+        if (!migrateVersion10ToVersion11(database)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 11;
     }
 
     if (version != CurrentSchemaVersion) {
@@ -803,7 +851,8 @@ bool DatabaseSchema::createBuildTable(QSqlDatabase& database)
                     'Planned',
                     'Pulling',
                     'Complete',
-                    'Disassembled'
+                    'Disassembled',
+                    'Cancelled'
                 )
             )
         )
@@ -1072,6 +1121,316 @@ bool DatabaseSchema::migrateVersion7ToVersion8(QSqlDatabase& database)
 bool DatabaseSchema::migrateVersion8ToVersion9(QSqlDatabase& database)
 {
     return createSetCatalogTable(database);
+}
+
+bool DatabaseSchema::migrateVersion9ToVersion10(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    //
+    // Builds are never deleted. Version 10 adds an active/archive
+    // lifecycle flag so completed historical Builds can be retired
+    // from the normal working list without changing their IDs or
+    // breaking requirements, allocations, lost/found history, or
+    // other references.
+    //
+    if (!query.exec(R"(
+        ALTER TABLE build
+        ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1
+    )")) {
+        qCritical() << "Unable to add build.is_active:" << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_build_workspace_active
+        ON build(workspace_id, is_active)
+    )")) {
+        qCritical() << "Unable to create Build active index:" << query.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion10ToVersion11(QSqlDatabase& database)
+{
+    //
+    // SQLite does not support ALTER CHECK CONSTRAINT. Existing Version 10
+    // databases therefore require the standard SQLite table-rebuild pattern.
+    //
+    // First inspect the table definition. Brand-new databases created by this
+    // source already include Cancelled and only need the version advanced.
+    //
+    QSqlQuery schemaQuery(database);
+
+    schemaQuery.prepare(R"(
+        SELECT sql
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = 'build'
+    )");
+
+    if (!schemaQuery.exec() || !schemaQuery.next()) {
+        qCritical() << "Unable to inspect Build table before Version 11 migration:"
+                    << schemaQuery.lastError().text();
+        return false;
+    }
+
+    const QString buildSql = schemaQuery.value(0).toString();
+
+    //
+    // Release the sqlite_master read statement before attempting to rebuild
+    // the Build table. Leaving this query active holds a schema read lock and
+    // SQLite can then reject DROP TABLE with "database table is locked".
+    //
+    schemaQuery.finish();
+
+    if (buildSql.contains("'Cancelled'", Qt::CaseInsensitive)) {
+        return setSchemaVersion(database, 11);
+    }
+
+    //
+    // This branch is used for an existing Version 10 database and is called
+    // before DatabaseSchema opens its normal migration transaction.
+    //
+    QSqlQuery pragmaQuery(database);
+
+    bool foreignKeysWereEnabled = false;
+
+    if (pragmaQuery.exec("PRAGMA foreign_keys") && pragmaQuery.next()) {
+        foreignKeysWereEnabled = pragmaQuery.value(0).toInt() != 0;
+    }
+
+    //
+    // Release the PRAGMA result before changing schema state.
+    //
+    pragmaQuery.finish();
+
+    if (foreignKeysWereEnabled) {
+        if (!pragmaQuery.exec("PRAGMA foreign_keys = OFF")) {
+            qCritical() << "Unable to temporarily disable foreign keys:"
+                        << pragmaQuery.lastError().text();
+            return false;
+        }
+
+        pragmaQuery.finish();
+    }
+
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin Version 11 Build migration:"
+                    << database.lastError().text();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE build_v11
+        (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            workspace_id  INTEGER NOT NULL,
+
+            build_type    TEXT NOT NULL,
+            name          TEXT NOT NULL,
+
+            set_number    TEXT,
+
+            inventory_mode TEXT NOT NULL DEFAULT 'Stock',
+
+            status        TEXT NOT NULL DEFAULT 'Planned',
+            is_active     INTEGER NOT NULL DEFAULT 1,
+
+            notes         TEXT,
+
+            created_utc   TEXT NOT NULL,
+            modified_utc  TEXT NOT NULL,
+
+            FOREIGN KEY (workspace_id)
+                REFERENCES workspace(id),
+
+            CHECK
+            (
+                build_type IN
+                (
+                    'Set',
+                    'MOC'
+                )
+            ),
+
+            CHECK
+            (
+                inventory_mode IN
+                (
+                    'Stock',
+                    'CompleteSet'
+                )
+            ),
+
+            CHECK
+            (
+                status IN
+                (
+                    'Planned',
+                    'Pulling',
+                    'Complete',
+                    'Disassembled',
+                    'Cancelled'
+                )
+            )
+        )
+    )")) {
+        qCritical() << "Unable to create Version 11 Build table:"
+                    << query.lastError().text();
+
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        INSERT INTO build_v11
+        (
+            id,
+            workspace_id,
+            build_type,
+            name,
+            set_number,
+            inventory_mode,
+            status,
+            is_active,
+            notes,
+            created_utc,
+            modified_utc
+        )
+        SELECT
+            id,
+            workspace_id,
+            build_type,
+            name,
+            set_number,
+            inventory_mode,
+            status,
+            is_active,
+            notes,
+            created_utc,
+            modified_utc
+        FROM build
+    )")) {
+        qCritical() << "Unable to copy Builds during Version 11 migration:"
+                    << query.lastError().text();
+
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!query.exec("DROP TABLE build")) {
+        qCritical() << "Unable to replace old Build table:"
+                    << query.lastError().text();
+
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!query.exec("ALTER TABLE build_v11 RENAME TO build")) {
+        qCritical() << "Unable to rename Version 11 Build table:"
+                    << query.lastError().text();
+
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!createBuildIndexes(database)) {
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS
+            idx_build_workspace_active
+        ON build(workspace_id, is_active)
+    )")) {
+        qCritical() << "Unable to recreate Build active index:"
+                    << query.lastError().text();
+
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!setSchemaVersion(database, 11)) {
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!database.commit()) {
+        qCritical() << "Unable to commit Version 11 Build migration:"
+                    << database.lastError().text();
+
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (foreignKeysWereEnabled) {
+        if (!pragmaQuery.exec("PRAGMA foreign_keys = ON")) {
+            qCritical() << "Unable to re-enable foreign keys after Version 11 migration:"
+                        << pragmaQuery.lastError().text();
+            return false;
+        }
+    }
+
+    //
+    // Validate that rebuilding the referenced Build table did not leave any
+    // broken foreign-key references.
+    //
+    if (!pragmaQuery.exec("PRAGMA foreign_key_check")) {
+        qCritical() << "Unable to validate foreign keys after Version 11 migration:"
+                    << pragmaQuery.lastError().text();
+        return false;
+    }
+
+    if (pragmaQuery.next()) {
+        qCritical() << "Foreign-key validation failed after Version 11 Build migration.";
+        return false;
+    }
+
+    return true;
 }
 
 bool DatabaseSchema::createSetCatalogTable(QSqlDatabase& database)

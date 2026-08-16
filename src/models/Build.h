@@ -29,6 +29,9 @@ public:
     QString status() const;
     void setStatus(const QString& status);
 
+    bool isActive() const;
+    void setIsActive(bool active);
+
     QString notes() const;
     void setNotes(const QString& notes);
 
@@ -47,6 +50,7 @@ private:
     QString m_setNumber;
     QString m_inventoryMode = "Stock";
     QString m_status = "Planned";
+    bool m_isActive = true;
     QString m_notes;
 
     QDateTime m_createdUtc;

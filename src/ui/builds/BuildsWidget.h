@@ -65,6 +65,7 @@ private:
     QPushButton* m_addButton = nullptr;
 
     QTableWidget* m_buildsTable = nullptr;
+    QCheckBox* m_showArchivedBuildsCheck = nullptr;
     QSplitter* m_buildsRequirementsSplitter = nullptr;
     QLabel* m_statusLabel = nullptr;
 

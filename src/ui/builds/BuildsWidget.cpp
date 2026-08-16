@@ -210,6 +210,16 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     auto* existingLayout = new QVBoxLayout(existingGroup);
 
+    auto* existingHeaderLayout = new QHBoxLayout();
+
+    existingHeaderLayout->addStretch(1);
+
+    m_showArchivedBuildsCheck = new QCheckBox("Show Archived", existingGroup);
+
+    existingHeaderLayout->addWidget(m_showArchivedBuildsCheck);
+
+    existingLayout->addLayout(existingHeaderLayout);
+
     m_buildsTable = new QTableWidget(existingGroup);
 
     m_buildsTable->setColumnCount(7);
@@ -499,6 +509,13 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
             this,
             &BuildsWidget::buildSelectionChanged);
 
+    connect(m_showArchivedBuildsCheck, &QCheckBox::toggled, this, [this]() {
+        m_selectedBuildId = 0;
+        loadBuilds();
+        loadRequirements();
+        updateRequirementUiState();
+    });
+
     connect(m_addRequirementButton, &QPushButton::clicked, this, &BuildsWidget::addRequirement);
 
     connect(m_partNumberEdit, &QLineEdit::returnPressed, this, &BuildsWidget::addRequirement);
@@ -609,7 +626,9 @@ void BuildsWidget::loadBuilds()
 
     BuildRepository repository;
 
-    const QList<Build> builds = repository.getByWorkspace(m_workspaceContext.currentWorkspaceId());
+    const QList<Build> builds = repository.getByWorkspace(
+        m_workspaceContext.currentWorkspaceId(),
+        m_showArchivedBuildsCheck && m_showArchivedBuildsCheck->isChecked());
 
     int row = 0;
 
@@ -640,20 +659,41 @@ void BuildsWidget::loadBuilds()
 
         actionCombo->addItem("Actions...", QString());
 
-        actionCombo->addItem("Edit Build...", "edit");
+        if (build.isActive()) {
+            actionCombo->addItem("Edit Build...", "edit");
 
-        if (build.inventoryMode() == "Stock" && build.status() != "Complete"
-            && build.status() != "Disassembled") {
+            //
+            // A Build may be archived only after it has been
+            // disassembled. This prevents an assembled, pulling,
+            // or planned Build from disappearing from the active
+            // workflow while it still represents live work.
+            //
+            if (build.status() == "Planned" || build.status() == "Pulling") {
+                actionCombo->addItem("Cancel Build...", "cancel");
+            }
+
+            if (build.status() == "Disassembled" || build.status() == "Cancelled") {
+                actionCombo->addItem("Archive Build", "archive");
+            }
+        } else {
+            actionCombo->addItem("Reactivate Build", "reactivate");
+
+            nameItem->setText(build.name() + " (Archived)");
+            statusItem->setText(build.status() + " / Archived");
+        }
+
+        if (build.isActive() && build.inventoryMode() == "Stock" && build.status() != "Complete"
+            && build.status() != "Disassembled" && build.status() != "Cancelled") {
             actionCombo->addItem("Complete Build...", "complete");
         }
 
-        if (build.inventoryMode() == "Stock" && build.status() == "Complete") {
+        if (build.isActive() && build.inventoryMode() == "Stock" && build.status() == "Complete") {
             actionCombo->addItem(build.buildType() == "MOC" ? "Disassemble MOC..."
                                                             : "Disassemble Build...",
                                  "disassemble");
         }
 
-        if (build.inventoryMode() == "CompleteSet" && build.status() == "Complete") {
+        if (build.isActive() && build.inventoryMode() == "CompleteSet" && build.status() == "Complete") {
             actionCombo->addItem("Disassemble Set...", "disassemble");
         }
 
@@ -703,6 +743,250 @@ void BuildsWidget::loadBuilds()
                             //
                             selectBuild(buildId);
                         }
+                    } else if (action == "cancel") {
+                        BuildRepository buildRepository;
+
+                        std::optional<Build> build = buildRepository.getById(buildId);
+
+                        if (!build) {
+                            QMessageBox::critical(this,
+                                                  "Cancel Build",
+                                                  "Unable to load the selected Build.");
+                            return;
+                        }
+
+                        if (build->status() != "Planned"
+                            && build->status() != "Pulling") {
+                            QMessageBox::information(
+                                this,
+                                "Cancel Build",
+                                "Only a Planned or Pulling Build can be cancelled.");
+                            return;
+                        }
+
+                        BuildRequirementRepository requirementRepository;
+                        const QList<BuildRequirement> requirements
+                            = requirementRepository.getByBuild(buildId);
+
+                        int totalPulled = 0;
+
+                        for (const BuildRequirement& requirement : requirements) {
+                            totalPulled += qMax(requirement.quantityPulled(), 0);
+                        }
+
+                        QString message
+                            = QString("Cancel this Build?\n\n%1\n\n"
+                                      "The Build will remain in BrickSuite with a "
+                                      "Cancelled status and can then be archived.")
+                                  .arg(build->name());
+
+                        if (totalPulled > 0) {
+                            message += QString(
+                                "\n\n%1 piece(s) have already been physically pulled. "
+                                "BrickSuite will first open the return/disassembly "
+                                "workflow so those pieces can be returned safely to "
+                                "loose inventory.")
+                                           .arg(totalPulled);
+                        } else {
+                            message +=
+                                "\n\nAny existing inventory allocations/reservations "
+                                "will be released.";
+                        }
+
+                        const QMessageBox::StandardButton response
+                            = QMessageBox::question(this,
+                                                    "Cancel Build",
+                                                    message,
+                                                    QMessageBox::Yes | QMessageBox::No,
+                                                    QMessageBox::No);
+
+                        if (response != QMessageBox::Yes)
+                            return;
+
+                        //
+                        // If physical pieces have already been pulled, reuse
+                        // BrickSuite's existing controlled return workflow.
+                        // That workflow restores loose inventory, records the
+                        // movements, and reduces Quantity Pulled safely.
+                        //
+                        if (totalPulled > 0) {
+                            DisassembleSetDialog dialog(buildId, this);
+
+                            if (dialog.exec() != QDialog::Accepted)
+                                return;
+
+                            //
+                            // The return dialog finishes in Disassembled.
+                            // Cancellation is the user's actual intent, so
+                            // convert the terminal state to Cancelled.
+                            //
+                            build = buildRepository.getById(buildId);
+
+                            if (!build) {
+                                QMessageBox::critical(
+                                    this,
+                                    "Cancel Build",
+                                    "The parts were returned, but BrickSuite could "
+                                    "not reload the Build to mark it Cancelled.");
+                                selectBuild(buildId);
+                                return;
+                            }
+                        }
+
+                        QSqlDatabase database = DatabaseManager::instance().database();
+
+                        if (!database.transaction()) {
+                            QMessageBox::critical(this,
+                                                  "Cancel Build",
+                                                  "Unable to start the cancellation.");
+                            return;
+                        }
+
+                        //
+                        // Allocations are reservations, not historical movement
+                        // records. Once a Build is cancelled they must be
+                        // released so the loose pieces become available to
+                        // other Builds.
+                        //
+                        BuildAllocationRepository allocationRepository;
+
+                        if (!allocationRepository.removeAllForBuild(buildId)) {
+                            database.rollback();
+
+                            QMessageBox::critical(
+                                this,
+                                "Cancel Build",
+                                "Unable to release the Build's inventory allocations.");
+                            return;
+                        }
+
+                        build->setStatus("Cancelled");
+
+                        if (!buildRepository.update(*build)) {
+                            database.rollback();
+
+                            QMessageBox::critical(this,
+                                                  "Cancel Build",
+                                                  "Unable to mark the Build Cancelled.");
+                            return;
+                        }
+
+                        if (!database.commit()) {
+                            database.rollback();
+
+                            QMessageBox::critical(this,
+                                                  "Cancel Build",
+                                                  "Unable to commit the cancellation.");
+                            return;
+                        }
+
+                        selectBuild(buildId);
+
+                        QMessageBox::information(
+                            this,
+                            "Cancel Build",
+                            QString("\"%1\" is now Cancelled.\n\n"
+                                    "You may archive it from the Build Actions menu.")
+                                .arg(build->name()));
+                        return;
+                    } else if (action == "archive") {
+                        BuildRepository repository;
+
+                        const std::optional<Build> build = repository.getById(buildId);
+
+                        if (!build) {
+                            QMessageBox::critical(this,
+                                                  "Archive Build",
+                                                  "Unable to load the selected Build.");
+                            return;
+                        }
+
+                        if (build->status() != "Disassembled"
+                            && build->status() != "Cancelled") {
+                            QMessageBox::information(
+                                this,
+                                "Archive Build",
+                                "Only a Disassembled or Cancelled Build can be archived.");
+                            return;
+                        }
+
+                        const QMessageBox::StandardButton response
+                            = QMessageBox::question(
+                                this,
+                                "Archive Build",
+                                QString("Archive this Build?\n\n%1\n\n"
+                                        "The Build and all of its history will remain "
+                                        "in the database. You can show and reactivate "
+                                        "archived Builds later.")
+                                    .arg(build->name()),
+                                QMessageBox::Yes | QMessageBox::No,
+                                QMessageBox::No);
+
+                        if (response != QMessageBox::Yes)
+                            return;
+
+                        if (!repository.setActive(buildId, false)) {
+                            QMessageBox::critical(this,
+                                                  "Archive Build",
+                                                  "Unable to archive the selected Build.");
+                            return;
+                        }
+
+                        m_selectedBuildId = 0;
+                        loadBuilds();
+                        loadRequirements();
+                        updateRequirementUiState();
+
+                        QMessageBox::information(this,
+                                                 "Archive Build",
+                                                 QString("\"%1\" has been archived.")
+                                                     .arg(build->name()));
+                        return;
+                    } else if (action == "reactivate") {
+                        BuildRepository repository;
+
+                        std::optional<Build> build = repository.getById(buildId);
+
+                        if (!build) {
+                            QMessageBox::critical(this,
+                                                  "Reactivate Build",
+                                                  "Unable to load the selected Build.");
+                            return;
+                        }
+
+                        //
+                        // Cancelled is a terminal workflow state. If the
+                        // user brings an archived Cancelled Build back,
+                        // it returns to Planned so normal work can resume.
+                        //
+                        if (build->status() == "Cancelled") {
+                            build->setStatus("Planned");
+                            build->setIsActive(true);
+
+                            if (!repository.update(*build)) {
+                                QMessageBox::critical(
+                                    this,
+                                    "Reactivate Build",
+                                    "Unable to reactivate the selected Build.");
+                                return;
+                            }
+                        } else {
+                            if (!repository.setActive(buildId, true)) {
+                                QMessageBox::critical(
+                                    this,
+                                    "Reactivate Build",
+                                    "Unable to reactivate the selected Build.");
+                                return;
+                            }
+                        }
+
+                        selectBuild(buildId);
+
+                        QMessageBox::information(this,
+                                                 "Reactivate Build",
+                                                 QString("\"%1\" is active again.")
+                                                     .arg(build->name()));
+                        return;
                     } else if (action == "complete") {
                         BuildRepository buildRepository;
 
@@ -1672,16 +1956,28 @@ void BuildsWidget::updateRequirementUiState()
 {
     const bool enabled = m_workspaceContext.hasCurrentWorkspace() && m_selectedBuildId > 0;
 
-    m_partNumberEdit->setEnabled(enabled);
+    bool buildIsActive = false;
 
-    m_colorCombo->setEnabled(enabled);
+    if (enabled) {
+        BuildRepository repository;
+        const std::optional<Build> selectedBuild = repository.getById(m_selectedBuildId);
+        buildIsActive = selectedBuild && selectedBuild->isActive();
+    }
 
-    m_quantitySpin->setEnabled(enabled);
+    m_partNumberEdit->setEnabled(enabled && buildIsActive);
 
-    m_spareCheck->setEnabled(enabled);
+    m_colorCombo->setEnabled(enabled && buildIsActive);
 
-    m_addRequirementButton->setEnabled(enabled);
+    m_quantitySpin->setEnabled(enabled && buildIsActive);
 
+    m_spareCheck->setEnabled(enabled && buildIsActive);
+
+    m_addRequirementButton->setEnabled(enabled && buildIsActive);
+
+    //
+    // Archived requirements remain visible for history/reference,
+    // but the Build is read-only until reactivated.
+    //
     m_requirementsTable->setEnabled(enabled);
 
     bool canLoadSet = false;
@@ -1695,7 +1991,7 @@ void BuildsWidget::updateRequirementUiState()
 
         const std::optional<Build> build = repository.getById(m_selectedBuildId);
 
-        if (build) {
+        if (build && build->isActive()) {
             canLoadSet = build->buildType() == "Set" && !build->setNumber().trimmed().isEmpty();
 
             canImportMoc = build->buildType() == "MOC" && build->inventoryMode() == "Stock";

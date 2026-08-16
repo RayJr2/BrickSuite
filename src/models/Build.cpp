@@ -70,6 +70,16 @@ void Build::setStatus(const QString& status)
     m_status = status.trimmed();
 }
 
+bool Build::isActive() const
+{
+    return m_isActive;
+}
+
+void Build::setIsActive(bool active)
+{
+    m_isActive = active;
+}
+
 QString Build::notes() const
 {
     return m_notes;

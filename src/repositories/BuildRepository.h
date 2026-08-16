@@ -14,7 +14,9 @@ public:
 
     std::optional<Build> getById(int id) const;
 
-    QList<Build> getByWorkspace(int workspaceId) const;
+    QList<Build> getByWorkspace(int workspaceId, bool includeArchived = false) const;
+
+    bool setActive(int buildId, bool active);
 
     bool update(Build& build);
 

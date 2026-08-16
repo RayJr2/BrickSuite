@@ -29,7 +29,8 @@ bool BuildRepository::create(Build& build)
     const QString status = build.status().trimmed();
 
     if (status != "Planned" && status != "Pulling" && status != "Complete"
-        && status != "Disassembled") {
+        && status != "Disassembled" && status != "Cancelled") {
+        qWarning() << "Invalid Build status:" << status;
         return false;
     }
 
@@ -48,6 +49,7 @@ bool BuildRepository::create(Build& build)
             set_number,
             inventory_mode,
             status,
+            is_active,
             notes,
             created_utc,
             modified_utc
@@ -60,6 +62,7 @@ bool BuildRepository::create(Build& build)
             :set_number,
             :inventory_mode,
             :status,
+            :is_active,
             :notes,
             :created_utc,
             :modified_utc
@@ -81,6 +84,8 @@ bool BuildRepository::create(Build& build)
     query.bindValue(":inventory_mode", inventoryMode);
 
     query.bindValue(":status", status);
+
+    query.bindValue(":is_active", build.isActive() ? 1 : 0);
 
     if (!build.notes().trimmed().isEmpty()) {
         query.bindValue(":notes", build.notes().trimmed());
@@ -124,6 +129,7 @@ std::optional<Build> BuildRepository::getById(int id) const
             set_number,
             inventory_mode,
             status,
+            is_active,
             notes,
             created_utc,
             modified_utc
@@ -145,7 +151,7 @@ std::optional<Build> BuildRepository::getById(int id) const
     return buildFromQuery(query);
 }
 
-QList<Build> BuildRepository::getByWorkspace(int workspaceId) const
+QList<Build> BuildRepository::getByWorkspace(int workspaceId, bool includeArchived) const
 {
     QList<Build> builds;
 
@@ -154,9 +160,7 @@ QList<Build> BuildRepository::getByWorkspace(int workspaceId) const
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
-    QSqlQuery query(database);
-
-    query.prepare(R"(
+    QString sql = R"(
         SELECT
             id,
             workspace_id,
@@ -165,21 +169,27 @@ QList<Build> BuildRepository::getByWorkspace(int workspaceId) const
             set_number,
             inventory_mode,
             status,
+            is_active,
             notes,
             created_utc,
             modified_utc
         FROM build
         WHERE workspace_id = :workspace_id
-        ORDER BY
-            status,
-            name
-    )");
+    )";
 
+    if (!includeArchived) {
+        sql += " AND is_active = 1";
+    }
+
+    sql += " ORDER BY is_active DESC, status, name";
+
+    QSqlQuery query(database);
+
+    query.prepare(sql);
     query.bindValue(":workspace_id", workspaceId);
 
     if (!query.exec()) {
         qCritical() << "Unable to retrieve builds:" << query.lastError().text();
-
         return builds;
     }
 
@@ -188,6 +198,36 @@ QList<Build> BuildRepository::getByWorkspace(int workspaceId) const
     }
 
     return builds;
+}
+
+bool BuildRepository::setActive(int buildId, bool active)
+{
+    if (buildId <= 0)
+        return false;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+
+    QSqlQuery query(database);
+
+    query.prepare(R"(
+        UPDATE build
+        SET
+            is_active = :is_active,
+            modified_utc = :modified_utc
+        WHERE id = :id
+    )");
+
+    query.bindValue(":is_active", active ? 1 : 0);
+    query.bindValue(":modified_utc", now.toString(Qt::ISODateWithMs));
+    query.bindValue(":id", buildId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to update Build active state:" << query.lastError().text();
+        return false;
+    }
+
+    return query.numRowsAffected() > 0;
 }
 
 bool BuildRepository::update(Build& build)
@@ -211,7 +251,8 @@ bool BuildRepository::update(Build& build)
     const QString status = build.status().trimmed();
 
     if (status != "Planned" && status != "Pulling" && status != "Complete"
-        && status != "Disassembled") {
+        && status != "Disassembled" && status != "Cancelled") {
+        qWarning() << "Invalid Build status:" << status;
         return false;
     }
 
@@ -230,6 +271,7 @@ bool BuildRepository::update(Build& build)
             set_number = :set_number,
             inventory_mode = :inventory_mode,
             status = :status,
+            is_active = :is_active,
             notes = :notes,
             modified_utc = :modified_utc
         WHERE id = :id
@@ -250,6 +292,8 @@ bool BuildRepository::update(Build& build)
     query.bindValue(":inventory_mode", inventoryMode);
 
     query.bindValue(":status", status);
+
+    query.bindValue(":is_active", build.isActive() ? 1 : 0);
 
     if (!build.notes().trimmed().isEmpty()) {
         query.bindValue(":notes", build.notes().trimmed());
@@ -292,6 +336,8 @@ Build BuildRepository::buildFromQuery(const QSqlQuery& query) const
     build.setInventoryMode(query.value("inventory_mode").toString());
 
     build.setStatus(query.value("status").toString());
+
+    build.setIsActive(query.value("is_active").toInt() != 0);
 
     build.setNotes(query.value("notes").toString());
 

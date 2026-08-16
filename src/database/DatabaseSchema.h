@@ -5,7 +5,7 @@
 class DatabaseSchema
 {
 public:
-    static constexpr int CurrentSchemaVersion = 9;
+    static constexpr int CurrentSchemaVersion = 11;
 
     static bool initialize(QSqlDatabase& database);
 
@@ -60,6 +60,10 @@ private:
     static bool migrateVersion7ToVersion8(QSqlDatabase& database);
 
     static bool migrateVersion8ToVersion9(QSqlDatabase& database);
+
+    static bool migrateVersion9ToVersion10(QSqlDatabase& database);
+
+    static bool migrateVersion10ToVersion11(QSqlDatabase& database);
 
     static bool createSetCatalogTable(QSqlDatabase& database);
 };
