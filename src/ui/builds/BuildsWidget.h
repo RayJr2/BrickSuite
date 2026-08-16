@@ -39,6 +39,7 @@ private slots:
     void addBuild();
     void buildSelectionChanged();
     void addRequirement();
+    void allocateAvailable();
 
 private:
     void loadBuilds();
@@ -80,6 +81,7 @@ private:
 
     QPushButton* m_loadSetFromRebrickableButton = nullptr;
     QPushButton* m_importMocPartsButton = nullptr;
+    QPushButton* m_allocateAvailableButton = nullptr;
     QPushButton* m_exportMissingPartsButton = nullptr;
     QPushButton* m_exportPullListButton = nullptr;
     QPushButton* m_importPullListButton = nullptr;

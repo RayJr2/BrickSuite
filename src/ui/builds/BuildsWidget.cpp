@@ -1,6 +1,7 @@
 #include "BuildsWidget.h"
 
 #include "../../app/WorkspaceContext.h"
+#include "../../database/DatabaseManager.h"
 #include "AllocateBuildRequirementDialog.h"
 #include "DisassembleSetDialog.h"
 #include "EditBuildDialog.h"
@@ -45,6 +46,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QSqlDatabase>
 #include <QShowEvent>
 #include <QSpinBox>
 #include <QSplitter>
@@ -264,6 +266,8 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_importMocPartsButton = new QPushButton("Import MOC Parts CSV", requirementsGroup);
 
+    m_allocateAvailableButton = new QPushButton("Allocate Available", requirementsGroup);
+
     m_exportMissingPartsButton = new QPushButton("Export Missing Parts CSV", requirementsGroup);
 
     m_exportPullListButton = new QPushButton("Export Pull List CSV", requirementsGroup);
@@ -274,6 +278,8 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     requirementsHeaderLayout->addWidget(m_loadSetFromRebrickableButton);
 
     requirementsHeaderLayout->addWidget(m_importMocPartsButton);
+
+    requirementsHeaderLayout->addWidget(m_allocateAvailableButton);
 
     requirementsHeaderLayout->addWidget(m_exportMissingPartsButton);
 
@@ -438,6 +444,11 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     // ------------------------------------------------------------
     //
     connect(m_addButton, &QPushButton::clicked, this, &BuildsWidget::addBuild);
+
+    connect(m_allocateAvailableButton,
+            &QPushButton::clicked,
+            this,
+            &BuildsWidget::allocateAvailable);
 
     connect(m_exportMissingPartsButton,
             &QPushButton::clicked,
@@ -1389,6 +1400,274 @@ void BuildsWidget::addRequirement()
     loadRequirements();
 }
 
+void BuildsWidget::allocateAvailable()
+{
+    if (!m_workspaceContext.hasCurrentWorkspace() || m_selectedBuildId <= 0) {
+        QMessageBox::warning(this, "Allocate Available", "Select a Build first.");
+
+        return;
+    }
+
+    BuildRepository buildRepository;
+
+    const std::optional<Build> build = buildRepository.getById(m_selectedBuildId);
+
+    if (!build) {
+        QMessageBox::critical(this, "Allocate Available", "Unable to load the selected Build.");
+
+        return;
+    }
+
+    if (build->inventoryMode() != "Stock") {
+        QMessageBox::information(this,
+                                 "Allocate Available",
+                                 "Automatic inventory allocation is available only for "
+                                 "Build from Stock.");
+
+        return;
+    }
+
+    BuildRequirementRepository requirementRepository;
+    InventoryRecordRepository inventoryRepository;
+    BuildAllocationRepository allocationRepository;
+
+    const QList<BuildRequirement> requirements = requirementRepository.getByBuild(m_selectedBuildId);
+
+    int regularRequirementCount = 0;
+
+    for (const BuildRequirement& requirement : requirements) {
+        if (!requirement.isSpare())
+            ++regularRequirementCount;
+    }
+
+    if (regularRequirementCount == 0) {
+        QMessageBox::information(this,
+                                 "Allocate Available",
+                                 "This Build does not have any non-spare requirements to allocate.");
+
+        return;
+    }
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    if (!database.transaction()) {
+        QMessageBox::critical(this,
+                              "Allocate Available",
+                              "Unable to start the automatic allocation transaction.");
+
+        return;
+    }
+
+    int allocationsCreated = 0;
+    int allocationsUpdated = 0;
+    int piecesAdded = 0;
+
+    for (const BuildRequirement& requirement : requirements) {
+        //
+        // Spare requirements are intentionally informational / optional.
+        // Match the existing single-requirement Allocate behavior and skip them.
+        //
+        if (requirement.isSpare())
+            continue;
+
+        const int remainingRequired = qMax(requirement.quantityRequired()
+                                               - requirement.quantityPulled(),
+                                           0);
+
+        if (remainingRequired <= 0)
+            continue;
+
+        int thisBuildAllocated = allocationRepository.totalAllocatedForPartColorForBuild(
+            m_selectedBuildId,
+            requirement.partId(),
+            requirement.colorId());
+
+        int stillNeeded = qMax(remainingRequired - thisBuildAllocated, 0);
+
+        if (stillNeeded <= 0)
+            continue;
+
+        //
+        // InventoryRecordRepository returns deterministic ordering by
+        // storage_location_id, condition, ownership_type. We deliberately
+        // use that existing ordering instead of inventing a storage preference.
+        //
+        const QList<InventoryRecord> records = inventoryRepository.getByPartColor(
+            m_workspaceContext.currentWorkspaceId(),
+            requirement.partId(),
+            requirement.colorId());
+
+        for (const InventoryRecord& record : records) {
+            if (stillNeeded <= 0)
+                break;
+
+            const int totalAllocated = allocationRepository.totalAllocatedForInventoryRecord(
+                record.id());
+
+            const int currentBuildAllocated
+                = allocationRepository.totalAllocatedForInventoryRecordForBuild(record.id(),
+                                                                                 m_selectedBuildId);
+
+            const int otherBuildsAllocated = qMax(totalAllocated - currentBuildAllocated, 0);
+
+            const int maximumForThisBuild = qMax(record.quantity() - otherBuildsAllocated, 0);
+
+            const int additionalCapacity = qMax(maximumForThisBuild - currentBuildAllocated, 0);
+
+            if (additionalCapacity <= 0)
+                continue;
+
+            const int quantityToAdd = qMin(stillNeeded, additionalCapacity);
+
+            if (quantityToAdd <= 0)
+                continue;
+
+            const int newAllocationQuantity = currentBuildAllocated + quantityToAdd;
+
+            const QList<BuildAllocation> recordAllocations = allocationRepository.getByInventoryRecord(
+                record.id());
+
+            std::optional<BuildAllocation> existingAllocation;
+
+            for (const BuildAllocation& allocation : recordAllocations) {
+                if (allocation.buildId() == m_selectedBuildId) {
+                    existingAllocation = allocation;
+                    break;
+                }
+            }
+
+            if (existingAllocation) {
+                existingAllocation->setQuantityAllocated(newAllocationQuantity);
+
+                if (!allocationRepository.update(*existingAllocation)) {
+                    database.rollback();
+
+                    QMessageBox::critical(this,
+                                          "Allocate Available",
+                                          "Unable to update an existing Build allocation. "
+                                          "No automatic allocations were saved.");
+
+                    loadRequirements();
+
+                    return;
+                }
+
+                ++allocationsUpdated;
+            } else {
+                BuildAllocation allocation;
+
+                allocation.setBuildId(m_selectedBuildId);
+                allocation.setInventoryRecordId(record.id());
+                allocation.setPartId(requirement.partId());
+                allocation.setColorId(requirement.colorId());
+                allocation.setStorageLocationId(record.storageLocationId());
+                allocation.setQuantityAllocated(quantityToAdd);
+
+                if (!allocationRepository.create(allocation)) {
+                    database.rollback();
+
+                    QMessageBox::critical(this,
+                                          "Allocate Available",
+                                          "Unable to create a Build allocation. "
+                                          "No automatic allocations were saved.");
+
+                    loadRequirements();
+
+                    return;
+                }
+
+                ++allocationsCreated;
+            }
+
+            piecesAdded += quantityToAdd;
+            stillNeeded -= quantityToAdd;
+            thisBuildAllocated += quantityToAdd;
+        }
+    }
+
+    if (!database.commit()) {
+        database.rollback();
+
+        QMessageBox::critical(this,
+                              "Allocate Available",
+                              "Unable to save the automatic allocations. "
+                              "No automatic allocations were saved.");
+
+        loadRequirements();
+
+        return;
+    }
+
+    //
+    // Recalculate the final Build state for the summary. This is intentionally
+    // done once after the transaction rather than refreshing for every row.
+    //
+    int satisfiedRequirements = 0;
+    int partiallySatisfiedRequirements = 0;
+    int stillMissingRequirements = 0;
+    int spareRequirementsSkipped = 0;
+
+    for (const BuildRequirement& requirement : requirements) {
+        if (requirement.isSpare()) {
+            ++spareRequirementsSkipped;
+            continue;
+        }
+
+        const int remainingRequired = qMax(requirement.quantityRequired()
+                                               - requirement.quantityPulled(),
+                                           0);
+
+        if (remainingRequired <= 0) {
+            ++satisfiedRequirements;
+            continue;
+        }
+
+        const int allocated = allocationRepository.totalAllocatedForPartColorForBuild(
+            m_selectedBuildId,
+            requirement.partId(),
+            requirement.colorId());
+
+        if (allocated >= remainingRequired) {
+            ++satisfiedRequirements;
+        } else if (allocated > 0) {
+            ++partiallySatisfiedRequirements;
+        } else {
+            ++stillMissingRequirements;
+        }
+    }
+
+    loadRequirements();
+    updateRequirementUiState();
+
+    QString message;
+
+    if (piecesAdded <= 0) {
+        message = "BrickSuite did not find any additional loose inventory that could be allocated.";
+    } else {
+        message = QString("BrickSuite automatically allocated %1 piece(s).\n\n"
+                          "Requirements satisfied: %2\n"
+                          "Partially satisfied: %3\n"
+                          "Still missing: %4")
+                      .arg(piecesAdded)
+                      .arg(satisfiedRequirements)
+                      .arg(partiallySatisfiedRequirements)
+                      .arg(stillMissingRequirements);
+
+        if (allocationsCreated > 0 || allocationsUpdated > 0) {
+            message += QString("\n\nAllocation records created: %1\n"
+                               "Allocation records updated: %2")
+                           .arg(allocationsCreated)
+                           .arg(allocationsUpdated);
+        }
+    }
+
+    if (spareRequirementsSkipped > 0) {
+        message += QString("\n\nSpare requirements skipped: %1").arg(spareRequirementsSkipped);
+    }
+
+    QMessageBox::information(this, "Allocate Available", message);
+}
+
 void BuildsWidget::updateRequirementUiState()
 {
     const bool enabled = m_workspaceContext.hasCurrentWorkspace() && m_selectedBuildId > 0;
@@ -1406,6 +1685,7 @@ void BuildsWidget::updateRequirementUiState()
     m_requirementsTable->setEnabled(enabled);
 
     bool canLoadSet = false;
+    bool canAllocateAvailable = false;
     bool canExportPullList = false;
     bool canExportMissingParts = false;
     bool canImportMoc = false;
@@ -1420,11 +1700,15 @@ void BuildsWidget::updateRequirementUiState()
 
             canImportMoc = build->buildType() == "MOC" && build->inventoryMode() == "Stock";
 
+            canAllocateAvailable = build->inventoryMode() == "Stock";
+
             canExportPullList = build->inventoryMode() == "Stock";
 
             canExportMissingParts = build->inventoryMode() == "Stock";
         }
     }
+
+    m_allocateAvailableButton->setEnabled(canAllocateAvailable);
 
     m_exportPullListButton->setEnabled(canExportPullList);
 
