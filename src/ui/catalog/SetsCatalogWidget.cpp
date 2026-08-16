@@ -163,6 +163,7 @@ void SetsCatalogWidget::refresh()
         m_resultLabel->setText("No Sets Catalog has been imported yet.");
 
         m_lastResultCount = 0;
+        m_totalResultCount = 0;
 
         updatePagingControls();
     }
@@ -210,6 +211,8 @@ void SetsCatalogWidget::searchSets()
     criteria.offset = m_currentPage * resultsPerPage;
 
     SetCatalogRepository repository;
+
+    m_totalResultCount = repository.count(criteria);
 
     const QList<SetCatalogItem> results = repository.search(criteria);
 
@@ -321,31 +324,26 @@ void SetsCatalogWidget::previousPage()
 void SetsCatalogWidget::nextPage()
 {
     const int resultsPerPage = UserSettings::instance().resultsPerPage();
+    const int totalPages = qMax(1, (m_totalResultCount + resultsPerPage - 1) / resultsPerPage);
 
-    if (m_lastResultCount < resultsPerPage) {
+    if (m_currentPage + 1 >= totalPages)
         return;
-    }
 
     ++m_currentPage;
 
     searchSets();
-
-    if (m_lastResultCount == 0) {
-        --m_currentPage;
-
-        searchSets();
-    }
 }
 
 void SetsCatalogWidget::updatePagingControls()
 {
     const int resultsPerPage = UserSettings::instance().resultsPerPage();
+    const int totalPages = qMax(1, (m_totalResultCount + resultsPerPage - 1) / resultsPerPage);
+    const int displayPage = qMin(m_currentPage + 1, totalPages);
 
     m_previousButton->setEnabled(m_currentPage > 0);
+    m_nextButton->setEnabled(m_currentPage + 1 < totalPages);
 
-    m_nextButton->setEnabled(m_lastResultCount == resultsPerPage);
-
-    m_pageLabel->setText(QString("Page %1").arg(m_currentPage + 1));
+    m_pageLabel->setText(QString("Page %1 of %2").arg(displayPage).arg(totalPages));
 }
 
 void SetsCatalogWidget::importSetsCsv()

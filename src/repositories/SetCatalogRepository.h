@@ -17,6 +17,8 @@ public:
 
     QList<SetCatalogItem> search(const SetCatalogSearchCriteria& criteria) const;
 
+    int count(const SetCatalogSearchCriteria& criteria) const;
+
     QList<int> getYears() const;
 
     int count() const;

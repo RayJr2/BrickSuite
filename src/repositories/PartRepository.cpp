@@ -368,6 +368,61 @@ QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteri
     return results;
 }
 
+
+int PartRepository::count(const PartSearchCriteria& criteria) const
+{
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QString sql = R"(
+        SELECT COUNT(*)
+        FROM part p
+        WHERE p.is_active = 1
+    )";
+
+    const QString searchText = criteria.searchText.trimmed();
+
+    if (!searchText.isEmpty()) {
+        sql += R"(
+            AND
+            (
+                p.part_number LIKE :search
+                OR p.name LIKE :search
+            )
+        )";
+    }
+
+    if (criteria.categoryId > 0) {
+        sql += R"(
+            AND p.part_category_id = :category_id
+        )";
+    }
+
+    QSqlQuery query(database);
+
+    if (!query.prepare(sql)) {
+        qCritical() << "Unable to prepare part count:" << query.lastError().text();
+        return 0;
+    }
+
+    if (!searchText.isEmpty()) {
+        query.bindValue(":search", "%" + searchText + "%");
+    }
+
+    if (criteria.categoryId > 0) {
+        query.bindValue(":category_id", criteria.categoryId);
+    }
+
+    if (!query.exec()) {
+        qCritical() << "Unable to count matching parts:" << query.lastError().text();
+        return 0;
+    }
+
+    if (!query.next())
+        return 0;
+
+    return query.value(0).toInt();
+}
+
 QList<Part> PartRepository::searchForInventoryEntry(const QString& searchText, int limit) const
 {
     QList<Part> parts;

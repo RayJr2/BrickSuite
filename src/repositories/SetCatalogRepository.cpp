@@ -178,6 +178,71 @@ QList<SetCatalogItem> SetCatalogRepository::search(const SetCatalogSearchCriteri
     return results;
 }
 
+
+int SetCatalogRepository::count(const SetCatalogSearchCriteria& criteria) const
+{
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QString sql = R"(
+        SELECT COUNT(*)
+        FROM set_catalog
+        WHERE 1 = 1
+    )";
+
+    const QString searchText = criteria.searchText.trimmed();
+
+    if (!searchText.isEmpty()) {
+        sql += R"(
+            AND
+            (
+                set_number LIKE :search
+                OR name LIKE :search
+            )
+        )";
+    }
+
+    if (criteria.year > 0) {
+        sql += R"(
+            AND year = :year
+        )";
+    }
+
+    if (criteria.themeId > 0) {
+        sql += R"(
+            AND theme_id = :theme_id
+        )";
+    }
+
+    QSqlQuery query(database);
+
+    if (!query.prepare(sql)) {
+        qCritical() << "Unable to prepare set catalog count:" << query.lastError().text();
+        return 0;
+    }
+
+    if (!searchText.isEmpty()) {
+        query.bindValue(":search", "%" + searchText + "%");
+    }
+
+    if (criteria.year > 0) {
+        query.bindValue(":year", criteria.year);
+    }
+
+    if (criteria.themeId > 0) {
+        query.bindValue(":theme_id", criteria.themeId);
+    }
+
+    if (!query.exec()) {
+        qCritical() << "Unable to count matching sets:" << query.lastError().text();
+        return 0;
+    }
+
+    if (!query.next())
+        return 0;
+
+    return query.value(0).toInt();
+}
+
 QList<int> SetCatalogRepository::getYears() const
 {
     QList<int> years;

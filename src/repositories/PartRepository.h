@@ -24,6 +24,8 @@ public:
 
     QList<PartSearchResult> search(const PartSearchCriteria& criteria) const;
 
+    int count(const PartSearchCriteria& criteria) const;
+
     QList<Part> searchForInventoryEntry(const QString& searchText, int limit = 20) const;
 
 private:

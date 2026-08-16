@@ -247,6 +247,8 @@ void PartsCatalogWidget::searchParts()
 
     PartRepository repository;
 
+    m_totalResultCount = repository.count(criteria);
+
     const QList<PartSearchResult> results = repository.search(criteria);
 
     m_lastResultCount = results.size();
@@ -404,21 +406,15 @@ void PartsCatalogWidget::previousPage()
 
 void PartsCatalogWidget::nextPage()
 {
-    if (m_lastResultCount < ResultsPerPage) {
+    const int resultsPerPage = UserSettings::instance().resultsPerPage();
+    const int totalPages = qMax(1, (m_totalResultCount + resultsPerPage - 1) / resultsPerPage);
+
+    if (m_currentPage + 1 >= totalPages)
         return;
-    }
 
     ++m_currentPage;
 
     searchParts();
-
-    // If the next page is empty,
-    // return to the last valid page.
-    if (m_lastResultCount == 0) {
-        --m_currentPage;
-
-        searchParts();
-    }
 }
 
 void PartsCatalogWidget::settingsChanged()
@@ -430,13 +426,14 @@ void PartsCatalogWidget::settingsChanged()
 
 void PartsCatalogWidget::updatePagingControls()
 {
-    m_previousButton->setEnabled(m_currentPage > 0);
-
     const int resultsPerPage = UserSettings::instance().resultsPerPage();
+    const int totalPages = qMax(1, (m_totalResultCount + resultsPerPage - 1) / resultsPerPage);
+    const int displayPage = qMin(m_currentPage + 1, totalPages);
 
-    m_nextButton->setEnabled(m_lastResultCount >= resultsPerPage);
+    m_previousButton->setEnabled(m_currentPage > 0);
+    m_nextButton->setEnabled(m_currentPage + 1 < totalPages);
 
-    m_pageLabel->setText(QString("Page %1").arg(m_currentPage + 1));
+    m_pageLabel->setText(QString("Page %1 of %2").arg(displayPage).arg(totalPages));
 }
 
 void PartsCatalogWidget::importPartsCsv()
