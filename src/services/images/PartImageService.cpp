@@ -1,5 +1,6 @@
 #include "PartImageService.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -208,6 +209,9 @@ void PartImageService::downloadImage(const QString& partNumber, const QString& i
         //
         if (reply->error() != QNetworkReply::NoError) {
             const QString error = reply->errorString();
+            qWarning() << "Part image download failed."
+                       << "Part:" << partNumber
+                       << "Error:" << error;
 
             reply->deleteLater();
 
@@ -240,6 +244,7 @@ void PartImageService::downloadImage(const QString& partNumber, const QString& i
         QSaveFile file(path);
 
         if (!file.open(QIODevice::WriteOnly)) {
+            qWarning() << "Unable to create part image cache file:" << path << file.errorString();
             emit imageFailed(partNumber, QString("Unable to create cached image: %1").arg(path));
 
             return;
@@ -426,6 +431,10 @@ void PartImageService::downloadPartColorImage(const QString& partNumber,
 
                 if (reply->error() != QNetworkReply::NoError) {
                     const QString error = reply->errorString();
+                    qWarning() << "Part color image download failed."
+                               << "Part:" << partNumber
+                               << "RebrickableColorId:" << rebrickableColorId
+                               << "Error:" << error;
 
                     reply->deleteLater();
 
@@ -456,6 +465,8 @@ void PartImageService::downloadPartColorImage(const QString& partNumber,
                 QSaveFile file(path);
 
                 if (!file.open(QIODevice::WriteOnly)) {
+                    qWarning() << "Unable to create part color image cache file:"
+                               << path << file.errorString();
                     emit partColorImageFailed(partNumber,
                                               rebrickableColorId,
                                               QString("Unable to create cached "

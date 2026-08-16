@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QDebug>
 
 #include "app/Application.h"
 #include "settings/ThemeManager.h"
@@ -19,6 +20,8 @@ int main(int argc, char *argv[])
     // are captured automatically from this point forward.
     //
     Logger::init();
+
+    qInfo() << "BrickSuite version:" << QApplication::applicationVersion();
 
     ThemeManager::applySavedTheme(qtApplication);
 

@@ -497,7 +497,16 @@ bool StorageLocationRepository::deactivate(int locationId)
         return false;
     }
 
-    return query.numRowsAffected() > 0;
+    const bool changed = query.numRowsAffected() > 0;
+
+    if (changed) {
+        qInfo() << "Storage location deactivated." << "LocationId:" << locationId;
+    } else {
+        qWarning() << "Storage location deactivation affected no rows."
+                   << "LocationId:" << locationId;
+    }
+
+    return changed;
 }
 
 bool StorageLocationRepository::reactivate(int locationId)
@@ -538,6 +547,15 @@ bool StorageLocationRepository::reactivate(int locationId)
         return false;
     }
 
-    return query.numRowsAffected() > 0;
+    const bool changed = query.numRowsAffected() > 0;
+
+    if (changed) {
+        qInfo() << "Storage location reactivated." << "LocationId:" << locationId;
+    } else {
+        qWarning() << "Storage location reactivation affected no rows."
+                   << "LocationId:" << locationId;
+    }
+
+    return changed;
 }
 

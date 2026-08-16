@@ -9,7 +9,9 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QTextCursor>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -58,6 +60,20 @@ LogViewerDialog::LogViewerDialog(QWidget* parent)
 
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
+    //
+    // Refresh automatically so the viewer can remain open on another screen
+    // while BrickSuite is being exercised. One second is frequent enough for
+    // testing without generating any additional log traffic.
+    //
+    m_refreshTimer = new QTimer(this);
+    m_refreshTimer->setInterval(1000);
+
+    connect(m_refreshTimer, &QTimer::timeout, this, [this]() {
+        refreshLog();
+    });
+
+    m_refreshTimer->start();
+
     refreshLog();
 }
 
@@ -72,11 +88,30 @@ void LogViewerDialog::refreshLog()
         return;
     }
 
-    m_logEdit->setPlainText(QString::fromUtf8(file.readAll()));
+    const QString logText = QString::fromUtf8(file.readAll());
 
-    QTextCursor cursor = m_logEdit->textCursor();
-    cursor.movePosition(QTextCursor::End);
-    m_logEdit->setTextCursor(cursor);
+    //
+    // If the user is watching the bottom of the log, continue following new
+    // entries. If they have scrolled upward to inspect older entries, preserve
+    // that position instead of snapping them back to the bottom every second.
+    //
+    QScrollBar* scrollBar = m_logEdit->verticalScrollBar();
+    const bool wasAtBottom = scrollBar->value() >= scrollBar->maximum();
+    const int previousScrollValue = scrollBar->value();
+
+    if (m_logEdit->toPlainText() == logText)
+        return;
+
+    m_logEdit->setPlainText(logText);
+
+    if (wasAtBottom) {
+        QTextCursor cursor = m_logEdit->textCursor();
+        cursor.movePosition(QTextCursor::End);
+        m_logEdit->setTextCursor(cursor);
+        scrollBar->setValue(scrollBar->maximum());
+    } else {
+        scrollBar->setValue(qMin(previousScrollValue, scrollBar->maximum()));
+    }
 }
 
 void LogViewerDialog::clearLog()

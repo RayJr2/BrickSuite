@@ -4,6 +4,7 @@
 
 class QPlainTextEdit;
 class QPushButton;
+class QTimer;
 
 class LogViewerDialog : public QDialog
 {
@@ -21,4 +22,5 @@ private:
     QPushButton* m_refreshButton = nullptr;
     QPushButton* m_clearButton = nullptr;
     QPushButton* m_openFolderButton = nullptr;
+    QTimer* m_refreshTimer = nullptr;
 };

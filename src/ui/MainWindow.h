@@ -17,6 +17,7 @@ class MyInventoryWidget;
 class BuildsWidget;
 class SetsCatalogWidget;
 class BackgroundPartColorImageCacheService;
+class LogViewerDialog;
 
 class MainWindow : public QMainWindow
 {
@@ -52,4 +53,5 @@ private:
     SetsCatalogWidget* m_setsCatalogWidget = nullptr;
 
     BackgroundPartColorImageCacheService* m_backgroundPartColorImageCacheService = nullptr;
+    LogViewerDialog* m_logViewerDialog = nullptr;
 };

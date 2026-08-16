@@ -15,6 +15,7 @@
 #include "../RebrickableApiClient.h"
 #include "PartImageService.h"
 
+#include <QDebug>
 #include <QMetaObject>
 #include <QTimer>
 #include <memory>
@@ -46,6 +47,8 @@ void BackgroundPartColorImageCacheService::start()
 
     m_started = true;
 
+    qInfo() << "Background part-color image cache started.";
+
     rebuildQueue();
 }
 
@@ -60,6 +63,8 @@ void BackgroundPartColorImageCacheService::stop()
     m_skippedThisRun.clear();
 
     ++m_generation;
+
+    qInfo() << "Background part-color image cache stopped.";
 }
 
 QString BackgroundPartColorImageCacheService::workKey(const QString& partNumber,
@@ -145,6 +150,10 @@ void BackgroundPartColorImageCacheService::rebuildQueue()
 
         m_workItems.append(item);
     }
+
+    qInfo() << "Background part-color image cache queue rebuilt."
+            << "WorkspaceId:" << m_workspaceContext.currentWorkspaceId()
+            << "PendingItems:" << m_workItems.size();
 
     //
     // If an old request is still completing, let it

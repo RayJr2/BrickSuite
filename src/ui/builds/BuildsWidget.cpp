@@ -32,6 +32,7 @@
 #include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
+#include <QDebug>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -47,6 +48,7 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QSqlDatabase>
+#include <QSqlError>
 #include <QShowEvent>
 #include <QSpinBox>
 #include <QSplitter>
@@ -836,6 +838,9 @@ void BuildsWidget::loadBuilds()
                         QSqlDatabase database = DatabaseManager::instance().database();
 
                         if (!database.transaction()) {
+                            qCritical() << "Unable to start Build cancellation transaction."
+                                        << "BuildId:" << buildId
+                                        << "DatabaseError:" << database.lastError().text();
                             QMessageBox::critical(this,
                                                   "Cancel Build",
                                                   "Unable to start the cancellation.");
@@ -852,6 +857,8 @@ void BuildsWidget::loadBuilds()
 
                         if (!allocationRepository.removeAllForBuild(buildId)) {
                             database.rollback();
+                            qCritical() << "Build cancellation failed while releasing allocations."
+                                        << "BuildId:" << buildId;
 
                             QMessageBox::critical(
                                 this,
@@ -864,6 +871,8 @@ void BuildsWidget::loadBuilds()
 
                         if (!buildRepository.update(*build)) {
                             database.rollback();
+                            qCritical() << "Build cancellation failed while saving Cancelled status."
+                                        << "BuildId:" << buildId;
 
                             QMessageBox::critical(this,
                                                   "Cancel Build",
@@ -872,6 +881,9 @@ void BuildsWidget::loadBuilds()
                         }
 
                         if (!database.commit()) {
+                            qCritical() << "Unable to commit Build cancellation."
+                                        << "BuildId:" << buildId
+                                        << "DatabaseError:" << database.lastError().text();
                             database.rollback();
 
                             QMessageBox::critical(this,
@@ -879,6 +891,11 @@ void BuildsWidget::loadBuilds()
                                                   "Unable to commit the cancellation.");
                             return;
                         }
+
+                        qInfo() << "Build cancelled."
+                                << "BuildId:" << buildId
+                                << "Name:" << build->name()
+                                << "PreviouslyPulledPieces:" << totalPulled;
 
                         selectBuild(buildId);
 
@@ -926,11 +943,17 @@ void BuildsWidget::loadBuilds()
                             return;
 
                         if (!repository.setActive(buildId, false)) {
+                            qCritical() << "Unable to archive Build." << "BuildId:" << buildId;
                             QMessageBox::critical(this,
                                                   "Archive Build",
                                                   "Unable to archive the selected Build.");
                             return;
                         }
+
+                        qInfo() << "Build archived."
+                                << "BuildId:" << buildId
+                                << "Name:" << build->name()
+                                << "Status:" << build->status();
 
                         m_selectedBuildId = 0;
                         loadBuilds();
@@ -979,6 +1002,11 @@ void BuildsWidget::loadBuilds()
                                 return;
                             }
                         }
+
+                        qInfo() << "Build reactivated."
+                                << "BuildId:" << buildId
+                                << "Name:" << build->name()
+                                << "Status:" << (build->status() == "Cancelled" ? "Planned" : build->status());
 
                         selectBuild(buildId);
 
@@ -1119,12 +1147,19 @@ void BuildsWidget::loadBuilds()
                         build->setStatus("Complete");
 
                         if (!buildRepository.update(*build)) {
+                            qCritical() << "Unable to mark Build Complete." << "BuildId:" << buildId;
                             QMessageBox::critical(this,
                                                   "Complete Build",
                                                   "Unable to mark the Build Complete.");
 
                             return;
                         }
+
+                        qInfo() << "Build completed."
+                                << "BuildId:" << buildId
+                                << "Name:" << build->name()
+                                << "RegularPieces:" << regularPulled
+                                << "SparePiecesPulled:" << sparePulled;
 
                         selectBuild(buildId);
 
@@ -1735,6 +1770,9 @@ void BuildsWidget::allocateAvailable()
     QSqlDatabase database = DatabaseManager::instance().database();
 
     if (!database.transaction()) {
+        qCritical() << "Unable to start Allocate Available transaction."
+                    << "BuildId:" << m_selectedBuildId
+                    << "DatabaseError:" << database.lastError().text();
         QMessageBox::critical(this,
                               "Allocate Available",
                               "Unable to start the automatic allocation transaction.");
@@ -1824,6 +1862,9 @@ void BuildsWidget::allocateAvailable()
                 existingAllocation->setQuantityAllocated(newAllocationQuantity);
 
                 if (!allocationRepository.update(*existingAllocation)) {
+                    qCritical() << "Allocate Available failed updating allocation."
+                                << "BuildId:" << m_selectedBuildId
+                                << "InventoryRecordId:" << record.id();
                     database.rollback();
 
                     QMessageBox::critical(this,
@@ -1848,6 +1889,12 @@ void BuildsWidget::allocateAvailable()
                 allocation.setQuantityAllocated(quantityToAdd);
 
                 if (!allocationRepository.create(allocation)) {
+                    qCritical() << "Allocate Available failed creating allocation."
+                                << "BuildId:" << m_selectedBuildId
+                                << "InventoryRecordId:" << record.id()
+                                << "PartId:" << requirement.partId()
+                                << "ColorId:" << requirement.colorId()
+                                << "Quantity:" << quantityToAdd;
                     database.rollback();
 
                     QMessageBox::critical(this,
@@ -1870,6 +1917,9 @@ void BuildsWidget::allocateAvailable()
     }
 
     if (!database.commit()) {
+        qCritical() << "Unable to commit Allocate Available transaction."
+                    << "BuildId:" << m_selectedBuildId
+                    << "DatabaseError:" << database.lastError().text();
         database.rollback();
 
         QMessageBox::critical(this,
@@ -1948,6 +1998,15 @@ void BuildsWidget::allocateAvailable()
     if (spareRequirementsSkipped > 0) {
         message += QString("\n\nSpare requirements skipped: %1").arg(spareRequirementsSkipped);
     }
+
+    qInfo() << "Allocate Available completed."
+            << "BuildId:" << m_selectedBuildId
+            << "PiecesAllocated:" << piecesAdded
+            << "RequirementsSatisfied:" << satisfiedRequirements
+            << "RequirementsPartial:" << partiallySatisfiedRequirements
+            << "RequirementsMissing:" << stillMissingRequirements
+            << "AllocationRowsCreated:" << allocationsCreated
+            << "AllocationRowsUpdated:" << allocationsUpdated;
 
     QMessageBox::information(this, "Allocate Available", message);
 }
@@ -2449,6 +2508,10 @@ void BuildsWidget::importMocPartsCsv()
                                                                          replaceExisting);
 
     if (!result.success) {
+        qWarning() << "MOC requirements import failed."
+                   << "BuildId:" << m_selectedBuildId
+                   << "File:" << fileName
+                   << "Reason:" << result.message;
         QMessageBox::critical(this, "Import MOC Parts", result.message);
 
         return;
@@ -2508,6 +2571,9 @@ void BuildsWidget::importMocPartsCsv()
 
             if (changed) {
                 if (!repository.update(*updatedBuild)) {
+                    qWarning() << "MOC requirements imported, but filename metadata update failed."
+                               << "BuildId:" << m_selectedBuildId
+                               << "File:" << fileName;
                     QMessageBox::warning(this,
                                          "Import MOC Parts",
                                          "The MOC requirements were imported, "
@@ -2530,6 +2596,15 @@ void BuildsWidget::importMocPartsCsv()
     } else {
         loadRequirements();
     }
+
+    qInfo() << "MOC requirements imported."
+            << "BuildId:" << m_selectedBuildId
+            << "File:" << fileName
+            << "CsvRows:" << result.rowsRead
+            << "RequirementRows:" << result.requirementsCreated
+            << "RegularPieces:" << result.regularPieces
+            << "SparePieces:" << result.sparePieces
+            << "MetadataUpdated:" << buildMetadataUpdated;
 
     QMessageBox::information(this,
                              "Import MOC Parts",

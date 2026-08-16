@@ -16,6 +16,7 @@
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
+#include <QDebug>
 #include <QAbstractItemView>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -27,6 +28,7 @@
 #include <QSet>
 #include <QSpinBox>
 #include <QSqlDatabase>
+#include <QSqlError>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -606,6 +608,9 @@ void DisassembleSetDialog::disassembleSet()
     QSqlDatabase database = DatabaseManager::instance().database();
 
     if (!database.transaction()) {
+        qCritical() << "Unable to start Build disassembly transaction."
+                    << "BuildId:" << m_buildId
+                    << "DatabaseError:" << database.lastError().text();
         QMessageBox::critical(this,
                               "Disassemble Set",
                               "Unable to start the disassembly "
@@ -700,6 +705,12 @@ void DisassembleSetDialog::disassembleSet()
                                                        QString::number(m_buildId),
                                                        notes,
                                                        false)) {
+            qCritical() << "Build disassembly failed returning inventory."
+                        << "BuildId:" << m_buildId
+                        << "PartId:" << row.partId
+                        << "ColorId:" << row.colorId
+                        << "Quantity:" << quantity
+                        << "StorageLocationId:" << storageLocationId;
             database.rollback();
 
             QMessageBox::critical(this,
@@ -745,6 +756,10 @@ void DisassembleSetDialog::disassembleSet()
             updatedRequirement.setQuantityPulled(remainingPulled);
 
             if (!requirementRepository.update(updatedRequirement)) {
+                qCritical() << "Build disassembly failed updating pulled quantity."
+                            << "BuildId:" << m_buildId
+                            << "RequirementId:" << row.requirementId
+                            << "RemainingPulled:" << remainingPulled;
                 database.rollback();
 
                 QMessageBox::critical(this,
@@ -779,6 +794,8 @@ void DisassembleSetDialog::disassembleSet()
     build->setStatus("Disassembled");
 
     if (!buildRepository.update(*build)) {
+        qCritical() << "Build disassembly failed updating Build status."
+                    << "BuildId:" << m_buildId;
         database.rollback();
 
         QMessageBox::critical(this,
@@ -790,6 +807,9 @@ void DisassembleSetDialog::disassembleSet()
     }
 
     if (!database.commit()) {
+        qCritical() << "Unable to commit Build disassembly."
+                    << "BuildId:" << m_buildId
+                    << "DatabaseError:" << database.lastError().text();
         database.rollback();
 
         QMessageBox::critical(this,
@@ -799,6 +819,13 @@ void DisassembleSetDialog::disassembleSet()
 
         return;
     }
+
+    qInfo() << "Build disassembled."
+            << "BuildId:" << m_buildId
+            << "Name:" << m_buildName
+            << "InventoryMode:" << m_inventoryMode
+            << "RowsReturned:" << rowsReturned
+            << "PiecesReturned:" << totalReturned;
 
     QMessageBox::information(this,
                              "Disassemble Build",

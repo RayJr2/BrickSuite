@@ -453,8 +453,27 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     auto* applicationLogAction = helpMenu->addAction("Application Log...");
 
     connect(applicationLogAction, &QAction::triggered, this, [this]() {
-        LogViewerDialog dialog(this);
-        dialog.exec();
+        //
+        // Keep one non-modal viewer alive so it can sit on another monitor
+        // while BrickSuite continues to be used and tested.
+        //
+        if (m_logViewerDialog) {
+            m_logViewerDialog->show();
+            m_logViewerDialog->raise();
+            m_logViewerDialog->activateWindow();
+            return;
+        }
+
+        m_logViewerDialog = new LogViewerDialog(this);
+        m_logViewerDialog->setAttribute(Qt::WA_DeleteOnClose);
+        m_logViewerDialog->setWindowModality(Qt::NonModal);
+        m_logViewerDialog->setModal(false);
+
+        connect(m_logViewerDialog, &QObject::destroyed, this, [this]() {
+            m_logViewerDialog = nullptr;
+        });
+
+        m_logViewerDialog->show();
     });
 
     // Test menu

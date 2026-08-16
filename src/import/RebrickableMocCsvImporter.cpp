@@ -10,9 +10,11 @@
 #include "../repositories/ColorRepository.h"
 #include "../repositories/PartRepository.h"
 
+#include <QDebug>
 #include <QFile>
 #include <QHash>
 #include <QSqlDatabase>
+#include <QSqlError>
 #include <QTextStream>
 
 namespace {
@@ -106,6 +108,7 @@ RebrickableMocCsvImporter::Result RebrickableMocCsvImporter::importFile(int buil
 
     if (buildId <= 0) {
         result.message = "Invalid Build ID.";
+        qWarning() << "MOC CSV import rejected: invalid Build ID:" << buildId;
 
         return result;
     }
@@ -114,6 +117,7 @@ RebrickableMocCsvImporter::Result RebrickableMocCsvImporter::importFile(int buil
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         result.message = "Unable to open the selected MOC CSV file.";
+        qWarning() << "Unable to open MOC CSV file:" << fileName << file.errorString();
 
         return result;
     }
@@ -269,6 +273,9 @@ RebrickableMocCsvImporter::Result RebrickableMocCsvImporter::importFile(int buil
 
     if (!database.transaction()) {
         result.message = "Unable to begin the MOC import transaction.";
+        qCritical() << "Unable to begin MOC import transaction."
+                    << "BuildId:" << buildId
+                    << "DatabaseError:" << database.lastError().text();
 
         return result;
     }
@@ -277,6 +284,8 @@ RebrickableMocCsvImporter::Result RebrickableMocCsvImporter::importFile(int buil
 
     if (replaceExisting) {
         if (!requirementRepository.removeAllForBuild(buildId)) {
+            qCritical() << "MOC import failed removing existing requirements."
+                        << "BuildId:" << buildId;
             database.rollback();
 
             result.message = "Unable to remove the existing "
@@ -306,6 +315,12 @@ RebrickableMocCsvImporter::Result RebrickableMocCsvImporter::importFile(int buil
         requirement.setIsSpare(pending.isSpare);
 
         if (!requirementRepository.create(requirement)) {
+            qCritical() << "MOC import failed creating requirement."
+                        << "BuildId:" << buildId
+                        << "PartId:" << pending.partId
+                        << "ColorId:" << pending.colorId
+                        << "Quantity:" << pending.quantity
+                        << "Spare:" << pending.isSpare;
             database.rollback();
 
             result.message = "Unable to create one of the "
@@ -325,6 +340,9 @@ RebrickableMocCsvImporter::Result RebrickableMocCsvImporter::importFile(int buil
     }
 
     if (!database.commit()) {
+        qCritical() << "Unable to commit MOC requirements import."
+                    << "BuildId:" << buildId
+                    << "DatabaseError:" << database.lastError().text();
         database.rollback();
 
         result.message = "Unable to commit the MOC requirements import.";
@@ -333,6 +351,14 @@ RebrickableMocCsvImporter::Result RebrickableMocCsvImporter::importFile(int buil
     }
 
     result.success = true;
+
+    qInfo() << "MOC CSV import transaction completed."
+            << "BuildId:" << buildId
+            << "RowsRead:" << result.rowsRead
+            << "RequirementsCreated:" << result.requirementsCreated
+            << "RegularPieces:" << result.regularPieces
+            << "SparePieces:" << result.sparePieces
+            << "ReplaceExisting:" << replaceExisting;
 
     result.message = "MOC requirements imported successfully.";
 
