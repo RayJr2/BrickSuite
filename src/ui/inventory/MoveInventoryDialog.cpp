@@ -14,6 +14,7 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHash>
+#include <QSet>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
@@ -122,9 +123,14 @@ void MoveInventoryDialog::loadStorageLocations()
         m_workspaceContext.currentWorkspaceId());
 
     QHash<int, StorageLocation> locationById;
+    QSet<int> activeParentIds;
 
     for (const StorageLocation& location : locations) {
         locationById.insert(location.id(), location);
+
+        if (location.parentLocationId() > 0) {
+            activeParentIds.insert(location.parentLocationId());
+        }
     }
 
     QString sourcePath;
@@ -152,6 +158,11 @@ void MoveInventoryDialog::loadStorageLocations()
         if (location.id() == m_sourceStorageLocationId) {
             sourcePath = path;
 
+            continue;
+        }
+
+        // Parent/container locations are not valid move destinations.
+        if (activeParentIds.contains(location.id())) {
             continue;
         }
 

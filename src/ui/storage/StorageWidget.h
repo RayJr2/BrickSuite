@@ -20,6 +20,7 @@ private slots:
     void addLocation();
     void editLocation();
     void deactivateLocation();
+    void reactivateLocation();
 
 private:
     void loadStorageTree();
@@ -30,4 +31,5 @@ private:
     QPushButton* m_addButton = nullptr;
     QPushButton* m_editButton = nullptr;
     QPushButton* m_deactivateButton = nullptr;
+    QPushButton* m_reactivateButton = nullptr;
 };

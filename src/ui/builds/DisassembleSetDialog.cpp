@@ -24,6 +24,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSet>
 #include <QSpinBox>
 #include <QSqlDatabase>
 #include <QTableWidget>
@@ -230,7 +231,20 @@ bool DisassembleSetDialog::loadStorageLocations()
 
     m_locations.clear();
 
+    QSet<int> activeParentIds;
+
     for (const StorageLocation& location : locations) {
+        if (location.parentLocationId() > 0) {
+            activeParentIds.insert(location.parentLocationId());
+        }
+    }
+
+    for (const StorageLocation& location : locations) {
+        // Only active leaf locations are valid disassembly destinations.
+        if (activeParentIds.contains(location.id())) {
+            continue;
+        }
+
         LocationChoice choice;
 
         choice.id = location.id();

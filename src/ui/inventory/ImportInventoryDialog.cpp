@@ -13,6 +13,7 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHash>
+#include <QSet>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
@@ -116,12 +117,24 @@ void ImportInventoryDialog::loadStorageLocations()
         m_workspaceContext.currentWorkspaceId());
 
     QHash<int, StorageLocation> locationById;
+    QSet<int> activeParentIds;
 
     for (const StorageLocation& location : locations) {
         locationById.insert(location.id(), location);
+
+        if (location.parentLocationId() > 0) {
+            activeParentIds.insert(location.parentLocationId());
+        }
     }
 
     for (const StorageLocation& location : locations) {
+        // Parent/container locations remain part of the hierarchy so
+        // full paths can be built, but only active leaf locations
+        // are offered for operational inventory selection.
+        if (activeParentIds.contains(location.id())) {
+            continue;
+        }
+
         QStringList pathParts;
 
         pathParts.prepend(location.name());

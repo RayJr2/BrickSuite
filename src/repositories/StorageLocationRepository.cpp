@@ -129,6 +129,46 @@ QList<StorageLocation> StorageLocationRepository::getByWorkspace(int workspaceId
     return locations;
 }
 
+QList<StorageLocation> StorageLocationRepository::getByWorkspaceIncludingInactive(int workspaceId) const
+{
+    QList<StorageLocation> locations;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QSqlQuery query(database);
+
+    query.prepare(R"(
+        SELECT
+            id,
+            workspace_id,
+            parent_location_id,
+            location_type_id,
+            name,
+            description,
+            sort_order,
+            is_active,
+            created_utc,
+            modified_utc
+        FROM storage_location
+        WHERE workspace_id = :workspace_id
+        ORDER BY sort_order, name
+    )");
+
+    query.bindValue(":workspace_id", workspaceId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to retrieve storage locations including inactive records:"
+                    << query.lastError().text();
+
+        return locations;
+    }
+
+    while (query.next())
+        locations.append(locationFromQuery(query));
+
+    return locations;
+}
+
 QList<StorageLocation> StorageLocationRepository::getChildren(int workspaceId,
                                                               int parentLocationId) const
 {
@@ -459,3 +499,45 @@ bool StorageLocationRepository::deactivate(int locationId)
 
     return query.numRowsAffected() > 0;
 }
+
+bool StorageLocationRepository::reactivate(int locationId)
+{
+    if (locationId <= 0)
+        return false;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+
+    QSqlQuery query(database);
+
+    query.prepare(R"(
+        UPDATE storage_location
+        SET
+            is_active = 1,
+            modified_utc = :modified_utc
+        WHERE id = :id
+          AND is_active = 0
+          AND (
+                parent_location_id IS NULL
+                OR EXISTS
+                (
+                    SELECT 1
+                    FROM storage_location parent
+                    WHERE parent.id = storage_location.parent_location_id
+                      AND parent.is_active = 1
+                )
+              )
+    )");
+
+    query.bindValue(":modified_utc", now);
+    query.bindValue(":id", locationId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to reactivate storage location:" << query.lastError().text();
+        return false;
+    }
+
+    return query.numRowsAffected() > 0;
+}
+

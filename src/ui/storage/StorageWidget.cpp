@@ -45,11 +45,14 @@ StorageWidget::StorageWidget(
 
     m_deactivateButton = new QPushButton("Deactivate Location", this);
 
+    m_reactivateButton = new QPushButton("Reactivate Location", this);
+
     auto* buttonLayout = new QHBoxLayout();
 
     buttonLayout->addWidget(m_addButton);
     buttonLayout->addWidget(m_editButton);
     buttonLayout->addWidget(m_deactivateButton);
+    buttonLayout->addWidget(m_reactivateButton);
 
     layout->addWidget(titleLabel);
     layout->addWidget(m_tree);
@@ -67,17 +70,23 @@ StorageWidget::StorageWidget(
 
     connect(m_deactivateButton, &QPushButton::clicked, this, &StorageWidget::deactivateLocation);
 
+    connect(m_reactivateButton, &QPushButton::clicked, this, &StorageWidget::reactivateLocation);
+
     workspaceChanged(
         m_workspaceContext.currentWorkspaceId());
 
     m_editButton->setEnabled(false);
     m_deactivateButton->setEnabled(false);
+    m_reactivateButton->setEnabled(false);
 
     connect(m_tree, &QTreeWidget::itemSelectionChanged, this, [this]() {
-        const bool selected = m_tree->currentItem() != nullptr;
+        QTreeWidgetItem* item = m_tree->currentItem();
+        const bool selected = item != nullptr;
+        const bool isActive = selected && item->data(0, Qt::UserRole + 2).toBool();
 
         m_editButton->setEnabled(selected);
-        m_deactivateButton->setEnabled(selected);
+        m_deactivateButton->setEnabled(selected && isActive);
+        m_reactivateButton->setEnabled(selected && !isActive);
     });
 }
 
@@ -94,6 +103,7 @@ void StorageWidget::loadStorageTree()
 
     m_editButton->setEnabled(false);
     m_deactivateButton->setEnabled(false);
+    m_reactivateButton->setEnabled(false);
 
     if (!m_workspaceContext.hasCurrentWorkspace())
     {
@@ -108,7 +118,7 @@ void StorageWidget::loadStorageTree()
     StorageLocationTypeRepository typeRepository;
 
     const QList<StorageLocation> locations =
-        locationRepository.getByWorkspace(
+        locationRepository.getByWorkspaceIncludingInactive(
             m_workspaceContext.currentWorkspaceId());
 
     const QList<StorageLocationType> types =
@@ -134,7 +144,9 @@ void StorageWidget::loadStorageTree()
 
         item->setText(
             0,
-            location.name());
+            location.isActive()
+                ? location.name()
+                : QString("%1 (Inactive)").arg(location.name()));
 
         item->setText(
             1,
@@ -150,6 +162,11 @@ void StorageWidget::loadStorageTree()
             0,
             Qt::UserRole + 1,
             location.parentLocationId());
+
+        item->setData(
+            0,
+            Qt::UserRole + 2,
+            location.isActive());
 
         items.insert(
             location.id(),
@@ -479,3 +496,61 @@ void StorageWidget::deactivateLocation()
 
     loadStorageTree();
 }
+
+void StorageWidget::reactivateLocation()
+{
+    QTreeWidgetItem* selectedItem = m_tree->currentItem();
+
+    if (!selectedItem)
+        return;
+
+    const int locationId = selectedItem->data(0, Qt::UserRole).toInt();
+    const int parentLocationId = selectedItem->data(0, Qt::UserRole + 1).toInt();
+
+    QString locationName = selectedItem->text(0);
+    locationName.remove(" (Inactive)");
+
+    StorageLocationRepository repository;
+
+    if (parentLocationId > 0) {
+        const std::optional<StorageLocation> parent = repository.getById(parentLocationId);
+
+        if (!parent.has_value()) {
+            QMessageBox::critical(this,
+                                  "BrickSuite",
+                                  "Unable to determine the parent storage location.");
+            return;
+        }
+
+        if (!parent->isActive()) {
+            QMessageBox::warning(this,
+                                 "BrickSuite",
+                                 QString("\"%1\" cannot be reactivated because its parent "
+                                         "location is inactive.\n\n"
+                                         "Reactivate the parent location first.")
+                                     .arg(locationName));
+            return;
+        }
+    }
+
+    const QMessageBox::StandardButton answer
+        = QMessageBox::question(this,
+                                "Reactivate Storage Location",
+                                QString("Reactivate \"%1\"?\n\n"
+                                        "The location will again be available for active "
+                                        "storage operations.")
+                                    .arg(locationName),
+                                QMessageBox::Yes | QMessageBox::No,
+                                QMessageBox::No);
+
+    if (answer != QMessageBox::Yes)
+        return;
+
+    if (!repository.reactivate(locationId)) {
+        QMessageBox::critical(this, "BrickSuite", "Unable to reactivate the storage location.");
+        return;
+    }
+
+    loadStorageTree();
+}
+

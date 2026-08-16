@@ -11,6 +11,7 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHash>
+#include <QSet>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
@@ -163,12 +164,24 @@ void FoundInventoryDialog::loadStorageLocations()
     const QList<StorageLocation> locations = repository.getByWorkspace(m_workspaceId);
 
     QHash<int, StorageLocation> locationById;
+    QSet<int> activeParentIds;
 
     for (const StorageLocation& location : locations) {
         locationById.insert(location.id(), location);
+
+        if (location.parentLocationId() > 0) {
+            activeParentIds.insert(location.parentLocationId());
+        }
     }
 
     for (const StorageLocation& location : locations) {
+        // Parent/container locations remain part of the hierarchy so
+        // full paths can be built, but only active leaf locations
+        // are offered for operational inventory selection.
+        if (activeParentIds.contains(location.id())) {
+            continue;
+        }
+
         QStringList pathParts;
 
         pathParts.prepend(location.name());

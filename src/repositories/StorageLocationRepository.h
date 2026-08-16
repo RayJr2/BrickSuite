@@ -14,6 +14,8 @@ public:
 
     QList<StorageLocation> getByWorkspace(int workspaceId) const;
 
+    QList<StorageLocation> getByWorkspaceIncludingInactive(int workspaceId) const;
+
     QList<StorageLocation> getChildren(int workspaceId, int parentLocationId) const;
 
     std::optional<StorageLocation> getById(int id) const;
@@ -27,6 +29,8 @@ public:
     bool isDescendant(int locationId, int possibleDescendantId) const;
 
     bool deactivate(int locationId);
+
+    bool reactivate(int locationId);
 
 private:
     StorageLocation locationFromQuery(const QSqlQuery& query) const;
