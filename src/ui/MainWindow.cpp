@@ -29,6 +29,7 @@
 #include "storage/StorageWidget.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QCloseEvent>
 #include <QDateTime>
 #include <QDebug>
@@ -42,6 +43,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QProgressDialog>
 #include <QPushButton>
 #include <QScreen>
 #include <QStandardPaths>
@@ -281,9 +283,36 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
             finalBackupPath += ".db";
         }
 
+        //
+        // Backup and verification are synchronous database operations.
+        // Show an indeterminate progress dialog so the user knows BrickSuite
+        // is working and should wait for the completion result.
+        //
+        QProgressDialog progressDialog("Backing up BrickSuite database...\n\n"
+                                       "This may take a moment.",
+                                       QString(),
+                                       0,
+                                       0,
+                                       this);
+
+        progressDialog.setWindowTitle("BrickSuite Database Backup");
+        progressDialog.setWindowModality(Qt::ApplicationModal);
+        progressDialog.setCancelButton(nullptr);
+        progressDialog.setMinimumDuration(0);
+        progressDialog.setAutoClose(false);
+        progressDialog.setAutoReset(false);
+        progressDialog.show();
+
+        //
+        // Force the dialog to paint before entering the synchronous backup.
+        //
+        QApplication::processEvents();
+
         QString errorMessage;
 
         if (!DatabaseManager::instance().backupDatabase(finalBackupPath, &errorMessage)) {
+            progressDialog.close();
+
             QMessageBox::critical(this,
                                   "BrickSuite Database Backup",
                                   QString("The database backup could not be created.\n\n%1")
@@ -292,10 +321,16 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
             return;
         }
 
+        progressDialog.setLabelText("Verifying database backup...\n\n"
+                                    "Please wait for the result.");
+        QApplication::processEvents();
+
         // Verify the backup
         QString verificationError;
 
         if (!DatabaseManager::instance().verifyDatabaseBackup(finalBackupPath, &verificationError)) {
+            progressDialog.close();
+
             QMessageBox::warning(this,
                                  "BrickSuite Database Backup",
                                  QString("The database backup was created, "
@@ -305,6 +340,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
             return;
         }
+
+        progressDialog.close();
 
         QMessageBox::information(this,
                                  "BrickSuite Database Backup",
@@ -324,12 +361,32 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
             return;
 
         //
-        // Verify the selected backup before asking
-        // the user to confirm the restore.
+        // Verify the selected backup before asking the user to confirm the
+        // restore. Verification can take a moment on a larger database, so
+        // make the work visible instead of leaving the UI apparently idle.
         //
+        QProgressDialog verifyProgress("Verifying selected BrickSuite backup...\n\n"
+                                       "Please wait for the result.",
+                                       QString(),
+                                       0,
+                                       0,
+                                       this);
+
+        verifyProgress.setWindowTitle("BrickSuite Database Restore");
+        verifyProgress.setWindowModality(Qt::ApplicationModal);
+        verifyProgress.setCancelButton(nullptr);
+        verifyProgress.setMinimumDuration(0);
+        verifyProgress.setAutoClose(false);
+        verifyProgress.setAutoReset(false);
+        verifyProgress.show();
+
+        QApplication::processEvents();
+
         QString verificationError;
 
         if (!DatabaseManager::instance().verifyDatabaseBackup(backupPath, &verificationError)) {
+            verifyProgress.close();
+
             QMessageBox::critical(this,
                                   "BrickSuite Database Restore",
                                   QString("The selected backup is not a valid "
@@ -338,6 +395,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
             return;
         }
+
+        verifyProgress.close();
 
         const QMessageBox::StandardButton response
             = QMessageBox::warning(this,
@@ -362,9 +421,30 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
         //
         m_workspaceContext.clearCurrentWorkspace();
 
+        QProgressDialog restoreProgress(
+            "Restoring BrickSuite database...\n\n"
+            "BrickSuite is creating a verified safety backup and restoring "
+            "the selected database. This may take a moment.",
+            QString(),
+            0,
+            0,
+            this);
+
+        restoreProgress.setWindowTitle("BrickSuite Database Restore");
+        restoreProgress.setWindowModality(Qt::ApplicationModal);
+        restoreProgress.setCancelButton(nullptr);
+        restoreProgress.setMinimumDuration(0);
+        restoreProgress.setAutoClose(false);
+        restoreProgress.setAutoReset(false);
+        restoreProgress.show();
+
+        QApplication::processEvents();
+
         QString restoreError;
 
         if (!DatabaseManager::instance().restoreDatabase(backupPath, &restoreError)) {
+            restoreProgress.close();
+
             //
             // Reload the workspace list from whichever
             // database DatabaseManager recovered to.
@@ -378,6 +458,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
             return;
         }
+
+        restoreProgress.close();
 
         //
         // The restored database is now open.
