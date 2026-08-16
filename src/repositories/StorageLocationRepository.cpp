@@ -351,6 +351,36 @@ bool StorageLocationRepository::hasChildren(int locationId) const
     return query.value(0).toInt() > 0;
 }
 
+bool StorageLocationRepository::hasInventory(int locationId) const
+{
+    if (locationId <= 0)
+        return false;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    QSqlQuery query(database);
+
+    query.prepare(R"(
+        SELECT 1
+        FROM inventory_record
+        WHERE storage_location_id = :location_id
+          AND quantity > 0
+        LIMIT 1
+    )");
+
+    query.bindValue(":location_id", locationId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to check storage location inventory:"
+                    << query.lastError().text();
+
+        // Fail safe: if the check itself fails, report inventory present so
+        // the caller does not deactivate a location whose contents are unknown.
+        return true;
+    }
+
+    return query.next();
+}
 bool StorageLocationRepository::isDescendant(int locationId, int possibleDescendantId) const
 {
     if (locationId <= 0 || possibleDescendantId <= 0) {

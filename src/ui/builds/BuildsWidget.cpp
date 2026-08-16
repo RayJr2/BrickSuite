@@ -45,6 +45,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QShowEvent>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTableWidget>
@@ -540,6 +541,23 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     workspaceChanged(m_workspaceContext.currentWorkspaceId());
 
     updateRequirementUiState();
+}
+
+void BuildsWidget::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+
+    //
+    // Inventory may have changed while the user was working
+    // elsewhere in BrickSuite. Recalculate only the currently
+    // selected Build Requirements when the Builds page becomes
+    // visible. This updates Owned / Available / Missing without
+    // unnecessarily rebuilding the Builds list.
+    //
+    if (m_workspaceContext.hasCurrentWorkspace() && m_selectedBuildId > 0) {
+        loadRequirements();
+        updateRequirementUiState();
+    }
 }
 
 void BuildsWidget::workspaceChanged(int workspaceId)

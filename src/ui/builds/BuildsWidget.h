@@ -15,6 +15,7 @@ class QSpinBox;
 class QGroupBox;
 class QWidget;
 class QSplitter;
+class QShowEvent;
 
 class BuildsWidget : public QWidget
 {
@@ -27,6 +28,9 @@ public:
 
     void refresh();
     void selectBuild(int buildId);
+
+protected:
+    void showEvent(QShowEvent* event) override;
 
 private slots:
     void workspaceChanged(

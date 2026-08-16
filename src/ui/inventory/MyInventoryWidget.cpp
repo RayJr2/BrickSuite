@@ -40,6 +40,8 @@
 #include <QPalette>
 #include <QPixmap>
 #include <QPushButton>
+#include <QShowEvent>
+#include <QSignalBlocker>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -384,6 +386,22 @@ MyInventoryWidget::MyInventoryWidget(
     updatePagingControls();
 }
 
+void MyInventoryWidget::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+
+    //
+    // Storage locations may have changed while
+    // My Inventory was not visible. Refresh only
+    // the Storage filter here. The inventory table
+    // itself is refreshed by the operations that
+    // actually modify inventory.
+    //
+    if (m_workspaceContext.hasCurrentWorkspace()) {
+        loadStorageLocations();
+    }
+}
+
 void MyInventoryWidget::workspaceChanged(int workspaceId)
 {
     Q_UNUSED(workspaceId);
@@ -431,6 +449,10 @@ void MyInventoryWidget::loadColors()
 
 void MyInventoryWidget::loadStorageLocations()
 {
+    const QSignalBlocker blocker(m_storageCombo);
+
+    const int selectedLocationId = m_storageCombo->currentData().toInt();
+
     m_storageCombo->clear();
 
     m_storageCombo->addItem("All Locations", 0);
@@ -474,6 +496,12 @@ void MyInventoryWidget::loadStorageLocations()
         m_storagePathById.insert(location.id(), path);
 
         m_storageCombo->addItem(path, location.id());
+
+        const int restoredIndex = m_storageCombo->findData(selectedLocationId);
+
+        if (restoredIndex >= 0) {
+            m_storageCombo->setCurrentIndex(restoredIndex);
+        }
     }
 }
 

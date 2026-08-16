@@ -22,6 +22,8 @@ public:
 
     bool hasChildren(int locationId) const;
 
+    bool hasInventory(int locationId) const;
+
     bool isDescendant(int locationId, int possibleDescendantId) const;
 
     bool deactivate(int locationId);

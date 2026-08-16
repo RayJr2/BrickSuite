@@ -10,6 +10,7 @@ class QComboBox;
 class QLineEdit;
 class QPushButton;
 class QTableWidget;
+class QShowEvent;
 class QLabel;
 class PartImageService;
 class RebrickableApiClient;
@@ -29,6 +30,9 @@ public:
     void updatePartColorImage(const QString& partNumber,
                               int rebrickableColorId,
                               const QString& imagePath);
+
+protected:
+    void showEvent(QShowEvent* event) override;
 
 private slots:
     void workspaceChanged(int workspaceId);

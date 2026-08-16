@@ -416,12 +416,13 @@ bool DatabaseSchema::seedStorageLocationTypes(QSqlDatabase& database)
 
     const LocationType types[] = {{"Area", "A physical workshop or storage area.", 10},
                                   {"Cabinet", "A cabinet or storage unit.", 20},
-                                  {"Case", "A portable or fixed storage case.", 30},
-                                  {"Drawer", "A drawer within a storage unit.", 40},
-                                  {"Bin", "A removable or fixed storage bin.", 50},
-                                  {"Tray", "A storage tray.", 60},
-                                  {"Compartment", "A compartment within another location.", 70},
-                                  {"Divider", "A divided section of another location.", 80}};
+                                  {"Shelf", "A shelf within a storage area or storage unit.", 30},
+                                  {"Case", "A portable or fixed storage case.", 40},
+                                  {"Drawer", "A drawer within a storage unit.", 50},
+                                  {"Bin", "A removable or fixed storage bin.", 60},
+                                  {"Tray", "A storage tray.", 70},
+                                  {"Compartment", "A compartment within another location.", 80},
+                                  {"Divider", "A divided section of another location.", 90}};
 
     for (const LocationType& type : types) {
         QSqlQuery query(database);

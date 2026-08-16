@@ -448,6 +448,16 @@ void StorageWidget::deactivateLocation()
         return;
     }
 
+    if (repository.hasInventory(locationId)) {
+        QMessageBox::warning(this,
+                             "BrickSuite",
+                             QString("\"%1\" contains loose inventory.\n\n"
+                                     "Move the inventory to another storage location before "
+                                     "deactivating it.")
+                                 .arg(locationName));
+
+        return;
+    }
     const QMessageBox::StandardButton answer
         = QMessageBox::question(this,
                                 "Deactivate Storage Location",
