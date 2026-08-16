@@ -1,0 +1,24 @@
+#pragma once
+
+#include <QDialog>
+
+class QPlainTextEdit;
+class QPushButton;
+
+class LogViewerDialog : public QDialog
+{
+    Q_OBJECT
+
+public:
+    explicit LogViewerDialog(QWidget* parent = nullptr);
+
+private:
+    void refreshLog();
+    void clearLog();
+    void openLogFolder();
+
+    QPlainTextEdit* m_logEdit = nullptr;
+    QPushButton* m_refreshButton = nullptr;
+    QPushButton* m_clearButton = nullptr;
+    QPushButton* m_openFolderButton = nullptr;
+};

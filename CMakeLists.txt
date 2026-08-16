@@ -48,6 +48,8 @@ qt_add_executable(BrickSuite
     resources/resources.qrc
     src/services/ReferenceDataSeeder.cpp
     src/services/ReferenceDataSeeder.h
+    src/services/Logger.h
+    src/services/Logger.cpp
     src/models/StorageLocationType.h
     src/models/StorageLocationType.cpp
     src/models/StorageLocation.h
@@ -103,6 +105,8 @@ qt_add_executable(BrickSuite
     src/settings/ThemeManager.h
     src/settings/ThemeManager.cpp
     src/ui/settings/SettingsDialog.cpp src/ui/settings/SettingsDialog.h
+    src/ui/logging/LogViewerDialog.h
+    src/ui/logging/LogViewerDialog.cpp
     src/import/RebrickableInventoryImportPreview.h
     src/ui/inventory/InventoryImportPreviewDialog.h
     src/ui/inventory/InventoryImportPreviewDialog.cpp
