@@ -10,6 +10,7 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHash>
@@ -18,6 +19,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSqlDatabase>
 #include <QStringList>
 #include <QVBoxLayout>
@@ -102,6 +104,8 @@ void ImportInventoryDialog::browseForFile()
         return;
 
     m_fileEdit->setText(filePath);
+
+    suggestStorageFromFileName(filePath);
 }
 
 void ImportInventoryDialog::loadStorageLocations()
@@ -153,6 +157,97 @@ void ImportInventoryDialog::loadStorageLocations()
         }
 
         m_storageCombo->addItem(pathParts.join(" / "), location.id());
+    }
+}
+
+QString ImportInventoryDialog::normalizedStorageKey(const QString& text)
+{
+    QString normalized = text.toLower().trimmed();
+
+    //
+    // Rebrickable category exports use filename-friendly slugs such as:
+    //
+    //     technic-special
+    //     transportation-sea-air
+    //     bricks-round-curved
+    //
+    // Storage names may use spaces, commas, ampersands, etc. Treat all
+    // non-alphanumeric characters as separators so both forms normalize
+    // to the same comparison key.
+    //
+    normalized.replace(QRegularExpression("[^a-z0-9]+"), " ");
+    normalized = normalized.simplified();
+
+    return normalized;
+}
+
+void ImportInventoryDialog::suggestStorageFromFileName(const QString& filePath)
+{
+    if (filePath.trimmed().isEmpty() || m_storageCombo->count() <= 0)
+        return;
+
+    const QFileInfo fileInfo(filePath);
+
+    QString baseName = fileInfo.completeBaseName().trimmed();
+
+    if (baseName.isEmpty())
+        return;
+
+    //
+    // Rebrickable owned-parts category exports currently use names such as:
+    //
+    //     rebrickable_parts_technic-special.csv
+    //
+    // Strip the known prefix before comparing the remaining category slug
+    // with BrickSuite's active operational storage leaf names.
+    //
+    const QString prefix = "rebrickable_parts_";
+
+    if (baseName.startsWith(prefix, Qt::CaseInsensitive)) {
+        baseName = baseName.mid(prefix.length());
+    }
+
+    const QString fileKey = normalizedStorageKey(baseName);
+
+    if (fileKey.isEmpty())
+        return;
+
+    int matchingIndex = -1;
+    int matchCount = 0;
+
+    for (int index = 0; index < m_storageCombo->count(); ++index) {
+        const QString displayPath = m_storageCombo->itemText(index);
+
+        //
+        // The combo displays the complete hierarchy, e.g.
+        //
+        //     Shelf Bottom / Technic Special
+        //
+        // Rebrickable's filename contains only the category name, so compare
+        // against the leaf component. The full path remains visible to the
+        // user and the selection can always be overridden.
+        //
+        const QString leafName = displayPath.section('/', -1).trimmed();
+
+        if (normalizedStorageKey(leafName) == fileKey) {
+            matchingIndex = index;
+            ++matchCount;
+        }
+    }
+
+    //
+    // Auto-select only an unambiguous exact normalized match. If two active
+    // leaf locations have the same name, BrickSuite does not guess which one
+    // the user intended.
+    //
+    if (matchCount == 1 && matchingIndex >= 0) {
+        m_storageCombo->setCurrentIndex(matchingIndex);
+
+        m_storageCombo->setToolTip(
+            QString("Suggested from CSV filename: %1")
+                .arg(fileInfo.fileName()));
+    } else {
+        m_storageCombo->setToolTip(QString());
     }
 }
 

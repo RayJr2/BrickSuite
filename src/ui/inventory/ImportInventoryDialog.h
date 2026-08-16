@@ -21,6 +21,8 @@ private slots:
 
 private:
     void loadStorageLocations();
+    void suggestStorageFromFileName(const QString& filePath);
+    static QString normalizedStorageKey(const QString& text);
 
     WorkspaceContext& m_workspaceContext;
 
