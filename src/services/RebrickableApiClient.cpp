@@ -14,6 +14,7 @@
 #include <QPointer>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 
 bool RebrickableApiClient::s_sessionBlocked =
 #if BRICKSUITE_REBRICKABLE_API_BLOCKED
@@ -456,6 +457,148 @@ void RebrickableApiClient::getPartColorDetails(const QString& partNumber,
 
             emit partColorDetailsFinished(result);
         });
+}
+
+void RebrickableApiClient::getPartImageUrls(const QStringList& partNumbers,
+                                               const QString& apiKey,
+                                               RequestPriority priority)
+{
+    PartImageUrlsResult invalidResult;
+
+    if (isSessionBlocked()) {
+        invalidResult.success = false;
+        invalidResult.httpStatusCode = 403;
+        invalidResult.message = sessionBlockReason();
+
+        emit partImageUrlsFinished(invalidResult);
+        return;
+    }
+
+    const QString trimmedApiKey = apiKey.trimmed();
+
+    QStringList cleanedPartNumbers;
+    cleanedPartNumbers.reserve(partNumbers.size());
+
+    for (const QString& partNumber : partNumbers) {
+        const QString trimmed = partNumber.trimmed();
+
+        if (!trimmed.isEmpty() && !cleanedPartNumbers.contains(trimmed)) {
+            cleanedPartNumbers.append(trimmed);
+        }
+    }
+
+    if (cleanedPartNumbers.isEmpty() || trimmedApiKey.isEmpty()) {
+        invalidResult.message = "Part numbers or Rebrickable API key are missing.";
+
+        emit partImageUrlsFinished(invalidResult);
+        return;
+    }
+
+    //
+    // Rebrickable recommends using the parts list endpoint with
+    // part_nums rather than issuing one API request per part.
+    // The caller intentionally keeps each batch small.
+    //
+    QUrl url("https://rebrickable.com/api/v3/lego/parts/");
+
+    QUrlQuery query;
+    query.addQueryItem("part_nums", cleanedPartNumbers.join(','));
+    query.addQueryItem("inc_part_details", "1");
+    query.addQueryItem("inc_color_details", "0");
+    query.addQueryItem("page_size", QString::number(cleanedPartNumbers.size()));
+    url.setQuery(query);
+
+    QNetworkRequest request(url);
+
+    request.setRawHeader("Authorization", QString("key %1").arg(trimmedApiKey).toUtf8());
+    request.setHeader(QNetworkRequest::UserAgentHeader, "BrickSuite/1.0");
+
+    enqueueGet(
+        request,
+        [this](QNetworkReply* reply) {
+            PartImageUrlsResult result;
+
+            const QVariant statusAttribute = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+
+            if (statusAttribute.isValid()) {
+                result.httpStatusCode = statusAttribute.toInt();
+            }
+
+            const QByteArray responseData = reply->readAll();
+
+            QString circuitBreakerReason;
+
+            if (result.httpStatusCode == 403
+                && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
+                tripSessionCircuitBreaker(circuitBreakerReason);
+
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+                emit partImageUrlsFinished(result);
+                return;
+            }
+
+            if (result.httpStatusCode == 429) {
+                handle429();
+
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+                emit partImageUrlsFinished(result);
+                return;
+            }
+
+            if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
+                const QJsonDocument document = QJsonDocument::fromJson(responseData);
+
+                if (!document.isObject()) {
+                    result.message = "Rebrickable returned an unexpected parts response.";
+                } else {
+                    const QJsonObject root = document.object();
+                    const QJsonArray parts = root.value("results").toArray();
+
+                    for (const QJsonValue& value : parts) {
+                        if (!value.isObject())
+                            continue;
+
+                        const QJsonObject partObject = value.toObject();
+
+                        PartImageUrl part;
+                        part.partNumber = partObject.value("part_num").toString().trimmed();
+                        part.partImageUrl = partObject.value("part_img_url").toString().trimmed();
+
+                        if (!part.partNumber.isEmpty()) {
+                            result.parts.append(part);
+                        }
+                    }
+
+                    result.success = true;
+                    result.message = QString("Retrieved image information for %1 part(s).")
+                                         .arg(result.parts.size());
+                }
+            } else if (result.httpStatusCode == 401) {
+                result.message = "Rebrickable rejected the API key.";
+            } else if (reply->error() != QNetworkReply::NoError) {
+                result.message = QString("Unable to retrieve part image information: %1")
+                                     .arg(reply->errorString());
+            } else {
+                result.message = QString("Rebrickable returned HTTP status %1.")
+                                     .arg(result.httpStatusCode);
+            }
+
+            reply->deleteLater();
+            emit partImageUrlsFinished(result);
+        },
+        [this]() {
+            PartImageUrlsResult result;
+            result.success = false;
+            result.httpStatusCode = 403;
+            result.message = sessionBlockReason();
+
+            emit partImageUrlsFinished(result);
+        },
+        priority);
 }
 
 void RebrickableApiClient::getPartDetails(const QString& partNumber, const QString& apiKey)

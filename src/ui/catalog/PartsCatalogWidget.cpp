@@ -187,19 +187,24 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
             });
 
     connect(m_rebrickableApiClient,
-            &RebrickableApiClient::partDetailsFinished,
+            &RebrickableApiClient::partImageUrlsFinished,
             this,
-            [this](const RebrickableApiClient::PartDetailsResult& result) {
-                m_partDetailsRequested.remove(result.part.partNumber);
-
+            [this](const RebrickableApiClient::PartImageUrlsResult& result) {
                 if (!result.success)
                     return;
 
-                if (result.part.partImageUrl.isEmpty())
-                    return;
+                for (const RebrickableApiClient::PartImageUrl& part : result.parts) {
+                    if (part.partImageUrl.isEmpty())
+                        continue;
 
-                m_partImageService->requestPartImage(result.part.partNumber,
-                                                     result.part.partImageUrl);
+                    //
+                    // Cache the image even if the user has already moved
+                    // to another catalog page. imageReady() updates a row
+                    // only when that part is currently visible.
+                    //
+                    m_partImageService->requestPartImage(part.partNumber,
+                                                         part.partImageUrl);
+                }
             });
 
     connect(m_importPartsButton, &QPushButton::clicked, this, &PartsCatalogWidget::importPartsCsv);
@@ -249,9 +254,8 @@ void PartsCatalogWidget::searchParts()
     m_resultsTable->setRowCount(0);
 
     m_rowByPartNumber.clear();
-    m_partDetailsRequested.clear();
 
-    const QString apiKey = UserSettings::instance().rebrickableApiKey();
+    QStringList missingPartImages;
 
     int row = 0;
 
@@ -337,10 +341,14 @@ void PartsCatalogWidget::searchParts()
             // imageReady() when the file is already cached.
             //
             m_partImageService->requestPartImage(partNumber, QString());
+        } else {
+            missingPartImages.append(partNumber);
         }
 
         ++row;
     }
+
+    requestMissingPartImages(missingPartImages);
 
     if (results.isEmpty()) {
         if (m_currentPage > 0) {
@@ -357,6 +365,31 @@ void PartsCatalogWidget::searchParts()
     }
 
     updatePagingControls();
+}
+
+void PartsCatalogWidget::requestMissingPartImages(const QStringList& partNumbers)
+{
+    if (partNumbers.isEmpty())
+        return;
+
+    const QString apiKey = UserSettings::instance().rebrickableApiKey().trimmed();
+
+    if (apiKey.isEmpty() || RebrickableApiClient::isSessionBlocked())
+        return;
+
+    //
+    // Rebrickable recommends batching part detail lookups. Keep each
+    // BrickSuite background request deliberately conservative at 20 parts.
+    // The central API request queue still applies its normal rate limit and
+    // gives foreground/user requests priority.
+    //
+    for (int first = 0; first < partNumbers.size(); first += PartImageBatchSize) {
+        const QStringList batch = partNumbers.mid(first, PartImageBatchSize);
+
+        m_rebrickableApiClient->getPartImageUrls(batch,
+                                                 apiKey,
+                                                 RebrickableApiClient::RequestPriority::Background);
+    }
 }
 
 void PartsCatalogWidget::previousPage()

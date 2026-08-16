@@ -82,6 +82,23 @@ public:
         PartDetails part;
     };
 
+    struct PartImageUrl
+    {
+        QString partNumber;
+        QString partImageUrl;
+    };
+
+    struct PartImageUrlsResult
+    {
+        bool success = false;
+
+        int httpStatusCode = 0;
+
+        QString message;
+
+        QList<PartImageUrl> parts;
+    };
+
     struct PartColorDetails
     {
         QString partNumber;
@@ -182,6 +199,10 @@ public:
 
     void getPartDetails(const QString& partNumber, const QString& apiKey);
 
+    void getPartImageUrls(const QStringList& partNumbers,
+                          const QString& apiKey,
+                          RequestPriority priority = RequestPriority::Background);
+
     void getSetDetails(const QString& setNumber, const QString& apiKey);
 
     void getSetParts(const QString& setNumber, const QString& apiKey);
@@ -201,6 +222,8 @@ signals:
     void partColorsFinished(const RebrickableApiClient::PartColorsResult& result);
 
     void partDetailsFinished(const RebrickableApiClient::PartDetailsResult& result);
+
+    void partImageUrlsFinished(const RebrickableApiClient::PartImageUrlsResult& result);
 
     void setDetailsFinished(const RebrickableApiClient::SetDetailsResult& result);
 
@@ -256,3 +279,5 @@ Q_DECLARE_METATYPE(RebrickableApiClient::SetPart)
 Q_DECLARE_METATYPE(RebrickableApiClient::SetPartsResult)
 Q_DECLARE_METATYPE(RebrickableApiClient::PartColorDetails)
 Q_DECLARE_METATYPE(RebrickableApiClient::PartColorDetailsResult)
+Q_DECLARE_METATYPE(RebrickableApiClient::PartImageUrl)
+Q_DECLARE_METATYPE(RebrickableApiClient::PartImageUrlsResult)

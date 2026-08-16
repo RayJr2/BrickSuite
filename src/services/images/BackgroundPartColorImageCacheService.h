@@ -55,5 +55,5 @@ private:
 
     int m_generation = 0;
 
-    static constexpr int BackgroundIntervalMs = 10000;
+    static constexpr int BackgroundIntervalMs = 5000;
 };

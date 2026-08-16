@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QHash>
-#include <QSet>
 #include <QWidget>
 
 class QComboBox;
@@ -32,8 +31,10 @@ signals:
 private:
     void loadCategories();
     void updatePagingControls();
+    void requestMissingPartImages(const QStringList& partNumbers);
 
     static constexpr int ResultsPerPage = 250;
+    static constexpr int PartImageBatchSize = 20;
 
     int m_currentPage = 0;
     int m_lastResultCount = 0;
@@ -53,7 +54,6 @@ private:
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
 
     QHash<QString, int> m_rowByPartNumber;
-    QSet<QString> m_partDetailsRequested;
 
     QPushButton* m_importPartsButton = nullptr;
 };
