@@ -42,6 +42,9 @@
 #include "../settings/UserSettings.h"
 
 #include "../ui/parts/PartDetailsDialog.h"
+
+#include "../core/AppVersion.h"
+
 #include "builds/BuildsWidget.h"
 #include "catalog/PartsCatalogWidget.h"
 #include "catalog/SetsCatalogWidget.h"
@@ -1038,7 +1041,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
         }
     }
 
-    statusBar()->showMessage("BrickSuite Version 1.0");
+    //statusBar()->showMessage("BrickSuite Version 1.0");
+    statusBar()->showMessage(AppVersion::displayVersion());
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)

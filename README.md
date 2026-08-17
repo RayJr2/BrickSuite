@@ -6,7 +6,7 @@ BrickSuite is a Windows desktop application for managing a physical brick collec
 
 ## Version 1.0
 
-BrickSuite v1.0.0 is the first feature-complete release baseline.
+BrickSuite v0.1.0 is the first feature-complete release baseline.
 
 The application is designed around a simple principle: physical inventory, storage locations, and build activity should remain traceable. Records that may be referenced elsewhere are deactivated or archived rather than casually deleted.
 
@@ -130,7 +130,7 @@ Because the database is the authoritative local data store, regular backups are 
 
 ## Application Logging
 
-BrickSuite v1.0 includes an application-wide diagnostic logger.
+BrickSuite v0.1.0 includes an application-wide diagnostic logger.
 
 The logger captures Qt `Info`, `Warning`, `Critical`, and fatal messages with timestamps while intentionally avoiding routine UI-action noise.
 
@@ -162,7 +162,7 @@ Version 1.0 includes:
 
 ## Technology
 
-BrickSuite v1.0 is implemented with:
+BrickSuite v0.1.0 is implemented with:
 
 - **C++17**
 - **Qt 6.10.2**
@@ -173,11 +173,11 @@ BrickSuite v1.0 is implemented with:
 - **CMake**
 - **Windows 11**
 
-The primary development environment for v1.0 is Qt Creator 19.0.0 with the Qt 6.10.2 MinGW 64-bit toolchain.
+The primary development environment for v0.1.0 is Qt Creator 19.0.0 with the Qt 6.10.2 MinGW 64-bit toolchain.
 
 ## Building BrickSuite
 
-BrickSuite v1.0 is developed with C++17, CMake, and Qt 6.10.2. The v1.0
+BrickSuite v0.1.0 is developed with C++17, CMake, and Qt 6.10.2. The v0.1.0
 development environment uses Qt Creator 19.0.0 and the Qt 6.10.2 MinGW
 64-bit toolchain on Windows 11.
 
@@ -210,7 +210,7 @@ https://sqlite.org/download.html
 
 BrickSuite uses Qt's `AppLocalDataLocation` for application-managed local data.
 
-On the v1.0 Windows development/test system this resolves under:
+On the v0.1.0 Windows development/test system this resolves under:
 
 ```text
 %LOCALAPPDATA%\RFStateSide\BrickSuite\
@@ -229,7 +229,7 @@ User-interface preferences are stored through `QSettings`.
 
 ## Database
 
-BrickSuite v1.0 uses SQLite and currently initializes **database schema version 11**.
+BrickSuite v0.1.0 uses SQLite and currently initializes **database schema version 11**.
 
 Schema migrations are applied by the application as required. The database contains the persistent relationships between workspaces, storage, inventory, Builds, requirements, allocations, movement history, Lost Inventory, and reference catalogs.
 
@@ -237,13 +237,13 @@ The application favors preserving database identity and history. Where practical
 
 ## Reference Catalog Size
 
-Catalog contents change as new Rebrickable data is imported. During final v1.0 testing in August 2026, a monthly `parts.csv` update processed 64,293 rows and added 49 new parts to the existing catalog, bringing the local Parts Catalog to approximately **64,301 parts**.
+Catalog contents change as new Rebrickable data is imported. During final v0.1.0 testing in August 2026, a monthly `parts.csv` update processed 64,293 rows and added 49 new parts to the existing catalog, bringing the local Parts Catalog to approximately **64,301 parts**.
 
 The application displays current matching totals directly below the Parts Catalog, Sets Catalog, and My Inventory tables, so the live database remains the authoritative source for current counts.
 
-## v1.0 Validation
+## v0.1.0 Validation
 
-BrickSuite v1.0 underwent a fresh-database regression pass covering:
+BrickSuite v0.1.0 underwent a fresh-database regression pass covering:
 
 - First-run database creation and reference-data seeding.
 - Real storage hierarchy creation.
@@ -260,13 +260,13 @@ BrickSuite v1.0 underwent a fresh-database regression pass covering:
 - Settings/UI persistence.
 - Restart and recovery behavior.
 
-Issues discovered during regression testing were corrected before the v1.0 feature-complete baseline, followed by additional workflow and diagnostic smoke testing.
+Issues discovered during regression testing were corrected before the v0.1.0 feature-complete baseline, followed by additional workflow and diagnostic smoke testing.
 
 ## Project Status
 
-**BrickSuite 1.0.0 — Feature Complete**
+**BrickSuite 0.1.0 — Feature Complete**
 
-Version 1.0 establishes the production-use baseline. Further ideas and enhancements can be evaluated from real-world use and developed as post-v1.0 work without expanding the initial release indefinitely.
+Version 1.0 establishes the production-use baseline. Further ideas and enhancements can be evaluated from real-world use and developed as post-v0.1.0 work without expanding the initial release indefinitely.
 
 ## Copyright and License
 

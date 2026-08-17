@@ -28,7 +28,7 @@ as pull requests.
 
 ## Development Baseline
 
-BrickSuite v1.0 uses:
+BrickSuite v0.1.0 uses:
 
 - C++17
 - Qt 6.10.2
@@ -38,7 +38,7 @@ BrickSuite v1.0 uses:
 - SQLite
 - CMake
 
-The v1.0 reference development environment is Windows 11 with Qt Creator
+The v0.1.0 reference development environment is Windows 11 with Qt Creator
 19.0.0 and the Qt 6.10.2 MinGW 64-bit toolchain.
 
 ## Pull Requests

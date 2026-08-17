@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(BrickSuite
-    VERSION 1.0.0
+    VERSION 0.1.0
     LANGUAGES CXX
 )
 
@@ -170,6 +170,8 @@ qt_add_executable(BrickSuite
     src/ui/inventory/LostInventoryDialog.h
     src/ui/inventory/LostInventoryDialog.cpp
     README.md
+    CONTRIBUTING.md PUBLIC_RELEASE_AUDIT.md
+    src/core/AppVersion.h
 
 )
 target_link_libraries(BrickSuite PRIVATE
@@ -182,6 +184,10 @@ target_link_libraries(BrickSuite PRIVATE
 
 set_target_properties(BrickSuite PROPERTIES
     WIN32_EXECUTABLE TRUE
+)
+
+target_compile_definitions(BrickSuite PRIVATE
+    BRICKSUITE_VERSION="${PROJECT_VERSION}"
 )
 
 set(BRICKSUITE_REBRICKABLE_API_BLOCKED OFF)

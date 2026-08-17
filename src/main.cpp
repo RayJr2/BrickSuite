@@ -22,15 +22,16 @@
 #include <QDebug>
 
 #include "app/Application.h"
-#include "settings/ThemeManager.h"
+#include "core/AppVersion.h"
 #include "services/Logger.h"
+#include "settings/ThemeManager.h"
 
 int main(int argc, char *argv[])
 {
     QApplication qtApplication(argc, argv);
 
     QApplication::setApplicationName("BrickSuite");
-    QApplication::setApplicationVersion("1.0.0");
+    QApplication::setApplicationVersion(AppVersion::version());
     QApplication::setOrganizationName("RFStateSide");
 
     //
