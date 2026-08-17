@@ -1,11 +1,136 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Parts Catalog</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+<html>
+<head>
+<meta charset="utf-8">
+<title>Parts Catalog</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
-code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>Parts Catalog</h1><p>Use the Parts Catalog to search BrickSuite's local part reference data, view part details, and add catalog parts to My Inventory.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+h2 { margin-top: 1.5em; }
+img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
+img.dialog { display:block; max-width:92%; height:auto; margin:14px auto 18px auto; }
+.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+</style>
+</head>
+<body>
+
+<h1>Parts Catalog</h1>
+
+<p>The Parts Catalog is BrickSuite's local reference library of part designs. Use it to answer
+questions such as <b>What is this part?</b>, <b>What category does it belong to?</b>, and
+<b>How can I add it to my inventory?</b></p>
+
+<p>The catalog is different from <a href="inventory.html">My Inventory</a>. A catalog row describes
+a part design; My Inventory describes the parts you actually own, including their color, quantity,
+condition, ownership type, and physical storage location.</p>
+
+<h2>Browsing the Catalog</h2>
+
+<p>The main table shows the part image, part number, name, category, material, and an
+<b>Actions</b> menu. BrickSuite keeps the reference catalog locally so normal browsing and
+searching do not require a live API request.</p>
+
+<img class="screenshot" src="images/parts_catalog_overview.png"
+     alt="BrickSuite Parts Catalog overview">
+
+<p>The summary at the lower left shows the number of parts matching the current search and filter.
+When the result contains more than one page, use <b>Previous</b> and <b>Next</b> at the lower
+right to move through it.</p>
+
+<p>In the example above the local catalog contains <b>64,301 parts</b>. This number can change
+when newer Rebrickable reference data is imported.</p>
+
+<h2>Searching for a Part</h2>
+
+<p>Enter all or part of a part number or name in <b>Search</b>, optionally choose a
+<b>Category</b>, and choose <b>Search</b>. The search is intentionally broad: entering
+<code>3001</code> finds part 3001 as well as other part numbers containing the same text.</p>
+
+<img class="screenshot" src="images/parts_catalog_search.png"
+     alt="Parts Catalog search for 3001">
+
+<p>Here, searching for <b>3001</b> produces 113 matching parts. The familiar
+<b>3001 — Brick 2 x 4</b> appears first, along with related part numbers such as 30014, 30016,
+3001a, and printed variants whose identifiers also contain 3001.</p>
+
+<div class="note"><b>Tip:</b> If a text search returns too many results, select a Category as well.
+The catalog requires search criteria or a selected category rather than loading an unrestricted
+search operation unnecessarily.</div>
+
+<h2>Part Details</h2>
+
+<p>Choose <b>Details</b> from a part's Actions menu to inspect its reference information.</p>
+
+<img class="dialog" src="images/parts_catalog_details.png"
+     alt="Part Details for LEGO part 3001">
+
+<p>The Part Details dialog can show the part number, name, category, material, known production
+years, Rebrickable details, and related reference information. For part 3001, the Related Parts
+view shows known molds, alternates, and printed variants.</p>
+
+<p>Additional tabs can expose other reference identifiers associated with the part. The exact
+information available depends on the reference data known for that part.</p>
+
+<h2>Parts and Colors</h2>
+
+<p>A Parts Catalog entry represents the <b>part design</b>, not a single owned part/color
+combination. The same design can exist in multiple colors. BrickSuite therefore keeps the main
+catalog focused on part identity and lets color become relevant when viewing reference information
+or creating inventory.</p>
+
+<p>This is an important distinction:</p>
+
+<pre>
+Parts Catalog
+  What part designs exist?
+
+My Inventory
+  Which parts do I own?
+  What colors are they?
+  How many do I have?
+  Where are they stored?
+</pre>
+
+<h2>Adding a Catalog Part to My Inventory</h2>
+
+<p>Choose <b>Add to Inventory</b> from the Actions menu when you own a part and want BrickSuite to
+track it. The dialog begins with the selected catalog part and lets you describe the actual piece
+or pieces being added.</p>
+
+<img class="dialog" src="images/parts_catalog_add_inventory.png"
+     alt="Add part 3001 in Black to My Inventory">
+
+<p>For the example shown, BrickSuite is ready to add one used, owned
+<b>3001 — Brick 2 x 4</b> in <b>Black</b> to
+<b>Cabinet Bricks / Basic Bricks / Black</b>.</p>
+
+<p>The <b>Show all colors</b> option can be used when the color you need is not in the normal known
+color list for the part. This allows BrickSuite to accommodate unusual, non-brand, or otherwise
+valid inventory without weakening the normal color guidance.</p>
+
+<p>Choose an appropriate active Storage location, Condition, Ownership type, and Quantity, then
+choose <b>Add</b>. This creates or updates owned inventory; it does not change the catalog
+definition itself.</p>
+
+<p>See <a href="inventory.html"><b>My Inventory</b></a> for editing quantities, moving parts,
+viewing movement history, and other owned-inventory workflows.</p>
+
+<h2>Updating Rebrickable Reference Data</h2>
+
+<p>The <b>Import Rebrickable parts.csv</b> action updates BrickSuite's local Parts Catalog from a
+Rebrickable parts CSV file. Existing catalog records can be updated and newly published part
+records can be added without removing older catalog entries merely because they are absent from a
+later import.</p>
+
+<p>This catalog-reference import is separate from importing your personal Rebrickable parts list.
+See <a href="rebrickable_import.html"><b>Rebrickable Import</b></a> for owned inventory imports.</p>
+
+<h2>Related Help</h2>
+
+<p><a href="getting_started.html">Getting Started</a> |
+<a href="inventory.html">My Inventory</a> |
+<a href="rebrickable_import.html">Rebrickable Import</a> |
+<a href="sets_catalog.html">Sets Catalog</a></p>
+
+</body>
+</html>

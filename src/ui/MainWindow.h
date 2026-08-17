@@ -51,6 +51,7 @@ protected:
 
 private slots:
     void addWorkspace();
+    void updateWorkspace();
     void workspaceSelected();
 
 private:
@@ -65,6 +66,7 @@ private:
     QLineEdit* m_nameEdit = nullptr;
     QTextEdit* m_descriptionEdit = nullptr;
     QPushButton* m_addButton = nullptr;
+    QPushButton* m_updateButton = nullptr;
 
     StorageWidget* m_storageWidget = nullptr;
     PartsCatalogWidget* m_partsCatalogWidget = nullptr;

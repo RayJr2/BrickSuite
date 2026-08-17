@@ -1,11 +1,174 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Rebrickable Import</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+<html>
+<head>
+<meta charset="utf-8">
+<title>Rebrickable Import</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
-code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>Rebrickable Import</h1><p>BrickSuite can preview and import Rebrickable owned-parts CSV files and suggest storage from compatible export filenames.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+h2 { margin-top: 1.5em; }
+img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
+img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px auto; }
+.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+</style>
+</head>
+<body>
+
+<h1>Rebrickable Import</h1>
+
+<p>BrickSuite can import an owned-parts CSV exported from Rebrickable into
+<a href="inventory.html">My Inventory</a>. The import workflow lets you choose the destination
+Storage location and inventory attributes, preview exactly what the CSV will do, and then decide
+whether to apply the changes.</p>
+
+<h2>Import Workflow</h2>
+
+<pre>
+Rebrickable owned-parts CSV
+          |
+      Select File
+          |
+ Choose Storage, Condition,
+      and Ownership
+          |
+        Preview
+          |
+   Review Before / After
+          |
+        Import
+          |
+     My Inventory
+          |
+   Inventory History
+</pre>
+
+<h2>Selecting the CSV and Destination</h2>
+
+<p>From <b>My Inventory</b>, choose <b>Import CSV</b>. Browse to the Rebrickable owned-parts CSV
+you want to import.</p>
+
+<img class="dialog" src="images/rebrickable_import_file.png"
+     alt="Import Rebrickable Inventory CSV dialog">
+
+<p>Choose the Storage location where the imported loose parts physically belong, along with the
+Condition and Ownership values that should be assigned to the imported inventory.</p>
+
+<p>In this example, the file <b>rebrickable_parts_bricks-curved (1).csv</b> is being imported as
+<b>Used</b>, <b>Owned</b> inventory into
+<b>Cabinet Bricks / Round Curved Bricks</b>.</p>
+
+<div class="note"><b>Filename assistance:</b> When a Rebrickable parts-list filename corresponds
+closely to an existing Storage location, BrickSuite can use that information to help select the
+destination. Always verify the Storage field before continuing; the selected location is where the
+imported inventory will be recorded.</div>
+
+<h2>Previewing the Import</h2>
+
+<p>Choosing <b>Import</b> from the first dialog opens an <b>Import Preview</b> before any inventory
+changes are committed. Use this preview to verify the CSV contents and the effect each row will
+have.</p>
+
+<img class="screenshot" src="images/rebrickable_import_preview.png"
+     alt="Rebrickable inventory Import Preview">
+
+<p>The preview summary shows the source filename, rows processed, valid rows, errors, and total
+piece quantity. The table then compares each CSV row with the current BrickSuite inventory.</p>
+
+<p>The key columns are:</p>
+
+<ul>
+<li><b>CSV Qty</b> — quantity requested by the CSV.</li>
+<li><b>Current Qty</b> — quantity BrickSuite currently has for the matching inventory.</li>
+<li><b>After Sync</b> — quantity that will exist after the import is applied.</li>
+<li><b>Status</b> — the action represented by the row, such as <b>New Inventory</b>.</li>
+<li><b>Error</b> — validation information when a row cannot be processed normally.</li>
+</ul>
+
+<p>In the example shown, BrickSuite processed <b>95 rows</b>, all 95 were valid, there were
+<b>0 errors</b>, and the CSV represents <b>169 total pieces</b>.</p>
+
+<div class="note"><b>Preview is the safety check.</b> Review the rows, quantities, colors, and
+statuses before committing the import. Choose <b>Cancel</b> if the preview is not what you
+expected.</div>
+
+<h2>Completing the Import</h2>
+
+<p>When the preview is correct, choose <b>Import</b>. BrickSuite applies the previewed inventory
+changes and reports the completed result.</p>
+
+<img class="dialog" src="images/rebrickable_import_complete.png"
+     alt="Successful Rebrickable inventory import">
+
+<p>The example import completed successfully with <b>95 rows imported</b> and
+<b>169 total pieces added</b>.</p>
+
+<p>If the preview contains invalid rows or an import encounters a genuine failure, review the
+reported error information rather than assuming all CSV rows were applied.</p>
+
+<h2>Verifying the Result in My Inventory</h2>
+
+<p>After the import, return to My Inventory and filter by the destination Storage location or
+search for one of the imported parts.</p>
+
+<img class="screenshot" src="images/rebrickable_import_inventory.png"
+     alt="Imported Rebrickable inventory in My Inventory">
+
+<p>Here, filtering Storage to <b>Shelf Top / Bricks Round &amp; Curved</b> shows the resulting
+inventory records, including multiple colors of <b>11477 — Brick Curved 2 x 1 No Studs
+[1/2 Bow]</b>. The result contains <b>120 inventory records</b>.</p>
+
+<p>The inventory table now shows the imported part/color quantities alongside their physical
+Storage location, Condition, and Ownership values just like inventory entered manually.</p>
+
+<h2>Import and Inventory History</h2>
+
+<p>Rebrickable CSV imports are recorded in BrickSuite's inventory history. The history can include
+the import event, quantity, destination Storage location, and the source CSV filename. This makes
+it possible to trace how inventory entered the Workspace later.</p>
+
+<p>Choose <b>History</b> from an inventory row's Actions menu to inspect those events. See
+<a href="inventory.html"><b>My Inventory</b></a> for more information about movement history.</p>
+
+<h2>Different Rebrickable CSV Files Have Different Purposes</h2>
+
+<p>BrickSuite uses several kinds of Rebrickable CSV data. They should not be confused:</p>
+
+<pre>
+parts.csv
+  Updates Parts Catalog reference data.
+
+sets.csv
+  Updates Sets Catalog reference data.
+
+Owned-parts / parts-list CSV
+  Synchronizes your physical loose parts into My Inventory.
+
+MOC CSV
+  Supplies part requirements for a MOC Build.
+</pre>
+
+<p>The Parts and Sets Catalog imports maintain BrickSuite's local reference library. An
+owned-parts CSV represents physical inventory. A MOC CSV represents Build requirements rather than
+loose inventory.</p>
+
+<h2>Practical Import Guidance</h2>
+
+<ul>
+<li>Export a Rebrickable parts list that represents the physical group of parts you intend to
+store together.</li>
+<li>Choose or verify the matching BrickSuite Storage location.</li>
+<li>Set the appropriate Condition and Ownership values.</li>
+<li>Read the preview before committing the import.</li>
+<li>After importing, verify the result in My Inventory.</li>
+<li>Use History later if you need to determine where an inventory quantity originated.</li>
+</ul>
+
+<h2>Related Help</h2>
+
+<p><a href="inventory.html">My Inventory</a> |
+<a href="storage.html">Storage</a> |
+<a href="parts_catalog.html">Parts Catalog</a> |
+<a href="mocs.html">MOCs</a></p>
+
+</body>
+</html>

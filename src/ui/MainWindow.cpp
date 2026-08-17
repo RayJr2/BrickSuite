@@ -1134,6 +1134,9 @@ void MainWindow::workspaceSelected()
 
     if (!item) {
         m_workspaceContext.clearCurrentWorkspace();
+
+        m_updateButton->setEnabled(false);
+
         return;
     }
 
@@ -1157,8 +1160,70 @@ void MainWindow::workspaceSelected()
 
     m_descriptionEdit->setPlainText(workspace->description());
 
+    m_updateButton->setEnabled(true);
+
     statusBar()->showMessage(QString("Current Workspace: %1").arg(workspace->name()));
 }
+
+void MainWindow::updateWorkspace()
+{
+    QListWidgetItem* item = m_workspaceList->currentItem();
+
+    if (!item) {
+        QMessageBox::information(this,
+                                 "Edit Workspace",
+                                 "Select a workspace before saving changes.");
+        return;
+    }
+
+    const QString name = m_nameEdit->text().trimmed();
+    const QString description = m_descriptionEdit->toPlainText().trimmed();
+
+    if (name.isEmpty()) {
+        QMessageBox::warning(this,
+                             "Edit Workspace",
+                             "Please enter a workspace name.");
+        return;
+    }
+
+    const int workspaceId = item->data(Qt::UserRole).toInt();
+
+    WorkspaceRepository repository;
+
+    std::optional<Workspace> workspace = repository.getById(workspaceId);
+
+    if (!workspace) {
+        QMessageBox::critical(this,
+                              "Edit Workspace",
+                              "Unable to load the selected workspace.");
+        return;
+    }
+
+    workspace->setName(name);
+    workspace->setDescription(description);
+
+    //
+    // Preserve the existing active state and database identity. Only the
+    // editable Workspace metadata is changed here.
+    //
+    if (!repository.update(*workspace)) {
+        QMessageBox::critical(this,
+                              "Edit Workspace",
+                              "Unable to save the workspace changes.");
+        return;
+    }
+
+    //
+    // Update the visible list immediately. The Workspace ID and current
+    // Workspace selection do not change.
+    //
+    item->setText(workspace->name());
+
+    statusBar()->showMessage(
+        QString("Workspace updated: %1").arg(workspace->name()),
+        5000);
+}
+
 void MainWindow::addWorkspace()
 {
     const QString name = m_nameEdit->text().trimmed();
@@ -1223,6 +1288,9 @@ QWidget* MainWindow::createWorkspaceTab()
 
     m_addButton = new QPushButton("Add Workspace", tab);
 
+    m_updateButton = new QPushButton("Save Workspace Changes", tab);
+    m_updateButton->setEnabled(false);
+
     formLayout->addWidget(nameLabel);
 
     formLayout->addWidget(m_nameEdit);
@@ -1231,7 +1299,13 @@ QWidget* MainWindow::createWorkspaceTab()
 
     formLayout->addWidget(m_descriptionEdit);
 
-    formLayout->addWidget(m_addButton);
+    auto* buttonLayout = new QHBoxLayout();
+
+    buttonLayout->addWidget(m_addButton);
+    buttonLayout->addWidget(m_updateButton);
+    buttonLayout->addStretch(1);
+
+    formLayout->addLayout(buttonLayout);
 
     formLayout->addStretch();
 
@@ -1240,6 +1314,11 @@ QWidget* MainWindow::createWorkspaceTab()
     mainLayout->addLayout(formLayout, 2);
 
     connect(m_addButton, &QPushButton::clicked, this, &MainWindow::addWorkspace);
+
+    connect(m_updateButton,
+            &QPushButton::clicked,
+            this,
+            &MainWindow::updateWorkspace);
 
     connect(m_workspaceList,
             &QListWidget::itemSelectionChanged,

@@ -226,7 +226,18 @@ bool WorkspaceRepository::update(
         return false;
     }
 
-    return query.numRowsAffected() > 0;
+    if (query.numRowsAffected() <= 0) {
+        qWarning() << "Workspace update affected no rows."
+                   << "WorkspaceId:" << workspace.id();
+
+        return false;
+    }
+
+    qInfo() << "Workspace updated."
+            << "WorkspaceId:" << workspace.id()
+            << "Name:" << workspace.name();
+
+    return true;
 }
 
 Workspace WorkspaceRepository::workspaceFromQuery(

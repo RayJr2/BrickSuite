@@ -1,11 +1,173 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Storage</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+<html>
+<head>
+<meta charset="utf-8">
+<title>Storage</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
-code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>Storage</h1><p>Use Storage to model the physical hierarchy of your workshop and manage active or inactive storage locations.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+h2 { margin-top: 1.5em; }
+h3 { margin-top: 1.2em; }
+img.screenshot {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 14px auto 18px auto;
+}
+img.dialog {
+    display: block;
+    max-width: 92%;
+    height: auto;
+    margin: 14px auto 18px auto;
+}
+.note {
+    border-left: 4px solid #888;
+    padding-left: 10px;
+    margin: 14px 0;
+}
+.next { margin-top: 1.5em; }
+</style>
+</head>
+<body>
+
+<h1>Storage</h1>
+
+<p>Storage is BrickSuite's digital representation of the places where your loose parts physically
+live. A useful Storage hierarchy should answer a simple question: <b>Where do I go in the real
+workshop to find this part?</b></p>
+
+<p>The hierarchy is intentionally flexible. You can model cabinets, shelves, drawers, bins,
+dividers, and other containers in the arrangement that matches your actual workshop.</p>
+
+<h2>Understanding the Storage Hierarchy</h2>
+
+<p>The Storage page presents locations as a parent/child tree. Expanding a location reveals the
+locations contained beneath it. The <b>Type</b> column identifies what each location represents
+physically.</p>
+
+<img class="screenshot"
+     src="images/storage_hierarchy.png"
+     alt="BrickSuite Storage hierarchy">
+
+<p>In the example above, <b>Cabinet Bricks</b> contains a drawer named <b>Basic Bricks</b>, which
+is further divided into Black, Other Colors, and Red sections. Other branches represent shelves
+containing category-based bins. BrickSuite does not require every branch to have the same depth.</p>
+
+<p>Locations marked <b>(Inactive)</b> remain visible in the hierarchy so historical information is
+preserved, but they are no longer treated as active storage destinations.</p>
+
+<h2>Storage Location Types</h2>
+
+<p>BrickSuite provides the following location types:</p>
+
+<p><b>Area, Cabinet, Shelf, Case, Drawer, Bin, Tray, Compartment, and Divider.</b></p>
+
+<p>The type describes the physical location; it does not impose a rigid hierarchy. For example, a
+Cabinet can contain Drawers, while a Shelf might contain Bins directly. Choose the type that best
+describes the real container.</p>
+
+<div class="note"><b>Design guidance:</b> Model enough detail to lead you to the part quickly, but
+avoid adding hierarchy levels that do not help you find anything. The digital hierarchy should
+remain as practical as the physical workshop.</div>
+
+<h2>Adding a Storage Location</h2>
+
+<p>Select the location that should contain the new location, when applicable, and choose
+<b>Add Location</b>. Enter a descriptive name and select the physical location type.</p>
+
+<img class="dialog"
+     src="images/storage_add_location.png"
+     alt="Add Storage Location dialog">
+
+<p>Names should make sense when viewed in the hierarchy. Category names such as
+<b>Curved Bricks</b>, <b>Technic Beams</b>, or <b>Wheels &amp; Tires</b> can be useful when a
+physical drawer or bin is dedicated to that group of parts.</p>
+
+<p>Choose <b>OK</b> to create the location or <b>Cancel</b> to leave Storage unchanged.</p>
+
+<h2>Editing a Storage Location</h2>
+
+<p>Select an existing active location and choose <b>Edit Location</b>. BrickSuite lets you update
+the location name, type, and parent relationship.</p>
+
+<img class="dialog"
+     src="images/storage_edit_location.png"
+     alt="Edit Storage Location dialog">
+
+<p>Changing the parent lets the digital hierarchy follow a physical reorganization without
+requiring the location to be recreated. For example, a drawer can be moved under a different
+cabinet while retaining its identity in BrickSuite.</p>
+
+<div class="note"><b>Important:</b> Editing a Storage location changes the description of the
+physical location. Moving inventory between storage locations is an inventory operation and should
+be performed from <a href="inventory.html">My Inventory</a>.</div>
+
+<h2>Deactivating Locations</h2>
+
+<p>BrickSuite uses deactivation instead of simply deleting storage locations. This protects
+inventory integrity and preserves historical references to locations that existed previously.</p>
+
+<p>A location cannot be deactivated while loose inventory is still stored there. If you attempt
+to do so, BrickSuite explains why the operation cannot continue:</p>
+
+<img class="dialog"
+     src="images/storage_deactivate_parent.png"
+     alt="BrickSuite warning that a storage location contains loose inventory">
+
+<p>Move the loose inventory to another active storage location first, then return to Storage and
+deactivate the old location.</p>
+
+<p>BrickSuite also protects hierarchical integrity: a parent location cannot be deactivated while
+it still has active child locations. Reorganize or deactivate the child locations first.</p>
+
+<h2>Reactivating a Location</h2>
+
+<p>Inactive locations remain in the Storage tree and are identified with <b>(Inactive)</b>. When
+an inactive location is selected and can be used again, choose <b>Reactivate Location</b> to return
+it to active service.</p>
+
+<p>This makes temporary storage changes reversible without losing the history associated with the
+location.</p>
+
+<h2>Storage and My Inventory</h2>
+
+<p>Storage and My Inventory work together. Storage defines the physical destinations; My Inventory
+records which loose parts are stored in those destinations.</p>
+
+<p>When adding, importing, editing, or moving inventory, choose an appropriate active storage
+location. If the workshop is reorganized later, use BrickSuite's inventory movement workflow so
+the database history reflects where the parts went.</p>
+
+<p class="next">See <a href="inventory.html"><b>My Inventory</b></a> for adding, editing, moving,
+filtering, and reviewing loose inventory.</p>
+
+<h2>Practical Example</h2>
+
+<p>A simple hierarchy might look like:</p>
+
+<pre>
+Cabinet Bricks
+  Basic Bricks
+    Black
+    Other Colors
+    Red
+
+Shelf Bottom
+  Technic Axles
+  Technic Beams
+  Technic Bricks
+  Technic Gears
+</pre>
+
+<p>Another workshop might organize the same parts very differently. BrickSuite's goal is not to
+prescribe the organization; it is to create an accurate digital twin of the organization you
+actually use.</p>
+
+<h2>Related Help</h2>
+
+<p><a href="getting_started.html">Getting Started</a> |
+<a href="inventory.html">My Inventory</a> |
+<a href="rebrickable_import.html">Rebrickable Import</a></p>
+
+</body>
+</html>

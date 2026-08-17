@@ -1,11 +1,125 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Sets Catalog</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sets Catalog</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
-code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>Sets Catalog</h1><p>Use the Sets Catalog to search Set reference data, inspect Set details, and create Set Builds.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+h2 { margin-top: 1.5em; }
+img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
+img.dialog { display:block; max-width:92%; height:auto; margin:14px auto 18px auto; }
+.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+</style>
+</head>
+<body>
+
+<h1>Sets Catalog</h1>
+
+<p>The Sets Catalog is BrickSuite's local reference library of Rebrickable Set data. Use it to
+find a Set by number or name, review its reference information, and create a BrickSuite Build
+from the Set.</p>
+
+<p>The catalog is reference data. A Set does not become something BrickSuite is actively managing
+until you create a <a href="builds.html">Build</a> from it.</p>
+
+<h2>Browsing the Catalog</h2>
+
+<p>The main table shows the Set number, name, year, Rebrickable Theme ID, part count, and an
+<b>Actions</b> menu.</p>
+
+<img class="screenshot" src="images/sets_catalog_overview.png"
+     alt="BrickSuite Sets Catalog overview">
+
+<p>The summary at the lower left shows the number of Sets matching the current search and year
+filter. The pager at the lower right moves through larger result sets.</p>
+
+<p>In the example above, the local catalog contains <b>28,099 Sets</b> across 113 pages. The
+catalog count can change when newer Rebrickable reference data is imported.</p>
+
+<h2>Searching for a Set</h2>
+
+<p>Enter a Set number or part of a Set name in <b>Search</b>. You can also select a year to narrow
+the results before choosing <b>Search</b>.</p>
+
+<img class="screenshot" src="images/sets_catalog_search.png"
+     alt="Sets Catalog search for Set 77239">
+
+<p>Searching for <b>77239</b> identifies Set <b>77239-1 — Porsche 911 GT3 RS Super Car</b>,
+released in 2025. The catalog shows its Rebrickable Theme ID as 601 and its reference part count
+as 355.</p>
+
+<div class="note"><b>Tip:</b> Set numbers are often the quickest way to locate a specific Set.
+Name searches are useful when you know only part of the title, and the Year filter can further
+reduce a broad result.</div>
+
+<h2>Set Details</h2>
+
+<p>Choose <b>Details</b> from the Set's Actions menu to inspect the available reference
+information.</p>
+
+<img class="dialog" src="images/sets_catalog_details.png"
+     alt="Set Details for 77239-1 Porsche 911 GT3 RS Super Car">
+
+<p>The Set Details dialog shows the Set number, name, year, Theme ID, part count, and cached Set
+image. BrickSuite caches reference images locally so they can be reused after they have been
+retrieved.</p>
+
+<p>The part count shown here is catalog reference information. The detailed Build workflow uses
+the Set's requirements when BrickSuite prepares the inventory work needed to assemble it.</p>
+
+<h2>Creating a Build from a Set</h2>
+
+<p>Choose the Set's Build action when you want BrickSuite to begin managing that Set as an actual
+project. BrickSuite confirms the Set and the inventory mode before creating the Build.</p>
+
+<img class="dialog" src="images/sets_catalog_create_build.png"
+     alt="Create Build confirmation for Set 77239-1">
+
+<p>In the example shown, BrickSuite will create a Build for
+<b>77239-1 — Porsche 911 GT3 RS Super Car</b> using <b>Complete Set</b> inventory mode. The new
+Build begins with status <b>Planned</b>.</p>
+
+<p>Choose <b>Yes</b> to create the Build or <b>No</b> to leave the Sets Catalog unchanged.</p>
+
+<p>After creation, continue on the <a href="builds.html"><b>Builds</b></a> page. From there,
+BrickSuite can manage requirements, inventory allocation, missing parts, pulling pieces, Build
+completion, and later lifecycle operations.</p>
+
+<h2>Sets Catalog vs. Builds</h2>
+
+<p>The distinction between the two areas is important:</p>
+
+<pre>
+Sets Catalog
+  What Sets exist?
+  What reference information is known about a Set?
+
+Builds
+  Which Set or MOC am I actually planning or assembling?
+  What pieces does it require?
+  Which pieces are available?
+  Which pieces are missing?
+  What inventory has been allocated or pulled?
+</pre>
+
+<p>Creating a Build does not remove or alter the Set in the catalog. The catalog remains the
+reference source while the Build records your working state.</p>
+
+<h2>Updating Rebrickable Set Reference Data</h2>
+
+<p>Use <b>Import Rebrickable sets.csv</b> to update BrickSuite's local Sets Catalog from a
+Rebrickable Sets CSV file. This keeps normal catalog browsing local while allowing newer Set
+reference data to be incorporated into BrickSuite.</p>
+
+<p>This reference-data import is separate from importing your owned loose-parts inventory.</p>
+
+<h2>Related Help</h2>
+
+<p><a href="getting_started.html">Getting Started</a> |
+<a href="parts_catalog.html">Parts Catalog</a> |
+<a href="builds.html">Builds</a> |
+<a href="missing_parts.html">Missing Parts</a></p>
+
+</body>
+</html>
