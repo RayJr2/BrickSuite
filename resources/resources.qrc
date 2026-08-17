@@ -7,5 +7,6 @@
     <qresource prefix="/icons">
         <file alias="combo_down_light.png">icons/combo_down_light.png</file>
         <file alias="combo_down_dark.png">icons/combo_down_dark.png</file>
+        <file alias="bricksuite.ico">icons/bricksuite.ico</file>
     </qresource>
 </RCC>

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(BrickSuite
-    VERSION 0.1.0
+    VERSION 0.2.0
     LANGUAGES CXX
 )
 
@@ -107,6 +107,8 @@ qt_add_executable(BrickSuite
     src/ui/settings/SettingsDialog.cpp src/ui/settings/SettingsDialog.h
     src/ui/logging/LogViewerDialog.h
     src/ui/logging/LogViewerDialog.cpp
+    src/ui/about/AboutDialog.h
+    src/ui/about/AboutDialog.cpp
     src/import/RebrickableInventoryImportPreview.h
     src/ui/inventory/InventoryImportPreviewDialog.h
     src/ui/inventory/InventoryImportPreviewDialog.cpp

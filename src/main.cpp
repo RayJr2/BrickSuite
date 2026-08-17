@@ -20,6 +20,7 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QIcon>
 
 #include "app/Application.h"
 #include "core/AppVersion.h"
@@ -33,6 +34,8 @@ int main(int argc, char *argv[])
     QApplication::setApplicationName("BrickSuite");
     QApplication::setApplicationVersion(AppVersion::version());
     QApplication::setOrganizationName("RFStateSide");
+
+    qtApplication.setWindowIcon(QIcon(QStringLiteral(":/icons/bricksuite.ico")));
 
     //
     // Install the application-wide Qt message handler after the Qt

@@ -20,6 +20,7 @@
 
 #include "MainWindow.h"
 
+#include "about/AboutDialog.h"
 #include "logging/LogViewerDialog.h"
 
 #include "../app/WorkspaceContext.h"
@@ -497,6 +498,15 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
         });
 
         m_logViewerDialog->show();
+    });
+
+    helpMenu->addSeparator();
+
+    auto* aboutAction = helpMenu->addAction("About BrickSuite...");
+
+    connect(aboutAction, &QAction::triggered, this, [this]() {
+        AboutDialog dialog(this);
+        dialog.exec();
     });
 
     // Test menu
