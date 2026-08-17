@@ -20,6 +20,7 @@
 
 #include "AboutDialog.h"
 
+#include "../../core/AppConstants.h"
 #include "../../core/AppVersion.h"
 
 #include <QApplication>
@@ -51,7 +52,8 @@ QLabel* createWrappedLabel(const QString& text, QWidget* parent)
 AboutDialog::AboutDialog(QWidget* parent)
     : QDialog(parent)
 {
-    setWindowTitle("About BrickSuite");
+    setWindowTitle(QStringLiteral("About %1").arg(AppConstants::name()));
+
     setWindowIcon(QApplication::windowIcon());
     setModal(true);
     setMinimumWidth(560);
@@ -71,9 +73,7 @@ AboutDialog::AboutDialog(QWidget* parent)
 
     if (!iconPixmap.isNull()) {
         iconLabel->setPixmap(
-            iconPixmap.scaled(iconLabel->size(),
-                              Qt::KeepAspectRatio,
-                              Qt::SmoothTransformation));
+            iconPixmap.scaled(iconLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
     }
 
     headerLayout->addWidget(iconLabel, 0, Qt::AlignTop);
@@ -81,23 +81,23 @@ AboutDialog::AboutDialog(QWidget* parent)
     auto* titleLayout = new QVBoxLayout();
     titleLayout->setSpacing(4);
 
-    auto* titleLabel = new QLabel(QStringLiteral("BrickSuite"), this);
+    auto* titleLabel = new QLabel(AppConstants::name(), this);
 
     QFont titleFont = titleLabel->font();
     titleFont.setPointSize(titleFont.pointSize() + 7);
     titleFont.setBold(true);
     titleLabel->setFont(titleFont);
 
-    auto* taglineLabel
-        = new QLabel(QStringLiteral("The Digital Twin Platform for Your Brick Workshop."), this);
+    auto* taglineLabel = new QLabel(QStringLiteral(
+                                        "The Digital Twin Platform for Your Brick Workshop."),
+                                    this);
 
     QFont taglineFont = taglineLabel->font();
     taglineFont.setItalic(true);
     taglineLabel->setFont(taglineFont);
     taglineLabel->setWordWrap(true);
 
-    auto* versionLabel
-        = new QLabel(QStringLiteral("Version %1").arg(AppVersion::version()), this);
+    auto* versionLabel = new QLabel(QStringLiteral("Version %1").arg(AppVersion::version()), this);
 
     QFont versionFont = versionLabel->font();
     versionFont.setBold(true);
@@ -107,8 +107,12 @@ AboutDialog::AboutDialog(QWidget* parent)
     titleLayout->addWidget(taglineLabel);
     titleLayout->addSpacing(8);
     titleLayout->addWidget(versionLabel);
+
     titleLayout->addWidget(
-        new QLabel(QStringLiteral("Copyright © 2026 RF StateSide, LLC"), this));
+        new QLabel(QStringLiteral("Copyright © %1 %2")
+                       .arg(AppConstants::copyrightYear(), AppConstants::company()),
+                   this));
+
     titleLayout->addStretch(1);
 
     headerLayout->addLayout(titleLayout, 1);
@@ -122,38 +126,35 @@ AboutDialog::AboutDialog(QWidget* parent)
     mainLayout->addWidget(separator);
 
     mainLayout->addWidget(
-        createWrappedLabel(
-            QStringLiteral(
-                "BrickSuite is an open-source desktop application for managing "
-                "brick inventory, storage locations, Sets, MOCs, Builds, missing "
-                "parts, Lost/Found inventory, and Rebrickable reference data."),
-            this));
+        createWrappedLabel(QStringLiteral(
+                               "%1 is an open-source desktop application for managing "
+                               "brick inventory, storage locations, Sets, MOCs, Builds, missing "
+                               "parts, Lost/Found inventory, and Rebrickable reference data.")
+                               .arg(AppConstants::name()),
+                           this));
 
     mainLayout->addWidget(
-        createWrappedLabel(
-            QStringLiteral(
-                "<b>License:</b> GNU Lesser General Public License, version 3.0 "
-                "(LGPL-3.0-only)<br>"
-                "<a href=\"https://www.gnu.org/licenses/lgpl-3.0.html\">"
-                "View the GNU LGPL v3.0 license</a>"),
-            this));
+        createWrappedLabel(QStringLiteral(
+                               "<b>License:</b> GNU Lesser General Public License, version 3.0 "
+                               "(LGPL-3.0-only)<br>"
+                               "<a href=\"https://www.gnu.org/licenses/lgpl-3.0.html\">"
+                               "View the GNU LGPL v3.0 license</a>"),
+                           this));
 
     mainLayout->addWidget(
-        createWrappedLabel(
-            QStringLiteral(
-                "<b>RF StateSide, LLC:</b> "
-                "<a href=\"https://rfstateside.com\">https://rfstateside.com</a>"),
-            this));
+        createWrappedLabel(QStringLiteral("<b>%1:</b> "
+                                          "<a href=\"https://%2\">https://%2</a>")
+                               .arg(AppConstants::company(), AppConstants::domain()),
+                           this));
 
-    auto* trademarkLabel
-        = createWrappedLabel(
-            QStringLiteral(
-                "<b>Third-Party Notice:</b> LEGO® is a trademark of the LEGO Group "
-                "of companies, which does not sponsor, authorize, or endorse "
-                "BrickSuite. Rebrickable is a trademark or brand name of its "
-                "respective owner. BrickSuite is an independent application and "
-                "is not affiliated with or endorsed by Rebrickable."),
-            this);
+    auto* trademarkLabel = createWrappedLabel(
+        QStringLiteral("<b>Third-Party Notice:</b> LEGO® is a trademark of the LEGO Group "
+                       "of companies, which does not sponsor, authorize, or endorse "
+                       "%1. Rebrickable is a trademark or brand name of its "
+                       "respective owner. %1 is an independent application and "
+                       "is not affiliated with or endorsed by Rebrickable.")
+            .arg(AppConstants::name()),
+        this);
 
     mainLayout->addWidget(trademarkLabel);
 

@@ -23,6 +23,7 @@
 #include <QIcon>
 
 #include "app/Application.h"
+#include "core/AppConstants.h"
 #include "core/AppVersion.h"
 #include "services/Logger.h"
 #include "settings/ThemeManager.h"
@@ -31,9 +32,9 @@ int main(int argc, char *argv[])
 {
     QApplication qtApplication(argc, argv);
 
-    QApplication::setApplicationName("BrickSuite");
+    QApplication::setApplicationName(AppConstants::name());
     QApplication::setApplicationVersion(AppVersion::version());
-    QApplication::setOrganizationName("RFStateSide");
+    QApplication::setOrganizationName(AppConstants::OrganizationName());
 
     qtApplication.setWindowIcon(QIcon(QStringLiteral(":/icons/bricksuite.ico")));
 

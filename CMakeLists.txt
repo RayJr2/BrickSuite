@@ -174,6 +174,7 @@ qt_add_executable(BrickSuite
     README.md
     CONTRIBUTING.md PUBLIC_RELEASE_AUDIT.md
     src/core/AppVersion.h
+    src/core/AppConstants.h
 
 )
 target_link_libraries(BrickSuite PRIVATE
@@ -188,8 +189,26 @@ set_target_properties(BrickSuite PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
+# --------------------------------------------------------------------
+# App constants
+# --------------------------------------------------------------------
+set(APP_NAME              "BrickSuite")
+set(APP_COMPANY           "RF StateSide, LLC")
+set(APP_ORGANIZATION_NAME "RFStateSide")
+set(APP_DOMAIN            "rfstateside.com")
+set(APP_COPYRIGHT_YEAR "2026")
+set(APP_RELEASE           "Development")
+set(APP_RELEASE_DATE      "2026-08-17")
+
 target_compile_definitions(BrickSuite PRIVATE
     BRICKSUITE_VERSION="${PROJECT_VERSION}"
+    APP_NAME="${APP_NAME}"
+    APP_COMPANY="${APP_COMPANY}"
+    APP_ORGANIZATION_NAME="${APP_ORGANIZATION_NAME}"
+    APP_DOMAIN="${APP_DOMAIN}"
+    APP_COPYRIGHT_YEAR="${APP_COPYRIGHT_YEAR}"
+    APP_RELEASE="${APP_RELEASE}"
+    APP_RELEASE_DATE="${APP_RELEASE_DATE}"
 )
 
 set(BRICKSUITE_REBRICKABLE_API_BLOCKED OFF)
