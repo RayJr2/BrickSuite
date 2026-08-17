@@ -12,6 +12,13 @@ bool BuildAllocationRepository::create(BuildAllocation& allocation)
     if (allocation.buildId() <= 0 || allocation.inventoryRecordId() <= 0 || allocation.partId() <= 0
         || allocation.colorId() <= 0 || allocation.storageLocationId() <= 0
         || allocation.quantityAllocated() <= 0) {
+        qWarning() << "Build allocation create rejected due to invalid arguments."
+                   << "BuildId:" << allocation.buildId()
+                   << "InventoryRecordId:" << allocation.inventoryRecordId()
+                   << "PartId:" << allocation.partId()
+                   << "ColorId:" << allocation.colorId()
+                   << "StorageLocationId:" << allocation.storageLocationId()
+                   << "QuantityAllocated:" << allocation.quantityAllocated();
         return false;
     }
 
@@ -251,8 +258,11 @@ bool BuildAllocationRepository::update(BuildAllocation& allocation)
         return false;
     }
 
-    if (query.numRowsAffected() <= 0)
+    if (query.numRowsAffected() <= 0) {
+        qWarning() << "Build allocation update affected no rows."
+                   << "AllocationId:" << allocation.id();
         return false;
+    }
 
     allocation.setModifiedUtc(now);
 
@@ -261,8 +271,11 @@ bool BuildAllocationRepository::update(BuildAllocation& allocation)
 
 bool BuildAllocationRepository::remove(int allocationId)
 {
-    if (allocationId <= 0)
+    if (allocationId <= 0) {
+        qWarning() << "Build allocation remove rejected."
+                   << "AllocationId:" << allocationId;
         return false;
+    }
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
@@ -281,13 +294,22 @@ bool BuildAllocationRepository::remove(int allocationId)
         return false;
     }
 
-    return query.numRowsAffected() > 0;
+    if (query.numRowsAffected() <= 0) {
+        qWarning() << "Build allocation remove affected no rows."
+                   << "AllocationId:" << allocationId;
+        return false;
+    }
+
+    return true;
 }
 
 bool BuildAllocationRepository::removeAllForBuild(int buildId)
 {
-    if (buildId <= 0)
+    if (buildId <= 0) {
+        qWarning() << "Remove all Build allocations rejected."
+                   << "BuildId:" << buildId;
         return false;
+    }
 
     QSqlDatabase database = DatabaseManager::instance().database();
 

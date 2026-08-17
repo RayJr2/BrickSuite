@@ -12,6 +12,12 @@ bool BuildRequirementRepository::create(BuildRequirement& requirement)
     if (requirement.buildId() <= 0 || requirement.partId() <= 0 || requirement.colorId() <= 0
         || requirement.quantityRequired() <= 0 || requirement.quantityPulled() < 0
         || requirement.quantityPulled() > requirement.quantityRequired()) {
+        qWarning() << "Build requirement create rejected due to invalid arguments."
+                   << "BuildId:" << requirement.buildId()
+                   << "PartId:" << requirement.partId()
+                   << "ColorId:" << requirement.colorId()
+                   << "QuantityRequired:" << requirement.quantityRequired()
+                   << "QuantityPulled:" << requirement.quantityPulled();
         return false;
     }
 
@@ -209,8 +215,11 @@ bool BuildRequirementRepository::update(BuildRequirement& requirement)
         return false;
     }
 
-    if (query.numRowsAffected() <= 0)
+    if (query.numRowsAffected() <= 0) {
+        qWarning() << "Build requirement update affected no rows."
+                   << "RequirementId:" << requirement.id();
         return false;
+    }
 
     requirement.setModifiedUtc(now);
 
@@ -219,8 +228,11 @@ bool BuildRequirementRepository::update(BuildRequirement& requirement)
 
 bool BuildRequirementRepository::remove(int requirementId)
 {
-    if (requirementId <= 0)
+    if (requirementId <= 0) {
+        qWarning() << "Build requirement remove rejected."
+                   << "RequirementId:" << requirementId;
         return false;
+    }
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
@@ -239,13 +251,22 @@ bool BuildRequirementRepository::remove(int requirementId)
         return false;
     }
 
-    return query.numRowsAffected() > 0;
+    if (query.numRowsAffected() <= 0) {
+        qWarning() << "Build requirement remove affected no rows."
+                   << "RequirementId:" << requirementId;
+        return false;
+    }
+
+    return true;
 }
 
 bool BuildRequirementRepository::removeAllForBuild(int buildId)
 {
-    if (buildId <= 0)
+    if (buildId <= 0) {
+        qWarning() << "Remove all Build requirements rejected."
+                   << "BuildId:" << buildId;
         return false;
+    }
 
     QSqlDatabase database = DatabaseManager::instance().database();
 

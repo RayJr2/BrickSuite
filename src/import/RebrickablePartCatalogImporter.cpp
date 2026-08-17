@@ -3,6 +3,7 @@
 #include "../database/DatabaseManager.h"
 
 #include <QDateTime>
+#include <QDebug>
 #include <QFile>
 #include <QHash>
 #include <QSqlDatabase>
@@ -75,6 +76,8 @@ RebrickablePartCatalogImporter::Result RebrickablePartCatalogImporter::importFil
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         result.message = "Unable to open parts.csv.";
+        qCritical() << "Parts Catalog import failed to open file:"
+                    << fileName << file.errorString();
 
         return result;
     }
@@ -83,6 +86,7 @@ RebrickablePartCatalogImporter::Result RebrickablePartCatalogImporter::importFil
 
     if (stream.atEnd()) {
         result.message = "parts.csv is empty.";
+        qWarning() << "Parts Catalog import rejected: file is empty:" << fileName;
 
         return result;
     }
@@ -109,6 +113,8 @@ RebrickablePartCatalogImporter::Result RebrickablePartCatalogImporter::importFil
         || materialIndex < 0) {
         result.message = "The selected file is not a supported "
                          "Rebrickable parts.csv file.";
+        qWarning() << "Parts Catalog import rejected: unsupported CSV header:"
+                   << fileName;
 
         return result;
     }
@@ -380,6 +386,14 @@ RebrickablePartCatalogImporter::Result RebrickablePartCatalogImporter::importFil
     result.success = true;
 
     result.message = "Parts Catalog import completed successfully.";
+
+    qInfo() << "Parts Catalog import completed."
+            << "File:" << fileName
+            << "RowsRead:" << result.rowsRead
+            << "Inserted:" << result.inserted
+            << "Updated:" << result.updated
+            << "Unchanged:" << result.unchanged
+            << "Skipped:" << result.skipped;
 
     return result;
 }

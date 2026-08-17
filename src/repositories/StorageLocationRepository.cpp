@@ -19,8 +19,10 @@ bool StorageLocationRepository::create(StorageLocation& location)
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
-    if (!database.isOpen())
+    if (!database.isOpen()) {
+        qCritical() << "Storage location create failed: database is not open.";
         return false;
+    }
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -85,6 +87,13 @@ bool StorageLocationRepository::create(StorageLocation& location)
 
     location.setCreatedUtc(now);
     location.setModifiedUtc(now);
+
+    qInfo() << "Storage location updated."
+            << "StorageLocationId:" << location.id()
+            << "WorkspaceId:" << location.workspaceId()
+            << "ParentLocationId:" << location.parentLocationId()
+            << "Name:" << location.name()
+            << "Active:" << location.isActive();
 
     return true;
 }

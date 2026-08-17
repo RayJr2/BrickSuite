@@ -1,5 +1,6 @@
 #include "SetImageService.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QNetworkAccessManager>
@@ -130,6 +131,9 @@ void SetImageService::downloadImage(const QString& setNumber, const QString& ima
     const QUrl url(imageUrl);
 
     if (!url.isValid()) {
+        qWarning() << "Set image request rejected: invalid URL."
+                   << "SetNumber:" << setNumber
+                   << "Url:" << imageUrl;
         emit imageFailed(setNumber, "Invalid set image URL.");
 
         return;
@@ -149,6 +153,10 @@ void SetImageService::downloadImage(const QString& setNumber, const QString& ima
         if (reply->error() != QNetworkReply::NoError) {
             const QString error = reply->errorString();
 
+            qWarning() << "Set image download failed."
+                       << "SetNumber:" << setNumber
+                       << "Error:" << error;
+
             reply->deleteLater();
 
             emit imageFailed(setNumber, QString("Unable to download set image: %1").arg(error));
@@ -161,6 +169,8 @@ void SetImageService::downloadImage(const QString& setNumber, const QString& ima
         reply->deleteLater();
 
         if (imageData.isEmpty()) {
+            qWarning() << "Set image download returned no data."
+                       << "SetNumber:" << setNumber;
             emit imageFailed(setNumber, "The image download returned no data.");
 
             return;
@@ -171,12 +181,19 @@ void SetImageService::downloadImage(const QString& setNumber, const QString& ima
         QSaveFile file(path);
 
         if (!file.open(QIODevice::WriteOnly)) {
+            qWarning() << "Unable to create cached Set image."
+                       << "SetNumber:" << setNumber
+                       << "Path:" << path
+                       << "Error:" << file.errorString();
             emit imageFailed(setNumber, QString("Unable to create cached image: %1").arg(path));
 
             return;
         }
 
         if (file.write(imageData) != imageData.size()) {
+            qWarning() << "Unable to write cached Set image."
+                       << "SetNumber:" << setNumber
+                       << "Path:" << path;
             file.cancelWriting();
 
             emit imageFailed(setNumber, "Unable to write cached set image.");
@@ -185,6 +202,10 @@ void SetImageService::downloadImage(const QString& setNumber, const QString& ima
         }
 
         if (!file.commit()) {
+            qWarning() << "Unable to commit cached Set image."
+                       << "SetNumber:" << setNumber
+                       << "Path:" << path
+                       << "Error:" << file.errorString();
             emit imageFailed(setNumber, "Unable to commit cached set image.");
 
             return;

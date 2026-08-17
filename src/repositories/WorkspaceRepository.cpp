@@ -69,6 +69,10 @@ bool WorkspaceRepository::create(Workspace& workspace)
     workspace.setCreatedUtc(now);
     workspace.setModifiedUtc(now);
 
+    qInfo() << "Workspace created."
+            << "WorkspaceId:" << workspace.id()
+            << "Name:" << workspace.name();
+
     return true;
 }
 

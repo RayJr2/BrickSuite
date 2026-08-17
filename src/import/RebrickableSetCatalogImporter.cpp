@@ -3,6 +3,7 @@
 #include "../database/DatabaseManager.h"
 
 #include <QDateTime>
+#include <QDebug>
 #include <QFile>
 #include <QHash>
 #include <QSqlDatabase>
@@ -72,6 +73,8 @@ RebrickableSetCatalogImporter::Result RebrickableSetCatalogImporter::importFile(
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         result.message = "Unable to open sets.csv.";
+        qCritical() << "Set Catalog import failed to open file:"
+                    << fileName << file.errorString();
 
         return result;
     }
@@ -80,6 +83,7 @@ RebrickableSetCatalogImporter::Result RebrickableSetCatalogImporter::importFile(
 
     if (stream.atEnd()) {
         result.message = "sets.csv is empty.";
+        qWarning() << "Set Catalog import rejected: file is empty:" << fileName;
 
         return result;
     }
@@ -100,6 +104,8 @@ RebrickableSetCatalogImporter::Result RebrickableSetCatalogImporter::importFile(
     if (!headerOk || headers != expectedHeaders) {
         result.message = "The selected file is not a supported "
                          "Rebrickable sets.csv file.";
+        qWarning() << "Set Catalog import rejected: unsupported CSV header:"
+                   << fileName;
 
         return result;
     }
@@ -312,6 +318,14 @@ RebrickableSetCatalogImporter::Result RebrickableSetCatalogImporter::importFile(
     result.success = true;
 
     result.message = "Set Catalog import completed successfully.";
+
+    qInfo() << "Set Catalog import completed."
+            << "File:" << fileName
+            << "RowsRead:" << result.rowsRead
+            << "Inserted:" << result.inserted
+            << "Updated:" << result.updated
+            << "Unchanged:" << result.unchanged
+            << "Skipped:" << result.skipped;
 
     return result;
 }
