@@ -21,6 +21,7 @@
 #include "../../repositories/StorageLocationRepository.h"
 
 #include <QAbstractItemView>
+#include <QDebug>
 #include <QDialogButtonBox>
 #include <QFile>
 #include <QHeaderView>
@@ -28,6 +29,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSqlDatabase>
+#include <QSqlError>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTextStream>
@@ -302,6 +304,9 @@ void ImportPullListDialog::buildPreview()
 
     const std::optional<Build> build = buildRepository.getById(m_buildId);
 
+    int reconciledRows = 0;
+    int reconciledPieces = 0;
+
     if (!build) {
         m_statusLabel->setText("Unable to load the selected Build.");
 
@@ -574,6 +579,10 @@ void ImportPullListDialog::reconcile()
     QSqlDatabase database = DatabaseManager::instance().database();
 
     if (!database.transaction()) {
+        qCritical() << "Unable to start Pull List reconciliation transaction."
+                    << "BuildId:" << m_buildId
+                    << "DatabaseError:" << database.lastError().text();
+
         QMessageBox::critical(this,
                               "Reconcile Pull List",
                               "Unable to start the reconciliation "
@@ -593,6 +602,9 @@ void ImportPullListDialog::reconcile()
     BuildRequirementRepository requirementRepository;
 
     const std::optional<Build> build = buildRepository.getById(m_buildId);
+
+    int reconciledRows = 0;
+    int reconciledPieces = 0;
 
     if (!build) {
         database.rollback();
@@ -790,6 +802,12 @@ void ImportPullListDialog::reconcile()
                                        : QString(" (%1)").arg(build->setNumber())));
 
         if (!movementRepository.create(movement)) {
+            qCritical() << "Pull List reconciliation failed creating movement history."
+                        << "BuildId:" << m_buildId
+                        << "PartId:" << row.partId
+                        << "ColorId:" << row.colorId
+                        << "QuantityPulled:" << row.quantityPulled;
+
             database.rollback();
 
             QMessageBox::critical(this,
@@ -800,9 +818,16 @@ void ImportPullListDialog::reconcile()
 
             return;
         }
+
+        ++reconciledRows;
+        reconciledPieces += row.quantityPulled;
     }
 
     if (!database.commit()) {
+        qCritical() << "Unable to commit Pull List reconciliation."
+                    << "BuildId:" << m_buildId
+                    << "DatabaseError:" << database.lastError().text();
+
         database.rollback();
 
         QMessageBox::critical(this,
@@ -812,6 +837,14 @@ void ImportPullListDialog::reconcile()
 
         return;
     }
+
+    qInfo() << "Pull List reconciled."
+            << "BuildId:" << m_buildId
+            << "Rows:" << reconciledRows
+            << "PiecesPulled:" << reconciledPieces
+            << "ExactRows:" << m_exactCount
+            << "PartialRows:" << m_partialCount
+            << "ZeroRows:" << m_zeroCount;
 
     QMessageBox::information(this, "Reconcile Pull List", "Pull List reconciled successfully.");
 

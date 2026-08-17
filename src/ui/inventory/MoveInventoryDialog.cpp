@@ -16,6 +16,7 @@
 #include <QHash>
 #include <QSet>
 #include <QLabel>
+#include <QDebug>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSpinBox>
@@ -193,10 +194,21 @@ void MoveInventoryDialog::moveInventory()
     InventoryRecordRepository repository;
 
     if (!repository.moveInventory(m_inventoryRecordId, destinationId, quantity)) {
+        qCritical() << "Inventory move failed."
+                    << "InventoryRecordId:" << m_inventoryRecordId
+                    << "DestinationStorageLocationId:" << destinationId
+                    << "Quantity:" << quantity;
+
         QMessageBox::critical(this, "BrickSuite", "Unable to move inventory.");
 
         return;
     }
+
+    qInfo() << "Inventory moved."
+            << "InventoryRecordId:" << m_inventoryRecordId
+            << "FromStorageLocationId:" << m_sourceStorageLocationId
+            << "ToStorageLocationId:" << destinationId
+            << "Quantity:" << quantity;
 
     accept();
 }

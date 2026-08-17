@@ -230,8 +230,14 @@ bool RebrickableInventoryImporter::importOwnedParts(const QString& filePath,
         return false;
     }
 
-    qInfo() << "Rebrickable inventory imported."
-            << "Rows:" << result.rowsImported << "Quantity:" << result.totalQuantityImported;
+    qInfo() << "Rebrickable inventory import completed."
+            << "File:" << filePath
+            << "WorkspaceId:" << options.workspaceId
+            << "StorageLocationId:" << options.storageLocationId
+            << "RowsProcessed:" << result.rowsProcessed
+            << "RowsImported:" << result.rowsImported
+            << "RowsFailed:" << result.rowsFailed
+            << "TotalQuantityImported:" << result.totalQuantityImported;
 
     return true;
 }
@@ -472,6 +478,14 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
 
         preview.rows.append(previewRow);
     }
+
+    qInfo() << "Rebrickable inventory preview completed."
+            << "File:" << filePath
+            << "WorkspaceId:" << options.workspaceId
+            << "StorageLocationId:" << options.storageLocationId
+            << "RowsProcessed:" << preview.rowsProcessed
+            << "FailedRows:" << preview.failedRows
+            << "TotalCsvQuantity:" << preview.totalCsvQuantity;
 
     return true;
 }

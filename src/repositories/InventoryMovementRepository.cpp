@@ -13,6 +13,11 @@ bool InventoryMovementRepository::create(InventoryMovement& movement)
 {
     if (movement.workspaceId() <= 0 || movement.partId() <= 0 || movement.colorId() <= 0
         || movement.movementType().trimmed().isEmpty()) {
+        qWarning() << "Inventory movement create rejected due to invalid arguments."
+                   << "WorkspaceId:" << movement.workspaceId()
+                   << "PartId:" << movement.partId()
+                   << "ColorId:" << movement.colorId()
+                   << "MovementType:" << movement.movementType();
         return false;
     }
 
@@ -141,8 +146,12 @@ QList<InventoryMovement> InventoryMovementRepository::getByInventoryRecord(int i
 
     query.bindValue(":inventory_record_id", inventoryRecordId);
 
-    if (!query.exec())
+    if (!query.exec()) {
+        qCritical() << "Unable to retrieve movements for inventory record."
+                    << "InventoryRecordId:" << inventoryRecordId
+                    << "Error:" << query.lastError().text();
         return movements;
+    }
 
     while (query.next())
         movements.append(movementFromQuery(query));
@@ -185,8 +194,13 @@ QList<InventoryMovement> InventoryMovementRepository::getByPart(int workspaceId,
 
     query.bindValue(":part_id", partId);
 
-    if (!query.exec())
+    if (!query.exec()) {
+        qCritical() << "Unable to retrieve movements for part."
+                    << "WorkspaceId:" << workspaceId
+                    << "PartId:" << partId
+                    << "Error:" << query.lastError().text();
         return movements;
+    }
 
     while (query.next())
         movements.append(movementFromQuery(query));

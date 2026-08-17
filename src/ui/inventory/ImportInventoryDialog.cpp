@@ -8,6 +8,7 @@
 #include "../../repositories/StorageLocationRepository.h"
 
 #include <QComboBox>
+#include <QDebug>
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -295,6 +296,11 @@ void ImportInventoryDialog::importFile()
     RebrickableInventoryImportPreview preview;
 
     if (!importer.previewOwnedParts(filePath, options, preview)) {
+        qCritical() << "Inventory import preview failed."
+                    << "File:" << filePath
+                    << "WorkspaceId:" << options.workspaceId
+                    << "StorageLocationId:" << options.storageLocationId;
+
         QMessageBox::critical(this,
                               "BrickSuite",
                               "Unable to preview the selected Rebrickable inventory file.");
@@ -309,6 +315,12 @@ void ImportInventoryDialog::importFile()
     }
 
     if (!importer.importOwnedParts(filePath, options, result)) {
+        qCritical() << "Inventory CSV import failed."
+                    << "File:" << filePath
+                    << "RowsProcessed:" << result.rowsProcessed
+                    << "RowsImported:" << result.rowsImported
+                    << "RowsFailed:" << result.rowsFailed;
+
         QMessageBox::critical(this,
                               "BrickSuite",
                               QString("Import failed.\n\n"

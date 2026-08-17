@@ -19,6 +19,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDebug>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHash>
@@ -226,10 +227,24 @@ void EditInventoryDialog::saveChanges()
     updated.setQuantity(quantity);
 
     if (!repository.updateOrMerge(updated)) {
+        qCritical() << "Inventory edit failed."
+                    << "InventoryRecordId:" << m_inventoryRecordId
+                    << "ColorId:" << updated.colorId()
+                    << "StorageLocationId:" << updated.storageLocationId()
+                    << "Quantity:" << updated.quantity();
+
         QMessageBox::critical(this, "BrickSuite", "Unable to update the inventory record.");
 
         return;
     }
+
+    qInfo() << "Inventory record updated."
+            << "InventoryRecordId:" << m_inventoryRecordId
+            << "ColorId:" << updated.colorId()
+            << "StorageLocationId:" << updated.storageLocationId()
+            << "Quantity:" << updated.quantity()
+            << "Condition:" << updated.condition()
+            << "OwnershipType:" << updated.ownershipType();
 
     accept();
 }
