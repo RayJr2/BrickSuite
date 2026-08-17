@@ -297,8 +297,18 @@ void SetsCatalogWidget::searchSets()
     // so they belong outside the for loop.
     //
     if (results.isEmpty()) {
-        m_resultLabel->setText(m_currentPage > 0 ? "No more matching sets."
-                                                 : "No matching sets found.");
+        if (m_currentPage > 0) {
+            m_resultLabel->setText("No more matching sets.");
+        } else {
+            const bool hasSearchText = !criteria.searchText.isEmpty();
+            const bool hasYearFilter = criteria.year > 0;
+
+            if (hasSearchText || hasYearFilter) {
+                m_resultLabel->setText("No sets match the current search or filters.");
+            } else {
+                m_resultLabel->setText("No sets are available in the Sets Catalog.");
+            }
+        }
     } else {
         const int firstResult = criteria.offset + 1;
 

@@ -28,6 +28,9 @@ public:
     QByteArray logViewerGeometry() const;
     void setLogViewerGeometry(const QByteArray& geometry);
 
+    bool showArchivedBuilds() const;
+    void setShowArchivedBuilds(bool showArchived);
+
     static QString themeToString(Theme theme);
     static Theme themeFromString(const QString& value);
 

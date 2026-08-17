@@ -1,5 +1,7 @@
 #include "BuildsWidget.h"
 
+#include "../../settings/UserSettings.h"
+
 #include "../../app/WorkspaceContext.h"
 #include "../../database/DatabaseManager.h"
 #include "AllocateBuildRequirementDialog.h"
@@ -217,6 +219,7 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     existingHeaderLayout->addStretch(1);
 
     m_showArchivedBuildsCheck = new QCheckBox("Show Archived", existingGroup);
+    m_showArchivedBuildsCheck->setChecked(UserSettings::instance().showArchivedBuilds());
 
     existingHeaderLayout->addWidget(m_showArchivedBuildsCheck);
 
@@ -511,7 +514,9 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
             this,
             &BuildsWidget::buildSelectionChanged);
 
-    connect(m_showArchivedBuildsCheck, &QCheckBox::toggled, this, [this]() {
+    connect(m_showArchivedBuildsCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        UserSettings::instance().setShowArchivedBuilds(checked);
+
         m_selectedBuildId = 0;
         loadBuilds();
         loadRequirements();

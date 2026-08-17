@@ -360,7 +360,14 @@ void PartsCatalogWidget::searchParts()
         if (m_currentPage > 0) {
             m_resultLabel->setText("No more matching parts.");
         } else {
-            m_resultLabel->setText("No matching parts found.");
+            const bool hasSearchText = !criteria.searchText.isEmpty();
+            const bool hasCategoryFilter = criteria.categoryId > 0;
+
+            if (hasSearchText || hasCategoryFilter) {
+                m_resultLabel->setText("No parts match the current search or filters.");
+            } else {
+                m_resultLabel->setText("No parts are available in the Parts Catalog.");
+            }
         }
     } else {
         const int firstResult = criteria.offset + 1;

@@ -27,6 +27,9 @@ constexpr auto kMainWindowStateKey = "State";
 constexpr auto kGroupLogViewer = "LogViewer";
 constexpr auto kLogViewerGeometryKey = "Geometry";
 
+constexpr auto kGroupBuilds = "Builds";
+constexpr auto kShowArchivedBuildsKey = "ShowArchived";
+
 } // namespace
 
 UserSettings& UserSettings::instance()
@@ -289,6 +292,31 @@ void UserSettings::setLogViewerGeometry(const QByteArray& geometry)
     settings.beginGroup(kGroupLogViewer);
 
     settings.setValue(kLogViewerGeometryKey, geometry);
+
+    settings.endGroup();
+}
+
+
+bool UserSettings::showArchivedBuilds() const
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupBuilds);
+
+    const bool showArchived = settings.value(kShowArchivedBuildsKey, false).toBool();
+
+    settings.endGroup();
+
+    return showArchived;
+}
+
+void UserSettings::setShowArchivedBuilds(bool showArchived)
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupBuilds);
+
+    settings.setValue(kShowArchivedBuildsKey, showArchived);
 
     settings.endGroup();
 }

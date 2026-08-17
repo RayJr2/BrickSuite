@@ -792,7 +792,18 @@ void MyInventoryWidget::searchInventory()
         if (m_currentPage > 0) {
             m_resultLabel->setText("No more matching inventory records.");
         } else {
-            m_resultLabel->setText("No inventory records found.");
+            const bool hasSearchText = !criteria.searchText.isEmpty();
+            const bool hasCategoryFilter = criteria.categoryId > 0;
+            const bool hasColorFilter = criteria.colorId > 0;
+            const bool hasStorageFilter = criteria.storageLocationId > 0;
+
+            if (hasSearchText || hasCategoryFilter || hasColorFilter || hasStorageFilter) {
+                m_resultLabel->setText(
+                    "No inventory records match the current search or filters.");
+            } else {
+                m_resultLabel->setText(
+                    "No loose inventory has been added to this workspace yet.");
+            }
         }
     } else {
         const int firstResult = criteria.offset + 1;
