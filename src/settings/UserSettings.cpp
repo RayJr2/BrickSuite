@@ -47,6 +47,10 @@ constexpr auto kMainWindowStateKey = "State";
 constexpr auto kGroupLogViewer = "LogViewer";
 constexpr auto kLogViewerGeometryKey = "Geometry";
 
+constexpr auto kGroupHelpViewer = "HelpViewer";
+constexpr auto kHelpViewerGeometryKey = "Geometry";
+constexpr auto kHelpViewerSplitterStateKey = "SplitterState";
+
 constexpr auto kGroupBuilds = "Builds";
 constexpr auto kShowArchivedBuildsKey = "ShowArchived";
 
@@ -316,6 +320,54 @@ void UserSettings::setLogViewerGeometry(const QByteArray& geometry)
     settings.endGroup();
 }
 
+
+QByteArray UserSettings::helpViewerGeometry() const
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupHelpViewer);
+
+    const QByteArray geometry = settings.value(kHelpViewerGeometryKey).toByteArray();
+
+    settings.endGroup();
+
+    return geometry;
+}
+
+void UserSettings::setHelpViewerGeometry(const QByteArray& geometry)
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupHelpViewer);
+
+    settings.setValue(kHelpViewerGeometryKey, geometry);
+
+    settings.endGroup();
+}
+
+QByteArray UserSettings::helpViewerSplitterState() const
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupHelpViewer);
+
+    const QByteArray state = settings.value(kHelpViewerSplitterStateKey).toByteArray();
+
+    settings.endGroup();
+
+    return state;
+}
+
+void UserSettings::setHelpViewerSplitterState(const QByteArray& state)
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupHelpViewer);
+
+    settings.setValue(kHelpViewerSplitterStateKey, state);
+
+    settings.endGroup();
+}
 
 bool UserSettings::showArchivedBuilds() const
 {

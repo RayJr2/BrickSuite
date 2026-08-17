@@ -21,6 +21,7 @@
 #include "MainWindow.h"
 
 #include "about/AboutDialog.h"
+#include "help/HelpManager.h"
 #include "logging/LogViewerDialog.h"
 
 #include "../app/WorkspaceContext.h"
@@ -62,6 +63,7 @@
 #include <QFileDialog>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -473,6 +475,32 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     // Help menu
     auto* helpMenu = menuBar()->addMenu("Help");
+
+    auto* helpContentsAction = helpMenu->addAction("BrickSuite Help");
+    helpContentsAction->setShortcut(QKeySequence::HelpContents);
+    helpContentsAction->setShortcutContext(Qt::ApplicationShortcut);
+
+    connect(helpContentsAction, &QAction::triggered, this, [this]() {
+        HelpTopic topic = HelpTopic::GettingStarted;
+
+        QWidget* currentWidget = m_tabWidget ? m_tabWidget->currentWidget() : nullptr;
+
+        if (currentWidget == m_storageWidget) {
+            topic = HelpTopic::Storage;
+        } else if (currentWidget == m_partsCatalogWidget) {
+            topic = HelpTopic::PartsCatalog;
+        } else if (currentWidget == m_setsCatalogWidget) {
+            topic = HelpTopic::SetsCatalog;
+        } else if (currentWidget == m_myInventoryWidget) {
+            topic = HelpTopic::Inventory;
+        } else if (currentWidget == m_buildsWidget) {
+            topic = HelpTopic::Builds;
+        }
+
+        HelpManager::showTopic(topic, this);
+    });
+
+    helpMenu->addSeparator();
 
     auto* applicationLogAction = helpMenu->addAction("Application Log...");
 

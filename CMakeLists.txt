@@ -109,6 +109,12 @@ qt_add_executable(BrickSuite
     src/ui/logging/LogViewerDialog.cpp
     src/ui/about/AboutDialog.h
     src/ui/about/AboutDialog.cpp
+    src/ui/help/HelpTopic.h
+    src/ui/help/HelpManager.h
+    src/ui/help/HelpManager.cpp
+    src/ui/help/HelpDialog.h
+    src/ui/help/HelpDialog.cpp
+    resources/help/help.qrc
     src/import/RebrickableInventoryImportPreview.h
     src/ui/inventory/InventoryImportPreviewDialog.h
     src/ui/inventory/InventoryImportPreviewDialog.cpp

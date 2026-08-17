@@ -21,18 +21,21 @@
 #include "SettingsDialog.h"
 
 #include "../../app/WorkspaceContext.h"
+#include "../help/HelpManager.h"
 #include "../../models/Workspace.h"
 #include "../../repositories/WorkspaceRepository.h"
 #include "../../services/RebrickableApiClient.h"
 #include "../../settings/ThemeManager.h"
 #include "../../settings/UserSettings.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
@@ -49,6 +52,21 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext, QWidget* pare
     setWindowTitle("BrickSuite Settings");
 
     resize(600, 420);
+
+    //
+    // Context-sensitive Help for the entire Settings dialog. Using
+    // WidgetWithChildrenShortcut means F1 works while focus is inside
+    // any Settings control (combo box, edit, checkbox, button, etc.).
+    //
+    auto* helpAction = new QAction(this);
+    helpAction->setShortcut(QKeySequence::HelpContents);
+    helpAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+
+    connect(helpAction, &QAction::triggered, this, [this]() {
+        HelpManager::showTopic(HelpTopic::Settings, this);
+    });
+
+    addAction(helpAction);
 
     auto* mainLayout = new QVBoxLayout(this);
 

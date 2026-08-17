@@ -1,0 +1,20 @@
+<RCC>
+    <qresource prefix="/help">
+        <file>index.html</file>
+        <file>getting_started.html</file>
+        <file>storage.html</file>
+        <file>parts_catalog.html</file>
+        <file>sets_catalog.html</file>
+        <file>inventory.html</file>
+        <file>rebrickable_import.html</file>
+        <file>builds.html</file>
+        <file>mocs.html</file>
+        <file>allocate_available.html</file>
+        <file>missing_parts.html</file>
+        <file>lost_found.html</file>
+        <file>backup_restore.html</file>
+        <file>settings.html</file>
+        <file>logging.html</file>
+        <file>troubleshooting.html</file>
+    </qresource>
+</RCC>

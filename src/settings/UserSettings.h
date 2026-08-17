@@ -48,6 +48,12 @@ public:
     QByteArray logViewerGeometry() const;
     void setLogViewerGeometry(const QByteArray& geometry);
 
+    QByteArray helpViewerGeometry() const;
+    void setHelpViewerGeometry(const QByteArray& geometry);
+
+    QByteArray helpViewerSplitterState() const;
+    void setHelpViewerSplitterState(const QByteArray& state);
+
     bool showArchivedBuilds() const;
     void setShowArchivedBuilds(bool showArchived);
 
