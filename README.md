@@ -175,6 +175,37 @@ BrickSuite v1.0 is implemented with:
 
 The primary development environment for v1.0 is Qt Creator 19.0.0 with the Qt 6.10.2 MinGW 64-bit toolchain.
 
+## Building BrickSuite
+
+BrickSuite v1.0 is developed with C++17, CMake, and Qt 6.10.2. The v1.0
+development environment uses Qt Creator 19.0.0 and the Qt 6.10.2 MinGW
+64-bit toolchain on Windows 11.
+
+The CMake project requires these Qt 6 modules:
+
+- Qt Core
+- Qt Gui
+- Qt Widgets
+- Qt SQL
+- Qt Network
+
+A typical build begins by configuring the repository's `CMakeLists.txt`
+with a Qt 6 development environment in which those modules are available.
+
+### SQLite
+
+BrickSuite uses SQLite as its local database engine through Qt SQL.
+
+A separate SQLite command-line installation is not normally required to
+run BrickSuite when the required Qt runtime components and SQLite SQL
+driver are present.
+
+Developers who want the SQLite command-line tools for inspecting,
+troubleshooting, or working directly with `BrickSuite.db` can obtain
+them from the official SQLite project:
+
+https://sqlite.org/download.html
+
 ## Local Application Data
 
 BrickSuite uses Qt's `AppLocalDataLocation` for application-managed local data.
@@ -236,6 +267,20 @@ Issues discovered during regression testing were corrected before the v1.0 featu
 **BrickSuite 1.0.0 — Feature Complete**
 
 Version 1.0 establishes the production-use baseline. Further ideas and enhancements can be evaluated from real-world use and developed as post-v1.0 work without expanding the initial release indefinitely.
+
+## Copyright and License
+
+Copyright © 2026 RF StateSide, LLC.
+
+BrickSuite is free and open-source software licensed under the
+**GNU Lesser General Public License, version 3.0 (LGPL-3.0-only)**.
+
+You may use, study, modify, and redistribute BrickSuite subject to the
+terms of the LGPL-3.0. See the repository `LICENSE` file for the complete
+license terms.
+
+Contributions are welcome. See `CONTRIBUTING.md` for the contribution
+guidelines.
 
 ## Trademark and Third-Party Notice
 
