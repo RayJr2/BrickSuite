@@ -68,6 +68,7 @@ private:
 
     QTableWidget* m_resultsTable = nullptr;
     QLabel* m_resultLabel = nullptr;
+    QLabel* m_summaryLabel = nullptr;
 
     QPushButton* m_previousButton = nullptr;
     QPushButton* m_nextButton = nullptr;

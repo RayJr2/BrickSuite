@@ -41,8 +41,8 @@ private:
     QPushButton* m_searchButton = nullptr;
     QPushButton* m_importButton = nullptr;
 
-    QLabel* m_catalogLabel = nullptr;
     QLabel* m_resultLabel = nullptr;
+    QLabel* m_summaryLabel = nullptr;
 
     QTableWidget* m_resultsTable = nullptr;
 

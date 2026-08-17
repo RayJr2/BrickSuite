@@ -1,7 +1,9 @@
 #include "LogViewerDialog.h"
 
 #include "../../services/Logger.h"
+#include "../../settings/UserSettings.h"
 
+#include <QCloseEvent>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QFile>
@@ -20,6 +22,12 @@ LogViewerDialog::LogViewerDialog(QWidget* parent)
 {
     setWindowTitle("BrickSuite Application Log");
     resize(950, 650);
+
+    const QByteArray savedGeometry = UserSettings::instance().logViewerGeometry();
+
+    if (!savedGeometry.isEmpty()) {
+        restoreGeometry(savedGeometry);
+    }
 
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -61,6 +69,15 @@ LogViewerDialog::LogViewerDialog(QWidget* parent)
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     //
+    // QDialog::reject()/done() does not necessarily route through closeEvent().
+    // Save geometry whenever the dialog finishes so the Close button, Esc key,
+    // and window close button all persist the viewer position and size.
+    //
+    connect(this, &QDialog::finished, this, [this](int) {
+        UserSettings::instance().setLogViewerGeometry(saveGeometry());
+    });
+
+    //
     // Refresh automatically so the viewer can remain open on another screen
     // while BrickSuite is being exercised. One second is frequent enough for
     // testing without generating any additional log traffic.
@@ -75,6 +92,17 @@ LogViewerDialog::LogViewerDialog(QWidget* parent)
     m_refreshTimer->start();
 
     refreshLog();
+}
+
+void LogViewerDialog::closeEvent(QCloseEvent* event)
+{
+    //
+    // Keep the Log Viewer where the user placed it, including another
+    // monitor, so diagnostic testing can resume without repositioning it.
+    //
+    UserSettings::instance().setLogViewerGeometry(saveGeometry());
+
+    QDialog::closeEvent(event);
 }
 
 void LogViewerDialog::refreshLog()

@@ -5,6 +5,7 @@
 class QPlainTextEdit;
 class QPushButton;
 class QTimer;
+class QCloseEvent;
 
 class LogViewerDialog : public QDialog
 {
@@ -12,6 +13,9 @@ class LogViewerDialog : public QDialog
 
 public:
     explicit LogViewerDialog(QWidget* parent = nullptr);
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
 
 private:
     void refreshLog();

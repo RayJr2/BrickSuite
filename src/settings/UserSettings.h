@@ -25,6 +25,9 @@ public:
     QByteArray mainWindowState() const;
     void setMainWindowState(const QByteArray& state);
 
+    QByteArray logViewerGeometry() const;
+    void setLogViewerGeometry(const QByteArray& geometry);
+
     static QString themeToString(Theme theme);
     static Theme themeFromString(const QString& value);
 

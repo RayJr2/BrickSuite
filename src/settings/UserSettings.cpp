@@ -24,6 +24,9 @@ constexpr auto kGroupMainWindow = "MainWindow";
 constexpr auto kMainWindowGeometryKey = "Geometry";
 constexpr auto kMainWindowStateKey = "State";
 
+constexpr auto kGroupLogViewer = "LogViewer";
+constexpr auto kLogViewerGeometryKey = "Geometry";
+
 } // namespace
 
 UserSettings& UserSettings::instance()
@@ -262,6 +265,30 @@ void UserSettings::setMainWindowState(const QByteArray& state)
     settings.beginGroup(kGroupMainWindow);
 
     settings.setValue(kMainWindowStateKey, state);
+
+    settings.endGroup();
+}
+
+QByteArray UserSettings::logViewerGeometry() const
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupLogViewer);
+
+    const QByteArray geometry = settings.value(kLogViewerGeometryKey).toByteArray();
+
+    settings.endGroup();
+
+    return geometry;
+}
+
+void UserSettings::setLogViewerGeometry(const QByteArray& geometry)
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupLogViewer);
+
+    settings.setValue(kLogViewerGeometryKey, geometry);
 
     settings.endGroup();
 }

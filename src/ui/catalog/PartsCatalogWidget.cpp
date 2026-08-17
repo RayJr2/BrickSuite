@@ -19,6 +19,7 @@
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
@@ -111,8 +112,11 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
     m_nextButton = new QPushButton("Next", this);
 
     m_pageLabel = new QLabel(this);
+    m_summaryLabel = new QLabel(this);
 
     auto* pagingLayout = new QHBoxLayout();
+
+    pagingLayout->addWidget(m_summaryLabel);
 
     pagingLayout->addStretch();
 
@@ -432,6 +436,11 @@ void PartsCatalogWidget::updatePagingControls()
 
     m_previousButton->setEnabled(m_currentPage > 0);
     m_nextButton->setEnabled(m_currentPage + 1 < totalPages);
+
+    m_summaryLabel->setText(
+        QString("%1 %2")
+            .arg(QLocale().toString(m_totalResultCount))
+            .arg(m_totalResultCount == 1 ? "Part" : "Parts"));
 
     m_pageLabel->setText(QString("Page %1 of %2").arg(displayPage).arg(totalPages));
 }
