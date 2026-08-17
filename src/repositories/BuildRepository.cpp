@@ -11,6 +11,9 @@
 bool BuildRepository::create(Build& build)
 {
     if (build.workspaceId() <= 0 || build.name().trimmed().isEmpty()) {
+        qWarning() << "Build create rejected due to invalid workspace/name."
+                   << "WorkspaceId:" << build.workspaceId()
+                   << "Name:" << build.name();
         return false;
     }
 
@@ -19,10 +22,14 @@ bool BuildRepository::create(Build& build)
     const QString inventoryMode = build.inventoryMode().trimmed();
 
     if (inventoryMode != "Stock" && inventoryMode != "CompleteSet") {
+        qWarning() << "Build create rejected due to invalid inventory mode:"
+                   << inventoryMode;
         return false;
     }
 
     if (buildType != "Set" && buildType != "MOC") {
+        qWarning() << "Build create rejected due to invalid build type:"
+                   << buildType;
         return false;
     }
 
@@ -202,8 +209,12 @@ QList<Build> BuildRepository::getByWorkspace(int workspaceId, bool includeArchiv
 
 bool BuildRepository::setActive(int buildId, bool active)
 {
-    if (buildId <= 0)
+    if (buildId <= 0) {
+        qWarning() << "Build active-state update rejected."
+                   << "BuildId:" << buildId
+                   << "Active:" << active;
         return false;
+    }
 
     QSqlDatabase database = DatabaseManager::instance().database();
     const QDateTime now = QDateTime::currentDateTimeUtc();
@@ -227,24 +238,41 @@ bool BuildRepository::setActive(int buildId, bool active)
         return false;
     }
 
-    return query.numRowsAffected() > 0;
+    if (query.numRowsAffected() <= 0) {
+        qWarning() << "Build active-state update affected no rows."
+                   << "BuildId:" << buildId
+                   << "Active:" << active;
+        return false;
+    }
+
+    return true;
 }
 
 bool BuildRepository::update(Build& build)
 {
     if (build.id() <= 0 || build.workspaceId() <= 0 || build.name().trimmed().isEmpty()) {
+        qWarning() << "Build update rejected due to invalid identity/workspace/name."
+                   << "BuildId:" << build.id()
+                   << "WorkspaceId:" << build.workspaceId()
+                   << "Name:" << build.name();
         return false;
     }
 
     const QString buildType = build.buildType().trimmed();
 
     if (buildType != "Set" && buildType != "MOC") {
+        qWarning() << "Build update rejected due to invalid build type:"
+                   << buildType
+                   << "BuildId:" << build.id();
         return false;
     }
 
     const QString inventoryMode = build.inventoryMode().trimmed();
 
     if (inventoryMode != "Stock" && inventoryMode != "CompleteSet") {
+        qWarning() << "Build update rejected due to invalid inventory mode:"
+                   << inventoryMode
+                   << "BuildId:" << build.id();
         return false;
     }
 

@@ -174,6 +174,9 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
     if (!QFile::exists(temporaryPath)) {
         setError("SQLite completed the backup operation, "
                  "but the backup file was not created.");
+        qCritical() << "Database backup failed: SQLite reported success but "
+                       "the temporary backup file was not created."
+                    << "TemporaryPath:" << temporaryPath;
 
         return false;
     }
@@ -226,6 +229,8 @@ bool DatabaseManager::verifyDatabaseBackup(const QString& backupPath, QString* e
 
     if (!QFile::exists(trimmedPath)) {
         setError(QString("The backup file does not exist:\n%1").arg(trimmedPath));
+        qWarning() << "Database backup verification rejected: file does not exist:"
+                   << trimmedPath;
 
         return false;
     }
@@ -337,6 +342,8 @@ bool DatabaseManager::restoreDatabase(const QString& backupPath, QString* errorM
 
     if (!QFile::exists(trimmedBackupPath)) {
         setError(QString("The selected backup file does not exist:\n%1").arg(trimmedBackupPath));
+        qWarning() << "Database restore rejected: selected backup does not exist:"
+                   << trimmedBackupPath;
 
         return false;
     }
@@ -443,6 +450,9 @@ bool DatabaseManager::restoreDatabase(const QString& backupPath, QString* errorM
 
             setError("Unable to move the current BrickSuite "
                      "database out of the way.");
+            qCritical() << "Database restore failed moving current live database aside."
+                        << "LiveDatabase:" << liveDatabasePath
+                        << "PreviousDatabase:" << oldDatabasePath;
 
             return false;
         }
@@ -460,6 +470,9 @@ bool DatabaseManager::restoreDatabase(const QString& backupPath, QString* errorM
 
         setError("Unable to install the selected backup "
                  "as the live BrickSuite database.");
+        qCritical() << "Database restore failed installing selected backup."
+                    << "SelectedBackup:" << trimmedBackupPath
+                    << "LiveDatabase:" << liveDatabasePath;
 
         return false;
     }

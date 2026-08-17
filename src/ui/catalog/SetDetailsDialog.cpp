@@ -4,6 +4,7 @@
 #include "../../repositories/SetCatalogRepository.h"
 #include "../../services/images/SetImageService.h"
 
+#include <QDebug>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -128,6 +129,9 @@ bool SetDetailsDialog::loadSet()
     const std::optional<SetCatalogItem> set = repository.getById(m_setCatalogId);
 
     if (!set) {
+        qWarning() << "Set Details could not load Set."
+                   << "SetCatalogId:" << m_setCatalogId;
+
         m_setNumberLabel->setText("Unable to load Set.");
 
         return false;

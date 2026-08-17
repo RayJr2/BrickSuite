@@ -156,8 +156,11 @@ bool WorkspaceRepository::update(
     QSqlDatabase database =
         DatabaseManager::instance().database();
 
-    if (!database.isOpen())
+    if (!database.isOpen()) {
+        qCritical() << "Workspace update failed: database is not open."
+                    << "WorkspaceId:" << workspace.id();
         return false;
+    }
 
     const QDateTime now =
         QDateTime::currentDateTimeUtc();

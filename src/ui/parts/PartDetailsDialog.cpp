@@ -9,6 +9,7 @@
 #include "../../services/images/PartImageService.h"
 #include "../../settings/UserSettings.h"
 
+#include <QDebug>
 #include <QDesktopServices>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -424,15 +425,20 @@ PartDetailsDialog::PartDetailsDialog(
 
 bool PartDetailsDialog::loadLocalPart()
 {
-    if (m_partId <= 0)
+    if (m_partId <= 0) {
+        qWarning() << "Part Details rejected invalid Part ID:" << m_partId;
         return false;
+    }
 
     PartRepository partRepository;
 
     const std::optional<Part> part = partRepository.getById(m_partId);
 
-    if (!part)
+    if (!part) {
+        qWarning() << "Part Details could not load local Part."
+                   << "PartId:" << m_partId;
         return false;
+    }
 
     m_partNumber = part->partNumber();
 

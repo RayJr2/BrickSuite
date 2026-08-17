@@ -3,6 +3,7 @@
 #include "../../models/Build.h"
 #include "../../repositories/BuildRepository.h"
 
+#include <QDebug>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -87,6 +88,9 @@ bool EditBuildDialog::loadBuild()
     const std::optional<Build> build = repository.getById(m_buildId);
 
     if (!build) {
+        qWarning() << "Edit Build dialog could not load Build."
+                   << "BuildId:" << m_buildId;
+
         QMessageBox::critical(this, "Edit Build", "Unable to load the selected Build.");
 
         return false;

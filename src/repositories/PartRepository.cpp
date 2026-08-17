@@ -12,6 +12,9 @@
 bool PartRepository::create(Part& part)
 {
     if (part.partNumber().trimmed().isEmpty() || part.name().trimmed().isEmpty()) {
+        qWarning() << "Part create rejected due to missing number/name."
+                   << "PartNumber:" << part.partNumber()
+                   << "Name:" << part.name();
         return false;
     }
 
@@ -189,6 +192,10 @@ std::optional<Part> PartRepository::getByPartNumber(const QString& partNumber) c
 bool PartRepository::update(Part& part)
 {
     if (part.id() <= 0 || part.partNumber().trimmed().isEmpty() || part.name().trimmed().isEmpty()) {
+        qWarning() << "Part update rejected due to invalid identity/number/name."
+                   << "PartId:" << part.id()
+                   << "PartNumber:" << part.partNumber()
+                   << "Name:" << part.name();
         return false;
     }
 
@@ -235,8 +242,12 @@ bool PartRepository::update(Part& part)
         return false;
     }
 
-    if (query.numRowsAffected() <= 0)
+    if (query.numRowsAffected() <= 0) {
+        qWarning() << "Part update affected no rows."
+                   << "PartId:" << part.id()
+                   << "PartNumber:" << part.partNumber();
         return false;
+    }
 
     part.setModifiedUtc(now);
 
