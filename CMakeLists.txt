@@ -169,6 +169,7 @@ qt_add_executable(BrickSuite
     src/ui/inventory/FoundInventoryDialog.cpp
     src/ui/inventory/LostInventoryDialog.h
     src/ui/inventory/LostInventoryDialog.cpp
+    README.md
 
 )
 target_link_libraries(BrickSuite PRIVATE
