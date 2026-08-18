@@ -66,6 +66,12 @@ public:
     bool rebrickableConnectionPreviouslyVerified() const;
     void setRebrickableConnectionPreviouslyVerified(bool verified);
 
+    QString bricksetApiKey() const;
+    void setBricksetApiKey(const QString& apiKey);
+
+    bool bricksetConnectionPreviouslyVerified() const;
+    void setBricksetConnectionPreviouslyVerified(bool verified);
+
     static constexpr int DefaultRebrickableRequestIntervalMs = 1250;
     static constexpr int MinimumRebrickableRequestIntervalMs = 1000;
     static constexpr int MaximumRebrickableRequestIntervalMs = 60000;

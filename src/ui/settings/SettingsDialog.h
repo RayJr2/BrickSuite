@@ -36,6 +36,7 @@ class QSpinBox;
 class QWidget;
 
 class RebrickableApiClient;
+class BricksetService;
 
 class SettingsDialog : public QDialog
 {
@@ -52,17 +53,23 @@ private slots:
     void cancelSettings();
     void previewTheme(int index);
     void showApiKeyToggled(bool checked);
+    void showBricksetApiKeyToggled(bool checked);
     void testRebrickableConnection();
+    void testBricksetConnection();
 
 private:
     void buildGeneralTab();
     void buildAppearanceTab();
     void buildApisTab();
     QWidget* buildRebrickableApiPage(QWidget* parent);
+    QWidget* buildBricksetApiPage(QWidget* parent);
 
     void setRebrickableConnectionStatus(ApiConnectionStatus status);
     static QString apiConnectionStatusText(ApiConnectionStatus status);
     void startRebrickableConnectionTest(const QString& apiKey);
+
+    void setBricksetConnectionStatus(ApiConnectionStatus status);
+    void startBricksetConnectionTest(const QString& apiKey);
 
     void loadSettings();
     void loadWorkspaces();
@@ -90,6 +97,16 @@ private:
     QString m_originalRebrickableApiKey;
 
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
+
+    // APIs / Brickset
+    QLineEdit* m_bricksetApiKeyEdit = nullptr;
+    QLabel* m_bricksetStatusLabel = nullptr;
+    QCheckBox* m_showBricksetApiKeyCheck = nullptr;
+    QPushButton* m_testBricksetConnectionButton = nullptr;
+    ApiConnectionStatus m_bricksetConnectionStatus = ApiConnectionStatus::NotConfigured;
+    QString m_originalBricksetApiKey;
+
+    BricksetService* m_bricksetService = nullptr;
 
     QDialogButtonBox* m_buttonBox = nullptr;
 };

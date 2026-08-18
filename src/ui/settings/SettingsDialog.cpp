@@ -25,6 +25,7 @@
 #include "../../models/Workspace.h"
 #include "../../repositories/WorkspaceRepository.h"
 #include "../../services/RebrickableApiClient.h"
+#include "../../api/brickset/BricksetService.h"
 #include "../../settings/ThemeManager.h"
 #include "../../settings/UserSettings.h"
 
@@ -84,6 +85,7 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext, QWidget* pare
     buildApisTab();
 
     m_rebrickableApiClient = new RebrickableApiClient(this);
+    m_bricksetService = new BricksetService(this);
 
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::saveSettings);
 
@@ -109,6 +111,35 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext, QWidget* pare
                         setRebrickableConnectionStatus(ApiConnectionStatus::NetworkError);
                     } else {
                         setRebrickableConnectionStatus(ApiConnectionStatus::ProviderError);
+                    }
+                }
+            });
+
+    connect(m_bricksetService,
+            &BricksetService::connectionTestFinished,
+            this,
+            [this](const BricksetService::ConnectionResult& result) {
+                m_testBricksetConnectionButton->setEnabled(true);
+
+                UserSettings& settings = UserSettings::instance();
+
+                if (result.success) {
+                    setBricksetConnectionStatus(ApiConnectionStatus::Connected);
+                    settings.setBricksetConnectionPreviouslyVerified(true);
+                } else {
+                    settings.setBricksetConnectionPreviouslyVerified(false);
+
+                    switch (result.error.type) {
+                    case ApiErrorType::Authentication:
+                        setBricksetConnectionStatus(ApiConnectionStatus::AuthenticationFailed);
+                        break;
+                    case ApiErrorType::Network:
+                    case ApiErrorType::Timeout:
+                        setBricksetConnectionStatus(ApiConnectionStatus::NetworkError);
+                        break;
+                    default:
+                        setBricksetConnectionStatus(ApiConnectionStatus::ProviderError);
+                        break;
                     }
                 }
             });
@@ -174,6 +205,21 @@ void SettingsDialog::loadSettings()
     } else {
         setRebrickableConnectionStatus(ApiConnectionStatus::Unknown);
     }
+
+    m_originalBricksetApiKey = settings.bricksetApiKey();
+    m_bricksetApiKeyEdit->setText(m_originalBricksetApiKey);
+
+    if (m_originalBricksetApiKey.trimmed().isEmpty()) {
+        setBricksetConnectionStatus(ApiConnectionStatus::NotConfigured);
+    } else if (settings.bricksetConnectionPreviouslyVerified()) {
+        setBricksetConnectionStatus(ApiConnectionStatus::Testing);
+
+        QTimer::singleShot(0, this, [this]() {
+            startBricksetConnectionTest(m_bricksetApiKeyEdit->text().trimmed());
+        });
+    } else {
+        setBricksetConnectionStatus(ApiConnectionStatus::Unknown);
+    }
 }
 
 void SettingsDialog::saveSettings()
@@ -187,6 +233,7 @@ void SettingsDialog::saveSettings()
     const auto theme = static_cast<UserSettings::Theme>(m_themeCombo->currentData().toInt());
 
     const QString apiKey = m_apiKeyEdit->text().trimmed();
+    const QString bricksetApiKey = m_bricksetApiKeyEdit->text().trimmed();
 
     settings.setResultsPerPage(resultsPerPage);
 
@@ -200,6 +247,15 @@ void SettingsDialog::saveSettings()
 
     if (rebrickableKeyChanged && m_rebrickableConnectionStatus != ApiConnectionStatus::Connected) {
         settings.setRebrickableConnectionPreviouslyVerified(false);
+    }
+
+    const bool bricksetKeyChanged =
+        (bricksetApiKey != m_originalBricksetApiKey.trimmed());
+
+    settings.setBricksetApiKey(bricksetApiKey);
+
+    if (bricksetKeyChanged && m_bricksetConnectionStatus != ApiConnectionStatus::Connected) {
+        settings.setBricksetConnectionPreviouslyVerified(false);
     }
 
     const int rebrickableRequestIntervalMs = m_rebrickableRequestIntervalSpin->value();
@@ -309,11 +365,11 @@ void SettingsDialog::buildApisTab()
     m_apiTabWidget->setTabPosition(QTabWidget::North);
 
     m_apiTabWidget->addTab(buildRebrickableApiPage(m_apiTabWidget), "Rebrickable");
+    m_apiTabWidget->addTab(buildBricksetApiPage(m_apiTabWidget), "Brickset");
 
-    // BrickLink is the next provider planned for M14.4. Its provider-specific
-    // configuration controls will be added during M14.3 as the authentication
-    // requirements are implemented. Brickset can be added later without
-    // changing the top-level Settings layout.
+    // BrickLink remains deferred because BrickLink currently restricts Store
+    // API registration to seller accounts. It can be added later without
+    // changing the Settings hierarchy.
 
     layout->addWidget(m_apiTabWidget);
 
@@ -395,9 +451,82 @@ QWidget* SettingsDialog::buildRebrickableApiPage(QWidget* parent)
     return page;
 }
 
+QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
+{
+    auto* page = new QWidget(parent);
+    auto* layout = new QVBoxLayout(page);
+
+    auto* apiGroup = new QGroupBox("Brickset API", page);
+    auto* apiLayout = new QFormLayout(apiGroup);
+
+    m_bricksetApiKeyEdit = new QLineEdit(apiGroup);
+    m_bricksetApiKeyEdit->setEchoMode(QLineEdit::Password);
+    m_bricksetApiKeyEdit->setPlaceholderText("Enter Brickset API key");
+
+    m_showBricksetApiKeyCheck = new QCheckBox("Show API key", apiGroup);
+
+    m_bricksetStatusLabel =
+        new QLabel(apiConnectionStatusText(ApiConnectionStatus::NotConfigured), apiGroup);
+
+    connect(m_bricksetApiKeyEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
+        if (m_bricksetConnectionStatus == ApiConnectionStatus::Testing)
+            return;
+
+        setBricksetConnectionStatus(text.trimmed().isEmpty()
+                                        ? ApiConnectionStatus::NotConfigured
+                                        : ApiConnectionStatus::Unknown);
+    });
+
+    connect(m_bricksetApiKeyEdit, &QLineEdit::editingFinished, this, [this]() {
+        const QString apiKey = m_bricksetApiKeyEdit->text().trimmed();
+
+        if (!apiKey.isEmpty() && apiKey != m_originalBricksetApiKey
+            && m_bricksetConnectionStatus != ApiConnectionStatus::Testing
+            && m_bricksetConnectionStatus != ApiConnectionStatus::Connected) {
+            startBricksetConnectionTest(apiKey);
+        }
+    });
+
+    m_testBricksetConnectionButton = new QPushButton("Test Connection", apiGroup);
+
+    connect(m_testBricksetConnectionButton,
+            &QPushButton::clicked,
+            this,
+            &SettingsDialog::testBricksetConnection);
+
+    apiLayout->addRow("API Key:", m_bricksetApiKeyEdit);
+    apiLayout->addRow(QString(), m_showBricksetApiKeyCheck);
+    apiLayout->addRow("Connection Status:", m_bricksetStatusLabel);
+    apiLayout->addRow(QString(), m_testBricksetConnectionButton);
+
+    auto* noteLabel = new QLabel(
+        "BrickSuite uses Brickset API v3. A previously verified API key is "
+        "validated automatically when Settings opens.\n\n"
+        "This M14.3 integration uses Brickset's checkKey method only. "
+        "Read-only set lookups will be added in M14.4.",
+        apiGroup);
+    noteLabel->setWordWrap(true);
+    apiLayout->addRow(QString(), noteLabel);
+
+    layout->addWidget(apiGroup);
+    layout->addStretch();
+
+    connect(m_showBricksetApiKeyCheck,
+            &QCheckBox::toggled,
+            this,
+            &SettingsDialog::showBricksetApiKeyToggled);
+
+    return page;
+}
+
 void SettingsDialog::showApiKeyToggled(bool checked)
 {
     m_apiKeyEdit->setEchoMode(checked ? QLineEdit::Normal : QLineEdit::Password);
+}
+
+void SettingsDialog::showBricksetApiKeyToggled(bool checked)
+{
+    m_bricksetApiKeyEdit->setEchoMode(checked ? QLineEdit::Normal : QLineEdit::Password);
 }
 
 void SettingsDialog::testRebrickableConnection()
@@ -452,3 +581,35 @@ QString SettingsDialog::apiConnectionStatusText(ApiConnectionStatus status)
 
     return QStringLiteral("Unknown");
 }
+
+void SettingsDialog::testBricksetConnection()
+{
+    const QString apiKey = m_bricksetApiKeyEdit->text().trimmed();
+
+    if (apiKey.isEmpty()) {
+        setBricksetConnectionStatus(ApiConnectionStatus::NotConfigured);
+        QMessageBox::warning(this, "Brickset", "Enter your Brickset API key first.");
+        return;
+    }
+
+    startBricksetConnectionTest(apiKey);
+}
+
+void SettingsDialog::startBricksetConnectionTest(const QString& apiKey)
+{
+    if (apiKey.trimmed().isEmpty())
+        return;
+
+    setBricksetConnectionStatus(ApiConnectionStatus::Testing);
+    m_testBricksetConnectionButton->setEnabled(false);
+    m_bricksetService->testConnection(apiKey.trimmed());
+}
+
+void SettingsDialog::setBricksetConnectionStatus(ApiConnectionStatus status)
+{
+    m_bricksetConnectionStatus = status;
+
+    if (m_bricksetStatusLabel)
+        m_bricksetStatusLabel->setText(apiConnectionStatusText(status));
+}
+

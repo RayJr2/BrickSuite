@@ -28,6 +28,7 @@ constexpr auto kGroupGeneral = "General";
 constexpr auto kGroupAppearance = "Appearance";
 
 constexpr auto kGroupRebrickable = "Rebrickable";
+constexpr auto kGroupBrickset = "Brickset";
 
 constexpr auto kThemeKey = "Theme";
 
@@ -37,6 +38,9 @@ constexpr auto kDefaultWorkspaceIdKey = "DefaultWorkspaceId";
 
 constexpr auto kRebrickableApiKey = "ApiKey";
 constexpr auto kRebrickableConnectionPreviouslyVerifiedKey = "ConnectionPreviouslyVerified";
+
+constexpr auto kBricksetApiKey = "ApiKey";
+constexpr auto kBricksetConnectionPreviouslyVerifiedKey = "ConnectionPreviouslyVerified";
 
 constexpr auto kRebrickableMinimumRequestIntervalMsKey = "MinimumRequestIntervalMs";
 
@@ -199,6 +203,46 @@ void UserSettings::setRebrickableConnectionPreviouslyVerified(bool verified)
 
     settings.beginGroup(kGroupRebrickable);
     settings.setValue(kRebrickableConnectionPreviouslyVerifiedKey, verified);
+    settings.endGroup();
+}
+
+QString UserSettings::bricksetApiKey() const
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupBrickset);
+    const QString apiKey = settings.value(kBricksetApiKey).toString();
+    settings.endGroup();
+
+    return apiKey;
+}
+
+void UserSettings::setBricksetApiKey(const QString& apiKey)
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupBrickset);
+    settings.setValue(kBricksetApiKey, apiKey.trimmed());
+    settings.endGroup();
+}
+
+bool UserSettings::bricksetConnectionPreviouslyVerified() const
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupBrickset);
+    const bool verified = settings.value(kBricksetConnectionPreviouslyVerifiedKey, false).toBool();
+    settings.endGroup();
+
+    return verified;
+}
+
+void UserSettings::setBricksetConnectionPreviouslyVerified(bool verified)
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupBrickset);
+    settings.setValue(kBricksetConnectionPreviouslyVerifiedKey, verified);
     settings.endGroup();
 }
 

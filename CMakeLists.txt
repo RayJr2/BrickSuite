@@ -127,6 +127,8 @@ qt_add_executable(BrickSuite
     src/api/ApiNetworkService.cpp
     src/api/rebrickable/RebrickableService.h
     src/api/rebrickable/RebrickableService.cpp
+    src/api/brickset/BricksetService.h
+    src/api/brickset/BricksetService.cpp
     src/services/RebrickableApiClient.h
     src/services/RebrickableApiClient.cpp
     src/services/images/PartImageService.cpp src/services/images/PartImageService.h
