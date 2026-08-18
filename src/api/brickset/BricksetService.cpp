@@ -530,3 +530,152 @@ void BricksetService::invalidateKeyUsageCache()
     s_sessionGetSetsCountAtUsageRefresh = s_sessionGetSetsCallCount;
 }
 
+void BricksetService::getInstructions2(const QString& setNumber,
+                                       const QString& apiKey)
+{
+    const QString trimmedSetNumber = setNumber.trimmed();
+    const QString trimmedApiKey = apiKey.trimmed();
+
+    if (trimmedSetNumber.isEmpty() || trimmedApiKey.isEmpty()) {
+        InstructionsResult result;
+        result.setNumber = trimmedSetNumber;
+        result.message = trimmedSetNumber.isEmpty()
+                             ? QStringLiteral("Brickset set number is empty.")
+                             : QStringLiteral("Brickset API key is empty.");
+        result.error.type = ApiErrorType::Configuration;
+        result.error.message = result.message;
+
+        emit instructionsFinished(result);
+        return;
+    }
+
+    QUrl url(QStringLiteral("https://brickset.com/api/v3.asmx/getInstructions2"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("apiKey"), trimmedApiKey);
+    query.addQueryItem(QStringLiteral("setNumber"), trimmedSetNumber);
+    url.setQuery(query);
+
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("BrickSuite/0.2.0"));
+
+    ApiRequestContext context;
+    context.provider = ApiProvider::Brickset;
+    context.operation = QStringLiteral("GetInstructions2");
+
+    QNetworkReply* reply = m_networkService->get(request, context);
+
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, trimmedSetNumber]() {
+                handleInstructionsReply(reply, trimmedSetNumber);
+            });
+}
+
+void BricksetService::handleInstructionsReply(QNetworkReply* reply,
+                                              const QString& setNumber)
+{
+    InstructionsResult result;
+    result.setNumber = setNumber;
+
+    const QVariant statusAttribute =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+
+    if (statusAttribute.isValid())
+        result.httpStatusCode = statusAttribute.toInt();
+
+    result.error.httpStatusCode = result.httpStatusCode;
+
+    const QByteArray responseData = reply->readAll();
+    const QJsonDocument document = QJsonDocument::fromJson(responseData);
+    const bool hasJsonObject = document.isObject();
+
+    QJsonObject root;
+    QString status;
+    QString providerMessage;
+
+    if (hasJsonObject) {
+        root = document.object();
+        status = root.value(QStringLiteral("status")).toString();
+        providerMessage = root.value(QStringLiteral("message")).toString();
+    }
+
+    if (reply->error() != QNetworkReply::NoError) {
+        result.message =
+            !providerMessage.isEmpty()
+                ? providerMessage
+                : QStringLiteral("Unable to retrieve Brickset instructions: %1")
+                      .arg(reply->errorString());
+
+        if (providerMessage.contains(QStringLiteral("Invalid API key"),
+                                     Qt::CaseInsensitive)) {
+            result.error.type = ApiErrorType::Authentication;
+        } else {
+            result.error.type = ApiErrorType::Network;
+        }
+
+        result.error.message = result.message;
+        result.error.providerMessage = providerMessage;
+
+        reply->deleteLater();
+        emit instructionsFinished(result);
+        return;
+    }
+
+    if (!hasJsonObject) {
+        result.message = QStringLiteral("Brickset returned an unexpected instructions response.");
+        result.error.type = ApiErrorType::InvalidResponse;
+        result.error.message = result.message;
+
+        reply->deleteLater();
+        emit instructionsFinished(result);
+        return;
+    }
+
+    if (status.compare(QStringLiteral("success"), Qt::CaseInsensitive) != 0) {
+        result.message = providerMessage.isEmpty()
+                             ? QStringLiteral("Brickset returned a provider error.")
+                             : providerMessage;
+
+        result.error.type =
+            providerMessage.contains(QStringLiteral("Invalid API key"),
+                                     Qt::CaseInsensitive)
+                ? ApiErrorType::Authentication
+                : ApiErrorType::Provider;
+
+        result.error.message = result.message;
+        result.error.providerMessage = providerMessage;
+
+        reply->deleteLater();
+        emit instructionsFinished(result);
+        return;
+    }
+
+    result.matches = root.value(QStringLiteral("matches")).toInt();
+
+    const QJsonArray instructions =
+        root.value(QStringLiteral("instructions")).toArray();
+
+    for (const QJsonValue& value : instructions) {
+        if (!value.isObject())
+            continue;
+
+        const QJsonObject object = value.toObject();
+
+        Instruction instruction;
+        instruction.url = object.value(QStringLiteral("URL")).toString();
+        instruction.description =
+            object.value(QStringLiteral("description")).toString();
+
+        if (!instruction.url.isEmpty())
+            result.instructions.append(instruction);
+    }
+
+    result.success = true;
+    result.message =
+        QStringLiteral("Brickset returned %1 instruction file(s) for %2.")
+            .arg(result.instructions.size())
+            .arg(setNumber);
+
+    reply->deleteLater();
+    emit instructionsFinished(result);
+}
+

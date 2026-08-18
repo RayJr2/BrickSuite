@@ -170,6 +170,8 @@ qt_add_executable(BrickSuite
     src/services/images/SetImageService.cpp
     src/ui/catalog/SetDetailsDialog.h
     src/ui/catalog/SetDetailsDialog.cpp
+    src/ui/catalog/BricksetInstructionsDialog.h
+    src/ui/catalog/BricksetInstructionsDialog.cpp
     src/import/RebrickablePartCatalogImporter.h
     src/import/RebrickablePartCatalogImporter.cpp
     src/ui/builds/DisassembleSetDialog.h

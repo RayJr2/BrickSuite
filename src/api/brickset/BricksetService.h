@@ -85,6 +85,23 @@ public:
         SetDetails set;
     };
 
+    struct Instruction
+    {
+        QString url;
+        QString description;
+    };
+
+    struct InstructionsResult
+    {
+        bool success = false;
+        int httpStatusCode = 0;
+        int matches = 0;
+        QString setNumber;
+        QString message;
+        ApiError error;
+        QList<Instruction> instructions;
+    };
+
     struct KeyUsageEntry
     {
         QString dateStamp;
@@ -111,6 +128,9 @@ public:
 
     void getKeyUsageStats(const QString& apiKey);
 
+    void getInstructions2(const QString& setNumber,
+                          const QString& apiKey);
+
     static int sessionGetSetsCallCount();
 
     static bool keyUsageKnown();
@@ -125,6 +145,8 @@ signals:
 
     void keyUsageStatsFinished(const BricksetService::KeyUsageResult& result);
 
+    void instructionsFinished(const BricksetService::InstructionsResult& result);
+
 private:
     void handleConnectionTestReply(QNetworkReply* reply);
 
@@ -132,6 +154,9 @@ private:
                                const QString& requestedSetNumber);
 
     void handleKeyUsageStatsReply(QNetworkReply* reply);
+
+    void handleInstructionsReply(QNetworkReply* reply,
+                                 const QString& setNumber);
 
     ApiNetworkService* m_networkService = nullptr;
 
@@ -148,3 +173,7 @@ Q_DECLARE_METATYPE(BricksetService::SetDetailsResult)
 
 Q_DECLARE_METATYPE(BricksetService::KeyUsageEntry)
 Q_DECLARE_METATYPE(BricksetService::KeyUsageResult)
+
+Q_DECLARE_METATYPE(BricksetService::Instruction)
+Q_DECLARE_METATYPE(BricksetService::InstructionsResult)
+

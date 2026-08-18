@@ -24,6 +24,8 @@
 #include "../../repositories/SetCatalogRepository.h"
 #include "../../services/images/SetImageService.h"
 #include "../../services/sets/SetDetailsProviderService.h"
+#include "../../settings/UserSettings.h"
+#include "BricksetInstructionsDialog.h"
 
 #include <QDebug>
 #include <QDialogButtonBox>
@@ -31,7 +33,9 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPixmap>
+#include <QPushButton>
 #include <QVBoxLayout>
 
 SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
@@ -105,7 +109,19 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
     m_minifigsLabel = new QLabel("-", providerGroup);
     m_availabilityLabel = new QLabel("-", providerGroup);
     m_ratingLabel = new QLabel("-", providerGroup);
-    m_instructionsLabel = new QLabel("-", providerGroup);
+
+    m_instructionsRowWidget = new QWidget(providerGroup);
+    auto* instructionsRowLayout = new QHBoxLayout(m_instructionsRowWidget);
+    instructionsRowLayout->setContentsMargins(0, 0, 0, 0);
+
+    m_instructionsLabel = new QLabel("-", m_instructionsRowWidget);
+    m_viewInstructionsButton = new QPushButton("View Instructions", m_instructionsRowWidget);
+    m_viewInstructionsButton->setVisible(false);
+
+    instructionsRowLayout->addWidget(m_instructionsLabel);
+    instructionsRowLayout->addStretch();
+    instructionsRowLayout->addWidget(m_viewInstructionsButton);
+
     m_additionalImagesLabel = new QLabel("-", providerGroup);
 
     m_providerLinkLabel = new QLabel("-", providerGroup);
@@ -120,7 +136,7 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
     m_providerLayout->addRow("Minifigs:", m_minifigsLabel);
     m_providerLayout->addRow("Availability:", m_availabilityLabel);
     m_providerLayout->addRow("Rating:", m_ratingLabel);
-    m_providerLayout->addRow("Instructions:", m_instructionsLabel);
+    m_providerLayout->addRow("Instructions:", m_instructionsRowWidget);
     m_providerLayout->addRow("Additional Images:", m_additionalImagesLabel);
     m_providerLayout->addRow("Provider Link:", m_providerLinkLabel);
 
@@ -139,6 +155,43 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
 
     m_imageService = new SetImageService(this);
     m_providerService = new SetDetailsProviderService(this);
+    m_bricksetService = new BricksetService(this);
+
+    connect(m_viewInstructionsButton,
+            &QPushButton::clicked,
+            this,
+            &SetDetailsDialog::requestBricksetInstructions);
+
+    connect(m_bricksetService,
+            &BricksetService::instructionsFinished,
+            this,
+            [this](const BricksetService::InstructionsResult& result) {
+                m_viewInstructionsButton->setEnabled(true);
+                m_viewInstructionsButton->setText("View Instructions");
+
+                if (result.setNumber != m_setNumber)
+                    return;
+
+                if (!result.success) {
+                    QMessageBox::warning(this,
+                                         "Brickset Instructions",
+                                         result.message);
+                    return;
+                }
+
+                if (result.instructions.isEmpty()) {
+                    QMessageBox::information(this,
+                                             "Brickset Instructions",
+                                             QString("No instruction files were returned for %1.")
+                                                 .arg(m_setNumber));
+                    return;
+                }
+
+                BricksetInstructionsDialog dialog(m_setNumber,
+                                                  result.instructions,
+                                                  this);
+                dialog.exec();
+            });
 
     connect(m_providerService,
             &SetDetailsProviderService::detailsReady,
@@ -180,6 +233,9 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
                     }
 
                     m_instructionsLabel->setText(QString::number(set.instructionsCount));
+                    m_viewInstructionsButton->setVisible(set.instructionsCount > 0);
+                    m_viewInstructionsButton->setEnabled(set.instructionsCount > 0);
+
                     m_additionalImagesLabel->setText(
                         QString::number(set.additionalImageCount));
 
@@ -358,6 +414,24 @@ void SetDetailsDialog::requestProviderEnrichment()
     m_providerService->requestDetails(m_setNumber);
 }
 
+void SetDetailsDialog::requestBricksetInstructions()
+{
+    if (!m_bricksetService || m_setNumber.isEmpty())
+        return;
+
+    const QString apiKey = UserSettings::instance().bricksetApiKey().trimmed();
+
+    if (apiKey.isEmpty()) {
+        m_viewInstructionsButton->setVisible(false);
+        return;
+    }
+
+    m_viewInstructionsButton->setEnabled(false);
+    m_viewInstructionsButton->setText("Loading...");
+
+    m_bricksetService->getInstructions2(m_setNumber, apiKey);
+}
+
 void SetDetailsDialog::setBricksetRowsVisible(bool visible)
 {
     if (!m_providerLayout)
@@ -369,8 +443,11 @@ void SetDetailsDialog::setBricksetRowsVisible(bool visible)
     m_providerLayout->setRowVisible(m_minifigsLabel, visible);
     m_providerLayout->setRowVisible(m_availabilityLabel, visible);
     m_providerLayout->setRowVisible(m_ratingLabel, visible);
-    m_providerLayout->setRowVisible(m_instructionsLabel, visible);
+    m_providerLayout->setRowVisible(m_instructionsRowWidget, visible);
     m_providerLayout->setRowVisible(m_additionalImagesLabel, visible);
+
+    if (!visible && m_viewInstructionsButton)
+        m_viewInstructionsButton->setVisible(false);
     m_providerLayout->setRowVisible(m_providerLinkLabel, visible);
 }
 
