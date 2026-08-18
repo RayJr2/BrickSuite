@@ -67,5 +67,16 @@
         <file>images/lost_found_mark_lost_confirmation.png</file>
         <file>images/lost_found_return.png</file>
         <file>images/lost_found_history.png</file>
+        <file>images/backup_restore_backup.png</file>
+        <file>images/backup_restore_backup_complete.png</file>
+        <file>images/backup_restore_restore.png</file>
+        <file>images/backup_restore_restore_confirmation.png</file>
+        <file>images/backup_restore_successful.png</file>
+        <file>images/settings_general.png</file>
+        <file>images/settings_appearance.png</file>
+        <file>images/settings_rebrickable.png</file>
+        <file>images/application_log_viewer.png</file>
+        <file>images/application_log_folder.png</file>
+        <file>images/application_log_clear.png</file>
     </qresource>
 </RCC>

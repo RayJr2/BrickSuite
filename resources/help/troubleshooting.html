@@ -1,11 +1,346 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Troubleshooting</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+<html>
+<head>
+<meta charset="utf-8">
+<title>Troubleshooting</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
+h2 { margin-top: 1.5em; }
+h3 { margin-top: 1.2em; }
 code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>Troubleshooting</h1><p>When diagnosing a problem, check the Application Log for Warning or Critical entries and record the workflow that produced the issue.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+pre { white-space: pre-wrap; }
+.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+.warning { border-left:4px solid #888; padding-left:10px; margin:14px 0; font-weight:bold; }
+</style>
+</head>
+<body>
+
+<h1>Troubleshooting</h1>
+
+<p>This page provides a practical starting point when BrickSuite does something unexpected. The
+goal is to preserve useful evidence, identify the affected workflow, and avoid making unnecessary
+changes while diagnosing the problem.</p>
+
+<div class="note"><b>Troubleshoot by preserving evidence, not by resetting data until the problem
+disappears.</b> If a database, CSV, backup, or log may help explain the problem, preserve it before
+changing or replacing it.</div>
+
+<h2>A Good First Response</h2>
+
+<pre>
+Something unexpected happens
+          |
+     Stop and observe
+          |
+Do not delete or overwrite useful data
+          |
+Check the relevant Help topic
+          |
+Review the Application Log
+          |
+Can the problem be reproduced?
+          |
+         Yes
+          |
+Preserve the current log if needed
+          |
+       Clear Log
+          |
+Reproduce the problem once
+          |
+Review / preserve the new log
+          |
+Record BrickSuite version,
+steps, and exact error message
+</pre>
+
+<p>See <a href="logging.html"><b>Application Log</b></a> for the focused-log troubleshooting
+workflow.</p>
+
+<h2>CSV Import Problems</h2>
+
+<p>CSV files are structured data. A file can look correct in a spreadsheet while still containing
+an unexpected header, an extra field, or an extra comma that changes the number of columns in a
+row.</p>
+
+<div class="warning">When preparing or repairing a CSV for BrickSuite, use the expected column
+headers for that import operation and do not add extra columns. Do not add a trailing comma to a
+row. A stray comma creates another CSV field and can cause the row to be rejected.</div>
+
+<p>Quoted commas inside a properly formed CSV field are different from stray commas. A spreadsheet
+application normally handles the required quoting automatically when saving a valid CSV.</p>
+
+<h3>My Inventory → Import CSV</h3>
+
+<p>The supported owned-parts import uses these columns:</p>
+
+<pre>Part,Color,Quantity</pre>
+
+<p><b>Part</b> is the Rebrickable part number, <b>Color</b> is the Rebrickable Color ID, and
+<b>Quantity</b> is the quantity represented by the CSV row.</p>
+
+<p>BrickSuite requires every data row to contain the same number of CSV fields as the header. A
+trailing comma or another unintended field can produce an <b>Invalid CSV column count</b> error in
+the import preview.</p>
+
+<p>See <a href="rebrickable_import.html"><b>Rebrickable Import</b></a> for the preview and inventory
+workflow.</p>
+
+<h3>Parts Catalog → Import Rebrickable parts.csv</h3>
+
+<p>The Parts Catalog importer expects the Rebrickable part fields:</p>
+
+<pre>part_num,name,part_cat_id,part_material</pre>
+
+<p>For this operation, use the official Rebrickable <b>parts.csv</b> file without manually adding,
+removing, or renaming columns. Each row must remain structurally consistent with its header.</p>
+
+<p>See <a href="parts_catalog.html"><b>Parts Catalog</b></a>.</p>
+
+<h3>Sets Catalog → Import Rebrickable sets.csv</h3>
+
+<p>The Sets Catalog importer requires this exact header and order:</p>
+
+<pre>set_num,name,year,theme_id,num_parts,img_url</pre>
+
+<p>The header is compared with the expected column list. Do not add, remove, rename, or reorder
+columns.</p>
+
+<p>See <a href="sets_catalog.html"><b>Sets Catalog</b></a>.</p>
+
+<h3>Builds → Import MOC Parts CSV</h3>
+
+<p>The current MOC importer expects these columns:</p>
+
+<pre>Part,Color,Quantity,Is Spare</pre>
+
+<p><b>Is Spare</b> is required by the current importer. Accepted values are:</p>
+
+<pre>
+TRUE values:  true, 1, yes
+FALSE values: false, 0, no
+</pre>
+
+<p>If a Rebrickable custom-list export does not contain <b>Is Spare</b>, add that column before
+importing and use <b>false</b> for regular requirements.</p>
+
+<p>Do not add a trailing comma or other unintended column to individual rows. Every row must
+contain the same number of CSV fields as the header.</p>
+
+<p>See <a href="mocs.html"><b>MOCs</b></a>.</p>
+
+<h3>Builds → Import Pull List CSV</h3>
+
+<p>The Pull List importer requires this exact header and order:</p>
+
+<pre>Build,Set Number,Part Number,Part Name,Color,Storage Location,Quantity Allocated,Quantity Pulled</pre>
+
+<p>The safest workflow is to export the Pull List from BrickSuite, leave its structure and identity
+columns unchanged, enter the actual physical pull quantity in <b>Quantity Pulled</b>, save the
+file, and import that same CSV back into BrickSuite.</p>
+
+<p>Do not add, remove, rename, or reorder Pull List columns. Do not insert an extra comma at the end
+of a row.</p>
+
+<p>See <a href="builds.html"><b>Builds</b></a> for the complete export → physical pull → import →
+preview → reconcile workflow.</p>
+
+<h3>Wrong CSV Type</h3>
+
+<p>Several BrickSuite workflows use CSV files, but they are not interchangeable:</p>
+
+<pre>
+Rebrickable parts.csv
+  Updates Parts Catalog reference data.
+
+Rebrickable sets.csv
+  Updates Sets Catalog reference data.
+
+Owned-parts CSV
+  Adds or synchronizes physical loose inventory.
+
+MOC Parts CSV
+  Creates Build requirements.
+
+BrickSuite Pull List CSV
+  Reconciles physically pulled Build inventory.
+</pre>
+
+<p>If an importer reports an unsupported format, first verify that the file was produced for the
+workflow you are using.</p>
+
+<h2>BrickSuite Does Not Start or the Database Cannot Be Opened</h2>
+
+<ul>
+<li>Do not immediately delete or replace the BrickSuite database.</li>
+<li>Preserve the current database if possible.</li>
+<li>Restart BrickSuite once and review the <a href="logging.html">Application Log</a> for startup,
+schema, or database messages.</li>
+<li>If recovery from a known-good backup is required, follow
+<a href="backup_restore.html">Backup / Restore</a> rather than manually replacing files while
+experimenting.</li>
+</ul>
+
+<h2>The Expected Workspace Is Not Selected</h2>
+
+<p>Open <a href="settings.html"><b>Settings</b></a> and verify the Default Workspace. Then confirm
+that the Workspace still exists and is available in BrickSuite.</p>
+
+<p>Changing the default selection does not move or merge inventory between Workspaces.</p>
+
+<h2>I Cannot Find a Part, Set, or Inventory Record</h2>
+
+<ul>
+<li>Clear or simplify the current search text.</li>
+<li>Check Category, Color, Year, and Storage filters as applicable.</li>
+<li>Check the result count and paging controls.</li>
+<li>Make sure you are searching the correct area.</li>
+</ul>
+
+<pre>
+Parts Catalog
+  What part designs exist?
+
+Sets Catalog
+  What Sets exist?
+
+My Inventory
+  What physical loose parts do I own?
+</pre>
+
+<p>See <a href="parts_catalog.html">Parts Catalog</a>,
+<a href="sets_catalog.html">Sets Catalog</a>, and
+<a href="inventory.html">My Inventory</a>.</p>
+
+<h2>Part or Set Images Are Missing</h2>
+
+<p>Reference images may need time to download and populate the local cache. Confirm that the
+computer has network access and allow background image activity to continue. If appropriate, open
+the item's Details view and then recheck the image.</p>
+
+<p>If images continue to fail, review the Application Log for image/network warnings before
+changing cache files manually.</p>
+
+<h2>A Rebrickable Inventory Import Does Not Look Correct</h2>
+
+<ul>
+<li>Stop at the Import Preview if the result is unexpected.</li>
+<li>Verify that the selected file is an owned-parts CSV.</li>
+<li>Verify the destination Storage location, Condition, and Ownership settings.</li>
+<li>Check the CSV header and row column counts described above.</li>
+<li>Review rows marked with an Error or review status before importing.</li>
+</ul>
+
+<p>Preview is intentionally the point where you can cancel without committing inventory changes.</p>
+
+<h2>A Build Shows Unexpected Missing Quantities</h2>
+
+<p>Review the requirement columns rather than looking only at Owned quantity:</p>
+
+<pre>
+Owned
+This Build
+Other Builds
+Available
+Missing
+</pre>
+
+<p>A piece can be owned by the Workspace but unavailable to the current Build because it is already
+allocated elsewhere. Use <a href="allocate_available.html"><b>Allocate Available</b></a> and
+<a href="missing_parts.html"><b>Missing Parts</b></a> to understand the current state.</p>
+
+<h2>Allocate Available Does Not Allocate Anything</h2>
+
+<p>This can be normal when:</p>
+
+<ul>
+<li>the requirements are already fully allocated;</li>
+<li>no matching loose inventory remains available;</li>
+<li>matching inventory is reserved by another Build; or</li>
+<li>the requirement no longer needs additional allocation.</li>
+</ul>
+
+<p>Manual allocation and Allocate Available use the same allocation model. Review the requirement
+quantities before assuming the operation failed.</p>
+
+<h2>The Pull List Does Not Match What I Physically Pulled</h2>
+
+<p>Stop at the reconciliation preview. No database changes have been made at that point.</p>
+
+<p>Compare <b>Quantity Allocated</b> with the actual <b>Quantity Pulled</b>, correct the physical
+pull or CSV if needed, then preview it again. Reconcile only when the preview represents what
+actually happened.</p>
+
+<h2>Physical Inventory Does Not Match BrickSuite</h2>
+
+<p>Use the workflow that represents what physically happened:</p>
+
+<pre>
+Edit
+  Maintain an inventory record or quantity.
+
+Move
+  Physically relocate pieces and preserve movement history.
+
+Lost
+  Record pieces that BrickSuite expected but you cannot locate.
+
+Found / Return
+  Return previously lost inventory when it is recovered.
+</pre>
+
+<p>Avoid deleting history or making unrelated quantity changes simply to make the totals match.
+See <a href="inventory.html">My Inventory</a> and
+<a href="lost_found.html">Lost / Found</a>.</p>
+
+<h2>Backup or Restore Reports a Failure</h2>
+
+<p>Preserve both the current database and the backup file. Do not repeatedly overwrite either file
+while experimenting.</p>
+
+<p>Review the Application Log and follow <a href="backup_restore.html"><b>Backup / Restore</b></a>
+for the supported workflow.</p>
+
+<h2>Theme or Display Looks Wrong</h2>
+
+<p>Review the Theme under <a href="settings.html"><b>Settings → Appearance</b></a>. If a display
+problem persists after selecting the intended theme, restart BrickSuite and recheck it before
+making more invasive changes.</p>
+
+<h2>Before Asking for Support or Opening an Issue</h2>
+
+<p>A good problem report makes an issue much easier to reproduce and diagnose. Record:</p>
+
+<pre>
+BrickSuite version:
+What I was doing:
+What I expected:
+What happened instead:
+Exact error message:
+Can I reproduce it:
+Steps to reproduce:
+Relevant Application Log entries:
+Screenshot, if useful:
+CSV or backup involved, if relevant:
+</pre>
+
+<p>The BrickSuite version is available from <b>Help → About BrickSuite</b>. If a CSV caused the
+problem, preserve the original file rather than editing the only copy before the problem is
+understood.</p>
+
+<div class="note"><b>Protect private information.</b> Before sharing screenshots, logs, CSV files,
+or other diagnostics publicly, review them for API keys, personal paths, private inventory data,
+or other information you do not intend to publish.</div>
+
+<h2>Related Help</h2>
+
+<p><a href="logging.html">Application Log</a> |
+<a href="backup_restore.html">Backup / Restore</a> |
+<a href="settings.html">Settings</a> |
+<a href="rebrickable_import.html">Rebrickable Import</a> |
+<a href="builds.html">Builds</a> |
+<a href="inventory.html">My Inventory</a></p>
+
+</body>
+</html>

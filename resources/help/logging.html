@@ -1,11 +1,140 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Application Log</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+<html>
+<head>
+<meta charset="utf-8">
+<title>Application Log</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
-code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>Application Log</h1><p>The non-modal Application Log records selected operational information and diagnostic warnings or errors.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+h2 { margin-top: 1.5em; }
+img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
+img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px auto; }
+.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+</style>
+</head>
+<body>
+
+<h1>Application Log</h1>
+
+<p>The Application Log records useful information about BrickSuite activity. It can help confirm
+that an operation completed normally and provide diagnostic information when something unexpected
+occurs.</p>
+
+<p>The log is intended to support troubleshooting without requiring you to inspect the BrickSuite
+database or development tools.</p>
+
+<h2>Viewing the Application Log</h2>
+
+<p>Open the <b>Application Log</b> from BrickSuite to review recent entries.</p>
+
+<img class="screenshot" src="images/application_log_viewer.png"
+     alt="BrickSuite Application Log viewer">
+
+<p>Entries are timestamped and assigned a severity such as <b>Info</b>, <b>Warning</b>, or
+<b>Critical</b>. The message describes the operation or condition that BrickSuite recorded.</p>
+
+<ul>
+<li><b>Info</b> — normal application activity and useful operational results.</li>
+<li><b>Warning</b> — an unexpected condition that deserves attention but may still allow the
+operation or application to continue.</li>
+<li><b>Critical</b> — a serious failure that should be investigated.</li>
+</ul>
+
+<p>Normal log activity can include application startup and version information, database
+initialization, imports and exports, Build operations, Backup / Restore activity, and other
+significant actions.</p>
+
+<div class="note"><b>The log is diagnostic information, not inventory history.</b> Inventory
+History records the lifecycle of physical inventory. The Application Log records application
+operations and diagnostic events.</div>
+
+<h2>Opening the Log Folder</h2>
+
+<p>Choose <b>Open Log Folder</b> when you need access to the underlying log file outside the
+BrickSuite viewer.</p>
+
+<img class="screenshot" src="images/application_log_folder.png"
+     alt="BrickSuite log folder open in Windows File Explorer">
+
+<p>The raw log file can be useful when preserving diagnostic information before clearing the
+viewer or when a log needs to be reviewed outside BrickSuite.</p>
+
+<p>If you are sharing a log for troubleshooting, review it first and share only the information
+needed to investigate the problem.</p>
+
+<h2>Clearing the Log</h2>
+
+<p>Choose <b>Clear Log</b> when you intentionally want to remove the existing application-log
+entries and begin with a clean diagnostic record.</p>
+
+<img class="dialog" src="images/application_log_clear.png"
+     alt="BrickSuite Clear Log confirmation">
+
+<p>BrickSuite asks for confirmation before clearing the log. If the existing entries may be useful
+later, preserve the log file before confirming the operation.</p>
+
+<div class="note"><b>Clearing the Application Log does not clear BrickSuite data.</b> It does not
+delete Workspaces, Storage, inventory, movement history, Builds, requirements, or allocations.</div>
+
+<h2>A Useful Troubleshooting Technique</h2>
+
+<p>When a problem can be reproduced consistently, a clean log can make the relevant events much
+easier to identify:</p>
+
+<pre>
+Preserve the current log if needed
+          |
+      Clear Log
+          |
+Reproduce the problem once
+          |
+Open Application Log
+          |
+Review the new entries
+</pre>
+
+<p>This produces a smaller diagnostic record focused on the actions immediately surrounding the
+problem instead of requiring you to search through unrelated earlier activity.</p>
+
+<h2>What to Look For</h2>
+
+<p>Start with entries at the time the problem occurred. Look for Warning or Critical messages and
+for Info entries immediately before them. The preceding normal operation often provides useful
+context for understanding what BrickSuite was doing when the problem occurred.</p>
+
+<p>When reporting a problem, it is helpful to describe the steps that produced it and preserve the
+corresponding log information.</p>
+
+<h2>Application Log and Backup / Restore</h2>
+
+<p>The Application Log can help confirm Backup / Restore operations or provide diagnostic
+information if one fails. The log itself is not a substitute for a database backup.</p>
+
+<p>See <a href="backup_restore.html"><b>Backup / Restore</b></a> for protecting the BrickSuite
+database.</p>
+
+<h2>Application Log and Inventory History</h2>
+
+<p>Use the two histories for different questions:</p>
+
+<pre>
+Application Log
+  What was BrickSuite doing?
+  Did an operation report a warning or failure?
+
+Inventory History
+  What happened to this physical inventory?
+  Was it imported, moved, lost, or otherwise changed?
+</pre>
+
+<p>See <a href="inventory.html"><b>My Inventory</b></a> for inventory movement history.</p>
+
+<h2>Related Help</h2>
+
+<p><a href="troubleshooting.html">Troubleshooting</a> |
+<a href="backup_restore.html">Backup / Restore</a> |
+<a href="settings.html">Settings</a> |
+<a href="inventory.html">My Inventory</a></p>
+
+</body>
+</html>

@@ -1,11 +1,51 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Settings</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
-h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
-code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>Settings</h1><p>Settings controls BrickSuite appearance, paging, default Workspace behavior, and Rebrickable connection settings.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+<html><head><meta charset="utf-8"><title>Settings</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
+h1 { margin-bottom: .35em; } h2 { margin-top: 1.5em; }
+img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px; }
+.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+</style></head><body>
+<h1>Settings</h1>
+<p>Settings contains user preferences that control how BrickSuite starts, appears, and connects to supported external services. These preferences persist between application sessions.</p>
+<p>Settings are separate from the BrickSuite database content that represents your workshop.</p>
+<pre>
+BrickSuite Database
+  Workspaces, Storage, Inventory, History
+  Builds, Requirements, Allocations
+
+Application Settings
+  Startup preferences
+  Appearance
+  External-service configuration
+</pre>
+
+<h2>General</h2>
+<img class="screenshot" src="images/settings_general.png" alt="BrickSuite Settings General page">
+<p>The <b>General</b> page contains application-wide preferences, including the <b>Default Workspace</b>. The Default Workspace determines which Workspace BrickSuite selects automatically when the application starts. When only one Workspace exists, BrickSuite can select it automatically.</p>
+<div class="note"><b>Changing the Default Workspace does not move or combine inventory.</b> It changes the Workspace selected by default; each Workspace continues to maintain its own data.</div>
+
+<h2>Appearance</h2>
+<img class="screenshot" src="images/settings_appearance.png" alt="BrickSuite Settings Appearance page with Theme choices visible">
+<p>The <b>Appearance</b> page controls BrickSuite's visual theme. The expanded Theme list in the screenshot shows the choices currently supported by the application.</p>
+<p>Changing the theme affects BrickSuite's presentation; it does not alter Storage, inventory, Builds, or other workshop data. Most screenshots in this Help system were captured using Dark theme, so colors may differ when another theme is selected.</p>
+
+<h2>Rebrickable</h2>
+<img class="screenshot" src="images/settings_rebrickable.png" alt="BrickSuite Settings Rebrickable page">
+<p>The <b>Rebrickable</b> page contains the configuration BrickSuite uses when a feature needs to communicate with Rebrickable. Enter the credential requested by the page and save the setting before using features that require that connection.</p>
+<div class="note"><b>Treat API credentials as private.</b> Do not publish your personal API key in screenshots, source code, public repositories, support posts, or other shared material.</div>
+<p>CSV workflows are separate from API configuration. Owned-parts CSV files and MOC requirement CSV files are handled by their respective import workflows.</p>
+<p>See <a href="rebrickable_import.html"><b>Rebrickable Import</b></a>, <a href="mocs.html"><b>MOCs</b></a>, and <a href="sets_catalog.html"><b>Sets Catalog</b></a> for those workflows.</p>
+
+<h2>Saving Settings</h2>
+<p>After changing a preference, use the Settings dialog's normal save or confirmation action. Saved preferences are retained for future BrickSuite sessions.</p>
+
+<h2>Help from Settings</h2>
+<p>Press <b>F1</b> while the Settings dialog has focus to open this Settings Help topic. This provides contextual Help without closing Settings and navigating through Help Contents.</p>
+
+<h2>Settings and Database Backup</h2>
+<p>Application preferences and database content are separate concepts. Database Backup / Restore protects the BrickSuite database. See <a href="backup_restore.html"><b>Backup / Restore</b></a>.</p>
+
+<h2>Related Help</h2>
+<p><a href="backup_restore.html">Backup / Restore</a> | <a href="logging.html">Application Log</a> | <a href="troubleshooting.html">Troubleshooting</a></p>
+</body></html>

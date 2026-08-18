@@ -1,11 +1,149 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Backup / Restore</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+<html>
+<head>
+<meta charset="utf-8">
+<title>Backup / Restore</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
-code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>Backup / Restore</h1><p>BrickSuite can create verified SQLite backups and restore a backup after creating a verified pre-restore safety backup.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+h2 { margin-top: 1.5em; }
+img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
+img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px auto; }
+.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+.warning { border-left:4px solid #888; padding-left:10px; margin:14px 0; font-weight:bold; }
+</style>
+</head>
+<body>
+
+<h1>Backup / Restore</h1>
+
+<p>BrickSuite stores the working state of your brick workshop in its database. A database backup
+creates a snapshot that can be kept separately and later restored if you need to return BrickSuite
+to that saved state.</p>
+
+<p>Backups protect important working data such as Workspaces, Storage locations, inventory,
+movement history, Builds, requirements, allocations, and other information maintained in the
+BrickSuite database.</p>
+
+<div class="note"><b>A backup is a snapshot.</b> It contains the database state at the time the
+backup was created. Changes made afterward are not part of that backup.</div>
+
+<h2>Creating a Backup</h2>
+
+<p>Choose BrickSuite's database backup command and select where the backup file should be saved.
+A location outside the normal application data folder is useful because it keeps the backup
+separate from the working database.</p>
+
+<img class="dialog" src="images/backup_restore_backup.png"
+     alt="Choose where to save a BrickSuite database backup">
+
+<p>Review the proposed filename and destination before saving. You may keep multiple backups when
+you want snapshots from different points in time.</p>
+
+<h2>Backup Completed</h2>
+
+<p>After the database has been copied successfully, BrickSuite confirms that the backup operation
+completed.</p>
+
+<img class="dialog" src="images/backup_restore_backup_complete.png"
+     alt="BrickSuite database backup completed successfully">
+
+<p>Keep important backup files somewhere appropriate for your normal computer-backup practices.
+A BrickSuite database backup is most useful when it remains available even if the working copy of
+the database is damaged, deleted, or replaced.</p>
+
+<h2>Restoring a Backup</h2>
+
+<p>Restore is the reverse operation. Choose BrickSuite's restore command and select the known-good
+backup file that contains the database state you want to recover.</p>
+
+<img class="dialog" src="images/backup_restore_restore.png"
+     alt="Select a BrickSuite database backup to restore">
+
+<div class="warning">Restore is different from opening or viewing a backup. Restoring replaces the
+current working database state with the state contained in the selected backup.</div>
+
+<p>Before proceeding, make sure you selected the intended backup. If the current database contains
+changes that you may want later, create a fresh backup of it first.</p>
+
+<h2>Confirming the Restore</h2>
+
+<p>Because restoring can replace newer working data, BrickSuite asks for confirmation before
+performing the operation.</p>
+
+<img class="dialog" src="images/backup_restore_restore_confirmation.png"
+     alt="BrickSuite database restore confirmation">
+
+<p>Read the confirmation carefully and choose <b>Yes</b> only when you intend to replace the
+current database with the selected backup. Choose <b>No</b> to leave the current database
+unchanged.</p>
+
+<h2>Successful Restore</h2>
+
+<p>When the restore completes successfully, BrickSuite reports the result.</p>
+
+<img class="dialog" src="images/backup_restore_successful.png"
+     alt="BrickSuite database restored successfully">
+
+<p>The working database now reflects the state stored in the restored backup. Data or changes made
+after that backup was originally created will not be present unless they were preserved elsewhere.</p>
+
+<h2>What Backup / Restore Protects</h2>
+
+<pre>
+Current BrickSuite Database
+           |
+        Backup
+           |
+           v
+      Backup File
+     (saved snapshot)
+
+
+      Backup File
+           |
+        Restore
+           |
+           v
+Current BrickSuite Database
+returns to the saved state
+</pre>
+
+<p>Think of the database as BrickSuite's record of your digital workshop. Protecting it means
+protecting much more than a list of parts: it preserves the relationships between inventory,
+physical Storage, history, and Build activity.</p>
+
+<h2>Recommended Backup Practice</h2>
+
+<ul>
+<li>Create a backup before major imports, large inventory changes, or other significant
+maintenance work.</li>
+<li>Create a backup before restoring an older backup if the current database contains anything
+you may want to recover later.</li>
+<li>Keep useful backups somewhere separate from BrickSuite's working database.</li>
+<li>Give important backups enough context that you can recognize the point in time they
+represent.</li>
+<li>Periodically verify that the backup files you intend to keep are still available.</li>
+</ul>
+
+<h2>Backup / Restore vs. Settings</h2>
+
+<p>Database Backup / Restore protects information stored in the BrickSuite database. Application
+preferences are a separate concept. See <a href="settings.html"><b>Settings</b></a> for the
+options BrickSuite maintains as application settings.</p>
+
+<h2>If Something Goes Wrong</h2>
+
+<p>If a backup or restore operation reports an error, do not repeatedly overwrite files while
+trying different combinations. Preserve the current database and the backup file, then review the
+<a href="logging.html"><b>Application Log</b></a> and
+<a href="troubleshooting.html"><b>Troubleshooting</b></a> topics for diagnostic guidance.</p>
+
+<h2>Related Help</h2>
+
+<p><a href="settings.html">Settings</a> |
+<a href="logging.html">Application Log</a> |
+<a href="troubleshooting.html">Troubleshooting</a></p>
+
+</body>
+</html>
