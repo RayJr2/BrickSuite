@@ -64,6 +64,7 @@
 #include <QFileDialog>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
@@ -573,7 +574,19 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
             return;
         }
 
-        const QString setNumber = QStringLiteral("10300-1");
+        bool ok = false;
+
+        const QString setNumber =
+            QInputDialog::getText(this,
+                                  "Brickset Set Details",
+                                  "Set number:",
+                                  QLineEdit::Normal,
+                                  QStringLiteral("10300-1"),
+                                  &ok)
+                .trimmed();
+
+        if (!ok || setNumber.isEmpty())
+            return;
 
         auto* bricksetService = new BricksetService(this);
 

@@ -17,6 +17,8 @@
 #include <QUrl>
 #include <QUrlQuery>
 
+int BricksetService::s_sessionGetSetsCallCount = 0;
+
 BricksetService::BricksetService(QObject* parent)
     : QObject(parent)
     , m_networkService(new ApiNetworkService(this))
@@ -166,6 +168,8 @@ void BricksetService::getSetDetails(const QString& fullSetNumber,
     context.provider = ApiProvider::Brickset;
     context.operation = QStringLiteral("GetSetDetails");
 
+    ++s_sessionGetSetsCallCount;
+
     QNetworkReply* reply = m_networkService->post(request, body, context);
 
     connect(reply, &QNetworkReply::finished, this,
@@ -256,10 +260,15 @@ void BricksetService::handleSetDetailsReply(QNetworkReply* reply,
                              ? QStringLiteral("Brickset returned a provider error.")
                              : providerMessage;
 
-        result.error.type =
-            providerMessage.contains(QStringLiteral("Invalid API key"), Qt::CaseInsensitive)
-                ? ApiErrorType::Authentication
-                : ApiErrorType::Provider;
+        if (providerMessage.contains(QStringLiteral("Invalid API key"),
+                                     Qt::CaseInsensitive)) {
+            result.error.type = ApiErrorType::Authentication;
+        } else if (providerMessage.contains(QStringLiteral("API limit exceeded"),
+                                            Qt::CaseInsensitive)) {
+            result.error.type = ApiErrorType::RateLimit;
+        } else {
+            result.error.type = ApiErrorType::Provider;
+        }
         result.error.message = result.message;
         result.error.providerMessage = providerMessage;
 
@@ -354,3 +363,7 @@ void BricksetService::handleSetDetailsReply(QNetworkReply* reply,
     emit setDetailsFinished(result);
 }
 
+int BricksetService::sessionGetSetsCallCount()
+{
+    return s_sessionGetSetsCallCount;
+}

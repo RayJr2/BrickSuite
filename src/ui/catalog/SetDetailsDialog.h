@@ -23,7 +23,9 @@
 #include <QDialog>
 
 class QLabel;
+class QFormLayout;
 class SetImageService;
+class SetDetailsProviderService;
 
 class SetDetailsDialog : public QDialog
 {
@@ -36,6 +38,8 @@ private:
     bool loadSet();
     void loadCachedImage();
     void requestImage();
+    void requestProviderEnrichment();
+    void setBricksetRowsVisible(bool visible);
 
     int m_setCatalogId = 0;
 
@@ -51,5 +55,19 @@ private:
     QLabel* m_partsLabel = nullptr;
     QLabel* m_imageStatusLabel = nullptr;
 
+    QLabel* m_providerSourceLabel = nullptr;
+    QLabel* m_providerStatusLabel = nullptr;
+    QLabel* m_bricksetIdLabel = nullptr;
+    QLabel* m_providerThemeLabel = nullptr;
+    QLabel* m_providerSubthemeLabel = nullptr;
+    QLabel* m_minifigsLabel = nullptr;
+    QLabel* m_availabilityLabel = nullptr;
+    QLabel* m_ratingLabel = nullptr;
+    QLabel* m_instructionsLabel = nullptr;
+    QLabel* m_additionalImagesLabel = nullptr;
+    QLabel* m_providerLinkLabel = nullptr;
+    QFormLayout* m_providerLayout = nullptr;
+
     SetImageService* m_imageService = nullptr;
+    SetDetailsProviderService* m_providerService = nullptr;
 };

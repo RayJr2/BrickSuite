@@ -91,6 +91,8 @@ public:
     void getSetDetails(const QString& fullSetNumber,
                        const QString& apiKey);
 
+    static int sessionGetSetsCallCount();
+
 signals:
     void connectionTestFinished(const BricksetService::ConnectionResult& result);
 
@@ -103,6 +105,8 @@ private:
                                const QString& requestedSetNumber);
 
     ApiNetworkService* m_networkService = nullptr;
+
+    static int s_sessionGetSetsCallCount;
 };
 
 Q_DECLARE_METATYPE(BricksetService::ConnectionResult)

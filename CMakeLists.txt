@@ -175,6 +175,8 @@ qt_add_executable(BrickSuite
     src/ui/builds/DisassembleSetDialog.h
     src/ui/builds/DisassembleSetDialog.cpp
     src/services/builds/MissingPartsService.cpp src/services/builds/MissingPartsService.h
+    src/services/sets/SetDetailsProviderService.h
+    src/services/sets/SetDetailsProviderService.cpp
     src/import/RebrickableMocCsvImporter.h
     src/import/RebrickableMocCsvImporter.cpp
     src/services/images/BackgroundPartColorImageCacheService.h
