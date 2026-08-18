@@ -120,6 +120,8 @@ qt_add_executable(BrickSuite
     src/ui/inventory/InventoryImportPreviewDialog.cpp
     src/api/ApiProvider.h
     src/api/ApiConnectionStatus.h
+    src/api/ApiProviderStatusRegistry.h
+    src/api/ApiProviderStatusRegistry.cpp
     src/api/ApiError.h
     src/api/ApiResult.h
     src/api/ApiRequestContext.h

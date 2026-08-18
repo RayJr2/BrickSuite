@@ -26,6 +26,7 @@
 #include "../../repositories/WorkspaceRepository.h"
 #include "../../services/RebrickableApiClient.h"
 #include "../../api/brickset/BricksetService.h"
+#include "../../api/ApiProviderStatusRegistry.h"
 #include "../../settings/ThemeManager.h"
 #include "../../settings/UserSettings.h"
 
@@ -609,6 +610,8 @@ void SettingsDialog::setRebrickableConnectionStatus(ApiConnectionStatus status)
 {
     m_rebrickableConnectionStatus = status;
 
+    ApiProviderStatusRegistry::instance().setStatus(ApiProvider::Rebrickable, status);
+
     if (m_rebrickableStatusLabel)
         m_rebrickableStatusLabel->setText(apiConnectionStatusText(status));
 }
@@ -661,6 +664,8 @@ void SettingsDialog::startBricksetConnectionTest(const QString& apiKey)
 void SettingsDialog::setBricksetConnectionStatus(ApiConnectionStatus status)
 {
     m_bricksetConnectionStatus = status;
+
+    ApiProviderStatusRegistry::instance().setStatus(ApiProvider::Brickset, status);
 
     if (m_bricksetStatusLabel)
         m_bricksetStatusLabel->setText(apiConnectionStatusText(status));

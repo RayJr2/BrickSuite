@@ -7,6 +7,7 @@
 
 #include "../../services/RebrickableApiClient.h"
 #include "../../settings/UserSettings.h"
+#include "../../api/ApiProviderStatusRegistry.h"
 
 #include <QDebug>
 
@@ -112,8 +113,11 @@ void SetDetailsProviderService::requestDetails(const QString& setNumber)
     UserSettings& settings = UserSettings::instance();
     const QString bricksetApiKey = settings.bricksetApiKey().trimmed();
 
+    const bool bricksetConnected =
+        ApiProviderStatusRegistry::instance().isConnected(ApiProvider::Brickset);
+
     if (!bricksetApiKey.isEmpty()
-        && settings.bricksetConnectionPreviouslyVerified()
+        && bricksetConnected
         && !BricksetService::keyUsageKnown()) {
         m_bricksetService->getKeyUsageStats(bricksetApiKey);
         return;
@@ -128,8 +132,11 @@ void SetDetailsProviderService::requestPreferredProvider()
 
     const QString bricksetApiKey = settings.bricksetApiKey().trimmed();
 
+    const ApiProviderStatusRegistry& providerStatus =
+        ApiProviderStatusRegistry::instance();
+
     if (!bricksetApiKey.isEmpty()
-        && settings.bricksetConnectionPreviouslyVerified()) {
+        && providerStatus.isConnected(ApiProvider::Brickset)) {
         const int threshold = settings.bricksetDailyGetSetsThreshold();
         const int effectiveUsage = BricksetService::effectiveTodayGetSetsCount();
 
@@ -165,7 +172,10 @@ void SetDetailsProviderService::requestRebrickable(bool usedFallback,
     UserSettings& settings = UserSettings::instance();
     const QString rebrickableApiKey = settings.rebrickableApiKey().trimmed();
 
-    if (rebrickableApiKey.isEmpty()) {
+    const bool rebrickableConnected =
+        ApiProviderStatusRegistry::instance().isConnected(ApiProvider::Rebrickable);
+
+    if (rebrickableApiKey.isEmpty() || !rebrickableConnected) {
         Result result;
         result.bricksetAttempted = m_bricksetAttempted;
         result.usedFallback = usedFallback;
@@ -174,11 +184,16 @@ void SetDetailsProviderService::requestRebrickable(bool usedFallback,
 
         if (usedFallback && !fallbackReason.isEmpty()) {
             result.message =
-                QStringLiteral("Brickset enrichment was unavailable and no "
-                               "Rebrickable API key is configured. %1")
+                QStringLiteral("Brickset enrichment was unavailable and "
+                               "Rebrickable is not currently connected. %1")
                     .arg(fallbackReason);
+        } else if (rebrickableApiKey.isEmpty()) {
+            result.message =
+                QStringLiteral("No connected set-details provider is available.");
         } else {
-            result.message = QStringLiteral("No set-details provider is configured.");
+            result.message =
+                QStringLiteral("Rebrickable is not currently connected and "
+                               "Brickset enrichment is unavailable.");
         }
 
         emit detailsReady(result);
