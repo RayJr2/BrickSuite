@@ -50,5 +50,22 @@
         <file>images/builds_reconcile.png</file>
         <file>images/builds_after_reconciled.png</file>
         <file>images/builds_completed.png</file>
+        <file>images/allocate_before.png</file>
+        <file>images/allocate_manual_dialog.png</file>
+        <file>images/allocate_after_manual.png</file>
+        <file>images/allocate_available_result.png</file>
+        <file>images/missing_parts_requirements.png</file>
+        <file>images/missing_parts_allocate_result.png</file>
+        <file>images/missing_parts_export.png</file>
+        <file>images/missing_parts_csv.png</file>
+        <file>images/mocs_new_build.png</file>
+        <file>images/mocs_import_csv.png</file>
+        <file>images/mocs_requirements.png</file>
+        <file>images/mocs_ready.png</file>
+        <file>images/lost_found_inventory_before.png</file>
+        <file>images/lost_found_report_lost.png</file>
+        <file>images/lost_found_mark_lost_confirmation.png</file>
+        <file>images/lost_found_return.png</file>
+        <file>images/lost_found_history.png</file>
     </qresource>
 </RCC>

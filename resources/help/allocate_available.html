@@ -1,11 +1,180 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Allocate Available</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+<html>
+<head>
+<meta charset="utf-8">
+<title>Allocate Available</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
-code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>Allocate Available</h1><p>Allocate Available searches loose inventory and reserves matching part/color quantities for unsatisfied Build requirements.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+h2 { margin-top: 1.5em; }
+img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
+img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px auto; }
+.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+</style>
+</head>
+<body>
+
+<h1>Allocate Available</h1>
+
+<p>Allocation reserves matching loose inventory for a Build requirement. It answers the question:
+<b>Which pieces in my Workspace are intended for this Build?</b></p>
+
+<p>BrickSuite supports two ways to allocate inventory:</p>
+
+<ul>
+<li><b>Manual allocation</b> — choose exactly which Storage locations will supply an individual
+requirement.</li>
+<li><b>Allocate Available</b> — let BrickSuite allocate available loose inventory across
+unsatisfied Build requirements automatically.</li>
+</ul>
+
+<div class="note"><b>Allocated does not mean Pulled.</b> Allocation reserves inventory for a Build,
+but the pieces remain in their physical Storage locations until the pull-list workflow records
+what was actually pulled.</div>
+
+<h2>Understanding the Requirement Quantities</h2>
+
+<p>This small Build from Stock example contains three requirements before any allocation:</p>
+
+<img class="screenshot" src="images/allocate_before.png"
+     alt="Build requirements before allocation">
+
+<p>The <b>House</b> Build requires 10 Black 3001 bricks, 4 Yellow 60032 windows, and 1
+Trans-Clear 60616a door. Before allocation, <b>This Build</b> is 0 for every row.</p>
+
+<p>The important columns are:</p>
+
+<ul>
+<li><b>Required</b> — total quantity required by the Build.</li>
+<li><b>Pulled</b> — quantity already physically pulled and reconciled.</li>
+<li><b>Remaining</b> — quantity still required after pulled pieces.</li>
+<li><b>Owned</b> — matching loose inventory owned by the Workspace.</li>
+<li><b>This Build</b> — matching inventory currently reserved for this Build.</li>
+<li><b>Other Builds</b> — matching inventory already reserved by other Builds.</li>
+<li><b>Available</b> — matching loose inventory still available to allocate.</li>
+<li><b>Missing</b> — quantity that cannot currently be satisfied from available inventory.</li>
+</ul>
+
+<p>For example, the Black 3001 requirement needs 10 pieces. BrickSuite owns 17 matching pieces,
+none are allocated to this or another Build, and all 17 are currently available.</p>
+
+<h2>Manually Allocating a Requirement</h2>
+
+<p>Choose <b>Allocate</b> from a requirement row's Actions menu when you want direct control over
+which physical Storage location supplies the pieces.</p>
+
+<img class="dialog" src="images/allocate_manual_dialog.png"
+     alt="Allocate Build Requirement dialog for Black 3001 bricks">
+
+<p>The Allocate Build Requirement dialog breaks matching inventory down by Storage location. For
+the Black 3001 requirement, BrickSuite finds inventory in three locations:</p>
+
+<ul>
+<li>Bricks — 6 available</li>
+<li>Unsorted Parts — 1 available</li>
+<li>Black — 10 available</li>
+</ul>
+
+<p>The Build requires 10 pieces, so this example allocates all 10 from the <b>Black</b> Storage
+location. The summary at the bottom shows <b>This Build Allocation: 10</b> and
+<b>Still Needed: 0</b> before the allocation is saved.</p>
+
+<p>Manual allocation is useful when the same part/color exists in several physical locations and
+you want to decide exactly where the Build should pull from.</p>
+
+<h2>After Manual Allocation</h2>
+
+<img class="screenshot" src="images/allocate_after_manual.png"
+     alt="Build requirements after manual allocation">
+
+<p>After manually allocating all three requirements, the table shows:</p>
+
+<ul>
+<li>Black 3001: 10 allocated to This Build, 7 still available.</li>
+<li>Yellow 60032: 4 allocated to This Build, 1 still available.</li>
+<li>Trans-Clear 60616a: 1 allocated to This Build, 1 still available.</li>
+</ul>
+
+<p>The <b>Missing</b> quantity remains 0 because every requirement has enough matching inventory.
+Notice that <b>Pulled</b> is still 0. Nothing has physically left Storage yet.</p>
+
+<h2>Using Allocate Available</h2>
+
+<p>For larger Builds, manually opening every requirement would be unnecessary work. Choose
+<b>Allocate Available</b> to have BrickSuite allocate matching loose inventory automatically
+where additional allocation is still needed.</p>
+
+<p>In this example, every requirement was already fully allocated manually. Running Allocate
+Available therefore finds no additional loose inventory that needs to be allocated and leaves the
+existing allocations unchanged.</p>
+
+<img class="screenshot" src="images/allocate_available_result.png"
+     alt="Build after Allocate Available finds no additional allocation work">
+
+<p>This demonstrates an important rule: <b>Allocate Available supplements the current allocation
+state; it does not replace or disturb valid allocations that are already assigned to the Build.</b></p>
+
+<p>For comparison, the larger Set example in <a href="builds.html">Builds</a> shows Allocate
+Available automatically allocating 231 pieces and fully satisfying 93 requirements.</p>
+
+<h2>When Inventory Is Shared with Other Builds</h2>
+
+<p>The <b>Other Builds</b> column identifies matching loose inventory already reserved elsewhere.
+Those pieces are not treated as freely available to the selected Build. This prevents two Builds
+from independently assuming that the same physical piece is available to both.</p>
+
+<p>The combination of <b>Owned</b>, <b>This Build</b>, <b>Other Builds</b>, and <b>Available</b>
+lets you see how shared Workspace inventory is committed before physically pulling anything.</p>
+
+<h2>Full, Partial, and Missing Requirements</h2>
+
+<p>When enough inventory is available, a requirement can be fully allocated. When only some of
+the required quantity is available, BrickSuite can allocate what is available while the remaining
+shortage stays visible. If no matching inventory is available, the requirement remains
+unallocated and its shortage is reflected in the Build state.</p>
+
+<p>Use <a href="missing_parts.html"><b>Missing Parts</b></a> when shortages must be acquired before
+the Build can proceed.</p>
+
+<h2>What Allocation Does Not Do</h2>
+
+<p>Allocation does not mean the pieces have been removed from their bins, drawers, or shelves.
+The physical workflow occurs later:</p>
+
+<pre>
+Allocate
+   |
+Export Pull List
+   |
+Physically find and pull pieces
+   |
+Record actual Pulled quantities
+   |
+Import Pull List
+   |
+Preview and Reconcile
+   |
+Loose inventory and Build state are updated
+</pre>
+
+<p>This separation is intentional. BrickSuite can reserve what the database says should be
+available, while the pull-list reconciliation records what was actually found and removed in the
+physical workshop.</p>
+
+<h2>Manual or Automatic?</h2>
+
+<p>Use <b>manual allocation</b> when Storage-location choice matters or when you want to inspect a
+specific requirement closely. Use <b>Allocate Available</b> when you want BrickSuite to process
+many requirements efficiently.</p>
+
+<p>Both methods use the same allocation model and can be used together on the same Build.</p>
+
+<h2>Related Help</h2>
+
+<p><a href="builds.html">Builds</a> |
+<a href="missing_parts.html">Missing Parts</a> |
+<a href="inventory.html">My Inventory</a> |
+<a href="storage.html">Storage</a></p>
+
+</body>
+</html>

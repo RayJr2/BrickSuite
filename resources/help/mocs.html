@@ -1,11 +1,197 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>MOCs</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+<html>
+<head>
+<meta charset="utf-8">
+<title>MOCs</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
-code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>MOCs</h1><p>BrickSuite imports Rebrickable MOC CSV requirements and manages MOCs through the Build workflow.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+h2 { margin-top: 1.5em; }
+img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
+img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px auto; }
+.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+</style>
+</head>
+<body>
+
+<h1>MOCs</h1>
+
+<p>A <b>MOC</b> (My Own Creation) Build lets BrickSuite manage a custom collection of part
+requirements that is not loaded from the Sets Catalog. In BrickSuite, a MOC becomes a normal Build
+once its requirements have been entered or imported.</p>
+
+<p>The most common workflow is to create a MOC Build and import its requirements from a
+Rebrickable MOC parts CSV.</p>
+
+<h2>Set Builds and MOC Builds</h2>
+
+<pre>
+Set Build
+  Requirements are loaded from Rebrickable Set data.
+
+MOC Build
+  Requirements are imported from a MOC CSV
+  or entered as individual requirements.
+
+                 |
+                 v
+
+Once requirements exist, both use the normal
+BrickSuite Build workflow:
+
+Allocate -> Missing Parts -> Pull -> Reconcile -> Complete
+</pre>
+
+<p>The difference is primarily where the requirements come from. Allocation, inventory shortages,
+physical pulling, and completion use the same Build model afterward.</p>
+
+<h2>Create the MOC Build</h2>
+
+<p>Create a new Build with <b>Type = MOC</b> and identify the MOC with a useful number and name.
+MOCs are commonly managed as <b>Build from Stock</b> projects because BrickSuite compares their
+requirements with the loose inventory available in the Workspace.</p>
+
+<img class="screenshot" src="images/mocs_new_build.png"
+     alt="New Starfighter MOC Build before requirements are imported">
+
+<p>The example uses MOC <b>ALT-53284 — Starfighter</b>, an alternate build based on Set
+912055-1 — Snowspeeder. The Build is in <b>Planned</b> status and its Build Requirements table is
+initially empty.</p>
+
+<p>This empty state is expected: creating the MOC Build establishes the project, but it does not
+yet tell BrickSuite which pieces the MOC requires.</p>
+
+<h2>Import the MOC Parts CSV</h2>
+
+<p>With the MOC selected, choose <b>Import MOC Parts CSV</b> and select the CSV containing the
+MOC's part requirements.</p>
+
+<img class="dialog" src="images/mocs_import_csv.png"
+     alt="Selecting a Rebrickable MOC parts CSV">
+
+<p>In this example the selected file is
+<b>rebrickable_parts_alt-53284-912055-starfighter.csv</b>. Using a descriptive filename can make
+MOC files easier to recognize later, but the requirements themselves come from the CSV contents.</p>
+
+<div class="note"><b>A MOC parts CSV is not an inventory import.</b> Importing this file tells
+BrickSuite what the Build requires. It does not add those pieces to My Inventory and does not imply
+that you own them.</div>
+
+<h2>Successful Requirements Import</h2>
+
+<p>BrickSuite reads the CSV and reports the result before you continue with the Build.</p>
+
+<img class="screenshot" src="images/mocs_requirements.png"
+     alt="Successful MOC requirements import">
+
+<p>For the Starfighter example, BrickSuite reports:</p>
+
+<ul>
+<li><b>CSV Rows Read:</b> 19</li>
+<li><b>Requirement Rows:</b> 19</li>
+<li><b>Regular Pieces:</b> 26</li>
+<li><b>Spare Pieces:</b> 0</li>
+<li><b>Total Pieces:</b> 26</li>
+</ul>
+
+<p>The requirements appear immediately in the Build Requirements table behind the success
+message. Each imported requirement identifies the part, color, and quantity needed by the MOC.</p>
+
+<h2>The MOC Is Ready for the Normal Build Workflow</h2>
+
+<p>After dismissing the import result, the requirements remain attached to the MOC Build and
+BrickSuite compares them with the current Workspace inventory.</p>
+
+<img class="screenshot" src="images/mocs_ready.png"
+     alt="Starfighter MOC ready for allocation">
+
+<p>The requirements table now shows the same inventory-state columns used by other Builds:
+<b>Required</b>, <b>Pulled</b>, <b>Remaining</b>, <b>Owned</b>, <b>This Build</b>,
+<b>Other Builds</b>, <b>Available</b>, and <b>Missing</b>.</p>
+
+<p>This comparison can immediately reveal several different conditions. Some requirements may have
+enough loose inventory available, some may be partly satisfiable, and others may already be
+unavailable because matching pieces are reserved by another Build.</p>
+
+<h2>Adding or Maintaining Individual Requirements</h2>
+
+<p>The Build Requirements area also provides controls for entering a Part number, Color,
+Quantity, and Spare status. This allows individual MOC requirements to be added when appropriate,
+rather than requiring every MOC to originate entirely from a CSV.</p>
+
+<p>Use the requirement row's Actions menu for supported maintenance operations on an existing
+requirement.</p>
+
+<h2>Allocate the MOC</h2>
+
+<p>Once the requirements are correct, allocation works exactly as it does for other Build from
+Stock projects. You can allocate individual requirements manually or choose
+<b>Allocate Available</b> to let BrickSuite reserve available loose inventory automatically.</p>
+
+<p>See <a href="allocate_available.html"><b>Allocate Available</b></a> for the detailed manual and
+automatic allocation workflow.</p>
+
+<h2>Handle Missing Parts</h2>
+
+<p>If the Workspace cannot satisfy every MOC requirement, the unresolved quantities remain
+visible in the <b>Missing</b> column. Export the missing-parts CSV when you need an external
+acquisition list.</p>
+
+<p>The larger <b>Power Digger 2</b> MOC example in
+<a href="missing_parts.html"><b>Missing Parts</b></a> demonstrates this workflow, including a
+realistic mix of fully available, partially available, and completely missing requirements.</p>
+
+<h2>Pull, Reconcile, and Complete</h2>
+
+<p>When the requirements are allocated and shortages have been resolved, the MOC follows the same
+physical workflow as other Builds:</p>
+
+<pre>
+Export Pull List CSV
+        |
+Physically pull the pieces
+        |
+Record actual Pulled quantities
+        |
+Import Pull List CSV
+        |
+Preview and Reconcile
+        |
+Assemble the MOC
+        |
+Complete the Build
+</pre>
+
+<p>The pull-list round trip keeps the MOC's digital state synchronized with the pieces actually
+removed from physical Storage. See <a href="builds.html"><b>Builds</b></a> for the complete
+workflow.</p>
+
+<h2>MOC CSV vs. Owned-Parts CSV</h2>
+
+<p>Both workflows can use CSV files, but they serve very different purposes:</p>
+
+<pre>
+MOC CSV
+  Defines what a Build needs.
+  Creates Build requirements.
+  Does not add loose inventory.
+
+Owned-parts CSV
+  Describes physical pieces you own.
+  Adds or synchronizes My Inventory.
+  Does not create Build requirements.
+</pre>
+
+<p>See <a href="rebrickable_import.html"><b>Rebrickable Import</b></a> for owned-parts inventory
+imports.</p>
+
+<h2>Related Help</h2>
+
+<p><a href="builds.html">Builds</a> |
+<a href="allocate_available.html">Allocate Available</a> |
+<a href="missing_parts.html">Missing Parts</a> |
+<a href="inventory.html">My Inventory</a> |
+<a href="rebrickable_import.html">Rebrickable Import</a></p>
+
+</body>
+</html>

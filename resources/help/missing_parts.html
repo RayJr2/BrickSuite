@@ -1,11 +1,189 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Missing Parts</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+<html>
+<head>
+<meta charset="utf-8">
+<title>Missing Parts</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
-code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>Missing Parts</h1><p>Missing Parts compares Build requirements with available inventory and identifies exact shortages by part and color.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+h2 { margin-top: 1.5em; }
+img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
+img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px auto; }
+.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+</style>
+</head>
+<body>
+
+<h1>Missing Parts</h1>
+
+<p>Missing Parts identifies Build requirements that cannot currently be satisfied from available
+loose inventory. The workflow helps you separate pieces BrickSuite can already reserve from pieces
+that still need to be acquired.</p>
+
+<p>A missing quantity is not simply the number required by the Build. BrickSuite considers the
+current Build state, inventory already pulled, allocations, inventory committed to other Builds,
+and the loose inventory that remains available.</p>
+
+<h2>Start with the Build Requirements</h2>
+
+<p>This example uses the MOC Build <b>Power Digger 2</b>. Its requirements contain a realistic
+mixture of parts that are available, partially available, and unavailable.</p>
+
+<img class="screenshot" src="images/missing_parts_requirements.png"
+     alt="Power Digger 2 Build requirements with missing parts">
+
+<p>The Build Requirements table provides the information needed to understand each shortage:</p>
+
+<ul>
+<li><b>Required</b> — total quantity required by the Build.</li>
+<li><b>Pulled</b> — quantity already physically pulled and reconciled.</li>
+<li><b>Remaining</b> — quantity still required after pulled pieces.</li>
+<li><b>Owned</b> — matching loose inventory owned by the Workspace.</li>
+<li><b>This Build</b> — matching inventory currently allocated to this Build.</li>
+<li><b>Other Builds</b> — matching inventory reserved by other Builds.</li>
+<li><b>Available</b> — matching loose inventory still available for allocation.</li>
+<li><b>Missing</b> — quantity the Build still cannot satisfy.</li>
+</ul>
+
+<p>Some requirements have no matching loose inventory and therefore show the entire remaining
+quantity as missing. Other requirements can be satisfied completely or partially from inventory.</p>
+
+<h2>Allocate What You Already Have</h2>
+
+<p>Before acquiring missing pieces, use <b>Allocate Available</b>. BrickSuite reserves the loose
+inventory it can legitimately use for the Build and leaves the unresolved shortage visible.</p>
+
+<img class="screenshot" src="images/missing_parts_allocate_result.png"
+     alt="Power Digger 2 requirements after available inventory is allocated">
+
+<p>The resulting table makes partial shortages easy to see. For example,
+<b>3021 — Plate 2 x 3 / Light Bluish Gray</b> requires 3 pieces. Two matching pieces are allocated
+to this Build, leaving <b>1 missing</b>.</p>
+
+<p>Requirements with enough inventory can be fully allocated, while requirements with no
+available inventory remain completely missing. BrickSuite does not treat the Build as
+all-or-nothing; it reserves what is available and identifies only the remaining shortage.</p>
+
+<div class="note"><b>Allocate before exporting.</b> The Missing Parts list should represent what
+you still need after BrickSuite has reserved the inventory you already have.</div>
+
+<p>See <a href="allocate_available.html"><b>Allocate Available</b></a> for manual and automatic
+allocation details.</p>
+
+<h2>Exporting Missing Parts</h2>
+
+<p>When the remaining shortages are ready to be taken outside BrickSuite, choose the Build's
+<b>Export Missing Parts CSV</b> action and select where to save the file.</p>
+
+<img class="dialog" src="images/missing_parts_export.png"
+     alt="Save Missing Parts CSV dialog">
+
+<p>BrickSuite proposes a descriptive filename based on the Build. In this example the export is
+saved as <b>BrickSuite_Missing_ALT-31014.csv</b>.</p>
+
+<p>Saving the CSV does not change inventory, allocations, or Build requirements. It creates a
+working list of the pieces that still need to be acquired.</p>
+
+<h2>Using the Missing Parts CSV</h2>
+
+<p>Open the exported file in a spreadsheet or another CSV-capable application.</p>
+
+<img class="screenshot" src="images/missing_parts_csv.png"
+     alt="Exported BrickSuite Missing Parts CSV">
+
+<p>The exported file shown here includes:</p>
+
+<ul>
+<li><b>Build</b></li>
+<li><b>Set Number</b></li>
+<li><b>Part Number</b></li>
+<li><b>Part Name</b></li>
+<li><b>Color</b></li>
+<li><b>Required</b></li>
+<li><b>Pulled</b></li>
+<li><b>Remaining</b></li>
+<li><b>Available</b></li>
+<li><b>Missing</b></li>
+</ul>
+
+<p>The <b>Missing</b> column is the quantity that still needs to be acquired for each exported
+requirement. The other columns preserve useful Build context so the shortage can be understood
+without having BrickSuite open beside the spreadsheet.</p>
+
+<p>The CSV can be used as a working acquisition list when searching for parts from whatever source
+you choose. BrickSuite v0.2.0 does not treat exporting the file as a purchase and does not assume
+that the missing pieces have been obtained.</p>
+
+<h2>After You Acquire the Parts</h2>
+
+<p>Once missing pieces have been physically acquired, add them to the appropriate BrickSuite
+Workspace inventory. Depending on how the parts were obtained, this can be done through normal
+<a href="inventory.html">My Inventory</a> entry or a supported inventory import workflow.</p>
+
+<p>Then return to the Build and run <b>Allocate Available</b> again. BrickSuite can reserve the
+newly available pieces for the requirements that were previously short.</p>
+
+<pre>
+Build Requirements
+        |
+Allocate Available
+        |
+Reserve everything currently available
+        |
+Remaining shortage becomes Missing
+        |
+Export Missing Parts CSV
+        |
+Acquire the physical pieces
+        |
+Add / Import them into My Inventory
+        |
+Allocate Available again
+        |
+Missing decreases or reaches zero
+        |
+Continue to Pull List
+</pre>
+
+<div class="note"><b>Acquiring a part outside BrickSuite does not resolve the shortage by itself.</b>
+The new physical pieces must first enter My Inventory and then be allocated to the Build so the
+digital Build state matches the real workshop.</div>
+
+<h2>Partial Shortages</h2>
+
+<p>A requirement does not have to be completely unavailable to appear as missing. If a Build
+requires 3 pieces and only 2 can be allocated, the remaining quantity of 1 is the shortage that
+must still be acquired.</p>
+
+<p>This is why the exported file contains both the requirement context and the Missing quantity:
+you acquire only what is still needed rather than purchasing the entire original requirement
+again.</p>
+
+<h2>Missing Parts and Other Builds</h2>
+
+<p>Inventory allocated to another Build is not freely available to the current Build. The
+<b>Other Builds</b> column helps explain why a part may be owned in the Workspace but still not be
+available for allocation here.</p>
+
+<p>This prevents multiple Builds from depending on the same physical loose piece at the same
+time.</p>
+
+<h2>When Missing Reaches Zero</h2>
+
+<p>After the necessary pieces have entered inventory and been allocated, the Build can proceed to
+the physical pull workflow. Export the Pull List, retrieve the pieces from Storage, record the
+actual Pulled quantities, import the completed list, and reconcile it with BrickSuite.</p>
+
+<p>See <a href="builds.html"><b>Builds</b></a> for the complete Build lifecycle and pull-list
+round trip.</p>
+
+<h2>Related Help</h2>
+
+<p><a href="builds.html">Builds</a> |
+<a href="allocate_available.html">Allocate Available</a> |
+<a href="inventory.html">My Inventory</a> |
+<a href="rebrickable_import.html">Rebrickable Import</a> |
+<a href="mocs.html">MOCs</a></p>
+
+</body>
+</html>

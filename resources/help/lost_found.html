@@ -1,11 +1,148 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Lost / Found</title><style>
-body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+<html>
+<head>
+<meta charset="utf-8">
+<title>Lost / Found</title>
+<style>
+body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.4em; }
-code { font-family: monospace; }
-.note { border-left: 4px solid #888; padding-left: 10px; margin: 12px 0; }
-</style></head>
-<body><h1>Lost / Found</h1><p>The Lost/Found workflow records missing pieces without destroying history and returns found pieces to loose inventory.</p>
-<p class="note">Detailed instructions and screenshots for this topic will be added during the
-BrickSuite v0.2.0 Help documentation pass.</p></body></html>
+h2 { margin-top: 1.5em; }
+img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
+img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px auto; }
+.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+</style>
+</head>
+<body>
+
+<h1>Lost / Found</h1>
+
+<p>The Lost/Found workflow keeps BrickSuite synchronized with the physical workshop when a piece
+that should be in loose inventory cannot be located. Instead of silently editing or deleting the
+quantity, BrickSuite records the loss so the inventory change remains traceable.</p>
+
+<div class="note"><b>Lost is not Delete.</b> Reporting inventory as Lost records why the quantity
+changed and preserves the event in Inventory History.</div>
+
+<h2>Starting Inventory</h2>
+
+<p>In this example, My Inventory contains <b>24</b> used, owned
+<b>3001 — Brick 2 x 4 / Light Bluish Gray</b> pieces in <b>Shelf Top / Bricks</b>.</p>
+
+<img class="screenshot" src="images/lost_found_inventory_before.png"
+     alt="Inventory before reporting pieces lost">
+
+<p>The database says 24 pieces are present. If a physical count shows that two of those pieces
+cannot be located, use <b>Lost Inventory...</b> rather than manually changing the inventory
+quantity.</p>
+
+<h2>Report the Missing Pieces</h2>
+
+<p>Choose <b>Lost Inventory...</b>, select the inventory record, and enter the quantity that cannot
+be found. Add a note when it will help explain the loss later.</p>
+
+<img class="dialog" src="images/lost_found_report_lost.png"
+     alt="Mark Inventory Lost dialog">
+
+<p>Here, two Light Bluish Gray 3001 bricks are being reported lost from the <b>Bricks</b> Storage
+location. The current quantity is 24, and the note records that the bricks had been played with
+outdoors.</p>
+
+<h2>Confirm the Inventory Change</h2>
+
+<p>Before committing the loss, BrickSuite summarizes the effect of the operation.</p>
+
+<img class="dialog" src="images/lost_found_mark_lost_confirmation.png"
+     alt="Confirmation before marking two pieces lost">
+
+<p>The confirmation shows:</p>
+
+<ul>
+<li><b>Current Quantity:</b> 24</li>
+<li><b>Quantity Lost:</b> 2</li>
+<li><b>Remaining Loose Inventory:</b> 22</li>
+</ul>
+
+<p>It also states that the operation will reduce My Loose Inventory and create a
+<b>Lost movement-history record</b>. Choose <b>Yes</b> only after confirming that the quantity
+matches the physical discrepancy.</p>
+
+<h2>Inventory After the Loss</h2>
+
+<img class="screenshot" src="images/lost_found_return.png"
+     alt="Inventory quantity after the loss is recorded">
+
+<p>After the loss is recorded, the same inventory record now contains <b>22</b> pieces instead of
+24. The two missing pieces are no longer counted as available loose inventory.</p>
+
+<p>This is the important digital-twin correction: BrickSuite now agrees with the quantity that can
+actually be accounted for in the physical Storage location.</p>
+
+<h2>Inventory History Preserves What Happened</h2>
+
+<p>Choose <b>History</b> for the part/color to review the event.</p>
+
+<img class="screenshot" src="images/lost_found_history.png"
+     alt="Inventory History showing a Lost event">
+
+<p>The example history records a <b>Lost</b> event with quantity <b>-2</b>, the source Storage
+location <b>Shelf Top / Bricks</b>, Condition <b>Used</b>, Ownership <b>Owned</b>, and the note
+entered when the loss was reported.</p>
+
+<p>The earlier CSV import records remain in the same history, so the inventory's lifecycle is
+preserved rather than replaced by an unexplained quantity adjustment.</p>
+
+<h2>When a Lost Piece Is Found</h2>
+
+<p>If previously lost inventory is later recovered, use BrickSuite's Found/Return workflow rather
+than treating the piece as a new purchase or unrelated inventory addition. Returning it through
+the Lost/Found workflow preserves the relationship between the earlier loss and the recovered
+physical piece.</p>
+
+<div class="note"><b>Found is not a new acquisition.</b> It represents inventory that BrickSuite
+previously recorded as lost and that has now been physically recovered.</div>
+
+<p>After the return is recorded, verify the resulting loose-inventory quantity and use Inventory
+History to review the lifecycle record.</p>
+
+<h2>Why Use Lost / Found?</h2>
+
+<pre>
+Inventory says the piece exists
+          |
+Physical piece cannot be located
+          |
+       Mark Lost
+          |
+Loose inventory quantity is reduced
+and the loss is recorded in History
+          |
+Piece is later recovered
+          |
+     Found / Return
+          |
+Piece returns to loose inventory
+while its lifecycle remains traceable
+</pre>
+
+<p>The purpose is not merely to adjust a number. Lost/Found records the reason the digital
+inventory changed so BrickSuite can continue to represent the physical workshop accurately.</p>
+
+<h2>Lost Inventory and Builds</h2>
+
+<p>If inventory expected for a Build cannot be physically located, preserving the loss is
+especially useful because the piece may have been expected by an allocation or other Build
+workflow. Correcting the loose-inventory state helps prevent later workflows from relying on a
+piece that is not actually present.</p>
+
+<p>After inventory changes, review the affected Build and use its normal allocation and
+<a href="missing_parts.html">Missing Parts</a> workflows as appropriate.</p>
+
+<h2>Related Help</h2>
+
+<p><a href="inventory.html">My Inventory</a> |
+<a href="builds.html">Builds</a> |
+<a href="allocate_available.html">Allocate Available</a> |
+<a href="missing_parts.html">Missing Parts</a></p>
+
+</body>
+</html>
