@@ -30,6 +30,7 @@ class QCheckBox;
 class QPushButton;
 class QTabWidget;
 class QSpinBox;
+class QWidget;
 
 class RebrickableApiClient;
 
@@ -45,13 +46,16 @@ signals:
 
 private slots:
     void saveSettings();
+    void cancelSettings();
+    void previewTheme(int index);
     void showApiKeyToggled(bool checked);
     void testRebrickableConnection();
 
 private:
     void buildGeneralTab();
     void buildAppearanceTab();
-    void buildRebrickableTab();
+    void buildApisTab();
+    QWidget* buildRebrickableApiPage(QWidget* parent);
 
     void loadSettings();
     void loadWorkspaces();
@@ -66,8 +70,10 @@ private:
 
     // Appearance
     QComboBox* m_themeCombo = nullptr;
+    int m_originalThemeValue = 0;
 
-    // Rebrickable
+    // APIs / Rebrickable
+    QTabWidget* m_apiTabWidget = nullptr;
     QLineEdit* m_apiKeyEdit = nullptr;
     QCheckBox* m_showApiKeyCheck = nullptr;
     QPushButton* m_testConnectionButton = nullptr;

@@ -51,7 +51,7 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext, QWidget* pare
 {
     setWindowTitle("BrickSuite Settings");
 
-    resize(600, 420);
+    resize(600, 500);
 
     //
     // Context-sensitive Help for the entire Settings dialog. Using
@@ -80,13 +80,13 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext, QWidget* pare
 
     buildGeneralTab();
     buildAppearanceTab();
-    buildRebrickableTab();
+    buildApisTab();
 
     m_rebrickableApiClient = new RebrickableApiClient(this);
 
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::saveSettings);
 
-    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &SettingsDialog::cancelSettings);
 
     connect(m_rebrickableApiClient,
             &RebrickableApiClient::connectionTestFinished,
@@ -137,7 +137,9 @@ void SettingsDialog::loadSettings()
         m_defaultWorkspaceCombo->setCurrentIndex(0);
     }
 
-    const int themeIndex = m_themeCombo->findData(static_cast<int>(settings.theme()));
+    m_originalThemeValue = static_cast<int>(settings.theme());
+
+    const int themeIndex = m_themeCombo->findData(m_originalThemeValue);
 
     if (themeIndex >= 0) {
         m_themeCombo->setCurrentIndex(themeIndex);
@@ -177,6 +179,29 @@ void SettingsDialog::saveSettings()
     emit settingsChanged();
 
     accept();
+}
+
+void SettingsDialog::cancelSettings()
+{
+    const auto originalTheme = static_cast<UserSettings::Theme>(m_originalThemeValue);
+
+    if (QApplication* application = qobject_cast<QApplication*>(QApplication::instance())) {
+        ThemeManager::applyTheme(*application, originalTheme);
+    }
+
+    reject();
+}
+
+void SettingsDialog::previewTheme(int index)
+{
+    if (index < 0)
+        return;
+
+    const auto theme = static_cast<UserSettings::Theme>(m_themeCombo->itemData(index).toInt());
+
+    if (QApplication* application = qobject_cast<QApplication*>(QApplication::instance())) {
+        ThemeManager::applyTheme(*application, theme);
+    }
 }
 
 void SettingsDialog::buildGeneralTab()
@@ -228,6 +253,11 @@ void SettingsDialog::buildAppearanceTab()
 
     m_themeCombo->addItem("Dark", static_cast<int>(UserSettings::Theme::Dark));
 
+    connect(m_themeCombo,
+            qOverload<int>(&QComboBox::currentIndexChanged),
+            this,
+            &SettingsDialog::previewTheme);
+
     appearanceLayout->addRow("Theme:", m_themeCombo);
 
     layout->addWidget(appearanceGroup);
@@ -237,33 +267,45 @@ void SettingsDialog::buildAppearanceTab()
     m_tabWidget->addTab(tab, "Appearance");
 }
 
-void SettingsDialog::buildRebrickableTab()
+void SettingsDialog::buildApisTab()
 {
     auto* tab = new QWidget(m_tabWidget);
-
     auto* layout = new QVBoxLayout(tab);
 
-    auto* apiGroup = new QGroupBox("Rebrickable API", tab);
+    m_apiTabWidget = new QTabWidget(tab);
+    m_apiTabWidget->setTabPosition(QTabWidget::North);
 
+    m_apiTabWidget->addTab(buildRebrickableApiPage(m_apiTabWidget), "Rebrickable");
+
+    // BrickLink is the next provider planned for M14.4. Its provider-specific
+    // configuration controls will be added during M14.3 as the authentication
+    // requirements are implemented. Brickset can be added later without
+    // changing the top-level Settings layout.
+
+    layout->addWidget(m_apiTabWidget);
+
+    m_tabWidget->addTab(tab, "APIs");
+}
+
+QWidget* SettingsDialog::buildRebrickableApiPage(QWidget* parent)
+{
+    auto* page = new QWidget(parent);
+    auto* layout = new QVBoxLayout(page);
+
+    auto* apiGroup = new QGroupBox("Rebrickable API", page);
     auto* apiLayout = new QFormLayout(apiGroup);
 
     m_apiKeyEdit = new QLineEdit(apiGroup);
-
     m_apiKeyEdit->setEchoMode(QLineEdit::Password);
-
     m_apiKeyEdit->setPlaceholderText("Enter Rebrickable API key");
 
     m_showApiKeyCheck = new QCheckBox("Show API key", apiGroup);
 
     m_rebrickableRequestIntervalSpin = new QSpinBox(apiGroup);
-
     m_rebrickableRequestIntervalSpin->setRange(UserSettings::MinimumRebrickableRequestIntervalMs,
                                                UserSettings::MaximumRebrickableRequestIntervalMs);
-
     m_rebrickableRequestIntervalSpin->setSingleStep(250);
-
     m_rebrickableRequestIntervalSpin->setSuffix(" ms");
-
     m_rebrickableRequestIntervalSpin->setToolTip("Minimum time between Rebrickable API requests.");
 
     m_testConnectionButton = new QPushButton("Test Connection", apiGroup);
@@ -274,11 +316,8 @@ void SettingsDialog::buildRebrickableTab()
             &SettingsDialog::testRebrickableConnection);
 
     apiLayout->addRow("API Key:", m_apiKeyEdit);
-
     apiLayout->addRow(QString(), m_showApiKeyCheck);
-
     apiLayout->addRow("Minimum Request Interval:", m_rebrickableRequestIntervalSpin);
-
     apiLayout->addRow(QString(), m_testConnectionButton);
 
     auto* noteLabel = new QLabel("BrickSuite throttles all Rebrickable API requests "
@@ -289,18 +328,15 @@ void SettingsDialog::buildRebrickableTab()
                                  "will stop further Rebrickable API requests for the "
                                  "current session if a 429 response is received.",
                                  apiGroup);
-
     noteLabel->setWordWrap(true);
-
     apiLayout->addRow(QString(), noteLabel);
 
     layout->addWidget(apiGroup);
-
     layout->addStretch();
 
-    m_tabWidget->addTab(tab, "Rebrickable");
-
     connect(m_showApiKeyCheck, &QCheckBox::toggled, this, &SettingsDialog::showApiKeyToggled);
+
+    return page;
 }
 
 void SettingsDialog::showApiKeyToggled(bool checked)
