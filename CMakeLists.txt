@@ -118,6 +118,15 @@ qt_add_executable(BrickSuite
     src/import/RebrickableInventoryImportPreview.h
     src/ui/inventory/InventoryImportPreviewDialog.h
     src/ui/inventory/InventoryImportPreviewDialog.cpp
+    src/api/ApiProvider.h
+    src/api/ApiConnectionStatus.h
+    src/api/ApiError.h
+    src/api/ApiResult.h
+    src/api/ApiRequestContext.h
+    src/api/ApiNetworkService.h
+    src/api/ApiNetworkService.cpp
+    src/api/rebrickable/RebrickableService.h
+    src/api/rebrickable/RebrickableService.cpp
     src/services/RebrickableApiClient.h
     src/services/RebrickableApiClient.cpp
     src/services/images/PartImageService.cpp src/services/images/PartImageService.h

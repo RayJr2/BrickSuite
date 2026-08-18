@@ -54,6 +54,15 @@ public:
 
     bool hasCachedPartColorImage(const QString& partNumber, int rebrickableColorId) const;
 
+    bool isPartColorImageKnownUnavailable(const QString& partNumber,
+                                          int rebrickableColorId) const;
+
+    bool markPartColorImageUnavailable(const QString& partNumber,
+                                       int rebrickableColorId);
+
+    void clearPartColorImageUnavailable(const QString& partNumber,
+                                        int rebrickableColorId);
+
 signals:
     void imageReady(
         const QString& partNumber,
@@ -86,6 +95,11 @@ private:
         const QString& imageUrl);
 
     QString colorCacheDirectory() const;
+
+    QString unavailableColorCacheDirectory() const;
+
+    QString unavailableColorMarkerPath(const QString& partNumber,
+                                       int rebrickableColorId) const;
 
     QString colorCacheFilePath(const QString& partNumber,
                                int rebrickableColorId,

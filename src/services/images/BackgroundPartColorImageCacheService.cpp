@@ -129,6 +129,9 @@ void BackgroundPartColorImageCacheService::rebuildQueue()
 
     QSet<QString> addedKeys;
 
+    int cachedItems = 0;
+    int knownUnavailableItems = 0;
+
     for (const InventoryRecord& record : records) {
         if (record.quantity() <= 0)
             continue;
@@ -151,16 +154,23 @@ void BackgroundPartColorImageCacheService::rebuildQueue()
             continue;
         }
 
-        if (m_partImageService->hasCachedPartColorImage(partNumber, rebrickableColorId)) {
-            continue;
-        }
-
         const QString key = workKey(partNumber, rebrickableColorId);
 
         if (addedKeys.contains(key))
             continue;
 
         addedKeys.insert(key);
+
+        if (m_partImageService->hasCachedPartColorImage(partNumber, rebrickableColorId)) {
+            ++cachedItems;
+            continue;
+        }
+
+        if (m_partImageService->isPartColorImageKnownUnavailable(partNumber,
+                                                                  rebrickableColorId)) {
+            ++knownUnavailableItems;
+            continue;
+        }
 
         WorkItem item;
 
@@ -173,7 +183,9 @@ void BackgroundPartColorImageCacheService::rebuildQueue()
 
     qInfo() << "Background part-color image cache queue rebuilt."
             << "WorkspaceId:" << m_workspaceContext.currentWorkspaceId()
-            << "PendingItems:" << m_workItems.size();
+            << "PendingItems:" << m_workItems.size()
+            << "CachedItems:" << cachedItems
+            << "KnownUnavailableItems:" << knownUnavailableItems;
 
     //
     // If an old request is still completing, let it
@@ -213,7 +225,9 @@ void BackgroundPartColorImageCacheService::processNext()
 
         if (m_skippedThisRun.contains(key)
             || m_partImageService->hasCachedPartColorImage(item.partNumber,
-                                                           item.rebrickableColorId)) {
+                                                           item.rebrickableColorId)
+            || m_partImageService->isPartColorImageKnownUnavailable(
+                item.partNumber, item.rebrickableColorId)) {
             m_workItems.removeFirst();
 
             continue;
@@ -266,12 +280,39 @@ void BackgroundPartColorImageCacheService::processNext()
                           return;
                       }
 
-                      if (!result.success || result.partColor.partImageUrl.trimmed().isEmpty()) {
-                          m_skippedThisRun.insert(key);
+                      if (!result.success) {
+                          //
+                          // A 404 is a definitive provider answer: Rebrickable does
+                          // not have this Part/Color combination. Remember it across
+                          // application runs so the background cache does not waste
+                          // another API request every time BrickSuite starts.
+                          //
+                          // Other failures can be transient (network, authentication,
+                          // rate limiting, provider outage), so skip them only for the
+                          // current run and allow a future retry.
+                          //
+                          if (result.httpStatusCode == 404) {
+                              m_partImageService->markPartColorImageUnavailable(
+                                  item.partNumber, item.rebrickableColorId);
+                          } else {
+                              m_skippedThisRun.insert(key);
+                          }
 
                           if (!RebrickableApiClient::isSessionBlocked()) {
                               scheduleNext();
                           }
+
+                          return;
+                      }
+
+                      if (result.partColor.partImageUrl.trimmed().isEmpty()) {
+                          // A valid provider response with no color-specific image is
+                          // also definitive. The UI can continue using the generic part
+                          // image without repeatedly querying Rebrickable.
+                          m_partImageService->markPartColorImageUnavailable(
+                              item.partNumber, item.rebrickableColorId);
+
+                          scheduleNext();
 
                           return;
                       }

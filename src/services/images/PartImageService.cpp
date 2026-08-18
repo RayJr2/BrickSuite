@@ -312,6 +312,75 @@ QString PartImageService::colorCacheDirectory() const
     return directoryPath;
 }
 
+QString PartImageService::unavailableColorCacheDirectory() const
+{
+    const QString directoryPath = QDir(colorCacheDirectory()).filePath("unavailable");
+
+    QDir directory;
+
+    if (!directory.exists(directoryPath)) {
+        directory.mkpath(directoryPath);
+    }
+
+    return directoryPath;
+}
+
+QString PartImageService::unavailableColorMarkerPath(const QString& partNumber,
+                                                      int rebrickableColorId) const
+{
+    const QString fileName = QString("%1_%2.unavailable")
+                                 .arg(safePartNumber(partNumber))
+                                 .arg(rebrickableColorId);
+
+    return QDir(unavailableColorCacheDirectory()).filePath(fileName);
+}
+
+bool PartImageService::isPartColorImageKnownUnavailable(const QString& partNumber,
+                                                         int rebrickableColorId) const
+{
+    if (partNumber.trimmed().isEmpty() || rebrickableColorId < 0)
+        return false;
+
+    return QFile::exists(unavailableColorMarkerPath(partNumber, rebrickableColorId));
+}
+
+bool PartImageService::markPartColorImageUnavailable(const QString& partNumber,
+                                                      int rebrickableColorId)
+{
+    if (partNumber.trimmed().isEmpty() || rebrickableColorId < 0)
+        return false;
+
+    const QString path = unavailableColorMarkerPath(partNumber, rebrickableColorId);
+
+    if (QFile::exists(path))
+        return true;
+
+    QSaveFile file(path);
+
+    if (!file.open(QIODevice::WriteOnly)) {
+        qWarning() << "Unable to create unavailable part-color image marker:"
+                   << path << file.errorString();
+        return false;
+    }
+
+    if (file.write("unavailable\n") < 0) {
+        file.cancelWriting();
+        return false;
+    }
+
+    return file.commit();
+}
+
+void PartImageService::clearPartColorImageUnavailable(const QString& partNumber,
+                                                       int rebrickableColorId)
+{
+    const QString path = unavailableColorMarkerPath(partNumber, rebrickableColorId);
+
+    if (QFile::exists(path) && !QFile::remove(path)) {
+        qWarning() << "Unable to remove unavailable part-color image marker:" << path;
+    }
+}
+
 QString PartImageService::partColorKey(const QString& partNumber, int rebrickableColorId) const
 {
     return QString("%1|%2").arg(safePartNumber(partNumber)).arg(rebrickableColorId);
@@ -517,6 +586,8 @@ void PartImageService::downloadPartColorImage(const QString& partNumber,
                 }
 
                 m_cachedColorPaths.insert(key, path);
+
+                clearPartColorImageUnavailable(partNumber, rebrickableColorId);
 
                 emit partColorImageReady(partNumber, rebrickableColorId, path);
             });
