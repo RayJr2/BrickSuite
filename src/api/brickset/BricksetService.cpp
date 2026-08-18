@@ -9,6 +9,7 @@
 #include "../ApiProvider.h"
 #include "../ApiRequestContext.h"
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
@@ -117,3 +118,239 @@ void BricksetService::handleConnectionTestReply(QNetworkReply* reply)
     reply->deleteLater();
     emit connectionTestFinished(result);
 }
+
+void BricksetService::getSetDetails(const QString& fullSetNumber,
+                                    const QString& apiKey)
+{
+    const QString trimmedSetNumber = fullSetNumber.trimmed();
+    const QString trimmedApiKey = apiKey.trimmed();
+
+    if (trimmedSetNumber.isEmpty() || trimmedApiKey.isEmpty()) {
+        SetDetailsResult result;
+        result.requestedSetNumber = trimmedSetNumber;
+        result.message = trimmedSetNumber.isEmpty()
+                             ? QStringLiteral("Brickset set number is empty.")
+                             : QStringLiteral("Brickset API key is empty.");
+        result.error.type = ApiErrorType::Configuration;
+        result.error.message = result.message;
+
+        emit setDetailsFinished(result);
+        return;
+    }
+
+    QJsonObject paramsObject;
+    paramsObject.insert(QStringLiteral("setNumber"), trimmedSetNumber);
+    paramsObject.insert(QStringLiteral("extendedData"), 1);
+
+    const QString params =
+        QString::fromUtf8(QJsonDocument(paramsObject).toJson(QJsonDocument::Compact));
+
+    QNetworkRequest request(
+        QUrl(QStringLiteral("https://brickset.com/api/v3.asmx/getSets")));
+
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("BrickSuite/0.2.0"));
+    request.setHeader(QNetworkRequest::ContentTypeHeader,
+                      QStringLiteral("application/x-www-form-urlencoded"));
+
+    // Brickset documents userHash as optional for normal catalog lookups,
+    // but the ASP.NET web-service method still requires the parameter name to
+    // be present. Build the form body explicitly so an empty value is emitted
+    // as "userHash=" rather than being omitted or serialized ambiguously.
+    const QByteArray body =
+        QByteArrayLiteral("apiKey=")
+        + QUrl::toPercentEncoding(trimmedApiKey)
+        + QByteArrayLiteral("&userHash=&params=")
+        + QUrl::toPercentEncoding(params);
+
+    ApiRequestContext context;
+    context.provider = ApiProvider::Brickset;
+    context.operation = QStringLiteral("GetSetDetails");
+
+    QNetworkReply* reply = m_networkService->post(request, body, context);
+
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, trimmedSetNumber]() {
+                handleSetDetailsReply(reply, trimmedSetNumber);
+            });
+}
+
+void BricksetService::handleSetDetailsReply(QNetworkReply* reply,
+                                            const QString& requestedSetNumber)
+{
+    SetDetailsResult result;
+    result.requestedSetNumber = requestedSetNumber;
+
+    const QVariant statusAttribute =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+
+    if (statusAttribute.isValid())
+        result.httpStatusCode = statusAttribute.toInt();
+
+    result.error.httpStatusCode = result.httpStatusCode;
+
+    const QByteArray responseData = reply->readAll();
+
+    const QJsonDocument document = QJsonDocument::fromJson(responseData);
+    const bool hasJsonObject = document.isObject();
+
+    QJsonObject root;
+    QString status;
+    QString providerMessage;
+
+    if (hasJsonObject) {
+        root = document.object();
+        status = root.value(QStringLiteral("status")).toString();
+        providerMessage = root.value(QStringLiteral("message")).toString();
+    }
+
+    // QNetworkReply reports HTTP 4xx/5xx as an error. Prefer a Brickset JSON
+    // error message when one is present; otherwise preserve the transport
+    // diagnostic and include a small response-body hint for troubleshooting.
+    if (reply->error() != QNetworkReply::NoError) {
+        if (!providerMessage.isEmpty()) {
+            result.message = providerMessage;
+            result.error.type =
+                providerMessage.contains(QStringLiteral("Invalid API key"),
+                                         Qt::CaseInsensitive)
+                    ? ApiErrorType::Authentication
+                    : ApiErrorType::Provider;
+            result.error.providerMessage = providerMessage;
+        } else {
+            QString bodyHint = QString::fromUtf8(responseData).trimmed();
+
+            // Avoid flooding UI/logs if the server returns an HTML error page.
+            if (bodyHint.size() > 500)
+                bodyHint = bodyHint.left(500) + QStringLiteral("...");
+
+            result.message =
+                QStringLiteral("Unable to retrieve set details from Brickset: %1")
+                    .arg(reply->errorString());
+
+            if (!bodyHint.isEmpty()) {
+                result.message += QStringLiteral("\n\nBrickset response: %1")
+                                      .arg(bodyHint);
+            }
+
+            result.error.type = ApiErrorType::Network;
+        }
+
+        result.error.message = result.message;
+
+        reply->deleteLater();
+        emit setDetailsFinished(result);
+        return;
+    }
+
+    if (!hasJsonObject) {
+        result.message = QStringLiteral("Brickset returned an unexpected response.");
+        result.error.type = ApiErrorType::InvalidResponse;
+        result.error.message = result.message;
+
+        reply->deleteLater();
+        emit setDetailsFinished(result);
+        return;
+    }
+
+    if (status.compare(QStringLiteral("success"), Qt::CaseInsensitive) != 0) {
+        result.message = providerMessage.isEmpty()
+                             ? QStringLiteral("Brickset returned a provider error.")
+                             : providerMessage;
+
+        result.error.type =
+            providerMessage.contains(QStringLiteral("Invalid API key"), Qt::CaseInsensitive)
+                ? ApiErrorType::Authentication
+                : ApiErrorType::Provider;
+        result.error.message = result.message;
+        result.error.providerMessage = providerMessage;
+
+        reply->deleteLater();
+        emit setDetailsFinished(result);
+        return;
+    }
+
+    result.matches = root.value(QStringLiteral("matches")).toInt();
+
+    const QJsonArray sets = root.value(QStringLiteral("sets")).toArray();
+
+    if (result.matches < 1 || sets.isEmpty() || !sets.first().isObject()) {
+        result.message =
+            QStringLiteral("Set %1 was not found on Brickset.").arg(requestedSetNumber);
+        result.error.type = ApiErrorType::Provider;
+        result.error.message = result.message;
+
+        reply->deleteLater();
+        emit setDetailsFinished(result);
+        return;
+    }
+
+    const QJsonObject object = sets.first().toObject();
+
+    SetDetails details;
+    details.bricksetSetId = object.value(QStringLiteral("setID")).toInt();
+    details.number = object.value(QStringLiteral("number")).toString();
+    details.numberVariant = object.value(QStringLiteral("numberVariant")).toInt();
+
+    if (!details.number.isEmpty() && details.numberVariant > 0) {
+        details.fullSetNumber =
+            QStringLiteral("%1-%2").arg(details.number).arg(details.numberVariant);
+    } else {
+        details.fullSetNumber = requestedSetNumber;
+    }
+
+    details.name = object.value(QStringLiteral("name")).toString();
+    details.year = object.value(QStringLiteral("year")).toInt();
+
+    details.theme = object.value(QStringLiteral("theme")).toString();
+    details.themeGroup = object.value(QStringLiteral("themeGroup")).toString();
+    details.subtheme = object.value(QStringLiteral("subtheme")).toString();
+    details.category = object.value(QStringLiteral("category")).toString();
+
+    details.released = object.value(QStringLiteral("released")).toBool();
+
+    details.pieces = object.value(QStringLiteral("pieces")).toInt();
+    details.minifigs = object.value(QStringLiteral("minifigs")).toInt();
+
+    details.launchDate = object.value(QStringLiteral("launchDate")).toString();
+    details.exitDate = object.value(QStringLiteral("exitDate")).toString();
+
+    const QJsonObject image = object.value(QStringLiteral("image")).toObject();
+    details.thumbnailUrl = image.value(QStringLiteral("thumbnailURL")).toString();
+    details.imageUrl = image.value(QStringLiteral("imageURL")).toString();
+
+    details.bricksetUrl = object.value(QStringLiteral("bricksetURL")).toString();
+
+    details.rating = object.value(QStringLiteral("rating")).toDouble();
+    details.ratingCount = object.value(QStringLiteral("ratingCount")).toInt();
+    details.reviewCount = object.value(QStringLiteral("reviewCount")).toInt();
+
+    details.packagingType = object.value(QStringLiteral("packagingType")).toString();
+    details.availability = object.value(QStringLiteral("availability")).toString();
+
+    details.instructionsCount =
+        object.value(QStringLiteral("instructionsCount")).toInt();
+    details.additionalImageCount =
+        object.value(QStringLiteral("additionalImageCount")).toInt();
+
+    const QJsonObject ageRange = object.value(QStringLiteral("ageRange")).toObject();
+    details.minimumAge = ageRange.value(QStringLiteral("min")).toInt();
+
+    const QJsonObject barcode = object.value(QStringLiteral("barcode")).toObject();
+    details.ean = barcode.value(QStringLiteral("EAN")).toString();
+    details.upc = barcode.value(QStringLiteral("UPC")).toString();
+
+    const QJsonObject extendedData =
+        object.value(QStringLiteral("extendedData")).toObject();
+    details.descriptionHtml =
+        extendedData.value(QStringLiteral("description")).toString();
+
+    details.lastUpdated = object.value(QStringLiteral("lastUpdated")).toString();
+
+    result.set = details;
+    result.success = true;
+    result.message =
+        QStringLiteral("Brickset set details retrieved for %1.").arg(details.fullSetNumber);
+
+    reply->deleteLater();
+    emit setDetailsFinished(result);
+}
+

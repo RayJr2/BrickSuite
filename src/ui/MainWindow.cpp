@@ -38,6 +38,7 @@
 #include "../repositories/WorkspaceRepository.h"
 
 #include "../services/RebrickableApiClient.h"
+#include "../api/brickset/BricksetService.h"
 #include "../services/images/BackgroundPartColorImageCacheService.h"
 #include "../services/images/PartImageService.h"
 
@@ -557,6 +558,83 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     rebrickableMenu->addSeparator();
 
     auto* throttleTestAction = rebrickableMenu->addAction("Throttle Test");
+
+    auto* bricksetMenu = testMenu->addMenu("Brickset");
+
+    auto* bricksetSetDetailsAction = bricksetMenu->addAction("Set Details");
+
+    connect(bricksetSetDetailsAction, &QAction::triggered, this, [this]() {
+        const QString apiKey = UserSettings::instance().bricksetApiKey();
+
+        if (apiKey.isEmpty()) {
+            QMessageBox::warning(this,
+                                 "Brickset Set Details",
+                                 "No Brickset API key is configured.");
+            return;
+        }
+
+        const QString setNumber = QStringLiteral("10300-1");
+
+        auto* bricksetService = new BricksetService(this);
+
+        connect(bricksetService,
+                &BricksetService::setDetailsFinished,
+                this,
+                [this, bricksetService](const BricksetService::SetDetailsResult& result) {
+                    if (!result.success) {
+                        qWarning() << "Brickset set lookup failed."
+                                   << "Set:" << result.requestedSetNumber
+                                   << "HTTP:" << result.httpStatusCode
+                                   << "Message:" << result.message;
+
+                        QMessageBox::warning(this, "Brickset Set Details", result.message);
+                        bricksetService->deleteLater();
+                        return;
+                    }
+
+                    const BricksetService::SetDetails& set = result.set;
+
+                    qInfo() << "Brickset set lookup succeeded."
+                            << "Set:" << set.fullSetNumber
+                            << "BricksetSetId:" << set.bricksetSetId
+                            << "Name:" << set.name
+                            << "Year:" << set.year
+                            << "Theme:" << set.theme
+                            << "Subtheme:" << set.subtheme
+                            << "Pieces:" << set.pieces
+                            << "Minifigs:" << set.minifigs
+                            << "AdditionalImages:" << set.additionalImageCount
+                            << "Instructions:" << set.instructionsCount;
+
+                    QMessageBox::information(
+                        this,
+                        "Brickset Set Details",
+                        QString("Set: %1\n"
+                                "Brickset Set ID: %2\n"
+                                "Name: %3\n"
+                                "Year: %4\n"
+                                "Theme: %5\n"
+                                "Subtheme: %6\n"
+                                "Pieces: %7\n"
+                                "Minifigs: %8\n"
+                                "Additional Images: %9\n"
+                                "Instructions: %10")
+                            .arg(set.fullSetNumber)
+                            .arg(set.bricksetSetId)
+                            .arg(set.name)
+                            .arg(set.year)
+                            .arg(set.theme)
+                            .arg(set.subtheme)
+                            .arg(set.pieces)
+                            .arg(set.minifigs)
+                            .arg(set.additionalImageCount)
+                            .arg(set.instructionsCount));
+
+                    bricksetService->deleteLater();
+                });
+
+        bricksetService->getSetDetails(setNumber, apiKey);
+    });
 
     connect(partDetailsAction, &QAction::triggered, this, [this]() {
         const QString apiKey = UserSettings::instance().rebrickableApiKey();

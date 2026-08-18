@@ -26,17 +26,85 @@ public:
         ApiError error;
     };
 
+    struct SetDetails
+    {
+        int bricksetSetId = 0;
+
+        QString number;
+        int numberVariant = 0;
+        QString fullSetNumber;
+
+        QString name;
+        int year = 0;
+
+        QString theme;
+        QString themeGroup;
+        QString subtheme;
+        QString category;
+
+        bool released = false;
+
+        int pieces = 0;
+        int minifigs = 0;
+
+        QString launchDate;
+        QString exitDate;
+
+        QString thumbnailUrl;
+        QString imageUrl;
+        QString bricksetUrl;
+
+        double rating = 0.0;
+        int ratingCount = 0;
+        int reviewCount = 0;
+
+        QString packagingType;
+        QString availability;
+
+        int instructionsCount = 0;
+        int additionalImageCount = 0;
+
+        int minimumAge = 0;
+
+        QString ean;
+        QString upc;
+
+        QString descriptionHtml;
+        QString lastUpdated;
+    };
+
+    struct SetDetailsResult
+    {
+        bool success = false;
+        int httpStatusCode = 0;
+        int matches = 0;
+        QString requestedSetNumber;
+        QString message;
+        ApiError error;
+        SetDetails set;
+    };
+
     explicit BricksetService(QObject* parent = nullptr);
 
     void testConnection(const QString& apiKey);
 
+    void getSetDetails(const QString& fullSetNumber,
+                       const QString& apiKey);
+
 signals:
     void connectionTestFinished(const BricksetService::ConnectionResult& result);
 
+    void setDetailsFinished(const BricksetService::SetDetailsResult& result);
+
 private:
     void handleConnectionTestReply(QNetworkReply* reply);
+
+    void handleSetDetailsReply(QNetworkReply* reply,
+                               const QString& requestedSetNumber);
 
     ApiNetworkService* m_networkService = nullptr;
 };
 
 Q_DECLARE_METATYPE(BricksetService::ConnectionResult)
+Q_DECLARE_METATYPE(BricksetService::SetDetails)
+Q_DECLARE_METATYPE(BricksetService::SetDetailsResult)
