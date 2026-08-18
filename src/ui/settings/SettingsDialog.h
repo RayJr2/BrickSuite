@@ -101,8 +101,10 @@ private:
     // APIs / Brickset
     QLineEdit* m_bricksetApiKeyEdit = nullptr;
     QLabel* m_bricksetStatusLabel = nullptr;
+    QLabel* m_bricksetUsageLabel = nullptr;
     QCheckBox* m_showBricksetApiKeyCheck = nullptr;
     QPushButton* m_testBricksetConnectionButton = nullptr;
+    QSpinBox* m_bricksetDailyThresholdSpin = nullptr;
     ApiConnectionStatus m_bricksetConnectionStatus = ApiConnectionStatus::NotConfigured;
     QString m_originalBricksetApiKey;
 

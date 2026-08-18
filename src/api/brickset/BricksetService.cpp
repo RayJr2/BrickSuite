@@ -9,6 +9,7 @@
 #include "../ApiProvider.h"
 #include "../ApiRequestContext.h"
 
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -18,6 +19,10 @@
 #include <QUrlQuery>
 
 int BricksetService::s_sessionGetSetsCallCount = 0;
+bool BricksetService::s_keyUsageKnown = false;
+QString BricksetService::s_keyUsageDate;
+int BricksetService::s_authoritativeTodayGetSetsCount = 0;
+int BricksetService::s_sessionGetSetsCountAtUsageRefresh = 0;
 
 BricksetService::BricksetService(QObject* parent)
     : QObject(parent)
@@ -367,3 +372,161 @@ int BricksetService::sessionGetSetsCallCount()
 {
     return s_sessionGetSetsCallCount;
 }
+
+void BricksetService::getKeyUsageStats(const QString& apiKey)
+{
+    const QString trimmedApiKey = apiKey.trimmed();
+
+    if (trimmedApiKey.isEmpty()) {
+        KeyUsageResult result;
+        result.message = QStringLiteral("Brickset API key is empty.");
+        result.error.type = ApiErrorType::Configuration;
+        result.error.message = result.message;
+
+        emit keyUsageStatsFinished(result);
+        return;
+    }
+
+    QUrl url(QStringLiteral("https://brickset.com/api/v3.asmx/getKeyUsageStats"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("apiKey"), trimmedApiKey);
+    url.setQuery(query);
+
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("BrickSuite/0.2.0"));
+
+    ApiRequestContext context;
+    context.provider = ApiProvider::Brickset;
+    context.operation = QStringLiteral("GetKeyUsageStats");
+
+    QNetworkReply* reply = m_networkService->get(request, context);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        handleKeyUsageStatsReply(reply);
+    });
+}
+
+void BricksetService::handleKeyUsageStatsReply(QNetworkReply* reply)
+{
+    KeyUsageResult result;
+
+    const QVariant statusAttribute =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+
+    if (statusAttribute.isValid())
+        result.httpStatusCode = statusAttribute.toInt();
+
+    result.error.httpStatusCode = result.httpStatusCode;
+
+    const QByteArray responseData = reply->readAll();
+
+    if (reply->error() != QNetworkReply::NoError) {
+        result.message =
+            QStringLiteral("Unable to retrieve Brickset key usage statistics: %1")
+                .arg(reply->errorString());
+        result.error.type = ApiErrorType::Network;
+        result.error.message = result.message;
+
+        reply->deleteLater();
+        emit keyUsageStatsFinished(result);
+        return;
+    }
+
+    const QJsonDocument document = QJsonDocument::fromJson(responseData);
+
+    if (!document.isObject()) {
+        result.message = QStringLiteral("Brickset returned an unexpected usage response.");
+        result.error.type = ApiErrorType::InvalidResponse;
+        result.error.message = result.message;
+
+        reply->deleteLater();
+        emit keyUsageStatsFinished(result);
+        return;
+    }
+
+    const QJsonObject root = document.object();
+    const QString status = root.value(QStringLiteral("status")).toString();
+    const QString providerMessage = root.value(QStringLiteral("message")).toString();
+
+    if (status.compare(QStringLiteral("success"), Qt::CaseInsensitive) != 0) {
+        result.message = providerMessage.isEmpty()
+                             ? QStringLiteral("Brickset returned a provider error.")
+                             : providerMessage;
+        result.error.type =
+            providerMessage.contains(QStringLiteral("Invalid API key"), Qt::CaseInsensitive)
+                ? ApiErrorType::Authentication
+                : ApiErrorType::Provider;
+        result.error.message = result.message;
+        result.error.providerMessage = providerMessage;
+
+        reply->deleteLater();
+        emit keyUsageStatsFinished(result);
+        return;
+    }
+
+    result.matches = root.value(QStringLiteral("matches")).toInt();
+
+    const QString today = QDateTime::currentDateTimeUtc().date().toString(Qt::ISODate);
+    const QJsonArray usage = root.value(QStringLiteral("apiKeyUsage")).toArray();
+
+    for (const QJsonValue& value : usage) {
+        if (!value.isObject())
+            continue;
+
+        const QJsonObject object = value.toObject();
+
+        KeyUsageEntry entry;
+        entry.dateStamp = object.value(QStringLiteral("dateStamp")).toString();
+        entry.count = object.value(QStringLiteral("count")).toInt();
+
+        result.entries.append(entry);
+
+        if (entry.dateStamp.startsWith(today))
+            result.todayCount = entry.count;
+    }
+
+    result.success = true;
+
+    s_keyUsageKnown = true;
+    s_keyUsageDate = today;
+    s_authoritativeTodayGetSetsCount = result.todayCount;
+    s_sessionGetSetsCountAtUsageRefresh = s_sessionGetSetsCallCount;
+
+    result.message =
+        QStringLiteral("Brickset key usage statistics retrieved. Today's getSets count: %1.")
+            .arg(result.todayCount);
+
+    reply->deleteLater();
+    emit keyUsageStatsFinished(result);
+}
+
+bool BricksetService::keyUsageKnown()
+{
+    return s_keyUsageKnown
+           && s_keyUsageDate == QDateTime::currentDateTimeUtc().date().toString(Qt::ISODate);
+}
+
+int BricksetService::authoritativeTodayGetSetsCount()
+{
+    return keyUsageKnown() ? s_authoritativeTodayGetSetsCount : -1;
+}
+
+int BricksetService::effectiveTodayGetSetsCount()
+{
+    if (!keyUsageKnown())
+        return -1;
+
+    const int callsSinceRefresh =
+        qMax(0, s_sessionGetSetsCallCount - s_sessionGetSetsCountAtUsageRefresh);
+
+    return s_authoritativeTodayGetSetsCount + callsSinceRefresh;
+}
+
+void BricksetService::invalidateKeyUsageCache()
+{
+    s_keyUsageKnown = false;
+    s_keyUsageDate.clear();
+    s_authoritativeTodayGetSetsCount = 0;
+    s_sessionGetSetsCountAtUsageRefresh = s_sessionGetSetsCallCount;
+}
+

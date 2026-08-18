@@ -41,6 +41,7 @@ constexpr auto kRebrickableConnectionPreviouslyVerifiedKey = "ConnectionPrevious
 
 constexpr auto kBricksetApiKey = "ApiKey";
 constexpr auto kBricksetConnectionPreviouslyVerifiedKey = "ConnectionPreviouslyVerified";
+constexpr auto kBricksetDailyGetSetsThresholdKey = "DailyGetSetsThreshold";
 
 constexpr auto kRebrickableMinimumRequestIntervalMsKey = "MinimumRequestIntervalMs";
 
@@ -243,6 +244,41 @@ void UserSettings::setBricksetConnectionPreviouslyVerified(bool verified)
 
     settings.beginGroup(kGroupBrickset);
     settings.setValue(kBricksetConnectionPreviouslyVerifiedKey, verified);
+    settings.endGroup();
+}
+
+int UserSettings::bricksetDailyGetSetsThreshold() const
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupBrickset);
+    int threshold =
+        settings.value(kBricksetDailyGetSetsThresholdKey,
+                       DefaultBricksetDailyGetSetsThreshold)
+            .toInt();
+    settings.endGroup();
+
+    if (threshold < MinimumBricksetDailyGetSetsThreshold)
+        threshold = MinimumBricksetDailyGetSetsThreshold;
+
+    if (threshold > MaximumBricksetDailyGetSetsThreshold)
+        threshold = MaximumBricksetDailyGetSetsThreshold;
+
+    return threshold;
+}
+
+void UserSettings::setBricksetDailyGetSetsThreshold(int threshold)
+{
+    if (threshold < MinimumBricksetDailyGetSetsThreshold)
+        threshold = MinimumBricksetDailyGetSetsThreshold;
+
+    if (threshold > MaximumBricksetDailyGetSetsThreshold)
+        threshold = MaximumBricksetDailyGetSetsThreshold;
+
+    QSettings settings;
+
+    settings.beginGroup(kGroupBrickset);
+    settings.setValue(kBricksetDailyGetSetsThresholdKey, threshold);
     settings.endGroup();
 }
 

@@ -564,6 +564,54 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     auto* bricksetSetDetailsAction = bricksetMenu->addAction("Set Details");
 
+    auto* bricksetKeyUsageAction = bricksetMenu->addAction("Key Usage Stats");
+
+    connect(bricksetKeyUsageAction, &QAction::triggered, this, [this]() {
+        const QString apiKey = UserSettings::instance().bricksetApiKey();
+
+        if (apiKey.isEmpty()) {
+            QMessageBox::warning(this,
+                                 "Brickset Key Usage Stats",
+                                 "No Brickset API key is configured.");
+            return;
+        }
+
+        auto* bricksetService = new BricksetService(this);
+
+        connect(bricksetService,
+                &BricksetService::keyUsageStatsFinished,
+                this,
+                [this, bricksetService](const BricksetService::KeyUsageResult& result) {
+                    if (!result.success) {
+                        QMessageBox::warning(this,
+                                             "Brickset Key Usage Stats",
+                                             result.message);
+                        bricksetService->deleteLater();
+                        return;
+                    }
+
+                    qInfo() << "Brickset key usage stats retrieved."
+                            << "Today:" << result.todayCount
+                            << "Entries:" << result.entries.size()
+                            << "Session getSets calls:"
+                            << BricksetService::sessionGetSetsCallCount();
+
+                    QMessageBox::information(
+                        this,
+                        "Brickset Key Usage Stats",
+                        QString("Today's getSets calls: %1\n"
+                                "Usage entries returned: %2\n"
+                                "BrickSuite getSets calls this session: %3")
+                            .arg(result.todayCount)
+                            .arg(result.entries.size())
+                            .arg(BricksetService::sessionGetSetsCallCount()));
+
+                    bricksetService->deleteLater();
+                });
+
+        bricksetService->getKeyUsageStats(apiKey);
+    });
+
     connect(bricksetSetDetailsAction, &QAction::triggered, this, [this]() {
         const QString apiKey = UserSettings::instance().bricksetApiKey();
 

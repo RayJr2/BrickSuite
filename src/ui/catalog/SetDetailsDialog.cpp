@@ -201,10 +201,15 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
                     m_providerSourceLabel->setText(
                         result.usedFallback ? "Rebrickable (fallback)" : "Rebrickable");
 
-                    m_providerStatusLabel->setText(
-                        result.usedFallback
-                            ? "Brickset enrichment was unavailable; Rebrickable details are being used."
-                            : "Rebrickable details loaded.");
+                    if (result.usedFallback) {
+                        m_providerStatusLabel->setText(
+                            result.fallbackReason.isEmpty()
+                                ? "Brickset enrichment was unavailable; Rebrickable details are being used."
+                                : QString("%1 Rebrickable details are being used.")
+                                      .arg(result.fallbackReason));
+                    } else {
+                        m_providerStatusLabel->setText("Rebrickable details loaded.");
+                    }
 
                     return;
                 }

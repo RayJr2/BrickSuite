@@ -35,6 +35,7 @@ public:
 
         QString setNumber;
         QString message;
+        QString fallbackReason;
 
         BricksetService::SetDetails brickset;
         RebrickableService::SetDetails rebrickable;
@@ -48,11 +49,14 @@ signals:
     void detailsReady(const SetDetailsProviderService::Result& result);
 
 private:
+    void requestPreferredProvider();
     void requestRebrickable(bool usedFallback,
                             const QString& fallbackReason = QString());
 
     QString m_setNumber;
+    QString m_fallbackReason;
     bool m_bricksetAttempted = false;
+    bool m_usedFallback = false;
 
     BricksetService* m_bricksetService = nullptr;
     RebrickableApiClient* m_rebrickableApiClient = nullptr;

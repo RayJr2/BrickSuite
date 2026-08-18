@@ -72,6 +72,13 @@ public:
     bool bricksetConnectionPreviouslyVerified() const;
     void setBricksetConnectionPreviouslyVerified(bool verified);
 
+    static constexpr int DefaultBricksetDailyGetSetsThreshold = 80;
+    static constexpr int MinimumBricksetDailyGetSetsThreshold = 1;
+    static constexpr int MaximumBricksetDailyGetSetsThreshold = 10000;
+
+    int bricksetDailyGetSetsThreshold() const;
+    void setBricksetDailyGetSetsThreshold(int threshold);
+
     static constexpr int DefaultRebrickableRequestIntervalMs = 1250;
     static constexpr int MinimumRebrickableRequestIntervalMs = 1000;
     static constexpr int MaximumRebrickableRequestIntervalMs = 60000;

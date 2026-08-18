@@ -52,14 +52,28 @@ SetDetailsProviderService::SetDetailsProviderService(QObject* parent)
                 requestRebrickable(true, bricksetResult.message);
             });
 
+    connect(m_bricksetService,
+            &BricksetService::keyUsageStatsFinished,
+            this,
+            [this](const BricksetService::KeyUsageResult& usageResult) {
+                if (!usageResult.success) {
+                    qWarning() << "Brickset key usage could not be refreshed; "
+                                  "continuing with normal provider selection."
+                               << "Message:" << usageResult.message;
+                }
+
+                requestPreferredProvider();
+            });
+
     connect(m_rebrickableApiClient,
             &RebrickableApiClient::setDetailsFinished,
             this,
             [this](const RebrickableApiClient::SetDetailsResult& rebrickableResult) {
                 Result result;
                 result.bricksetAttempted = m_bricksetAttempted;
-                result.usedFallback = m_bricksetAttempted;
+                result.usedFallback = m_usedFallback;
                 result.setNumber = m_setNumber;
+                result.fallbackReason = m_fallbackReason;
 
                 if (rebrickableResult.success) {
                     result.hasEnrichment = true;
@@ -83,6 +97,7 @@ SetDetailsProviderService::SetDetailsProviderService(QObject* parent)
 void SetDetailsProviderService::requestDetails(const QString& setNumber)
 {
     m_setNumber = setNumber.trimmed();
+    m_fallbackReason.clear();
     m_bricksetAttempted = false;
 
     if (m_setNumber.isEmpty()) {
@@ -92,15 +107,47 @@ void SetDetailsProviderService::requestDetails(const QString& setNumber)
         return;
     }
 
+    m_usedFallback = false;
+
+    UserSettings& settings = UserSettings::instance();
+    const QString bricksetApiKey = settings.bricksetApiKey().trimmed();
+
+    if (!bricksetApiKey.isEmpty()
+        && settings.bricksetConnectionPreviouslyVerified()
+        && !BricksetService::keyUsageKnown()) {
+        m_bricksetService->getKeyUsageStats(bricksetApiKey);
+        return;
+    }
+
+    requestPreferredProvider();
+}
+
+void SetDetailsProviderService::requestPreferredProvider()
+{
     UserSettings& settings = UserSettings::instance();
 
     const QString bricksetApiKey = settings.bricksetApiKey().trimmed();
 
-    // A previously verified Brickset credential makes Brickset the preferred
-    // enrichment provider. The request itself still determines whether the
-    // provider is reachable in this session; any failure falls back cleanly.
     if (!bricksetApiKey.isEmpty()
         && settings.bricksetConnectionPreviouslyVerified()) {
+        const int threshold = settings.bricksetDailyGetSetsThreshold();
+        const int effectiveUsage = BricksetService::effectiveTodayGetSetsCount();
+
+        if (effectiveUsage >= 0 && effectiveUsage >= threshold) {
+            const QString reason =
+                QStringLiteral("Brickset daily getSets threshold reached (%1 / %2).")
+                    .arg(effectiveUsage)
+                    .arg(threshold);
+
+            qInfo() << "Brickset Set Details enrichment skipped."
+                    << "Set:" << m_setNumber
+                    << "EffectiveUsage:" << effectiveUsage
+                    << "Threshold:" << threshold;
+
+            requestRebrickable(true, reason);
+            return;
+        }
+
         m_bricksetAttempted = true;
         m_bricksetService->getSetDetails(m_setNumber, bricksetApiKey);
         return;
@@ -112,6 +159,9 @@ void SetDetailsProviderService::requestDetails(const QString& setNumber)
 void SetDetailsProviderService::requestRebrickable(bool usedFallback,
                                                    const QString& fallbackReason)
 {
+    m_usedFallback = usedFallback;
+    m_fallbackReason = fallbackReason;
+
     UserSettings& settings = UserSettings::instance();
     const QString rebrickableApiKey = settings.rebrickableApiKey().trimmed();
 

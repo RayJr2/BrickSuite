@@ -9,6 +9,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QList>
 
 class ApiNetworkService;
 class QNetworkReply;
@@ -84,6 +85,23 @@ public:
         SetDetails set;
     };
 
+    struct KeyUsageEntry
+    {
+        QString dateStamp;
+        int count = 0;
+    };
+
+    struct KeyUsageResult
+    {
+        bool success = false;
+        int httpStatusCode = 0;
+        int matches = 0;
+        int todayCount = 0;
+        QString message;
+        ApiError error;
+        QList<KeyUsageEntry> entries;
+    };
+
     explicit BricksetService(QObject* parent = nullptr);
 
     void testConnection(const QString& apiKey);
@@ -91,12 +109,21 @@ public:
     void getSetDetails(const QString& fullSetNumber,
                        const QString& apiKey);
 
+    void getKeyUsageStats(const QString& apiKey);
+
     static int sessionGetSetsCallCount();
+
+    static bool keyUsageKnown();
+    static int authoritativeTodayGetSetsCount();
+    static int effectiveTodayGetSetsCount();
+    static void invalidateKeyUsageCache();
 
 signals:
     void connectionTestFinished(const BricksetService::ConnectionResult& result);
 
     void setDetailsFinished(const BricksetService::SetDetailsResult& result);
+
+    void keyUsageStatsFinished(const BricksetService::KeyUsageResult& result);
 
 private:
     void handleConnectionTestReply(QNetworkReply* reply);
@@ -104,11 +131,20 @@ private:
     void handleSetDetailsReply(QNetworkReply* reply,
                                const QString& requestedSetNumber);
 
+    void handleKeyUsageStatsReply(QNetworkReply* reply);
+
     ApiNetworkService* m_networkService = nullptr;
 
     static int s_sessionGetSetsCallCount;
+    static bool s_keyUsageKnown;
+    static QString s_keyUsageDate;
+    static int s_authoritativeTodayGetSetsCount;
+    static int s_sessionGetSetsCountAtUsageRefresh;
 };
 
 Q_DECLARE_METATYPE(BricksetService::ConnectionResult)
 Q_DECLARE_METATYPE(BricksetService::SetDetails)
 Q_DECLARE_METATYPE(BricksetService::SetDetailsResult)
+
+Q_DECLARE_METATYPE(BricksetService::KeyUsageEntry)
+Q_DECLARE_METATYPE(BricksetService::KeyUsageResult)

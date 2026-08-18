@@ -126,6 +126,10 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext, QWidget* pare
                 if (result.success) {
                     setBricksetConnectionStatus(ApiConnectionStatus::Connected);
                     settings.setBricksetConnectionPreviouslyVerified(true);
+
+                    const QString apiKey = m_bricksetApiKeyEdit->text().trimmed();
+                    if (!apiKey.isEmpty())
+                        m_bricksetService->getKeyUsageStats(apiKey);
                 } else {
                     settings.setBricksetConnectionPreviouslyVerified(false);
 
@@ -141,6 +145,22 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext, QWidget* pare
                         setBricksetConnectionStatus(ApiConnectionStatus::ProviderError);
                         break;
                     }
+                }
+            });
+
+    connect(m_bricksetService,
+            &BricksetService::keyUsageStatsFinished,
+            this,
+            [this](const BricksetService::KeyUsageResult& result) {
+                if (!m_bricksetUsageLabel)
+                    return;
+
+                if (result.success) {
+                    m_bricksetUsageLabel->setText(
+                        QString("%1 calls today").arg(
+                            BricksetService::effectiveTodayGetSetsCount()));
+                } else {
+                    m_bricksetUsageLabel->setText("Unavailable");
                 }
             });
 
@@ -208,6 +228,15 @@ void SettingsDialog::loadSettings()
 
     m_originalBricksetApiKey = settings.bricksetApiKey();
     m_bricksetApiKeyEdit->setText(m_originalBricksetApiKey);
+    m_bricksetDailyThresholdSpin->setValue(settings.bricksetDailyGetSetsThreshold());
+
+    if (BricksetService::keyUsageKnown()) {
+        m_bricksetUsageLabel->setText(
+            QString("%1 calls today").arg(
+                BricksetService::effectiveTodayGetSetsCount()));
+    } else {
+        m_bricksetUsageLabel->setText("Not checked");
+    }
 
     if (m_originalBricksetApiKey.trimmed().isEmpty()) {
         setBricksetConnectionStatus(ApiConnectionStatus::NotConfigured);
@@ -257,6 +286,8 @@ void SettingsDialog::saveSettings()
     if (bricksetKeyChanged && m_bricksetConnectionStatus != ApiConnectionStatus::Connected) {
         settings.setBricksetConnectionPreviouslyVerified(false);
     }
+
+    settings.setBricksetDailyGetSetsThreshold(m_bricksetDailyThresholdSpin->value());
 
     const int rebrickableRequestIntervalMs = m_rebrickableRequestIntervalSpin->value();
     settings.setRebrickableMinimumRequestIntervalMs(rebrickableRequestIntervalMs);
@@ -468,6 +499,19 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
     m_bricksetStatusLabel =
         new QLabel(apiConnectionStatusText(ApiConnectionStatus::NotConfigured), apiGroup);
 
+    m_bricksetUsageLabel = new QLabel("Not checked", apiGroup);
+
+    m_bricksetDailyThresholdSpin = new QSpinBox(apiGroup);
+    m_bricksetDailyThresholdSpin->setRange(
+        UserSettings::MinimumBricksetDailyGetSetsThreshold,
+        UserSettings::MaximumBricksetDailyGetSetsThreshold);
+    m_bricksetDailyThresholdSpin->setValue(
+        UserSettings::DefaultBricksetDailyGetSetsThreshold);
+    m_bricksetDailyThresholdSpin->setSuffix(" calls/day");
+    m_bricksetDailyThresholdSpin->setToolTip(
+        "When today's effective Brickset getSets usage reaches this threshold, "
+        "BrickSuite uses Rebrickable for Set Details instead.");
+
     connect(m_bricksetApiKeyEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
         if (m_bricksetConnectionStatus == ApiConnectionStatus::Testing)
             return;
@@ -475,6 +519,12 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
         setBricksetConnectionStatus(text.trimmed().isEmpty()
                                         ? ApiConnectionStatus::NotConfigured
                                         : ApiConnectionStatus::Unknown);
+
+        if (text.trimmed() != m_originalBricksetApiKey.trimmed()) {
+            BricksetService::invalidateKeyUsageCache();
+            if (m_bricksetUsageLabel)
+                m_bricksetUsageLabel->setText("Not checked");
+        }
     });
 
     connect(m_bricksetApiKeyEdit, &QLineEdit::editingFinished, this, [this]() {
@@ -497,13 +547,16 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
     apiLayout->addRow("API Key:", m_bricksetApiKeyEdit);
     apiLayout->addRow(QString(), m_showBricksetApiKeyCheck);
     apiLayout->addRow("Connection Status:", m_bricksetStatusLabel);
+    apiLayout->addRow("Today's getSets Usage:", m_bricksetUsageLabel);
+    apiLayout->addRow("Daily getSets Threshold:", m_bricksetDailyThresholdSpin);
     apiLayout->addRow(QString(), m_testBricksetConnectionButton);
 
     auto* noteLabel = new QLabel(
         "BrickSuite uses Brickset API v3. A previously verified API key is "
         "validated automatically when Settings opens.\n\n"
-        "This M14.3 integration uses Brickset's checkKey method only. "
-        "Read-only set lookups will be added in M14.4.",
+        "Brickset is preferred for Set Details enrichment while daily getSets "
+        "usage remains below the configured threshold. Rebrickable is used "
+        "automatically when the threshold is reached or Brickset is unavailable.",
         apiGroup);
     noteLabel->setWordWrap(true);
     apiLayout->addRow(QString(), noteLabel);
