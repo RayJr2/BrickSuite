@@ -111,19 +111,26 @@ columns.</p>
 
 <h3>Builds → Import MOC Parts CSV</h3>
 
-<p>The current MOC importer expects these columns:</p>
+<p>The MOC importer requires these columns:</p>
 
-<pre>Part,Color,Quantity,Is Spare</pre>
+<pre>Part,Color,Quantity</pre>
 
-<p><b>Is Spare</b> is required by the current importer. Accepted values are:</p>
+<p>The following column is optional:</p>
+
+<pre>Is Spare</pre>
+
+<p>If <b>Is Spare</b> is present, BrickSuite parses its value normally. Accepted values are:</p>
 
 <pre>
 TRUE values:  true, 1, yes
 FALSE values: false, 0, no
 </pre>
 
-<p>If a Rebrickable custom-list export does not contain <b>Is Spare</b>, add that column before
-importing and use <b>false</b> for regular requirements.</p>
+<p>If the <b>Is Spare</b> column is omitted, BrickSuite imports every requirement as a regular
+(non-spare) requirement by default.</p>
+
+<p>This supports Rebrickable custom-list exports and alternate-build workflows where the exported
+CSV contains Part, Color, and Quantity but does not include an Is Spare column.</p>
 
 <p>Do not add a trailing comma or other unintended column to individual rows. Every row must
 contain the same number of CSV fields as the header.</p>

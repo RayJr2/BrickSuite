@@ -168,13 +168,23 @@ RebrickableMocCsvImporter::Result RebrickableMocCsvImporter::importFile(int buil
 
     const int spareIndex = headers.indexOf("Is Spare");
 
-    if (!headerOk || partIndex < 0 || colorIndex < 0 || quantityIndex < 0 || spareIndex < 0) {
+    if (!headerOk || partIndex < 0 || colorIndex < 0 || quantityIndex < 0) {
         result.message = "The selected file is not a supported "
                          "Rebrickable MOC parts CSV.\n\n"
-                         "Expected columns:\n"
-                         "Part, Color, Quantity, Is Spare";
+                         "Required columns:\n"
+                         "Part, Color, Quantity\n\n"
+                         "Optional column:\n"
+                         "Is Spare";
 
         return result;
+    }
+
+    const bool hasSpareColumn = spareIndex >= 0;
+
+    if (!hasSpareColumn) {
+        qInfo() << "MOC CSV does not contain an Is Spare column; "
+                   "defaulting all imported requirements to non-spare."
+                << "File:" << fileName;
     }
 
     PartRepository partRepository;
@@ -220,7 +230,11 @@ RebrickableMocCsvImporter::Result RebrickableMocCsvImporter::importFile(int buil
 
         bool isSpare = false;
 
-        const bool spareOk = parseBoolean(fields.at(spareIndex), isSpare);
+        bool spareOk = true;
+
+        if (hasSpareColumn) {
+            spareOk = parseBoolean(fields.at(spareIndex), isSpare);
+        }
 
         if (partNumber.isEmpty() || !colorOk || !quantityOk || quantity <= 0 || !spareOk) {
             result.message = QString("Invalid MOC requirement data "
