@@ -42,6 +42,7 @@
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -94,10 +95,21 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext, QWidget* pare
             [this](const RebrickableApiClient::ConnectionResult& result) {
                 m_testConnectionButton->setEnabled(true);
 
+                UserSettings& settings = UserSettings::instance();
+
                 if (result.success) {
-                    QMessageBox::information(this, "Rebrickable", result.message);
+                    setRebrickableConnectionStatus(ApiConnectionStatus::Connected);
+                    settings.setRebrickableConnectionPreviouslyVerified(true);
                 } else {
-                    QMessageBox::warning(this, "Rebrickable", result.message);
+                    settings.setRebrickableConnectionPreviouslyVerified(false);
+
+                    if (result.httpStatusCode == 401) {
+                        setRebrickableConnectionStatus(ApiConnectionStatus::AuthenticationFailed);
+                    } else if (result.httpStatusCode == 0) {
+                        setRebrickableConnectionStatus(ApiConnectionStatus::NetworkError);
+                    } else {
+                        setRebrickableConnectionStatus(ApiConnectionStatus::ProviderError);
+                    }
                 }
             });
 
@@ -145,8 +157,23 @@ void SettingsDialog::loadSettings()
         m_themeCombo->setCurrentIndex(themeIndex);
     }
 
-    m_apiKeyEdit->setText(settings.rebrickableApiKey());
+    m_originalRebrickableApiKey = settings.rebrickableApiKey();
+    m_apiKeyEdit->setText(m_originalRebrickableApiKey);
     m_rebrickableRequestIntervalSpin->setValue(settings.rebrickableMinimumRequestIntervalMs());
+
+    if (m_originalRebrickableApiKey.trimmed().isEmpty()) {
+        setRebrickableConnectionStatus(ApiConnectionStatus::NotConfigured);
+    } else if (settings.rebrickableConnectionPreviouslyVerified()) {
+        setRebrickableConnectionStatus(ApiConnectionStatus::Testing);
+
+        // Allow the Settings dialog to finish constructing before starting
+        // the asynchronous provider validation.
+        QTimer::singleShot(0, this, [this]() {
+            startRebrickableConnectionTest(m_apiKeyEdit->text().trimmed());
+        });
+    } else {
+        setRebrickableConnectionStatus(ApiConnectionStatus::Unknown);
+    }
 }
 
 void SettingsDialog::saveSettings()
@@ -167,7 +194,13 @@ void SettingsDialog::saveSettings()
 
     settings.setTheme(theme);
 
+    const bool rebrickableKeyChanged = (apiKey != m_originalRebrickableApiKey.trimmed());
+
     settings.setRebrickableApiKey(apiKey);
+
+    if (rebrickableKeyChanged && m_rebrickableConnectionStatus != ApiConnectionStatus::Connected) {
+        settings.setRebrickableConnectionPreviouslyVerified(false);
+    }
 
     const int rebrickableRequestIntervalMs = m_rebrickableRequestIntervalSpin->value();
     settings.setRebrickableMinimumRequestIntervalMs(rebrickableRequestIntervalMs);
@@ -301,6 +334,28 @@ QWidget* SettingsDialog::buildRebrickableApiPage(QWidget* parent)
 
     m_showApiKeyCheck = new QCheckBox("Show API key", apiGroup);
 
+    m_rebrickableStatusLabel = new QLabel(apiConnectionStatusText(ApiConnectionStatus::NotConfigured),
+                                         apiGroup);
+
+    connect(m_apiKeyEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
+        if (m_rebrickableConnectionStatus == ApiConnectionStatus::Testing)
+            return;
+
+        setRebrickableConnectionStatus(text.trimmed().isEmpty()
+                                           ? ApiConnectionStatus::NotConfigured
+                                           : ApiConnectionStatus::Unknown);
+    });
+
+    connect(m_apiKeyEdit, &QLineEdit::editingFinished, this, [this]() {
+        const QString apiKey = m_apiKeyEdit->text().trimmed();
+
+        if (!apiKey.isEmpty() && apiKey != m_originalRebrickableApiKey
+            && m_rebrickableConnectionStatus != ApiConnectionStatus::Testing
+            && m_rebrickableConnectionStatus != ApiConnectionStatus::Connected) {
+            startRebrickableConnectionTest(apiKey);
+        }
+    });
+
     m_rebrickableRequestIntervalSpin = new QSpinBox(apiGroup);
     m_rebrickableRequestIntervalSpin->setRange(UserSettings::MinimumRebrickableRequestIntervalMs,
                                                UserSettings::MaximumRebrickableRequestIntervalMs);
@@ -317,6 +372,7 @@ QWidget* SettingsDialog::buildRebrickableApiPage(QWidget* parent)
 
     apiLayout->addRow("API Key:", m_apiKeyEdit);
     apiLayout->addRow(QString(), m_showApiKeyCheck);
+    apiLayout->addRow("Connection Status:", m_rebrickableStatusLabel);
     apiLayout->addRow("Minimum Request Interval:", m_rebrickableRequestIntervalSpin);
     apiLayout->addRow(QString(), m_testConnectionButton);
 
@@ -349,12 +405,50 @@ void SettingsDialog::testRebrickableConnection()
     const QString apiKey = m_apiKeyEdit->text().trimmed();
 
     if (apiKey.isEmpty()) {
+        setRebrickableConnectionStatus(ApiConnectionStatus::NotConfigured);
         QMessageBox::warning(this, "Rebrickable", "Enter your Rebrickable API key first.");
-
         return;
     }
 
-    m_testConnectionButton->setEnabled(false);
+    startRebrickableConnectionTest(apiKey);
+}
 
-    m_rebrickableApiClient->testConnection(apiKey);
+void SettingsDialog::startRebrickableConnectionTest(const QString& apiKey)
+{
+    if (apiKey.trimmed().isEmpty())
+        return;
+
+    setRebrickableConnectionStatus(ApiConnectionStatus::Testing);
+    m_testConnectionButton->setEnabled(false);
+    m_rebrickableApiClient->testConnection(apiKey.trimmed());
+}
+
+void SettingsDialog::setRebrickableConnectionStatus(ApiConnectionStatus status)
+{
+    m_rebrickableConnectionStatus = status;
+
+    if (m_rebrickableStatusLabel)
+        m_rebrickableStatusLabel->setText(apiConnectionStatusText(status));
+}
+
+QString SettingsDialog::apiConnectionStatusText(ApiConnectionStatus status)
+{
+    switch (status) {
+    case ApiConnectionStatus::NotConfigured:
+        return QStringLiteral("Not Configured");
+    case ApiConnectionStatus::Unknown:
+        return QStringLiteral("Not Tested");
+    case ApiConnectionStatus::Testing:
+        return QStringLiteral("Testing...");
+    case ApiConnectionStatus::Connected:
+        return QStringLiteral("Connected");
+    case ApiConnectionStatus::AuthenticationFailed:
+        return QStringLiteral("Authentication Failed");
+    case ApiConnectionStatus::NetworkError:
+        return QStringLiteral("Network Error");
+    case ApiConnectionStatus::ProviderError:
+        return QStringLiteral("Provider Error");
+    }
+
+    return QStringLiteral("Unknown");
 }

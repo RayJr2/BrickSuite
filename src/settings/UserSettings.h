@@ -63,6 +63,9 @@ public:
     QString rebrickableApiKey() const;
     void setRebrickableApiKey(const QString& apiKey);
 
+    bool rebrickableConnectionPreviouslyVerified() const;
+    void setRebrickableConnectionPreviouslyVerified(bool verified);
+
     static constexpr int DefaultRebrickableRequestIntervalMs = 1250;
     static constexpr int MinimumRebrickableRequestIntervalMs = 1000;
     static constexpr int MaximumRebrickableRequestIntervalMs = 60000;

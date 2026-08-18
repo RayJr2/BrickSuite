@@ -36,6 +36,7 @@ constexpr auto kResultsPerPageKey = "ResultsPerPage";
 constexpr auto kDefaultWorkspaceIdKey = "DefaultWorkspaceId";
 
 constexpr auto kRebrickableApiKey = "ApiKey";
+constexpr auto kRebrickableConnectionPreviouslyVerifiedKey = "ConnectionPreviouslyVerified";
 
 constexpr auto kRebrickableMinimumRequestIntervalMsKey = "MinimumRequestIntervalMs";
 
@@ -178,6 +179,26 @@ void UserSettings::setRebrickableApiKey(const QString& apiKey)
 
     settings.setValue(kRebrickableApiKey, apiKey.trimmed());
 
+    settings.endGroup();
+}
+
+bool UserSettings::rebrickableConnectionPreviouslyVerified() const
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupRebrickable);
+    const bool verified = settings.value(kRebrickableConnectionPreviouslyVerifiedKey, false).toBool();
+    settings.endGroup();
+
+    return verified;
+}
+
+void UserSettings::setRebrickableConnectionPreviouslyVerified(bool verified)
+{
+    QSettings settings;
+
+    settings.beginGroup(kGroupRebrickable);
+    settings.setValue(kRebrickableConnectionPreviouslyVerifiedKey, verified);
     settings.endGroup();
 }
 

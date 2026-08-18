@@ -22,10 +22,13 @@
 
 #include <QDialog>
 
+#include "../../api/ApiConnectionStatus.h"
+
 class WorkspaceContext;
 class QComboBox;
 class QDialogButtonBox;
 class QLineEdit;
+class QLabel;
 class QCheckBox;
 class QPushButton;
 class QTabWidget;
@@ -57,6 +60,10 @@ private:
     void buildApisTab();
     QWidget* buildRebrickableApiPage(QWidget* parent);
 
+    void setRebrickableConnectionStatus(ApiConnectionStatus status);
+    static QString apiConnectionStatusText(ApiConnectionStatus status);
+    void startRebrickableConnectionTest(const QString& apiKey);
+
     void loadSettings();
     void loadWorkspaces();
 
@@ -75,9 +82,12 @@ private:
     // APIs / Rebrickable
     QTabWidget* m_apiTabWidget = nullptr;
     QLineEdit* m_apiKeyEdit = nullptr;
+    QLabel* m_rebrickableStatusLabel = nullptr;
     QCheckBox* m_showApiKeyCheck = nullptr;
     QPushButton* m_testConnectionButton = nullptr;
     QSpinBox* m_rebrickableRequestIntervalSpin = nullptr;
+    ApiConnectionStatus m_rebrickableConnectionStatus = ApiConnectionStatus::NotConfigured;
+    QString m_originalRebrickableApiKey;
 
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
 
