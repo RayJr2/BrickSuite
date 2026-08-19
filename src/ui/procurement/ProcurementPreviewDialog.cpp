@@ -18,6 +18,7 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDebug>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -520,6 +521,10 @@ bool ProcurementPreviewDialog::persistRememberedPartOverrides()
             QStringLiteral("User-confirmed BrickLink ITEMID from procurement preview.");
 
         if (!repository.upsert(mapping)) {
+            qWarning() << "Unable to save user-confirmed BrickLink ITEMID mapping."
+                       << "PartId:" << item.partId
+                       << "PartNumber:" << item.partNumber;
+
             QMessageBox::warning(
                 this,
                 QStringLiteral("BrickLink Wanted List"),
@@ -575,6 +580,10 @@ void ProcurementPreviewDialog::generateBrickLinkXml()
         writer.write(m_draft, brickLinkOptions());
 
     if (!result.success) {
+        qWarning() << "BrickLink Wanted List XML generation failed."
+                   << "BuildId:" << m_draft.buildId
+                   << "Reason:" << result.message;
+
         QMessageBox::warning(
             this,
             QStringLiteral("BrickLink Wanted List"),

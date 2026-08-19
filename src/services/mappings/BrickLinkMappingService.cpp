@@ -94,6 +94,16 @@ bool BrickLinkMappingService::storePartExternalIds(
         return true;
     }
 
+    // Reopening Part Details should not rewrite an identical provider
+    // mapping or advance modified_utc when nothing actually changed.
+    if (existing
+        && existing->status == ExternalMappingStatus::Mapped
+        && existing->source.compare(QStringLiteral("Rebrickable"),
+                                    Qt::CaseInsensitive) == 0
+        && existing->externalId.trimmed() == brickLinkIds.first()) {
+        return true;
+    }
+
     ExternalPartMapping mapping;
     mapping.partId = partId;
     mapping.provider = provider;
@@ -103,7 +113,13 @@ bool BrickLinkMappingService::storePartExternalIds(
     mapping.notes =
         QStringLiteral("Resolved from Rebrickable BrickLink external part ID.");
 
-    return repository.upsert(mapping);
+    if (!repository.upsert(mapping)) {
+        qWarning() << "Unable to store Rebrickable BrickLink external part ID."
+                   << "PartId:" << partId;
+        return false;
+    }
+
+    return true;
 }
 
 void BrickLinkMappingService::applyCatalogColors(

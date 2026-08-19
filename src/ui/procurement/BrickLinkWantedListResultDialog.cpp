@@ -7,6 +7,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QFile>
@@ -146,6 +147,10 @@ void BrickLinkWantedListResultDialog::saveXml()
     QFile file(finalFileName);
 
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        qWarning() << "Unable to save BrickLink Wanted List XML."
+                   << "File:" << finalFileName
+                   << "Reason:" << file.errorString();
+
         m_statusLabel->setText(
             QStringLiteral("Unable to save BrickLink XML."));
         return;
@@ -169,6 +174,8 @@ void BrickLinkWantedListResultDialog::openBrickLinkUpload()
         m_statusLabel->setText(
             QStringLiteral("BrickLink Wanted List upload page opened."));
     } else {
+        qWarning() << "Unable to open BrickLink Wanted List upload page.";
+
         m_statusLabel->setText(
             QStringLiteral("Unable to open the BrickLink upload page."));
     }
