@@ -38,6 +38,9 @@ struct RebrickableInventoryImportPreviewRow
 
     int inventoryRecordId = 0;
 
+    bool presentInCsv = false;
+    bool presentInBrickSuite = false;
+
     int csvQuantity = 0;
     int currentQuantity = 0;
     int resultingQuantity = 0;
@@ -51,6 +54,9 @@ struct RebrickableInventoryImportPreview
 {
     QString sourceFilePath;
     QString sourceFileName;
+
+    QString sourcePartListName;
+    QString storageDisplayName;
 
     InventoryCsvOperation operation = InventoryCsvOperation::Append;
 

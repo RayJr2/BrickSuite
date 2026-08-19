@@ -90,9 +90,10 @@ ImportInventoryDialog::ImportInventoryDialog(WorkspaceContext& workspaceContext,
         static_cast<int>(InventoryCsvOperation::CompareOnly));
 
     m_operationCombo->setToolTip(
-        QStringLiteral("Append adds CSV quantities. Replace makes CSV rows match their "
-                       "quantities. Subtract removes CSV quantities. Compare Only makes "
-                       "no inventory changes."));
+        QStringLiteral("Append adds CSV quantities. Replace makes the selected storage "
+                       "match the CSV exactly, including reducing parts absent from the CSV "
+                       "to zero. Subtract removes CSV quantities. Compare Only makes no "
+                       "inventory changes."));
 
     // Storage
     m_storageCombo = new QComboBox(this);
@@ -391,6 +392,31 @@ void ImportInventoryDialog::importFile()
         return;
     }
 
+    preview.storageDisplayName = m_storageCombo->currentText().trimmed();
+
+    if (options.operation == InventoryCsvOperation::CompareOnly) {
+        QFileInfo sourceInfo(filePath);
+        QString listName = sourceInfo.completeBaseName().trimmed();
+
+        const QString prefix = QStringLiteral("rebrickable_parts_");
+
+        if (listName.startsWith(prefix, Qt::CaseInsensitive))
+            listName = listName.mid(prefix.length());
+
+        const QRegularExpression duplicateDownloadSuffix(
+            R"(\s*\(\d+\)\s*$)");
+        listName.remove(duplicateDownloadSuffix);
+
+        listName.replace(QRegularExpression(QStringLiteral("[-_]+")),
+                         QStringLiteral(" "));
+        listName = listName.simplified();
+
+        preview.sourcePartListName =
+            listName.isEmpty()
+                ? sourceInfo.completeBaseName()
+                : listName;
+    }
+
     InventoryImportPreviewDialog previewDialog(preview, this);
 
     if (previewDialog.exec() != QDialog::Accepted)
@@ -403,6 +429,47 @@ void ImportInventoryDialog::importFile()
             QStringLiteral("Comparison completed. No BrickSuite inventory was changed."));
         accept();
         return;
+    }
+
+    if (options.operation == InventoryCsvOperation::Replace) {
+        int rowsRemoved = 0;
+        int piecesRemoved = 0;
+
+        for (const RebrickableInventoryImportPreviewRow& row : preview.rows) {
+            if (!row.presentInCsv
+                && row.presentInBrickSuite
+                && row.currentQuantity > 0) {
+                ++rowsRemoved;
+                piecesRemoved += row.currentQuantity;
+            }
+        }
+
+        QMessageBox confirm(this);
+        confirm.setIcon(QMessageBox::Warning);
+        confirm.setWindowTitle(QStringLiteral("Confirm Replace Inventory"));
+        confirm.setText(
+            QStringLiteral("Replace will make the selected BrickSuite storage location "
+                           "match this CSV exactly."));
+        confirm.setInformativeText(
+            QStringLiteral("Parts/colors currently in \"%1\" but absent from the CSV "
+                           "will be reduced to zero.\n\n"
+                           "Storage-only rows to zero: %2\n"
+                           "Pieces removed from those rows: %3\n\n"
+                           "Continue with Replace?")
+                .arg(preview.storageDisplayName)
+                .arg(rowsRemoved)
+                .arg(piecesRemoved));
+
+        QPushButton* replaceButton =
+            confirm.addButton(QStringLiteral("Replace Inventory"),
+                              QMessageBox::AcceptRole);
+        confirm.addButton(QMessageBox::Cancel);
+        confirm.setDefaultButton(QMessageBox::Cancel);
+
+        confirm.exec();
+
+        if (confirm.clickedButton() != replaceButton)
+            return;
     }
 
     if (!importer.importPreview(preview, options, result)) {

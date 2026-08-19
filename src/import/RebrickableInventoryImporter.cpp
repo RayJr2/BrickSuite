@@ -30,6 +30,7 @@
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QSet>
 #include <QTextStream>
 #include <QtGlobal>
 
@@ -320,6 +321,7 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
         ++preview.rowsProcessed;
 
         RebrickableInventoryImportPreviewRow previewRow;
+        previewRow.presentInCsv = true;
 
         const QStringList fields = parseCsvLine(line);
 
@@ -473,6 +475,7 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
             if (query.next()) {
                 previewRow.inventoryRecordId = query.value("id").toInt();
                 previewRow.currentQuantity = query.value("quantity").toInt();
+                previewRow.presentInBrickSuite = previewRow.currentQuantity > 0;
             }
         }
 
@@ -532,9 +535,9 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
             if (previewRow.difference == 0) {
                 previewRow.status = QStringLiteral("Match");
             } else if (previewRow.difference > 0) {
-                previewRow.status = QStringLiteral("BrickSuite Higher");
+                previewRow.status = QStringLiteral("Append to Rebrickable");
             } else {
-                previewRow.status = QStringLiteral("Rebrickable Higher");
+                previewRow.status = QStringLiteral("Subtract from Rebrickable");
             }
             break;
         }
@@ -546,6 +549,114 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
         preview.totalCsvQuantity += previewRow.csvQuantity;
 
         preview.rows.append(previewRow);
+    }
+
+    //
+    // Compare Only and Replace reconcile the complete union of:
+    //   - rows represented by the Rebrickable CSV
+    //   - rows currently stored in the selected BrickSuite location
+    //
+    // Compare Only needs the union to detect BrickSuite-only inventory.
+    // Replace needs the same union so inventory absent from the CSV can be
+    // reduced to zero, making the selected storage match the CSV exactly.
+    //
+    if (options.operation == InventoryCsvOperation::CompareOnly
+        || options.operation == InventoryCsvOperation::Replace) {
+        QSet<QString> representedKeys;
+
+        for (const RebrickableInventoryImportPreviewRow& row : preview.rows) {
+            if (row.partId <= 0 || row.colorId <= 0)
+                continue;
+
+            representedKeys.insert(
+                QStringLiteral("%1:%2").arg(row.partId).arg(row.colorId));
+        }
+
+        QSqlQuery inventoryQuery(m_database);
+
+        inventoryQuery.prepare(R"(
+            SELECT
+                ir.id AS inventory_record_id,
+                ir.part_id,
+                ir.color_id,
+                ir.quantity,
+                p.rebrickable_part_id,
+                p.name AS part_name,
+                c.rebrickable_id AS rebrickable_color_id,
+                c.name AS color_name
+            FROM inventory_record ir
+            INNER JOIN part p
+                ON p.id = ir.part_id
+            INNER JOIN color c
+                ON c.id = ir.color_id
+            WHERE ir.workspace_id = :workspace_id
+              AND ir.storage_location_id = :storage_location_id
+              AND ir.condition = :condition
+              AND ir.ownership_type = :ownership_type
+              AND ir.quantity > 0
+            ORDER BY p.rebrickable_part_id, c.name
+        )");
+
+        inventoryQuery.bindValue(":workspace_id", options.workspaceId);
+        inventoryQuery.bindValue(":storage_location_id", options.storageLocationId);
+        inventoryQuery.bindValue(":condition", options.condition.trimmed());
+        inventoryQuery.bindValue(":ownership_type", options.ownershipType.trimmed());
+
+        if (!inventoryQuery.exec()) {
+            qCritical() << "Unable to query selected BrickSuite storage for comparison:"
+                        << inventoryQuery.lastError().text();
+            return false;
+        }
+
+        while (inventoryQuery.next()) {
+            const int partId = inventoryQuery.value("part_id").toInt();
+            const int colorId = inventoryQuery.value("color_id").toInt();
+
+            const QString key =
+                QStringLiteral("%1:%2").arg(partId).arg(colorId);
+
+            if (representedKeys.contains(key))
+                continue;
+
+            RebrickableInventoryImportPreviewRow row;
+
+            row.partId = partId;
+            row.colorId = colorId;
+            row.inventoryRecordId =
+                inventoryQuery.value("inventory_record_id").toInt();
+
+            row.partNumber =
+                inventoryQuery.value("rebrickable_part_id").toString();
+            row.partName =
+                inventoryQuery.value("part_name").toString();
+
+            row.rebrickableColorId =
+                inventoryQuery.value("rebrickable_color_id").toInt();
+            row.colorName =
+                inventoryQuery.value("color_name").toString();
+
+            row.presentInCsv = false;
+            row.presentInBrickSuite = true;
+
+            row.csvQuantity = 0;
+            row.currentQuantity =
+                inventoryQuery.value("quantity").toInt();
+
+            if (options.operation == InventoryCsvOperation::CompareOnly) {
+                row.resultingQuantity = row.currentQuantity;
+                row.difference = row.currentQuantity;
+                row.status = QStringLiteral("Append to Rebrickable");
+            } else {
+                row.resultingQuantity = 0;
+                row.difference = -row.currentQuantity;
+                row.status = QStringLiteral("Replace Remove");
+            }
+
+            preview.rows.append(row);
+            ++preview.validRows;
+
+            representedKeys.insert(key);
+        }
     }
 
     qInfo() << "Rebrickable inventory preview completed."

@@ -20,8 +20,10 @@
 
 #include "InventoryImportPreviewDialog.h"
 
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QHeaderView>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QTableWidget>
@@ -40,7 +42,17 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
 
     auto* mainLayout = new QVBoxLayout(this);
 
+    m_scopeLabel = new QLabel(this);
+    m_scopeLabel->setWordWrap(true);
+
     m_summaryLabel = new QLabel(this);
+    m_summaryLabel->setWordWrap(true);
+
+    if (m_preview.operation == InventoryCsvOperation::CompareOnly) {
+        m_scopeLabel->setText(QStringLiteral("<b>Comparing:</b> Rebrickable Part List \"%1\" "
+                                             "↔ BrickSuite \"%2\"")
+                                  .arg(m_preview.sourcePartListName, m_preview.storageDisplayName));
+    }
 
     m_table = new QTableWidget(this);
 
@@ -63,15 +75,31 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
         break;
     }
 
+    QString csvColumn = QStringLiteral("CSV Qty");
+    QString currentColumn = QStringLiteral("Current Qty");
+    QString statusColumn = QStringLiteral("Status");
+
+    if (m_preview.operation == InventoryCsvOperation::CompareOnly) {
+        csvColumn = QStringLiteral("Rebrickable Qty");
+        currentColumn = QStringLiteral("BrickSuite Qty");
+        statusColumn = QStringLiteral("Action");
+    }
+
     m_table->setHorizontalHeaderLabels(QStringList() << "Part #"
                                                      << "Name"
                                                      << "Color"
-                                                     << "CSV Qty"
-                                                     << "Current Qty"
+                                                     << csvColumn
+                                                     << currentColumn
                                                      << resultColumn
                                                      << "Difference"
-                                                     << "Status"
+                                                     << statusColumn
                                                      << "Error");
+
+    if (m_preview.operation == InventoryCsvOperation::CompareOnly) {
+        // Result Qty is identical to BrickSuite Qty in a non-mutating compare.
+        m_table->setColumnHidden(5, true);
+        m_table->setColumnHidden(8, true);
+    }
 
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
@@ -121,6 +149,34 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
 
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
+    if (m_preview.operation == InventoryCsvOperation::CompareOnly) {
+        mainLayout->addWidget(m_scopeLabel);
+
+        auto* filterLayout = new QHBoxLayout();
+        filterLayout->addWidget(new QLabel(QStringLiteral("Show:"), this));
+
+        m_filterCombo = new QComboBox(this);
+        m_filterCombo->addItem(QStringLiteral("Differences Only"),
+                               QStringLiteral("Differences"));
+        m_filterCombo->addItem(QStringLiteral("All"),
+                               QStringLiteral("All"));
+        m_filterCombo->addItem(QStringLiteral("Append to Rebrickable"),
+                               QStringLiteral("Append"));
+        m_filterCombo->addItem(QStringLiteral("Subtract from Rebrickable"),
+                               QStringLiteral("Subtract"));
+        m_filterCombo->addItem(QStringLiteral("Matches"),
+                               QStringLiteral("Match"));
+
+        filterLayout->addWidget(m_filterCombo);
+        filterLayout->addStretch(1);
+        mainLayout->addLayout(filterLayout);
+
+        connect(m_filterCombo,
+                &QComboBox::currentIndexChanged,
+                this,
+                &InventoryImportPreviewDialog::applyCompareFilter);
+    }
+
     mainLayout->addWidget(m_summaryLabel);
 
     mainLayout->addWidget(m_table);
@@ -129,10 +185,57 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
 
     populateSummary();
     populateTable();
+
+    if (m_preview.operation == InventoryCsvOperation::CompareOnly)
+        applyCompareFilter();
 }
 
 void InventoryImportPreviewDialog::populateSummary()
 {
+    if (m_preview.operation == InventoryCsvOperation::CompareOnly) {
+        int matches = 0;
+        int appendRows = 0;
+        int appendPieces = 0;
+        int subtractRows = 0;
+        int subtractPieces = 0;
+        int comparedRows = 0;
+        int errorRows = 0;
+
+        for (const RebrickableInventoryImportPreviewRow& row : m_preview.rows) {
+            if (row.status == QStringLiteral("Error")) {
+                ++errorRows;
+                continue;
+            }
+
+            ++comparedRows;
+
+            if (row.difference > 0) {
+                ++appendRows;
+                appendPieces += row.difference;
+            } else if (row.difference < 0) {
+                ++subtractRows;
+                subtractPieces += -row.difference;
+            } else {
+                ++matches;
+            }
+        }
+
+        m_summaryLabel->setText(
+            QStringLiteral(
+                "Compared rows: %1    Matches: %2    "
+                "Append to Rebrickable: %3 rows / %4 pieces    "
+                "Subtract from Rebrickable: %5 rows / %6 pieces    "
+                "Errors: %7")
+                .arg(comparedRows)
+                .arg(matches)
+                .arg(appendRows)
+                .arg(appendPieces)
+                .arg(subtractRows)
+                .arg(subtractPieces)
+                .arg(errorRows));
+        return;
+    }
+
     m_summaryLabel->setText(
         QString("Operation: %1\n"
                 "File: %2\n"
@@ -180,3 +283,39 @@ void InventoryImportPreviewDialog::populateTable()
         ++row;
     }
 }
+
+
+void InventoryImportPreviewDialog::applyCompareFilter()
+{
+    if (m_preview.operation != InventoryCsvOperation::CompareOnly
+        || !m_filterCombo) {
+        return;
+    }
+
+    const QString filter =
+        m_filterCombo->currentData().toString();
+
+    for (int rowIndex = 0;
+         rowIndex < m_preview.rows.size();
+         ++rowIndex) {
+        const RebrickableInventoryImportPreviewRow& row =
+            m_preview.rows.at(rowIndex);
+
+        bool show = true;
+
+        if (row.status == QStringLiteral("Error")) {
+            show = true;
+        } else if (filter == QStringLiteral("Differences")) {
+            show = row.difference != 0;
+        } else if (filter == QStringLiteral("Append")) {
+            show = row.difference > 0;
+        } else if (filter == QStringLiteral("Subtract")) {
+            show = row.difference < 0;
+        } else if (filter == QStringLiteral("Match")) {
+            show = row.difference == 0;
+        }
+
+        m_table->setRowHidden(rowIndex, !show);
+    }
+}
+

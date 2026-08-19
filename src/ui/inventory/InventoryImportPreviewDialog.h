@@ -24,6 +24,7 @@
 
 #include "../../import/RebrickableInventoryImportPreview.h"
 
+class QComboBox;
 class QLabel;
 class QTableWidget;
 class QDialogButtonBox;
@@ -39,10 +40,13 @@ public:
 private:
     void populateSummary();
     void populateTable();
+    void applyCompareFilter();
 
     RebrickableInventoryImportPreview m_preview;
 
+    QLabel* m_scopeLabel = nullptr;
     QLabel* m_summaryLabel = nullptr;
+    QComboBox* m_filterCombo = nullptr;
     QTableWidget* m_table = nullptr;
     QDialogButtonBox* m_buttonBox = nullptr;
 };
