@@ -1,0 +1,430 @@
+/*
+ * BrickSuite - The Digital Twin Platform for Your Brick Workshop
+ *
+ * Copyright (C) 2026 RF StateSide, LLC
+ */
+#include "ProcurementPreviewDialog.h"
+
+#include "../../api/ApiProvider.h"
+#include "../../models/Color.h"
+#include "../../models/ExternalColorMapping.h"
+#include "../../repositories/ColorRepository.h"
+#include "../../repositories/ExternalColorMappingRepository.h"
+
+#include <QAbstractItemView>
+#include <QComboBox>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
+#include <QTableWidget>
+#include <QTableWidgetItem>
+#include <QVBoxLayout>
+
+#include <algorithm>
+
+namespace
+{
+constexpr int PartNumberColumn = 0;
+constexpr int PartNameColumn = 1;
+constexpr int ItemIdColumn = 2;
+constexpr int SourceColorColumn = 3;
+constexpr int BrickLinkColorColumn = 4;
+constexpr int QuantityColumn = 5;
+constexpr int PartStatusColumn = 6;
+constexpr int ColorStatusColumn = 7;
+constexpr int ExportStatusColumn = 8;
+}
+
+ProcurementPreviewDialog::ProcurementPreviewDialog(
+    const ProcurementDraft& draft,
+    QWidget* parent)
+    : QDialog(parent)
+    , m_draft(draft)
+{
+    setWindowTitle(QStringLiteral("Missing Parts Procurement Preview"));
+    resize(1220, 720);
+
+    buildUi();
+    populateRows();
+    updateSummary();
+}
+
+const ProcurementDraft& ProcurementPreviewDialog::draft() const
+{
+    return m_draft;
+}
+
+BrickLinkWantedListOptions ProcurementPreviewDialog::brickLinkOptions() const
+{
+    BrickLinkWantedListOptions options;
+
+    options.condition = m_conditionCombo->currentData().toString();
+    options.notify = m_notifyCombo->currentData().toString();
+    options.wantedShow = m_wantedShowCombo->currentData().toString();
+    options.remarksMode = m_remarksCombo->currentData().toString();
+    options.customRemarks = m_customRemarksEdit->text().trimmed();
+
+    return options;
+}
+
+void ProcurementPreviewDialog::buildUi()
+{
+    auto* mainLayout = new QVBoxLayout(this);
+
+    auto* heading = new QLabel(
+        QStringLiteral("<b>Target: BrickLink Wanted List</b>"),
+        this);
+    mainLayout->addWidget(heading);
+
+    m_buildLabel = new QLabel(this);
+    m_buildLabel->setWordWrap(true);
+
+    QString buildIdentity = m_draft.buildName;
+
+    if (!m_draft.buildNumber.trimmed().isEmpty()) {
+        buildIdentity =
+            QStringLiteral("%1 — %2")
+                .arg(m_draft.buildNumber.trimmed(), m_draft.buildName);
+    }
+
+    m_buildLabel->setText(
+        QStringLiteral("Build: %1    Type: %2")
+            .arg(buildIdentity, m_draft.buildType));
+    mainLayout->addWidget(m_buildLabel);
+
+    m_summaryLabel = new QLabel(this);
+    mainLayout->addWidget(m_summaryLabel);
+
+    auto* optionsGroup = new QGroupBox(
+        QStringLiteral("BrickLink Wanted List Optional Fields"),
+        this);
+    auto* optionsLayout = new QFormLayout(optionsGroup);
+
+    m_conditionCombo = new QComboBox(optionsGroup);
+    m_conditionCombo->addItem(QStringLiteral("Do not include"), QString());
+    m_conditionCombo->addItem(QStringLiteral("New"), QStringLiteral("N"));
+    m_conditionCombo->addItem(QStringLiteral("Used"), QStringLiteral("U"));
+
+    m_notifyCombo = new QComboBox(optionsGroup);
+    m_notifyCombo->addItem(QStringLiteral("Do not include"), QString());
+    m_notifyCombo->addItem(QStringLiteral("Yes"), QStringLiteral("Y"));
+    m_notifyCombo->addItem(QStringLiteral("No"), QStringLiteral("N"));
+
+    m_wantedShowCombo = new QComboBox(optionsGroup);
+    m_wantedShowCombo->addItem(QStringLiteral("Do not include"), QString());
+    m_wantedShowCombo->addItem(QStringLiteral("Yes"), QStringLiteral("Y"));
+    m_wantedShowCombo->addItem(QStringLiteral("No"), QStringLiteral("N"));
+
+    m_remarksCombo = new QComboBox(optionsGroup);
+    m_remarksCombo->addItem(QStringLiteral("Do not include"), QString());
+    m_remarksCombo->addItem(QStringLiteral("Use build name"),
+                            QStringLiteral("BuildName"));
+    m_remarksCombo->addItem(QStringLiteral("Custom..."),
+                            QStringLiteral("Custom"));
+
+    m_customRemarksEdit = new QLineEdit(optionsGroup);
+    m_customRemarksEdit->setPlaceholderText(
+        QStringLiteral("Remarks to include on each BrickLink item"));
+    m_customRemarksEdit->setVisible(false);
+
+    optionsLayout->addRow(QStringLiteral("Condition:"), m_conditionCombo);
+    optionsLayout->addRow(QStringLiteral("Notify:"), m_notifyCombo);
+    optionsLayout->addRow(QStringLiteral("Wanted Show:"), m_wantedShowCombo);
+    optionsLayout->addRow(QStringLiteral("Remarks:"), m_remarksCombo);
+    optionsLayout->addRow(QStringLiteral("Custom Remarks:"), m_customRemarksEdit);
+
+    connect(m_remarksCombo,
+            &QComboBox::currentIndexChanged,
+            this,
+            [this]() {
+                const bool custom =
+                    m_remarksCombo->currentData().toString()
+                    == QStringLiteral("Custom");
+                m_customRemarksEdit->setVisible(custom);
+            });
+
+    mainLayout->addWidget(optionsGroup);
+
+    auto* note = new QLabel(
+        QStringLiteral("BrickLink ITEMID and color changes made here are "
+                       "session-only procurement overrides. They do not change "
+                       "BrickSuite provider mappings."),
+        this);
+    note->setWordWrap(true);
+    mainLayout->addWidget(note);
+
+    m_table = new QTableWidget(this);
+    m_table->setColumnCount(9);
+    m_table->setHorizontalHeaderLabels({
+        QStringLiteral("Part Number"),
+        QStringLiteral("Part Name"),
+        QStringLiteral("BrickLink ITEMID"),
+        QStringLiteral("BrickSuite Color"),
+        QStringLiteral("BrickLink Color"),
+        QStringLiteral("Missing Qty"),
+        QStringLiteral("Part Status"),
+        QStringLiteral("Color Status"),
+        QStringLiteral("Export Status")
+    });
+
+    m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_table->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_table->setAlternatingRowColors(true);
+    m_table->verticalHeader()->setVisible(false);
+
+    m_table->horizontalHeader()->setSectionResizeMode(
+        PartNumberColumn, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(
+        PartNameColumn, QHeaderView::Stretch);
+    m_table->horizontalHeader()->setSectionResizeMode(
+        ItemIdColumn, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(
+        SourceColorColumn, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(
+        BrickLinkColorColumn, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(
+        QuantityColumn, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(
+        PartStatusColumn, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(
+        ColorStatusColumn, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(
+        ExportStatusColumn, QHeaderView::ResizeToContents);
+
+    mainLayout->addWidget(m_table, 1);
+
+    auto* buttons =
+        new QDialogButtonBox(QDialogButtonBox::Close, this);
+    connect(buttons,
+            &QDialogButtonBox::rejected,
+            this,
+            &QDialog::reject);
+    mainLayout->addWidget(buttons);
+}
+
+QList<ProcurementPreviewDialog::BrickLinkColorChoice>
+ProcurementPreviewDialog::loadMappedBrickLinkColors() const
+{
+    QList<BrickLinkColorChoice> choices;
+
+    ExternalColorMappingRepository mappingRepository;
+    ColorRepository colorRepository;
+
+    const QList<ExternalColorMapping> mappings =
+        mappingRepository.getByProvider(
+            apiProviderName(ApiProvider::BrickLink));
+
+    for (const ExternalColorMapping& mapping : mappings) {
+        if (mapping.status != ExternalMappingStatus::Mapped
+            || mapping.externalId.trimmed().isEmpty()) {
+            continue;
+        }
+
+        const auto color = colorRepository.getById(mapping.colorId);
+
+        if (!color)
+            continue;
+
+        BrickLinkColorChoice choice;
+        choice.externalId = mapping.externalId.trimmed();
+        choice.displayName =
+            QStringLiteral("%1 (%2)")
+                .arg(color->name(), choice.externalId);
+
+        choices.append(choice);
+    }
+
+    std::sort(
+        choices.begin(),
+        choices.end(),
+        [](const BrickLinkColorChoice& left,
+           const BrickLinkColorChoice& right) {
+            return left.displayName.compare(
+                       right.displayName,
+                       Qt::CaseInsensitive) < 0;
+        });
+
+    return choices;
+}
+
+void ProcurementPreviewDialog::populateRows()
+{
+    const QList<BrickLinkColorChoice> mappedColors =
+        loadMappedBrickLinkColors();
+
+    m_table->setRowCount(m_draft.items.size());
+
+    for (int row = 0; row < m_draft.items.size(); ++row) {
+        ProcurementItem& item = m_draft.items[row];
+
+        m_table->setItem(
+            row,
+            PartNumberColumn,
+            new QTableWidgetItem(item.partNumber));
+
+        m_table->setItem(
+            row,
+            PartNameColumn,
+            new QTableWidgetItem(item.partName));
+
+        auto* itemIdEdit = new QLineEdit(m_table);
+        itemIdEdit->setText(item.resolvedItemId);
+        itemIdEdit->setPlaceholderText(
+            QStringLiteral("Enter BrickLink ITEMID"));
+        m_table->setCellWidget(row, ItemIdColumn, itemIdEdit);
+
+        m_table->setItem(
+            row,
+            SourceColorColumn,
+            new QTableWidgetItem(item.colorName));
+
+        auto* colorCombo = new QComboBox(m_table);
+        colorCombo->addItem(
+            QStringLiteral("Unknown — Select BrickLink Color..."),
+            QString());
+
+        int selectedColorIndex = 0;
+
+        for (const BrickLinkColorChoice& choice : mappedColors) {
+            colorCombo->addItem(choice.displayName, choice.externalId);
+
+            if (item.resolvedColorReady
+                && choice.externalId == item.resolvedColorId) {
+                selectedColorIndex = colorCombo->count() - 1;
+            }
+        }
+
+        colorCombo->setCurrentIndex(selectedColorIndex);
+        m_table->setCellWidget(row, BrickLinkColorColumn, colorCombo);
+
+        m_table->setItem(
+            row,
+            QuantityColumn,
+            new QTableWidgetItem(QString::number(item.quantityNeeded)));
+
+        m_table->setItem(
+            row,
+            PartStatusColumn,
+            new QTableWidgetItem(item.resolvedItemStatus));
+
+        m_table->setItem(
+            row,
+            ColorStatusColumn,
+            new QTableWidgetItem(item.resolvedColorStatus));
+
+        m_table->setItem(
+            row,
+            ExportStatusColumn,
+            new QTableWidgetItem(QString()));
+
+        connect(itemIdEdit,
+                &QLineEdit::textChanged,
+                this,
+                [this, row](const QString& text) {
+                    ProcurementItem& changed = m_draft.items[row];
+
+                    const QString trimmed = text.trimmed();
+
+                    if (trimmed == changed.resolvedItemId.trimmed()) {
+                        changed.itemOverride.clear();
+                    } else {
+                        changed.itemOverride = trimmed;
+                    }
+
+                    updatePartRow(row);
+                    updateRowStatus(row);
+                    updateSummary();
+                });
+
+        connect(colorCombo,
+                &QComboBox::currentIndexChanged,
+                this,
+                [this, row, colorCombo](int) {
+                    ProcurementItem& changed = m_draft.items[row];
+
+                    const QString selectedId =
+                        colorCombo->currentData().toString().trimmed();
+
+                    if (!selectedId.isEmpty()
+                        && changed.resolvedColorReady
+                        && selectedId == changed.resolvedColorId) {
+                        changed.colorOverrideId.clear();
+                        changed.colorOverrideName.clear();
+                    } else if (!selectedId.isEmpty()) {
+                        changed.colorOverrideId = selectedId;
+                        changed.colorOverrideName =
+                            colorCombo->currentText();
+                    } else {
+                        changed.colorOverrideId.clear();
+                        changed.colorOverrideName.clear();
+                    }
+
+                    updateColorRow(row);
+                    updateRowStatus(row);
+                    updateSummary();
+                });
+
+        updatePartRow(row);
+        updateColorRow(row);
+        updateRowStatus(row);
+    }
+}
+
+void ProcurementPreviewDialog::updatePartRow(int row)
+{
+    if (row < 0 || row >= m_draft.items.size())
+        return;
+
+    const ProcurementItem& item = m_draft.items.at(row);
+
+    QString status = item.resolvedItemStatus;
+
+    if (!item.itemOverride.trimmed().isEmpty())
+        status = QStringLiteral("Session Override");
+
+    m_table->item(row, PartStatusColumn)->setText(status);
+}
+
+void ProcurementPreviewDialog::updateColorRow(int row)
+{
+    if (row < 0 || row >= m_draft.items.size())
+        return;
+
+    const ProcurementItem& item = m_draft.items.at(row);
+
+    QString status = item.resolvedColorStatus;
+
+    if (!item.colorOverrideId.trimmed().isEmpty())
+        status = QStringLiteral("Override");
+
+    m_table->item(row, ColorStatusColumn)->setText(status);
+}
+
+void ProcurementPreviewDialog::updateRowStatus(int row)
+{
+    if (row < 0 || row >= m_draft.items.size())
+        return;
+
+    const ProcurementItem& item = m_draft.items.at(row);
+
+    m_table->item(row, ExportStatusColumn)
+        ->setText(item.ready()
+                      ? QStringLiteral("Ready")
+                      : QStringLiteral("Needs Review"));
+}
+
+void ProcurementPreviewDialog::updateSummary()
+{
+    m_summaryLabel->setText(
+        QStringLiteral(
+            "Missing pieces: %1    Unique items: %2    "
+            "Ready: %3    Needs Review: %4")
+            .arg(m_draft.totalMissingPieces())
+            .arg(m_draft.items.size())
+            .arg(m_draft.readyRows())
+            .arg(m_draft.reviewRows()));
+}

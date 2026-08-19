@@ -186,6 +186,12 @@ qt_add_executable(BrickSuite
     src/ui/builds/DisassembleSetDialog.h
     src/ui/builds/DisassembleSetDialog.cpp
     src/services/builds/MissingPartsService.cpp src/services/builds/MissingPartsService.h
+    src/models/procurement/ProcurementDraft.h
+    src/models/procurement/BrickLinkWantedListOptions.h
+    src/services/procurement/ProcurementDraftService.h
+    src/services/procurement/ProcurementDraftService.cpp
+    src/ui/procurement/ProcurementPreviewDialog.h
+    src/ui/procurement/ProcurementPreviewDialog.cpp
     src/services/sets/SetDetailsProviderService.h
     src/services/sets/SetDetailsProviderService.cpp
     src/services/mappings/BrickLinkMappingService.h

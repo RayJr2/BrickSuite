@@ -72,6 +72,7 @@ private:
     void importPullList();
     void importMocPartsCsv();
     void exportMissingParts();
+    void procureMissingParts();
 
     WorkspaceContext& m_workspaceContext;
 
@@ -104,6 +105,7 @@ private:
     QPushButton* m_importMocPartsButton = nullptr;
     QPushButton* m_allocateAvailableButton = nullptr;
     QPushButton* m_exportMissingPartsButton = nullptr;
+    QPushButton* m_procureMissingPartsButton = nullptr;
     QPushButton* m_exportPullListButton = nullptr;
     QPushButton* m_importPullListButton = nullptr;
 

@@ -48,6 +48,8 @@
 
 #include "../../import/RebrickableMocCsvImporter.h"
 #include "../../services/builds/MissingPartsService.h"
+#include "../../services/procurement/ProcurementDraftService.h"
+#include "../../ui/procurement/ProcurementPreviewDialog.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
 
@@ -305,6 +307,8 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_exportMissingPartsButton = new QPushButton("Export Missing Parts CSV", requirementsGroup);
 
+    m_procureMissingPartsButton = new QPushButton("Procure Missing Parts...", requirementsGroup);
+
     m_exportPullListButton = new QPushButton("Export Pull List CSV", requirementsGroup);
     m_importPullListButton = new QPushButton("Import Pull List CSV", requirementsGroup);
 
@@ -317,6 +321,8 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     requirementsHeaderLayout->addWidget(m_allocateAvailableButton);
 
     requirementsHeaderLayout->addWidget(m_exportMissingPartsButton);
+
+    requirementsHeaderLayout->addWidget(m_procureMissingPartsButton);
 
     requirementsHeaderLayout->addWidget(m_exportPullListButton);
 
@@ -489,6 +495,11 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
             &QPushButton::clicked,
             this,
             &BuildsWidget::exportMissingParts);
+
+    connect(m_procureMissingPartsButton,
+            &QPushButton::clicked,
+            this,
+            &BuildsWidget::procureMissingParts);
 
     connect(m_exportPullListButton, &QPushButton::clicked, this, &BuildsWidget::exportPullList);
     connect(m_importPullListButton, &QPushButton::clicked, this, &BuildsWidget::importPullList);
@@ -2068,6 +2079,7 @@ void BuildsWidget::updateRequirementUiState()
     bool canAllocateAvailable = false;
     bool canExportPullList = false;
     bool canExportMissingParts = false;
+    bool canProcureMissingParts = false;
     bool canImportMoc = false;
 
     if (enabled) {
@@ -2085,6 +2097,7 @@ void BuildsWidget::updateRequirementUiState()
             canExportPullList = build->inventoryMode() == "Stock";
 
             canExportMissingParts = build->inventoryMode() == "Stock";
+            canProcureMissingParts = build->inventoryMode() == "Stock";
         }
     }
 
@@ -2097,6 +2110,8 @@ void BuildsWidget::updateRequirementUiState()
     m_importMocPartsButton->setEnabled(canImportMoc);
 
     m_exportMissingPartsButton->setEnabled(canExportMissingParts);
+
+    m_procureMissingPartsButton->setEnabled(canProcureMissingParts);
 
     m_loadSetFromRebrickableButton->setEnabled(canLoadSet);
 }
@@ -2332,6 +2347,40 @@ void BuildsWidget::selectBuild(int buildId)
 
         return;
     }
+}
+
+void BuildsWidget::procureMissingParts()
+{
+    if (m_selectedBuildId <= 0) {
+        QMessageBox::warning(this,
+                             "Procure Missing Parts",
+                             "Select a Build first.");
+        return;
+    }
+
+    ProcurementDraftService service;
+
+    const ProcurementDraftService::Result result =
+        service.createBrickLinkDraft(
+            m_workspaceContext.currentWorkspaceId(),
+            m_selectedBuildId);
+
+    if (!result.success) {
+        QMessageBox::critical(this,
+                              "Procure Missing Parts",
+                              result.message);
+        return;
+    }
+
+    if (result.draft.items.isEmpty()) {
+        QMessageBox::information(this,
+                                 "Procure Missing Parts",
+                                 result.message);
+        return;
+    }
+
+    ProcurementPreviewDialog dialog(result.draft, this);
+    dialog.exec();
 }
 
 void BuildsWidget::exportMissingParts()
