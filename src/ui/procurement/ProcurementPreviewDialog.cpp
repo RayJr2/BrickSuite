@@ -373,20 +373,29 @@ void ProcurementPreviewDialog::populateRows()
 
                     if (trimmed == changed.resolvedItemId.trimmed()) {
                         changed.itemOverride.clear();
+                        changed.itemOverrideActive = false;
                         changed.rememberItemOverride = false;
                         rememberCheck->setChecked(false);
                         rememberCheck->setEnabled(false);
                     } else {
+                        // A deliberate edit is an override even when the user
+                        // clears the field. This keeps an empty ITEMID from
+                        // silently falling back to the resolved provider ID.
                         changed.itemOverride = trimmed;
+                        changed.itemOverrideActive = true;
 
                         const bool usableOverride = !trimmed.isEmpty();
                         rememberCheck->setEnabled(usableOverride);
 
-                        // Remember is the normal behavior for a deliberate
-                        // provider-ID correction, while still allowing the
-                        // user to uncheck it for a one-time procurement edit.
-                        if (usableOverride && !rememberCheck->isChecked())
+                        if (!usableOverride) {
+                            changed.rememberItemOverride = false;
+                            rememberCheck->setChecked(false);
+                        } else if (!rememberCheck->isChecked()) {
+                            // Remember is the normal behavior for a deliberate
+                            // provider-ID correction, while still allowing the
+                            // user to uncheck it for a one-time procurement edit.
                             rememberCheck->setChecked(true);
+                        }
                     }
 
                     updatePartRow(row);
@@ -447,8 +456,11 @@ void ProcurementPreviewDialog::updatePartRow(int row)
 
     QString status = item.resolvedItemStatus;
 
-    if (!item.itemOverride.trimmed().isEmpty())
-        status = QStringLiteral("Session Override");
+    if (item.itemOverrideActive) {
+        status = item.itemOverride.trimmed().isEmpty()
+                     ? QStringLiteral("Needs Review")
+                     : QStringLiteral("Session Override");
+    }
 
     m_table->item(row, PartStatusColumn)->setText(status);
 }
@@ -537,6 +549,7 @@ bool ProcurementPreviewDialog::persistRememberedPartOverrides()
         item.resolvedItemStatus = QStringLiteral("User Override");
         item.resolvedItemReady = true;
         item.itemOverride.clear();
+        item.itemOverrideActive = false;
         item.rememberItemOverride = false;
 
         if (row < m_rememberPartOverrideChecks.size()) {

@@ -29,6 +29,7 @@ struct ProcurementItem
 
     // Session-only preview overrides. These do not update provider mappings.
     QString itemOverride;
+    bool itemOverrideActive = false;
     bool rememberItemOverride = false;
 
     QString colorOverrideId;
@@ -36,9 +37,9 @@ struct ProcurementItem
 
     QString effectiveItemId() const
     {
-        return itemOverride.trimmed().isEmpty()
-                   ? resolvedItemId.trimmed()
-                   : itemOverride.trimmed();
+        return itemOverrideActive
+                   ? itemOverride.trimmed()
+                   : resolvedItemId.trimmed();
     }
 
     QString effectiveColorId() const
@@ -50,8 +51,11 @@ struct ProcurementItem
 
     bool itemReady() const
     {
-        return !effectiveItemId().isEmpty()
-               && (resolvedItemReady || !itemOverride.trimmed().isEmpty());
+        if (itemOverrideActive)
+            return !itemOverride.trimmed().isEmpty();
+
+        return resolvedItemReady
+               && !resolvedItemId.trimmed().isEmpty();
     }
 
     bool colorReady() const
