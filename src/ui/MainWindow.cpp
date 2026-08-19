@@ -22,6 +22,8 @@
 
 #include "about/AboutDialog.h"
 #include "help/HelpManager.h"
+#include "mappings/BrickLinkColorMappingStatusDialog.h"
+#include "mappings/BrickLinkPartMappingTestDialog.h"
 #include "logging/LogViewerDialog.h"
 
 #include "../app/WorkspaceContext.h"
@@ -41,6 +43,7 @@
 #include "../api/brickset/BricksetService.h"
 #include "../services/images/BackgroundPartColorImageCacheService.h"
 #include "../services/images/PartImageService.h"
+#include "../services/mappings/BrickLinkMappingService.h"
 
 #include "../settings/UserSettings.h"
 
@@ -565,6 +568,90 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     auto* bricksetSetDetailsAction = bricksetMenu->addAction("Set Details");
 
     auto* bricksetKeyUsageAction = bricksetMenu->addAction("Key Usage Stats");
+
+    auto* brickLinkMenu = testMenu->addMenu("BrickLink Export");
+
+    auto* refreshBrickLinkColorMappingsAction =
+        brickLinkMenu->addAction("Refresh Color Mappings from Rebrickable");
+
+    auto* viewBrickLinkColorMappingStatusAction =
+        brickLinkMenu->addAction("View Color Mapping Status");
+
+    auto* testBrickLinkPartResolverAction =
+        brickLinkMenu->addAction("Test Part Number Resolver");
+
+    connect(testBrickLinkPartResolverAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                BrickLinkPartMappingTestDialog dialog(this);
+                dialog.exec();
+            });
+
+    connect(viewBrickLinkColorMappingStatusAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                BrickLinkColorMappingStatusDialog dialog(this);
+                dialog.exec();
+            });
+
+    connect(refreshBrickLinkColorMappingsAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                const QString apiKey =
+                    UserSettings::instance().rebrickableApiKey().trimmed();
+
+                if (apiKey.isEmpty()) {
+                    QMessageBox::warning(
+                        this,
+                        "BrickLink Color Mappings",
+                        "A Rebrickable API key is required to refresh "
+                        "BrickLink color mappings.");
+                    return;
+                }
+
+                auto* mappingService = new BrickLinkMappingService(this);
+
+                connect(mappingService,
+                        &BrickLinkMappingService::colorMappingsRefreshed,
+                        this,
+                        [this, mappingService](
+                            const BrickLinkMappingService::ColorRefreshResult& result) {
+                            if (!result.success) {
+                                QMessageBox::warning(
+                                    this,
+                                    "BrickLink Color Mappings",
+                                    result.message);
+                                mappingService->deleteLater();
+                                return;
+                            }
+
+                            QMessageBox::information(
+                                this,
+                                "BrickLink Color Mappings",
+                                QString("BrickLink color mapping refresh completed.\n\n"
+                                        "Mapping source: Rebrickable reference data\n"
+                                        "BrickLink API access used: No\n\n"
+                                        "BrickSuite colors: %1\n"
+                                        "Rebrickable colors returned: %2\n"
+                                        "Matched BrickSuite colors: %3\n\n"
+                                        "Mapped: %4\n"
+                                        "Unsupported: %5\n"
+                                        "Unknown: %6")
+                                    .arg(result.brickSuiteColors)
+                                    .arg(result.rebrickableColors)
+                                    .arg(result.matchedBrickSuiteColors)
+                                    .arg(result.mapped)
+                                    .arg(result.unsupported)
+                                    .arg(result.unknown));
+
+                            mappingService->deleteLater();
+                        });
+
+                mappingService->refreshColorMappings(apiKey);
+            });
 
     connect(bricksetKeyUsageAction, &QAction::triggered, this, [this]() {
         const QString apiKey = UserSettings::instance().bricksetApiKey();

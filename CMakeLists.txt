@@ -74,8 +74,15 @@ qt_add_executable(BrickSuite
     src/repositories/ColorRepository.cpp
     src/models/PartCategory.h
     src/models/PartCategory.cpp
+    src/models/ExternalMappingStatus.h
+    src/models/ExternalColorMapping.h
+    src/models/ExternalPartMapping.h
     src/repositories/PartCategoryRepository.h
     src/repositories/PartCategoryRepository.cpp
+    src/repositories/ExternalColorMappingRepository.h
+    src/repositories/ExternalColorMappingRepository.cpp
+    src/repositories/ExternalPartMappingRepository.h
+    src/repositories/ExternalPartMappingRepository.cpp
     src/models/PartSearchCriteria.h
     src/ui/catalog/PartsCatalogWidget.cpp
     src/ui/catalog/PartsCatalogWidget.h
@@ -181,6 +188,14 @@ qt_add_executable(BrickSuite
     src/services/builds/MissingPartsService.cpp src/services/builds/MissingPartsService.h
     src/services/sets/SetDetailsProviderService.h
     src/services/sets/SetDetailsProviderService.cpp
+    src/services/mappings/BrickLinkMappingService.h
+    src/services/mappings/BrickLinkMappingService.cpp
+    src/services/mappings/BrickLinkPartResolver.h
+    src/services/mappings/BrickLinkPartResolver.cpp
+    src/ui/mappings/BrickLinkColorMappingStatusDialog.h
+    src/ui/mappings/BrickLinkColorMappingStatusDialog.cpp
+    src/ui/mappings/BrickLinkPartMappingTestDialog.h
+    src/ui/mappings/BrickLinkPartMappingTestDialog.cpp
     src/import/RebrickableMocCsvImporter.h
     src/import/RebrickableMocCsvImporter.cpp
     src/services/images/BackgroundPartColorImageCacheService.h

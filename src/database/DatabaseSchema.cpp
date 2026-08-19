@@ -233,6 +233,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 11;
     }
 
+    // Version 11 -> Version 12.
+    if (version == 11) {
+        if (!migrateVersion11ToVersion12(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 12)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 12;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -1512,3 +1527,93 @@ bool DatabaseSchema::createSetCatalogTable(QSqlDatabase& database)
 
     return true;
 }
+
+bool DatabaseSchema::migrateVersion11ToVersion12(QSqlDatabase& database)
+{
+    if (!createExternalColorMappingTable(database))
+        return false;
+
+    if (!createExternalPartMappingTable(database))
+        return false;
+
+    return true;
+}
+
+bool DatabaseSchema::createExternalColorMappingTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS external_color_mapping
+        (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            color_id        INTEGER NOT NULL,
+            provider        TEXT NOT NULL,
+            external_id     TEXT,
+            mapping_status  TEXT NOT NULL DEFAULT 'Unknown'
+                            CHECK(mapping_status IN ('Unknown', 'Mapped', 'Unsupported')),
+            source          TEXT,
+            notes           TEXT,
+            created_utc     TEXT NOT NULL,
+            modified_utc    TEXT NOT NULL,
+
+            FOREIGN KEY(color_id) REFERENCES color(id),
+            UNIQUE(color_id, provider)
+        )
+    )")) {
+        qCritical() << "Unable to create external_color_mapping table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_external_color_mapping_provider_status
+        ON external_color_mapping(provider, mapping_status)
+    )")) {
+        qCritical() << "Unable to create external color mapping index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::createExternalPartMappingTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS external_part_mapping
+        (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            part_id         INTEGER NOT NULL,
+            provider        TEXT NOT NULL,
+            external_id     TEXT,
+            mapping_status  TEXT NOT NULL DEFAULT 'Unknown'
+                            CHECK(mapping_status IN ('Unknown', 'Mapped', 'Unsupported')),
+            source          TEXT,
+            notes           TEXT,
+            created_utc     TEXT NOT NULL,
+            modified_utc    TEXT NOT NULL,
+
+            FOREIGN KEY(part_id) REFERENCES part(id),
+            UNIQUE(part_id, provider)
+        )
+    )")) {
+        qCritical() << "Unable to create external_part_mapping table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_external_part_mapping_provider_status
+        ON external_part_mapping(provider, mapping_status)
+    )")) {
+        qCritical() << "Unable to create external part mapping index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+

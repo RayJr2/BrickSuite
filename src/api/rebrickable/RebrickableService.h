@@ -72,6 +72,27 @@ public:
         QList<PartColor> colors;
     };
 
+
+    struct CatalogColor
+    {
+        int rebrickableColorId = 0;
+        QString name;
+        QString rgb;
+        bool isTransparent = false;
+
+        QHash<QString, QStringList> externalIds;
+    };
+
+    struct CatalogColorsResult
+    {
+        bool success = false;
+        int httpStatusCode = 0;
+        int totalCount = 0;
+        QString message;
+
+        QList<CatalogColor> colors;
+    };
+
     struct PartDetails
     {
         QString partNumber;
@@ -220,6 +241,8 @@ public:
 
     void getPartColors(const QString& partNumber, const QString& apiKey);
 
+    void getCatalogColors(const QString& apiKey);
+
     void getPartDetails(const QString& partNumber, const QString& apiKey);
 
     void getPartImageUrls(const QStringList& partNumbers,
@@ -243,6 +266,8 @@ signals:
     void connectionTestFinished(const RebrickableService::ConnectionResult& result);
 
     void partColorsFinished(const RebrickableService::PartColorsResult& result);
+
+    void catalogColorsFinished(const RebrickableService::CatalogColorsResult& result);
 
     void partDetailsFinished(const RebrickableService::PartDetailsResult& result);
 
@@ -307,3 +332,6 @@ Q_DECLARE_METATYPE(RebrickableService::PartColorDetails)
 Q_DECLARE_METATYPE(RebrickableService::PartColorDetailsResult)
 Q_DECLARE_METATYPE(RebrickableService::PartImageUrl)
 Q_DECLARE_METATYPE(RebrickableService::PartImageUrlsResult)
+Q_DECLARE_METATYPE(RebrickableService::CatalogColor)
+Q_DECLARE_METATYPE(RebrickableService::CatalogColorsResult)
+

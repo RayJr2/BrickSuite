@@ -38,6 +38,52 @@
 #include <QUrl>
 #include <QUrlQuery>
 
+
+namespace
+{
+QStringList externalIdValues(const QJsonValue& value)
+{
+    QStringList ids;
+
+    if (value.isArray()) {
+        const QJsonArray values = value.toArray();
+
+        for (const QJsonValue& item : values) {
+            if (item.isString())
+                ids.append(item.toString());
+            else if (item.isDouble())
+                ids.append(QString::number(item.toInt()));
+        }
+
+        return ids;
+    }
+
+    if (value.isObject()) {
+        const QJsonObject object = value.toObject();
+
+        // Rebrickable color payloads may expose provider mappings as an
+        // object containing ext_ids. Support that shape without assuming
+        // every provider uses it.
+        if (object.contains(QStringLiteral("ext_ids"))) {
+            return externalIdValues(object.value(QStringLiteral("ext_ids")));
+        }
+
+        if (object.contains(QStringLiteral("ids"))) {
+            return externalIdValues(object.value(QStringLiteral("ids")));
+        }
+
+        return ids;
+    }
+
+    if (value.isString())
+        ids.append(value.toString());
+    else if (value.isDouble())
+        ids.append(QString::number(value.toInt()));
+
+    return ids;
+}
+}
+
 bool RebrickableService::s_sessionBlocked =
 #if BRICKSUITE_REBRICKABLE_API_BLOCKED
     true;
@@ -194,6 +240,144 @@ void RebrickableService::handleConnectionTestReply(QNetworkReply* reply)
     reply->deleteLater();
 
     emit connectionTestFinished(result);
+}
+
+void RebrickableService::getCatalogColors(const QString& apiKey)
+{
+    if (isSessionBlocked()) {
+        CatalogColorsResult result;
+        result.httpStatusCode = 403;
+        result.message = sessionBlockReason();
+        emit catalogColorsFinished(result);
+        return;
+    }
+
+    const QString trimmedApiKey = apiKey.trimmed();
+
+    if (trimmedApiKey.isEmpty()) {
+        CatalogColorsResult result;
+        result.message = QStringLiteral("Rebrickable API key is empty.");
+        emit catalogColorsFinished(result);
+        return;
+    }
+
+    QUrl url(QStringLiteral("https://rebrickable.com/api/v3/lego/colors/"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("page_size"), QStringLiteral("1000"));
+    url.setQuery(query);
+
+    QNetworkRequest request(url);
+    request.setRawHeader("Authorization",
+                         QString("key %1").arg(trimmedApiKey).toUtf8());
+    request.setHeader(QNetworkRequest::UserAgentHeader, "BrickSuite/1.0");
+
+    enqueueGet(
+        request,
+        QStringLiteral("GetCatalogColors"),
+        [this](QNetworkReply* reply) {
+            CatalogColorsResult result;
+
+            const QVariant statusAttribute =
+                reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+
+            if (statusAttribute.isValid())
+                result.httpStatusCode = statusAttribute.toInt();
+
+            const QByteArray responseData = reply->readAll();
+
+            QString circuitBreakerReason;
+
+            if (result.httpStatusCode == 403
+                && detectCloudflareIpBan(responseData, circuitBreakerReason)) {
+                tripSessionCircuitBreaker(circuitBreakerReason);
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+                emit catalogColorsFinished(result);
+                return;
+            }
+
+            if (result.httpStatusCode == 429) {
+                handle429();
+                result.message = sessionBlockReason();
+
+                reply->deleteLater();
+                emit catalogColorsFinished(result);
+                return;
+            }
+
+            if (reply->error() == QNetworkReply::NoError
+                && result.httpStatusCode == 200) {
+                const QJsonDocument document = QJsonDocument::fromJson(responseData);
+
+                if (!document.isObject()) {
+                    result.message =
+                        QStringLiteral("Rebrickable returned an unexpected colors response.");
+                } else {
+                    const QJsonObject root = document.object();
+                    result.totalCount = root.value(QStringLiteral("count")).toInt();
+
+                    const QJsonArray results =
+                        root.value(QStringLiteral("results")).toArray();
+
+                    for (const QJsonValue& value : results) {
+                        if (!value.isObject())
+                            continue;
+
+                        const QJsonObject object = value.toObject();
+
+                        CatalogColor color;
+                        color.rebrickableColorId =
+                            object.value(QStringLiteral("id")).toInt();
+                        color.name = object.value(QStringLiteral("name")).toString();
+                        color.rgb = object.value(QStringLiteral("rgb")).toString();
+                        color.isTransparent =
+                            object.value(QStringLiteral("is_trans")).toBool();
+
+                        const QJsonObject externalIds =
+                            object.value(QStringLiteral("external_ids")).toObject();
+
+                        for (auto it = externalIds.constBegin();
+                             it != externalIds.constEnd();
+                             ++it) {
+                            const QStringList ids = externalIdValues(it.value());
+
+                            if (!ids.isEmpty())
+                                color.externalIds.insert(it.key(), ids);
+                        }
+
+                        result.colors.append(color);
+                    }
+
+                    result.success = true;
+                    result.message =
+                        QStringLiteral("%1 Rebrickable catalog colors retrieved.")
+                            .arg(result.colors.size());
+                }
+            } else if (result.httpStatusCode == 401) {
+                result.message = QStringLiteral("Rebrickable rejected the API key.");
+            } else if (reply->error() != QNetworkReply::NoError) {
+                result.message =
+                    QStringLiteral("Unable to retrieve Rebrickable colors: %1")
+                        .arg(reply->errorString());
+            } else {
+                result.message =
+                    QStringLiteral("Rebrickable returned HTTP status %1.")
+                        .arg(result.httpStatusCode);
+            }
+
+            reply->deleteLater();
+            emit catalogColorsFinished(result);
+        },
+        [this]() {
+            CatalogColorsResult result;
+            result.httpStatusCode = 403;
+            result.message = sessionBlockReason();
+            emit catalogColorsFinished(result);
+        },
+        RequestPriority::Foreground,
+        {},
+        ApiLogPolicy::ErrorsOnly);
 }
 
 void RebrickableService::getPartColors(const QString& partNumber, const QString& apiKey)
