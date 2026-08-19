@@ -124,6 +124,8 @@ qt_add_executable(BrickSuite
     resources/help/help.qrc
     src/import/InventoryCsvOperation.h
     src/import/RebrickableInventoryImportPreview.h
+    src/services/inventory/RebrickableInventoryDiffCsvWriter.h
+    src/services/inventory/RebrickableInventoryDiffCsvWriter.cpp
     src/ui/inventory/InventoryImportPreviewDialog.h
     src/ui/inventory/InventoryImportPreviewDialog.cpp
     src/api/ApiProvider.h

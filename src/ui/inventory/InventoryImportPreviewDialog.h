@@ -26,6 +26,7 @@
 
 class QComboBox;
 class QLabel;
+class QPushButton;
 class QTableWidget;
 class QDialogButtonBox;
 
@@ -42,11 +43,17 @@ private:
     void populateTable();
     void applyCompareFilter();
 
+    void exportAppendCsv();
+    void exportSubtractCsv();
+    void exportDiffCsv(bool append);
+
     RebrickableInventoryImportPreview m_preview;
 
     QLabel* m_scopeLabel = nullptr;
     QLabel* m_summaryLabel = nullptr;
     QComboBox* m_filterCombo = nullptr;
     QTableWidget* m_table = nullptr;
+    QPushButton* m_exportAppendButton = nullptr;
+    QPushButton* m_exportSubtractButton = nullptr;
     QDialogButtonBox* m_buttonBox = nullptr;
 };

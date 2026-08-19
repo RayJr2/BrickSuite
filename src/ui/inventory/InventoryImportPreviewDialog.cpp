@@ -20,14 +20,23 @@
 
 #include "InventoryImportPreviewDialog.h"
 
+#include "../../services/inventory/RebrickableInventoryDiffCsvWriter.h"
+
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
+#include <QStringConverter>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QTextStream>
 #include <QVBoxLayout>
 
 InventoryImportPreviewDialog::InventoryImportPreviewDialog(
@@ -175,6 +184,30 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
                 &QComboBox::currentIndexChanged,
                 this,
                 &InventoryImportPreviewDialog::applyCompareFilter);
+
+        auto* exportLayout = new QHBoxLayout();
+
+        m_exportAppendButton =
+            new QPushButton(QStringLiteral("Export Append CSV..."), this);
+
+        m_exportSubtractButton =
+            new QPushButton(QStringLiteral("Export Subtract CSV..."), this);
+
+        exportLayout->addWidget(m_exportAppendButton);
+        exportLayout->addWidget(m_exportSubtractButton);
+        exportLayout->addStretch(1);
+
+        mainLayout->addLayout(exportLayout);
+
+        connect(m_exportAppendButton,
+                &QPushButton::clicked,
+                this,
+                &InventoryImportPreviewDialog::exportAppendCsv);
+
+        connect(m_exportSubtractButton,
+                &QPushButton::clicked,
+                this,
+                &InventoryImportPreviewDialog::exportSubtractCsv);
     }
 
     mainLayout->addWidget(m_summaryLabel);
@@ -186,8 +219,28 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
     populateSummary();
     populateTable();
 
-    if (m_preview.operation == InventoryCsvOperation::CompareOnly)
+    if (m_preview.operation == InventoryCsvOperation::CompareOnly) {
         applyCompareFilter();
+
+        bool hasAppendRows = false;
+        bool hasSubtractRows = false;
+
+        for (const RebrickableInventoryImportPreviewRow& row : m_preview.rows) {
+            if (row.status == QStringLiteral("Error"))
+                continue;
+
+            hasAppendRows = hasAppendRows || row.difference > 0;
+            hasSubtractRows = hasSubtractRows || row.difference < 0;
+        }
+
+        const bool exportAllowed = m_preview.failedRows == 0;
+
+        if (m_exportAppendButton)
+            m_exportAppendButton->setEnabled(exportAllowed && hasAppendRows);
+
+        if (m_exportSubtractButton)
+            m_exportSubtractButton->setEnabled(exportAllowed && hasSubtractRows);
+    }
 }
 
 void InventoryImportPreviewDialog::populateSummary()
@@ -317,5 +370,99 @@ void InventoryImportPreviewDialog::applyCompareFilter()
 
         m_table->setRowHidden(rowIndex, !show);
     }
+}
+
+
+void InventoryImportPreviewDialog::exportAppendCsv()
+{
+    exportDiffCsv(true);
+}
+
+void InventoryImportPreviewDialog::exportSubtractCsv()
+{
+    exportDiffCsv(false);
+}
+
+void InventoryImportPreviewDialog::exportDiffCsv(bool append)
+{
+    if (m_preview.operation != InventoryCsvOperation::CompareOnly)
+        return;
+
+    RebrickableInventoryDiffCsvWriter writer;
+
+    const auto deltaType =
+        append
+            ? RebrickableInventoryDiffCsvWriter::DeltaType::Append
+            : RebrickableInventoryDiffCsvWriter::DeltaType::Subtract;
+
+    const RebrickableInventoryDiffCsvWriter::Result result =
+        writer.write(m_preview, deltaType);
+
+    if (!result.success) {
+        QMessageBox::warning(
+            this,
+            QStringLiteral("Rebrickable Diff CSV"),
+            result.message);
+        return;
+    }
+
+    const QFileInfo sourceInfo(m_preview.sourceFilePath);
+
+    const QString suggestedPath =
+        sourceInfo.dir().filePath(
+            RebrickableInventoryDiffCsvWriter::suggestedFileName(
+                m_preview,
+                deltaType));
+
+    QString fileName =
+        QFileDialog::getSaveFileName(
+            this,
+            append
+                ? QStringLiteral("Save Rebrickable Append CSV")
+                : QStringLiteral("Save Rebrickable Subtract CSV"),
+            suggestedPath,
+            QStringLiteral("CSV Files (*.csv)"));
+
+    if (fileName.isEmpty())
+        return;
+
+    if (!fileName.endsWith(QStringLiteral(".csv"),
+                           Qt::CaseInsensitive)) {
+        fileName += QStringLiteral(".csv");
+    }
+
+    QFile file(fileName);
+
+    if (!file.open(QIODevice::WriteOnly
+                   | QIODevice::Truncate
+                   | QIODevice::Text)) {
+        QMessageBox::critical(
+            this,
+            QStringLiteral("Rebrickable Diff CSV"),
+            QStringLiteral("Unable to save the CSV file.\n\n%1")
+                .arg(file.errorString()));
+        return;
+    }
+
+    QTextStream stream(&file);
+    stream.setEncoding(QStringConverter::Utf8);
+    stream << result.csv;
+    file.close();
+
+    QMessageBox::information(
+        this,
+        QStringLiteral("Rebrickable Diff CSV"),
+        QStringLiteral("%1 CSV saved successfully.\n\n"
+                       "Rows: %2\n"
+                       "Pieces: %3\n\n"
+                       "On Rebrickable, import this file and choose %4 Parts.")
+            .arg(append
+                     ? QStringLiteral("Append")
+                     : QStringLiteral("Subtract"))
+            .arg(result.rows)
+            .arg(result.pieces)
+            .arg(append
+                     ? QStringLiteral("Append")
+                     : QStringLiteral("Subtract")));
 }
 
