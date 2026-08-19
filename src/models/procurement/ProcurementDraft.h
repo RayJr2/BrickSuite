@@ -29,6 +29,8 @@ struct ProcurementItem
 
     // Session-only preview overrides. These do not update provider mappings.
     QString itemOverride;
+    bool rememberItemOverride = false;
+
     QString colorOverrideId;
     QString colorOverrideName;
 

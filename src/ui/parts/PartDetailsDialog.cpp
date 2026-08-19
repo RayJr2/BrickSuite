@@ -27,6 +27,7 @@
 #include "../../repositories/PartRepository.h"
 
 #include "../../services/images/PartImageService.h"
+#include "../../services/mappings/BrickLinkMappingService.h"
 #include "../../settings/UserSettings.h"
 
 #include <QDebug>
@@ -417,6 +418,11 @@ PartDetailsDialog::PartDetailsDialog(
                 populateRelatedParts(result);
 
                 populateExternalIds(result);
+
+                BrickLinkMappingService mappingService;
+                mappingService.storePartExternalIds(
+                    m_partId,
+                    result.part.externalIds);
 
                 if (!result.part.partImageUrl.isEmpty()) {
                     m_partImageService->requestPartImage(result.part.partNumber,

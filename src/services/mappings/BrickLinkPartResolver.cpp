@@ -47,10 +47,24 @@ BrickLinkPartResolver::Result BrickLinkPartResolver::resolve(
     if (mapping->status == ExternalMappingStatus::Mapped
         && !mapping->externalId.trimmed().isEmpty()) {
         result.itemId = mapping->externalId.trimmed();
-        result.status = ResolutionStatus::MappedOverride;
+
+        if (mapping->source.compare(QStringLiteral("User"),
+                                    Qt::CaseInsensitive) == 0) {
+            result.status = ResolutionStatus::UserOverride;
+            result.message =
+                QStringLiteral("Using a user-confirmed BrickLink part-number override.");
+        } else if (mapping->source.compare(QStringLiteral("Rebrickable"),
+                                           Qt::CaseInsensitive) == 0) {
+            result.status = ResolutionStatus::ExternalId;
+            result.message =
+                QStringLiteral("Using the BrickLink external ID supplied by Rebrickable.");
+        } else {
+            result.status = ResolutionStatus::MappedOverride;
+            result.message =
+                QStringLiteral("Using a stored BrickLink part-number mapping.");
+        }
+
         result.canExport = true;
-        result.message =
-            QStringLiteral("Using a stored BrickLink part-number override.");
         return result;
     }
 
@@ -80,6 +94,10 @@ QString BrickLinkPartResolver::statusText(ResolutionStatus status)
     switch (status) {
     case ResolutionStatus::Direct:
         return QStringLiteral("Direct");
+    case ResolutionStatus::ExternalId:
+        return QStringLiteral("External ID");
+    case ResolutionStatus::UserOverride:
+        return QStringLiteral("User Override");
     case ResolutionStatus::MappedOverride:
         return QStringLiteral("Mapped Override");
     case ResolutionStatus::NeedsReview:

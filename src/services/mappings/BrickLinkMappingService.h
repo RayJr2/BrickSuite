@@ -33,6 +33,10 @@ public:
 
     void refreshColorMappings(const QString& rebrickableApiKey);
 
+    bool storePartExternalIds(
+        int partId,
+        const QHash<QString, QStringList>& externalIds) const;
+
 signals:
     void colorMappingsRefreshed(
         const BrickLinkMappingService::ColorRefreshResult& result);

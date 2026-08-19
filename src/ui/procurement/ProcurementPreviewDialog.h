@@ -10,9 +10,11 @@
 
 #include <QDialog>
 
+class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QPushButton;
 class QTableWidget;
 
 class ProcurementPreviewDialog : public QDialog
@@ -41,6 +43,8 @@ private:
     void updateColorRow(int row);
     void updateRowStatus(int row);
     void updateSummary();
+    bool persistRememberedPartOverrides();
+    void generateBrickLinkXml();
 
     ProcurementDraft m_draft;
 
@@ -54,4 +58,6 @@ private:
     QLineEdit* m_customRemarksEdit = nullptr;
 
     QTableWidget* m_table = nullptr;
+    QList<QCheckBox*> m_rememberPartOverrideChecks;
+    QPushButton* m_generateButton = nullptr;
 };

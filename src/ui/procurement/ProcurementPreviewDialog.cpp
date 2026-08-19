@@ -10,18 +10,27 @@
 #include "../../models/ExternalColorMapping.h"
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/ExternalColorMappingRepository.h"
+#include "../../repositories/ExternalPartMappingRepository.h"
+#include "../../models/ExternalPartMapping.h"
+#include "../../services/procurement/BrickLinkWantedListXmlWriter.h"
+#include "BrickLinkWantedListResultDialog.h"
 
 #include <QAbstractItemView>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
+#include <QPushButton>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
+#include <QWidget>
 
 #include <algorithm>
 
@@ -30,12 +39,13 @@ namespace
 constexpr int PartNumberColumn = 0;
 constexpr int PartNameColumn = 1;
 constexpr int ItemIdColumn = 2;
-constexpr int SourceColorColumn = 3;
-constexpr int BrickLinkColorColumn = 4;
-constexpr int QuantityColumn = 5;
-constexpr int PartStatusColumn = 6;
-constexpr int ColorStatusColumn = 7;
-constexpr int ExportStatusColumn = 8;
+constexpr int RememberPartColumn = 3;
+constexpr int SourceColorColumn = 4;
+constexpr int BrickLinkColorColumn = 5;
+constexpr int QuantityColumn = 6;
+constexpr int PartStatusColumn = 7;
+constexpr int ColorStatusColumn = 8;
+constexpr int ExportStatusColumn = 9;
 }
 
 ProcurementPreviewDialog::ProcurementPreviewDialog(
@@ -149,19 +159,21 @@ void ProcurementPreviewDialog::buildUi()
     mainLayout->addWidget(optionsGroup);
 
     auto* note = new QLabel(
-        QStringLiteral("BrickLink ITEMID and color changes made here are "
-                       "session-only procurement overrides. They do not change "
-                       "BrickSuite provider mappings."),
+        QStringLiteral("BrickLink ITEMID and color edits are session-only overrides. "
+                       "For an ITEMID edit, check Remember to save it as a user-confirmed "
+                       "BrickLink mapping when XML is generated. User mappings take precedence "
+                       "over Rebrickable external IDs."),
         this);
     note->setWordWrap(true);
     mainLayout->addWidget(note);
 
     m_table = new QTableWidget(this);
-    m_table->setColumnCount(9);
+    m_table->setColumnCount(10);
     m_table->setHorizontalHeaderLabels({
         QStringLiteral("Part Number"),
         QStringLiteral("Part Name"),
         QStringLiteral("BrickLink ITEMID"),
+        QStringLiteral("Remember"),
         QStringLiteral("BrickSuite Color"),
         QStringLiteral("BrickLink Color"),
         QStringLiteral("Missing Qty"),
@@ -183,6 +195,8 @@ void ProcurementPreviewDialog::buildUi()
     m_table->horizontalHeader()->setSectionResizeMode(
         ItemIdColumn, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(
+        RememberPartColumn, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(
         SourceColorColumn, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(
         BrickLinkColorColumn, QHeaderView::ResizeToContents);
@@ -199,10 +213,21 @@ void ProcurementPreviewDialog::buildUi()
 
     auto* buttons =
         new QDialogButtonBox(QDialogButtonBox::Close, this);
+
+    m_generateButton =
+        new QPushButton(QStringLiteral("Generate BrickLink XML"), this);
+    buttons->addButton(m_generateButton, QDialogButtonBox::ActionRole);
+
+    connect(m_generateButton,
+            &QPushButton::clicked,
+            this,
+            &ProcurementPreviewDialog::generateBrickLinkXml);
+
     connect(buttons,
             &QDialogButtonBox::rejected,
             this,
             &QDialog::reject);
+
     mainLayout->addWidget(buttons);
 }
 
@@ -277,6 +302,22 @@ void ProcurementPreviewDialog::populateRows()
             QStringLiteral("Enter BrickLink ITEMID"));
         m_table->setCellWidget(row, ItemIdColumn, itemIdEdit);
 
+        auto* rememberCheck = new QCheckBox(m_table);
+        rememberCheck->setToolTip(
+            QStringLiteral("Save an edited ITEMID as a user-confirmed BrickLink mapping "
+                           "when XML is generated."));
+        rememberCheck->setEnabled(false);
+        rememberCheck->setChecked(false);
+
+        auto* rememberContainer = new QWidget(m_table);
+        auto* rememberLayout = new QHBoxLayout(rememberContainer);
+        rememberLayout->setContentsMargins(0, 0, 0, 0);
+        rememberLayout->setAlignment(Qt::AlignCenter);
+        rememberLayout->addWidget(rememberCheck);
+
+        m_table->setCellWidget(row, RememberPartColumn, rememberContainer);
+        m_rememberPartOverrideChecks.append(rememberCheck);
+
         m_table->setItem(
             row,
             SourceColorColumn,
@@ -324,20 +365,42 @@ void ProcurementPreviewDialog::populateRows()
         connect(itemIdEdit,
                 &QLineEdit::textChanged,
                 this,
-                [this, row](const QString& text) {
+                [this, row, rememberCheck](const QString& text) {
                     ProcurementItem& changed = m_draft.items[row];
 
                     const QString trimmed = text.trimmed();
 
                     if (trimmed == changed.resolvedItemId.trimmed()) {
                         changed.itemOverride.clear();
+                        changed.rememberItemOverride = false;
+                        rememberCheck->setChecked(false);
+                        rememberCheck->setEnabled(false);
                     } else {
                         changed.itemOverride = trimmed;
+
+                        const bool usableOverride = !trimmed.isEmpty();
+                        rememberCheck->setEnabled(usableOverride);
+
+                        // Remember is the normal behavior for a deliberate
+                        // provider-ID correction, while still allowing the
+                        // user to uncheck it for a one-time procurement edit.
+                        if (usableOverride && !rememberCheck->isChecked())
+                            rememberCheck->setChecked(true);
                     }
 
                     updatePartRow(row);
                     updateRowStatus(row);
                     updateSummary();
+                });
+
+        connect(rememberCheck,
+                &QCheckBox::toggled,
+                this,
+                [this, row](bool checked) {
+                    if (row < 0 || row >= m_draft.items.size())
+                        return;
+
+                    m_draft.items[row].rememberItemOverride = checked;
                 });
 
         connect(colorCombo,
@@ -427,4 +490,105 @@ void ProcurementPreviewDialog::updateSummary()
             .arg(m_draft.items.size())
             .arg(m_draft.readyRows())
             .arg(m_draft.reviewRows()));
+
+    if (m_generateButton) {
+        m_generateButton->setEnabled(
+            !m_draft.items.isEmpty()
+            && m_draft.reviewRows() == 0);
+    }
+}
+
+bool ProcurementPreviewDialog::persistRememberedPartOverrides()
+{
+    ExternalPartMappingRepository repository;
+
+    for (int row = 0; row < m_draft.items.size(); ++row) {
+        ProcurementItem& item = m_draft.items[row];
+
+        if (!item.rememberItemOverride
+            || item.itemOverride.trimmed().isEmpty()) {
+            continue;
+        }
+
+        ExternalPartMapping mapping;
+        mapping.partId = item.partId;
+        mapping.provider = apiProviderName(ApiProvider::BrickLink);
+        mapping.externalId = item.itemOverride.trimmed();
+        mapping.status = ExternalMappingStatus::Mapped;
+        mapping.source = QStringLiteral("User");
+        mapping.notes =
+            QStringLiteral("User-confirmed BrickLink ITEMID from procurement preview.");
+
+        if (!repository.upsert(mapping)) {
+            QMessageBox::warning(
+                this,
+                QStringLiteral("BrickLink Wanted List"),
+                QStringLiteral("Unable to save the BrickLink ITEMID override for part %1.")
+                    .arg(item.partNumber));
+            return false;
+        }
+
+        item.resolvedItemId = mapping.externalId;
+        item.resolvedItemStatus = QStringLiteral("User Override");
+        item.resolvedItemReady = true;
+        item.itemOverride.clear();
+        item.rememberItemOverride = false;
+
+        if (row < m_rememberPartOverrideChecks.size()) {
+            QCheckBox* check = m_rememberPartOverrideChecks.at(row);
+            check->setChecked(false);
+            check->setEnabled(false);
+        }
+
+        if (auto* edit =
+                qobject_cast<QLineEdit*>(
+                    m_table->cellWidget(row, ItemIdColumn))) {
+            edit->setText(item.resolvedItemId);
+        }
+
+        updatePartRow(row);
+        updateRowStatus(row);
+    }
+
+    return true;
+}
+
+void ProcurementPreviewDialog::generateBrickLinkXml()
+{
+    if (m_draft.items.isEmpty())
+        return;
+
+    if (m_draft.reviewRows() != 0) {
+        QMessageBox::warning(
+            this,
+            QStringLiteral("BrickLink Wanted List"),
+            QStringLiteral("Resolve every Needs Review row before generating BrickLink XML."));
+        return;
+    }
+
+    if (!persistRememberedPartOverrides())
+        return;
+
+    BrickLinkWantedListXmlWriter writer;
+
+    const BrickLinkWantedListXmlWriter::Result result =
+        writer.write(m_draft, brickLinkOptions());
+
+    if (!result.success) {
+        QMessageBox::warning(
+            this,
+            QStringLiteral("BrickLink Wanted List"),
+            result.message);
+        return;
+    }
+
+    BrickLinkWantedListResultDialog dialog(
+        result.xml,
+        result.itemRows,
+        result.totalPieces,
+        m_draft.buildNumber,
+        m_draft.buildName,
+        this);
+
+    dialog.exec();
 }

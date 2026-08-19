@@ -190,8 +190,12 @@ qt_add_executable(BrickSuite
     src/models/procurement/BrickLinkWantedListOptions.h
     src/services/procurement/ProcurementDraftService.h
     src/services/procurement/ProcurementDraftService.cpp
+    src/services/procurement/BrickLinkWantedListXmlWriter.h
+    src/services/procurement/BrickLinkWantedListXmlWriter.cpp
     src/ui/procurement/ProcurementPreviewDialog.h
     src/ui/procurement/ProcurementPreviewDialog.cpp
+    src/ui/procurement/BrickLinkWantedListResultDialog.h
+    src/ui/procurement/BrickLinkWantedListResultDialog.cpp
     src/services/sets/SetDetailsProviderService.h
     src/services/sets/SetDetailsProviderService.cpp
     src/services/mappings/BrickLinkMappingService.h

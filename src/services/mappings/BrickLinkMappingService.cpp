@@ -8,8 +8,10 @@
 #include "../../api/ApiProvider.h"
 #include "../../models/Color.h"
 #include "../../models/ExternalColorMapping.h"
+#include "../../models/ExternalPartMapping.h"
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/ExternalColorMappingRepository.h"
+#include "../../repositories/ExternalPartMappingRepository.h"
 
 #include <QDebug>
 #include <QHash>
@@ -55,6 +57,53 @@ void BrickLinkMappingService::refreshColorMappings(
     }
 
     m_rebrickableService->getCatalogColors(apiKey);
+}
+
+bool BrickLinkMappingService::storePartExternalIds(
+    int partId,
+    const QHash<QString, QStringList>& externalIds) const
+{
+    if (partId <= 0)
+        return false;
+
+    QStringList brickLinkIds =
+        providerIds(externalIds, QStringLiteral("BrickLink"));
+
+    for (QString& id : brickLinkIds)
+        id = id.trimmed();
+
+    brickLinkIds.removeAll(QString());
+    brickLinkIds.removeDuplicates();
+
+    // Do not guess when Rebrickable supplies zero or multiple BrickLink IDs.
+    if (brickLinkIds.size() != 1)
+        return false;
+
+    ExternalPartMappingRepository repository;
+
+    const QString provider =
+        apiProviderName(ApiProvider::BrickLink);
+
+    const auto existing =
+        repository.getByPartAndProvider(partId, provider);
+
+    // A user-confirmed mapping always has precedence over provider data.
+    if (existing
+        && existing->source.compare(QStringLiteral("User"),
+                                    Qt::CaseInsensitive) == 0) {
+        return true;
+    }
+
+    ExternalPartMapping mapping;
+    mapping.partId = partId;
+    mapping.provider = provider;
+    mapping.externalId = brickLinkIds.first();
+    mapping.status = ExternalMappingStatus::Mapped;
+    mapping.source = QStringLiteral("Rebrickable");
+    mapping.notes =
+        QStringLiteral("Resolved from Rebrickable BrickLink external part ID.");
+
+    return repository.upsert(mapping);
 }
 
 void BrickLinkMappingService::applyCatalogColors(

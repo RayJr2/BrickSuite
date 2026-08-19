@@ -13,6 +13,8 @@ public:
     enum class ResolutionStatus
     {
         Direct,
+        ExternalId,
+        UserOverride,
         MappedOverride,
         NeedsReview
     };
