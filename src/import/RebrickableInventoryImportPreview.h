@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "InventoryCsvOperation.h"
+
 #include <QList>
 #include <QString>
 
@@ -34,9 +36,12 @@ struct RebrickableInventoryImportPreviewRow
     int colorId = 0;
     QString colorName;
 
+    int inventoryRecordId = 0;
+
     int csvQuantity = 0;
     int currentQuantity = 0;
     int resultingQuantity = 0;
+    int difference = 0;
 
     QString status;
     QString errorMessage;
@@ -46,6 +51,8 @@ struct RebrickableInventoryImportPreview
 {
     QString sourceFilePath;
     QString sourceFileName;
+
+    InventoryCsvOperation operation = InventoryCsvOperation::Append;
 
     int rowsProcessed = 0;
     int validRows = 0;

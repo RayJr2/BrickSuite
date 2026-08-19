@@ -33,7 +33,9 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
     : QDialog(parent)
     , m_preview(preview)
 {
-    setWindowTitle("Import Preview");
+    setWindowTitle(
+        QStringLiteral("%1 Inventory Preview")
+            .arg(inventoryCsvOperationName(m_preview.operation)));
     resize(1100, 600);
 
     auto* mainLayout = new QVBoxLayout(this);
@@ -42,14 +44,32 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
 
     m_table = new QTableWidget(this);
 
-    m_table->setColumnCount(8);
+    m_table->setColumnCount(9);
+
+    QString resultColumn = QStringLiteral("Result Qty");
+
+    switch (m_preview.operation) {
+    case InventoryCsvOperation::Append:
+        resultColumn = QStringLiteral("After Append");
+        break;
+    case InventoryCsvOperation::Replace:
+        resultColumn = QStringLiteral("After Replace");
+        break;
+    case InventoryCsvOperation::Subtract:
+        resultColumn = QStringLiteral("After Subtract");
+        break;
+    case InventoryCsvOperation::CompareOnly:
+        resultColumn = QStringLiteral("BrickSuite Qty");
+        break;
+    }
 
     m_table->setHorizontalHeaderLabels(QStringList() << "Part #"
                                                      << "Name"
                                                      << "Color"
                                                      << "CSV Qty"
                                                      << "Current Qty"
-                                                     << "After Sync"
+                                                     << resultColumn
+                                                     << "Difference"
                                                      << "Status"
                                                      << "Error");
 
@@ -77,14 +97,24 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
 
     m_table->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
 
-    m_table->horizontalHeader()->setSectionResizeMode(7, QHeaderView::Stretch);
+    m_table->horizontalHeader()->setSectionResizeMode(7, QHeaderView::ResizeToContents);
+
+    m_table->horizontalHeader()->setSectionResizeMode(8, QHeaderView::Stretch);
 
     m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
 
     if (QPushButton* importButton = m_buttonBox->button(QDialogButtonBox::Ok)) {
-        importButton->setText("Import");
+        if (m_preview.operation == InventoryCsvOperation::CompareOnly) {
+            importButton->setText(QStringLiteral("Done"));
+        } else {
+            importButton->setText(
+                QStringLiteral("Apply %1")
+                    .arg(inventoryCsvOperationName(m_preview.operation)));
+        }
 
-        importButton->setEnabled(m_preview.failedRows == 0 && m_preview.validRows > 0);
+        importButton->setEnabled(
+            m_preview.failedRows == 0
+            && m_preview.validRows > 0);
     }
 
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -103,16 +133,19 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
 
 void InventoryImportPreviewDialog::populateSummary()
 {
-    m_summaryLabel->setText(QString("File: %1\n"
-                                    "Rows processed: %2    "
-                                    "Valid: %3    "
-                                    "Errors: %4    "
-                                    "Total pieces: %5")
-                                .arg(m_preview.sourceFileName)
-                                .arg(m_preview.rowsProcessed)
-                                .arg(m_preview.validRows)
-                                .arg(m_preview.failedRows)
-                                .arg(m_preview.totalCsvQuantity));
+    m_summaryLabel->setText(
+        QString("Operation: %1\n"
+                "File: %2\n"
+                "Rows processed: %3    "
+                "Valid: %4    "
+                "Needs Review / Errors: %5    "
+                "CSV pieces: %6")
+            .arg(inventoryCsvOperationName(m_preview.operation))
+            .arg(m_preview.sourceFileName)
+            .arg(m_preview.rowsProcessed)
+            .arg(m_preview.validRows)
+            .arg(m_preview.failedRows)
+            .arg(m_preview.totalCsvQuantity));
 }
 
 void InventoryImportPreviewDialog::populateTable()
@@ -138,9 +171,11 @@ void InventoryImportPreviewDialog::populateTable()
                          5,
                          new QTableWidgetItem(QString::number(previewRow.resultingQuantity)));
 
-        m_table->setItem(row, 6, new QTableWidgetItem(previewRow.status));
+        m_table->setItem(row, 6, new QTableWidgetItem(QString::number(previewRow.difference)));
 
-        m_table->setItem(row, 7, new QTableWidgetItem(previewRow.errorMessage));
+        m_table->setItem(row, 7, new QTableWidgetItem(previewRow.status));
+
+        m_table->setItem(row, 8, new QTableWidgetItem(previewRow.errorMessage));
 
         ++row;
     }

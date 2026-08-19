@@ -23,6 +23,7 @@
 
 #include "../../app/WorkspaceContext.h"
 #include "../../database/DatabaseManager.h"
+#include "../../import/InventoryCsvOperation.h"
 #include "../../import/RebrickableInventoryImporter.h"
 #include "../../models/StorageLocation.h"
 #include "../../repositories/StorageLocationRepository.h"
@@ -50,7 +51,7 @@ ImportInventoryDialog::ImportInventoryDialog(WorkspaceContext& workspaceContext,
     , m_workspaceContext(workspaceContext)
 {
     setWindowTitle("Import Rebrickable Inventory CSV");
-    resize(600, 300);
+    resize(620, 340);
 
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -73,6 +74,26 @@ ImportInventoryDialog::ImportInventoryDialog(WorkspaceContext& workspaceContext,
 
     fileWidget->setLayout(fileLayout);
 
+    // Operation
+    m_operationCombo = new QComboBox(this);
+    m_operationCombo->addItem(
+        QStringLiteral("Append"),
+        static_cast<int>(InventoryCsvOperation::Append));
+    m_operationCombo->addItem(
+        QStringLiteral("Replace"),
+        static_cast<int>(InventoryCsvOperation::Replace));
+    m_operationCombo->addItem(
+        QStringLiteral("Subtract"),
+        static_cast<int>(InventoryCsvOperation::Subtract));
+    m_operationCombo->addItem(
+        QStringLiteral("Compare Only"),
+        static_cast<int>(InventoryCsvOperation::CompareOnly));
+
+    m_operationCombo->setToolTip(
+        QStringLiteral("Append adds CSV quantities. Replace makes CSV rows match their "
+                       "quantities. Subtract removes CSV quantities. Compare Only makes "
+                       "no inventory changes."));
+
     // Storage
     m_storageCombo = new QComboBox(this);
 
@@ -88,6 +109,8 @@ ImportInventoryDialog::ImportInventoryDialog(WorkspaceContext& workspaceContext,
     m_ownershipCombo->addItem("Owned");
 
     formLayout->addRow("CSV File:", fileWidget);
+
+    formLayout->addRow("Operation:", m_operationCombo);
 
     formLayout->addRow("Storage:", m_storageCombo);
 
@@ -106,6 +129,26 @@ ImportInventoryDialog::ImportInventoryDialog(WorkspaceContext& workspaceContext,
     mainLayout->addWidget(m_buttonBox);
 
     connect(m_browseButton, &QPushButton::clicked, this, &ImportInventoryDialog::browseForFile);
+
+    connect(m_operationCombo,
+            &QComboBox::currentIndexChanged,
+            this,
+            [this]() {
+                if (QPushButton* okButton =
+                        m_buttonBox->button(QDialogButtonBox::Ok)) {
+                    const auto operation =
+                        static_cast<InventoryCsvOperation>(
+                            m_operationCombo->currentData().toInt());
+
+                    okButton->setText(
+                        operation == InventoryCsvOperation::CompareOnly
+                            ? QStringLiteral("Compare")
+                            : QStringLiteral("Preview"));
+                }
+            });
+
+    if (QPushButton* okButton = m_buttonBox->button(QDialogButtonBox::Ok))
+        okButton->setText(QStringLiteral("Preview"));
 
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &ImportInventoryDialog::importFile);
 
@@ -228,6 +271,22 @@ void ImportInventoryDialog::suggestStorageFromFileName(const QString& filePath)
         baseName = baseName.mid(prefix.length());
     }
 
+    //
+    // Browsers commonly append a duplicate-download suffix, for example:
+    //
+    //     rebrickable_parts_panels (1).csv
+    //     rebrickable_parts_panels (2).csv
+    //
+    // Treat only a trailing " (number)" suffix as disposable. This keeps
+    // storage matching conservative while still handling normal browser
+    // duplicate filenames.
+    //
+    const QRegularExpression duplicateDownloadSuffix(
+        R"(\s*\(\d+\)\s*$)");
+
+    baseName.remove(duplicateDownloadSuffix);
+    baseName = baseName.trimmed();
+
     const QString fileKey = normalizedStorageKey(baseName);
 
     if (fileKey.isEmpty())
@@ -310,6 +369,10 @@ void ImportInventoryDialog::importFile()
 
     options.ownershipType = m_ownershipCombo->currentText().trimmed();
 
+    options.operation =
+        static_cast<InventoryCsvOperation>(
+            m_operationCombo->currentData().toInt());
+
     RebrickableInventoryImporter::ImportResult result;
 
     // Preview
@@ -330,37 +393,49 @@ void ImportInventoryDialog::importFile()
 
     InventoryImportPreviewDialog previewDialog(preview, this);
 
-    if (previewDialog.exec() != QDialog::Accepted) {
+    if (previewDialog.exec() != QDialog::Accepted)
+        return;
+
+    if (options.operation == InventoryCsvOperation::CompareOnly) {
+        QMessageBox::information(
+            this,
+            QStringLiteral("BrickSuite"),
+            QStringLiteral("Comparison completed. No BrickSuite inventory was changed."));
+        accept();
         return;
     }
 
-    if (!importer.importOwnedParts(filePath, options, result)) {
-        qCritical() << "Inventory CSV import failed."
+    if (!importer.importPreview(preview, options, result)) {
+        qCritical() << "Inventory CSV operation failed."
                     << "File:" << filePath
+                    << "Operation:" << inventoryCsvOperationName(options.operation)
                     << "RowsProcessed:" << result.rowsProcessed
-                    << "RowsImported:" << result.rowsImported
+                    << "RowsChanged:" << result.rowsImported
                     << "RowsFailed:" << result.rowsFailed;
 
-        QMessageBox::critical(this,
-                              "BrickSuite",
-                              QString("Import failed.\n\n"
-                                      "Processed: %1\n"
-                                      "Imported: %2\n"
-                                      "Failed: %3")
-                                  .arg(result.rowsProcessed)
-                                  .arg(result.rowsImported)
-                                  .arg(result.rowsFailed));
-
+        QMessageBox::critical(
+            this,
+            QStringLiteral("BrickSuite"),
+            QStringLiteral("%1 failed.\n\n"
+                           "Processed: %2\n"
+                           "Changed: %3\n"
+                           "Failed: %4")
+                .arg(inventoryCsvOperationName(options.operation))
+                .arg(result.rowsProcessed)
+                .arg(result.rowsImported)
+                .arg(result.rowsFailed));
         return;
     }
 
-    QMessageBox::information(this,
-                             "BrickSuite",
-                             QString("Import completed successfully.\n\n"
-                                     "Rows imported: %1\n"
-                                     "Total pieces added: %2")
-                                 .arg(result.rowsImported)
-                                 .arg(result.totalQuantityImported));
+    QMessageBox::information(
+        this,
+        QStringLiteral("BrickSuite"),
+        QStringLiteral("%1 completed successfully.\n\n"
+                       "Rows changed: %2\n"
+                       "Pieces changed: %3")
+            .arg(inventoryCsvOperationName(options.operation))
+            .arg(result.rowsImported)
+            .arg(result.totalQuantityImported));
 
     accept();
 }

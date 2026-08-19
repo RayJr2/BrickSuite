@@ -21,6 +21,7 @@
 #pragma once
 
 #include "RebrickableInventoryImportPreview.h"
+#include "InventoryCsvOperation.h"
 
 #include <QString>
 #include <QStringList>
@@ -37,6 +38,8 @@ public:
 
         QString condition = "Used";
         QString ownershipType = "Owned";
+
+        InventoryCsvOperation operation = InventoryCsvOperation::Append;
     };
 
     struct ImportResult

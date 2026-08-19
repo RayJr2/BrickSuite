@@ -42,6 +42,14 @@ public:
 
     bool updateQuantity(int inventoryRecordId, int quantity);
 
+    bool setQuantityWithMovement(int inventoryRecordId,
+                                 int newQuantity,
+                                 const QString& movementType,
+                                 const QString& referenceType = QString(),
+                                 const QString& referenceId = QString(),
+                                 const QString& notes = QString(),
+                                 bool manageTransaction = true);
+
     QList<InventorySearchResult> search(const InventorySearchCriteria& criteria) const;
 
     int count(const InventorySearchCriteria& criteria) const;

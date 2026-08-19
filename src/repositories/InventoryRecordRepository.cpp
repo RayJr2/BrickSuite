@@ -245,6 +245,134 @@ bool InventoryRecordRepository::updateQuantity(int inventoryRecordId, int quanti
     return query.numRowsAffected() > 0;
 }
 
+
+bool InventoryRecordRepository::setQuantityWithMovement(
+    int inventoryRecordId,
+    int newQuantity,
+    const QString& movementType,
+    const QString& referenceType,
+    const QString& referenceId,
+    const QString& notes,
+    bool manageTransaction)
+{
+    if (inventoryRecordId <= 0 || newQuantity < 0)
+        return false;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    if (manageTransaction) {
+        if (!database.transaction()) {
+            qCritical() << "Unable to begin inventory quantity adjustment transaction:"
+                        << database.lastError().text();
+            return false;
+        }
+    }
+
+    QSqlQuery currentQuery(database);
+    currentQuery.prepare(R"(
+        SELECT
+            workspace_id,
+            part_id,
+            color_id,
+            storage_location_id,
+            condition,
+            ownership_type,
+            quantity
+        FROM inventory_record
+        WHERE id = :id
+    )");
+    currentQuery.bindValue(":id", inventoryRecordId);
+
+    if (!currentQuery.exec() || !currentQuery.next()) {
+        qCritical() << "Unable to load inventory record for quantity adjustment:"
+                    << currentQuery.lastError().text();
+
+        if (manageTransaction)
+            database.rollback();
+
+        return false;
+    }
+
+    const int currentQuantity = currentQuery.value("quantity").toInt();
+    const int difference = newQuantity - currentQuantity;
+
+    if (difference == 0) {
+        if (manageTransaction)
+            database.commit();
+        return true;
+    }
+
+    const int workspaceId = currentQuery.value("workspace_id").toInt();
+    const int partId = currentQuery.value("part_id").toInt();
+    const int colorId = currentQuery.value("color_id").toInt();
+    const int storageLocationId = currentQuery.value("storage_location_id").toInt();
+    const QString condition = currentQuery.value("condition").toString();
+    const QString ownershipType = currentQuery.value("ownership_type").toString();
+
+    QSqlQuery updateQuery(database);
+    updateQuery.prepare(R"(
+        UPDATE inventory_record
+        SET
+            quantity = :quantity,
+            modified_utc = :modified_utc
+        WHERE id = :id
+    )");
+    updateQuery.bindValue(":quantity", newQuantity);
+    updateQuery.bindValue(":modified_utc",
+                          QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    updateQuery.bindValue(":id", inventoryRecordId);
+
+    if (!updateQuery.exec() || updateQuery.numRowsAffected() <= 0) {
+        qCritical() << "Unable to set inventory quantity:"
+                    << updateQuery.lastError().text();
+
+        if (manageTransaction)
+            database.rollback();
+
+        return false;
+    }
+
+    InventoryMovement movement;
+    movement.setWorkspaceId(workspaceId);
+    movement.setInventoryRecordId(inventoryRecordId);
+    movement.setPartId(partId);
+    movement.setColorId(colorId);
+    movement.setMovementType(
+        movementType.trimmed().isEmpty()
+            ? (difference > 0 ? QStringLiteral("QuantityIncrease")
+                              : QStringLiteral("QuantityDecrease"))
+            : movementType.trimmed());
+    movement.setQuantityChange(difference);
+    movement.setToStorageLocationId(storageLocationId);
+    movement.setCondition(condition);
+    movement.setOwnershipType(ownershipType);
+    movement.setReferenceType(referenceType.trimmed());
+    movement.setReferenceId(referenceId.trimmed());
+    movement.setNotes(notes.trimmed());
+
+    InventoryMovementRepository movementRepository;
+
+    if (!movementRepository.create(movement)) {
+        qCritical() << "Unable to create inventory quantity adjustment movement.";
+
+        if (manageTransaction)
+            database.rollback();
+
+        return false;
+    }
+
+    if (manageTransaction) {
+        if (!database.commit()) {
+            qCritical() << "Unable to commit inventory quantity adjustment:"
+                        << database.lastError().text();
+            database.rollback();
+            return false;
+        }
+    }
+
+    return true;
+}
+
 InventoryRecord InventoryRecordRepository::inventoryRecordFromQuery(const QSqlQuery& query) const
 {
     InventoryRecord record;

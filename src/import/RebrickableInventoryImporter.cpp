@@ -31,6 +31,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QTextStream>
+#include <QtGlobal>
 
 RebrickableInventoryImporter::RebrickableInventoryImporter(QSqlDatabase& database)
     : m_database(database)
@@ -271,6 +272,7 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
     preview.sourceFilePath = filePath;
 
     preview.sourceFileName = QFileInfo(filePath).fileName();
+    preview.operation = options.operation;
 
     if (options.workspaceId <= 0 || options.storageLocationId <= 0) {
         qCritical() << "Invalid Rebrickable inventory preview options.";
@@ -431,7 +433,9 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
             QSqlQuery query(m_database);
 
             query.prepare(R"(
-                SELECT quantity
+                SELECT
+                    id,
+                    quantity
                 FROM inventory_record
                 WHERE workspace_id = :workspace_id
                   AND part_id = :part_id
@@ -467,32 +471,77 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
             }
 
             if (query.next()) {
+                previewRow.inventoryRecordId = query.value("id").toInt();
                 previewRow.currentQuantity = query.value("quantity").toInt();
             }
         }
 
-        if (previewRow.currentQuantity == 0) {
+        switch (options.operation) {
+        case InventoryCsvOperation::Append:
+            previewRow.resultingQuantity =
+                previewRow.currentQuantity + previewRow.csvQuantity;
+            previewRow.difference = previewRow.csvQuantity;
+            previewRow.status =
+                previewRow.currentQuantity == 0
+                    ? QStringLiteral("New Inventory")
+                    : QStringLiteral("Append");
+            break;
+
+        case InventoryCsvOperation::Replace:
             previewRow.resultingQuantity = previewRow.csvQuantity;
+            previewRow.difference =
+                previewRow.resultingQuantity - previewRow.currentQuantity;
 
-            previewRow.status = "New Inventory";
-        } else if (previewRow.csvQuantity == previewRow.currentQuantity) {
+            if (previewRow.currentQuantity == 0) {
+                previewRow.status = QStringLiteral("New Inventory");
+            } else if (previewRow.difference == 0) {
+                previewRow.status = QStringLiteral("No Change");
+            } else if (previewRow.difference > 0) {
+                previewRow.status = QStringLiteral("Replace Increase");
+            } else {
+                previewRow.status = QStringLiteral("Replace Decrease");
+            }
+            break;
+
+        case InventoryCsvOperation::Subtract:
+            if (previewRow.currentQuantity < previewRow.csvQuantity) {
+                previewRow.resultingQuantity = previewRow.currentQuantity;
+                previewRow.difference = 0;
+                previewRow.status = QStringLiteral("Needs Review");
+                previewRow.errorMessage =
+                    QStringLiteral("Cannot subtract %1; BrickSuite has only %2 in the selected storage.")
+                        .arg(previewRow.csvQuantity)
+                        .arg(previewRow.currentQuantity);
+                ++preview.failedRows;
+            } else {
+                previewRow.resultingQuantity =
+                    previewRow.currentQuantity - previewRow.csvQuantity;
+                previewRow.difference = -previewRow.csvQuantity;
+                previewRow.status =
+                    previewRow.csvQuantity == 0
+                        ? QStringLiteral("No Change")
+                        : QStringLiteral("Subtract");
+            }
+            break;
+
+        case InventoryCsvOperation::CompareOnly:
             previewRow.resultingQuantity = previewRow.currentQuantity;
+            previewRow.difference =
+                previewRow.currentQuantity - previewRow.csvQuantity;
 
-            previewRow.status = "No Change";
-        } else if (previewRow.csvQuantity > previewRow.currentQuantity) {
-            previewRow.resultingQuantity = previewRow.csvQuantity;
-
-            previewRow.status = "Increase Quantity";
-        } else {
-            previewRow.resultingQuantity = previewRow.currentQuantity;
-
-            previewRow.status = "Review - CSV Quantity Lower";
-
-            previewRow.errorMessage = QString("CSV quantity is %1 lower than BrickSuite quantity.")
-                                          .arg(previewRow.currentQuantity - previewRow.csvQuantity);
+            if (previewRow.difference == 0) {
+                previewRow.status = QStringLiteral("Match");
+            } else if (previewRow.difference > 0) {
+                previewRow.status = QStringLiteral("BrickSuite Higher");
+            } else {
+                previewRow.status = QStringLiteral("Rebrickable Higher");
+            }
+            break;
         }
 
-        ++preview.validRows;
+        if (previewRow.status != QStringLiteral("Needs Review")) {
+            ++preview.validRows;
+        }
 
         preview.totalCsvQuantity += previewRow.csvQuantity;
 
@@ -510,28 +559,36 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
     return true;
 }
 
-bool RebrickableInventoryImporter::importPreview(const RebrickableInventoryImportPreview& preview,
-                                                 const ImportOptions& options,
-                                                 ImportResult& result)
+bool RebrickableInventoryImporter::importPreview(
+    const RebrickableInventoryImportPreview& preview,
+    const ImportOptions& options,
+    ImportResult& result)
 {
     result = {};
 
     if (options.workspaceId <= 0 || options.storageLocationId <= 0) {
         qCritical() << "Invalid Rebrickable inventory import options.";
-
         return false;
     }
 
     if (preview.rows.isEmpty()) {
         qWarning() << "Rebrickable inventory preview contains no rows.";
+        return false;
+    }
 
+    if (options.operation == InventoryCsvOperation::CompareOnly) {
+        result.rowsProcessed = preview.rowsProcessed;
+        return true;
+    }
+
+    if (preview.failedRows > 0) {
+        qWarning() << "Rebrickable inventory preview contains rows that require review.";
         return false;
     }
 
     if (!m_database.transaction()) {
         qCritical() << "Unable to begin Rebrickable inventory import transaction:"
                     << m_database.lastError().text();
-
         return false;
     }
 
@@ -540,117 +597,136 @@ bool RebrickableInventoryImporter::importPreview(const RebrickableInventoryImpor
     for (const RebrickableInventoryImportPreviewRow& previewRow : preview.rows) {
         ++result.rowsProcessed;
 
-        //
-        // Invalid preview rows should never be imported.
-        //
-        if (previewRow.status == "Error") {
+        if (previewRow.status == QStringLiteral("Error")
+            || previewRow.status == QStringLiteral("Needs Review")) {
             ++result.rowsFailed;
-
-            qWarning() << "Skipping invalid Rebrickable inventory row:" << previewRow.partNumber
-                       << previewRow.errorMessage;
-
             continue;
         }
 
-        //
-        // Snapshot already matches BrickSuite.
-        //
-        if (previewRow.status == "No Change") {
+        if (previewRow.status == QStringLiteral("No Change")
+            || previewRow.status == QStringLiteral("Match")) {
             continue;
         }
 
-        //
-        // CSV quantity is lower than BrickSuite.
-        // Version 1 does not automatically subtract.
-        //
-        if (previewRow.status == "Review - CSV Quantity Lower") {
-            continue;
+        bool rowApplied = false;
+        int quantityChanged = 0;
+
+        if (options.operation == InventoryCsvOperation::Append) {
+            InventoryRecord record;
+            record.setWorkspaceId(options.workspaceId);
+            record.setPartId(previewRow.partId);
+            record.setColorId(previewRow.colorId);
+            record.setStorageLocationId(options.storageLocationId);
+            record.setCondition(options.condition);
+            record.setOwnershipType(options.ownershipType);
+            record.setQuantity(previewRow.csvQuantity);
+
+            const QString notes =
+                QStringLiteral("Rebrickable CSV Append. Quantity appended: %1.")
+                    .arg(previewRow.csvQuantity);
+
+            rowApplied =
+                inventoryRepository.addOrIncreaseQuantity(
+                    record,
+                    QStringLiteral("CSVImport"),
+                    QStringLiteral("RebrickableCSV"),
+                    preview.sourceFileName,
+                    notes,
+                    false);
+
+            quantityChanged = previewRow.csvQuantity;
+        } else if (options.operation == InventoryCsvOperation::Replace) {
+            if (previewRow.currentQuantity == 0) {
+                InventoryRecord record;
+                record.setWorkspaceId(options.workspaceId);
+                record.setPartId(previewRow.partId);
+                record.setColorId(previewRow.colorId);
+                record.setStorageLocationId(options.storageLocationId);
+                record.setCondition(options.condition);
+                record.setOwnershipType(options.ownershipType);
+                record.setQuantity(previewRow.resultingQuantity);
+
+                rowApplied =
+                    inventoryRepository.addOrIncreaseQuantity(
+                        record,
+                        QStringLiteral("CSVImport"),
+                        QStringLiteral("RebrickableCSV"),
+                        preview.sourceFileName,
+                        QStringLiteral("Rebrickable CSV Replace created inventory."),
+                        false);
+            } else {
+                const QString movementType =
+                    previewRow.difference > 0
+                        ? QStringLiteral("QuantityIncrease")
+                        : QStringLiteral("QuantityDecrease");
+
+                const QString notes =
+                    QStringLiteral("Rebrickable CSV Replace. Quantity %1 -> %2.")
+                        .arg(previewRow.currentQuantity)
+                        .arg(previewRow.resultingQuantity);
+
+                rowApplied =
+                    inventoryRepository.setQuantityWithMovement(
+                        previewRow.inventoryRecordId,
+                        previewRow.resultingQuantity,
+                        movementType,
+                        QStringLiteral("RebrickableCSV"),
+                        preview.sourceFileName,
+                        notes,
+                        false);
+            }
+
+            quantityChanged = qAbs(previewRow.difference);
+        } else if (options.operation == InventoryCsvOperation::Subtract) {
+            if (previewRow.inventoryRecordId <= 0
+                || previewRow.currentQuantity < previewRow.csvQuantity) {
+                rowApplied = false;
+            } else {
+                const QString notes =
+                    QStringLiteral("Rebrickable CSV Subtract. Quantity %1 -> %2.")
+                        .arg(previewRow.currentQuantity)
+                        .arg(previewRow.resultingQuantity);
+
+                rowApplied =
+                    inventoryRepository.setQuantityWithMovement(
+                        previewRow.inventoryRecordId,
+                        previewRow.resultingQuantity,
+                        QStringLiteral("QuantityDecrease"),
+                        QStringLiteral("RebrickableCSV"),
+                        preview.sourceFileName,
+                        notes,
+                        false);
+            }
+
+            quantityChanged = previewRow.csvQuantity;
         }
 
-        int quantityToAdd = 0;
-
-        if (previewRow.status == "New Inventory") {
-            quantityToAdd = previewRow.csvQuantity;
-        } else if (previewRow.status == "Increase Quantity") {
-            quantityToAdd = previewRow.csvQuantity - previewRow.currentQuantity;
-        } else {
+        if (!rowApplied) {
             ++result.rowsFailed;
-
-            qWarning() << "Unsupported Rebrickable preview status:" << previewRow.status;
-
-            continue;
-        }
-
-        if (quantityToAdd <= 0) {
-            continue;
-        }
-
-        InventoryRecord record;
-
-        record.setWorkspaceId(options.workspaceId);
-
-        record.setPartId(previewRow.partId);
-
-        record.setColorId(previewRow.colorId);
-
-        record.setStorageLocationId(options.storageLocationId);
-
-        record.setCondition(options.condition);
-
-        record.setOwnershipType(options.ownershipType);
-
-        record.setQuantity(quantityToAdd);
-
-        const QString notes = QString("Rebrickable synchronization. "
-                                      "CSV quantity: %1, "
-                                      "BrickSuite quantity before sync: %2, "
-                                      "quantity added: %3.")
-                                  .arg(previewRow.csvQuantity)
-                                  .arg(previewRow.currentQuantity)
-                                  .arg(quantityToAdd);
-
-        if (!inventoryRepository.addOrIncreaseQuantity(record,
-                                                       "CSVImport",
-                                                       "RebrickableCSV",
-                                                       preview.sourceFileName,
-                                                       notes,
-                                                       false)) {
-            ++result.rowsFailed;
-
-            qCritical() << "Unable to import Rebrickable inventory row:" << previewRow.partNumber;
-
+            qCritical() << "Unable to apply Rebrickable inventory row."
+                        << "Part:" << previewRow.partNumber
+                        << "Operation:" << inventoryCsvOperationName(options.operation);
             continue;
         }
 
         ++result.rowsImported;
-
-        result.totalQuantityImported += quantityToAdd;
+        result.totalQuantityImported += quantityChanged;
     }
 
-    //
-    // Keep the import atomic.
-    //
     if (result.rowsFailed > 0) {
-        qCritical() << "Rebrickable inventory import encountered" << result.rowsFailed
-                    << "failed rows.";
-
+        qCritical() << "Rebrickable inventory operation encountered"
+                    << result.rowsFailed << "failed rows.";
         m_database.rollback();
-
         return false;
     }
 
     if (!m_database.commit()) {
-        qCritical() << "Unable to commit Rebrickable inventory import:"
+        qCritical() << "Unable to commit Rebrickable inventory operation:"
                     << m_database.lastError().text();
-
         m_database.rollback();
-
         return false;
     }
 
-    qInfo() << "Rebrickable inventory synchronization completed."
-            << "Rows changed:" << result.rowsImported
-            << "Quantity added:" << result.totalQuantityImported;
-
     return true;
 }
+

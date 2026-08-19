@@ -49,6 +49,7 @@ private:
     QLineEdit* m_fileEdit = nullptr;
     QPushButton* m_browseButton = nullptr;
 
+    QComboBox* m_operationCombo = nullptr;
     QComboBox* m_storageCombo = nullptr;
     QComboBox* m_conditionCombo = nullptr;
     QComboBox* m_ownershipCombo = nullptr;
