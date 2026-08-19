@@ -49,6 +49,8 @@ public:
 
     bool inventoryWasAdded() const;
 
+    void setPreferredStorageLocationId(int storageLocationId);
+
 private slots:
     void addInventory();
     void showAllColorsToggled(bool checked);

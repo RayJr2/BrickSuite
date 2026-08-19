@@ -982,6 +982,18 @@ void MyInventoryWidget::addPart()
 
     AddInventoryDialog dialog(m_workspaceContext, this);
 
+    //
+    // When My Inventory is scoped to a specific operational storage
+    // location, use that location as the initial Add Part destination.
+    // "All Locations" remains neutral and leaves the dialog's normal
+    // default unchanged.
+    //
+    const int filteredStorageLocationId =
+        m_storageCombo->currentData().toInt();
+
+    if (filteredStorageLocationId > 0)
+        dialog.setPreferredStorageLocationId(filteredStorageLocationId);
+
     dialog.exec();
 
     //

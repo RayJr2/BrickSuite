@@ -684,6 +684,20 @@ void AddInventoryDialog::updateAddButtonState()
     addButton->setEnabled(validPart && validColor && validStorage);
 }
 
+void AddInventoryDialog::setPreferredStorageLocationId(
+    int storageLocationId)
+{
+    if (storageLocationId <= 0 || !m_storageCombo)
+        return;
+
+    const int index = m_storageCombo->findData(storageLocationId);
+
+    if (index >= 0)
+        m_storageCombo->setCurrentIndex(index);
+
+    updateAddButtonState();
+}
+
 bool AddInventoryDialog::inventoryWasAdded() const
 {
     return m_inventoryWasAdded;
