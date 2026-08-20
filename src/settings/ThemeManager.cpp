@@ -137,8 +137,11 @@ QString ThemeManager::globalStyleSheet(UserSettings::Theme theme)
 
     const QString disabledText = isDarkTheme ? "#777777" : "#888888";
 
-    const QString arrowIcon = isDarkTheme ? ":/icons/combo_down_light.png"
-                                          : ":/icons/combo_down_dark.png";
+    const QString downArrowIcon = isDarkTheme ? ":/icons/combo_down_light.png"
+                                              : ":/icons/combo_down_dark.png";
+
+    const QString upArrowIcon = isDarkTheme ? ":/icons/spin_up_light.png"
+                                            : ":/icons/spin_up_dark.png";
 
     return QString(R"(
         QRadioButton::indicator {
@@ -186,6 +189,37 @@ QString ThemeManager::globalStyleSheet(UserSettings::Theme theme)
             border: 1px solid %1;
             padding: 3px;
             border-radius: 4px;
+        }
+
+        QSpinBox::up-button,
+        QDoubleSpinBox::up-button {
+            subcontrol-origin: border;
+            subcontrol-position: top right;
+            width: 22px;
+            border-left: 1px solid %1;
+            border-bottom: 1px solid %1;
+        }
+
+        QSpinBox::down-button,
+        QDoubleSpinBox::down-button {
+            subcontrol-origin: border;
+            subcontrol-position: bottom right;
+            width: 22px;
+            border-left: 1px solid %1;
+        }
+
+        QSpinBox::up-arrow,
+        QDoubleSpinBox::up-arrow {
+            image: url(%10);
+            width: 10px;
+            height: 10px;
+        }
+
+        QSpinBox::down-arrow,
+        QDoubleSpinBox::down-arrow {
+            image: url(%9);
+            width: 10px;
+            height: 10px;
         }
 
         QComboBox {
@@ -340,5 +374,6 @@ QString ThemeManager::globalStyleSheet(UserSettings::Theme theme)
              hoverBackground, // %6
              disabledText,    // %7
              hoverText,       // %8
-             arrowIcon);      // %9
+             downArrowIcon,   // %9
+             upArrowIcon);    // %10
 }
