@@ -248,6 +248,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 12;
     }
 
+    // Version 12 -> Version 13.
+    if (version == 12) {
+        if (!migrateVersion12ToVersion13(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 13)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 13;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -1610,6 +1625,170 @@ bool DatabaseSchema::createExternalPartMappingTable(QSqlDatabase& database)
         ON external_part_mapping(provider, mapping_status)
     )")) {
         qCritical() << "Unable to create external part mapping index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion12ToVersion13(QSqlDatabase& database)
+{
+    if (!createPartRelationshipTable(database))
+        return false;
+
+    if (!createPartAliasTable(database))
+        return false;
+
+    return true;
+}
+
+bool DatabaseSchema::createPartRelationshipTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS part_relationship
+        (
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            parent_part_id            INTEGER NOT NULL,
+            child_part_id             INTEGER NOT NULL,
+
+            relationship_type         TEXT NOT NULL
+                                      CHECK(
+                                          relationship_type IN
+                                          (
+                                              'Unknown',
+                                              'Alternate',
+                                              'Mold',
+                                              'Print',
+                                              'Pattern',
+                                              'Subpart',
+                                              'Related'
+                                          )
+                                      ),
+
+            source_relationship_type  TEXT NOT NULL,
+            source                    TEXT NOT NULL,
+
+            is_active                 INTEGER NOT NULL DEFAULT 1
+                                      CHECK(is_active IN (0, 1)),
+
+            created_utc               TEXT NOT NULL,
+            modified_utc              TEXT NOT NULL,
+
+            FOREIGN KEY(parent_part_id)
+                REFERENCES part(id),
+
+            FOREIGN KEY(child_part_id)
+                REFERENCES part(id),
+
+            CHECK(parent_part_id <> child_part_id),
+
+            UNIQUE(
+                parent_part_id,
+                child_part_id,
+                source_relationship_type,
+                source
+            )
+        )
+    )")) {
+        qCritical() << "Unable to create part_relationship table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_part_relationship_parent
+        ON part_relationship(parent_part_id, is_active)
+    )")) {
+        qCritical() << "Unable to create part relationship parent index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_part_relationship_child
+        ON part_relationship(child_part_id, is_active)
+    )")) {
+        qCritical() << "Unable to create part relationship child index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_part_relationship_source_type
+        ON part_relationship(source, source_relationship_type, is_active)
+    )")) {
+        qCritical() << "Unable to create part relationship source/type index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::createPartAliasTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS part_alias
+        (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            part_id            INTEGER NOT NULL,
+
+            alias_part_number  TEXT NOT NULL COLLATE NOCASE UNIQUE,
+
+            alias_type         TEXT NOT NULL
+                               CHECK(
+                                   alias_type IN
+                                   (
+                                       'Unknown',
+                                       'PartNumberMapping',
+                                       'RebrickableAlternate',
+                                       'RebrickableMold',
+                                       'UserConfirmed',
+                                       'Legacy',
+                                       'Molded'
+                                   )
+                               ),
+
+            source             TEXT NOT NULL,
+
+            is_active          INTEGER NOT NULL DEFAULT 1
+                               CHECK(is_active IN (0, 1)),
+
+            notes              TEXT,
+
+            created_utc        TEXT NOT NULL,
+            modified_utc       TEXT NOT NULL,
+
+            FOREIGN KEY(part_id)
+                REFERENCES part(id)
+        )
+    )")) {
+        qCritical() << "Unable to create part_alias table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_part_alias_part
+        ON part_alias(part_id, is_active)
+    )")) {
+        qCritical() << "Unable to create part alias part index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_part_alias_source_type
+        ON part_alias(source, alias_type, is_active)
+    )")) {
+        qCritical() << "Unable to create part alias source/type index:"
                     << query.lastError().text();
         return false;
     }

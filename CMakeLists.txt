@@ -77,12 +77,18 @@ qt_add_executable(BrickSuite
     src/models/ExternalMappingStatus.h
     src/models/ExternalColorMapping.h
     src/models/ExternalPartMapping.h
+    src/models/PartRelationship.h
+    src/models/PartAlias.h
     src/repositories/PartCategoryRepository.h
     src/repositories/PartCategoryRepository.cpp
     src/repositories/ExternalColorMappingRepository.h
     src/repositories/ExternalColorMappingRepository.cpp
     src/repositories/ExternalPartMappingRepository.h
     src/repositories/ExternalPartMappingRepository.cpp
+    src/repositories/PartRelationshipRepository.h
+    src/repositories/PartRelationshipRepository.cpp
+    src/repositories/PartAliasRepository.h
+    src/repositories/PartAliasRepository.cpp
     src/models/PartSearchCriteria.h
     src/ui/catalog/PartsCatalogWidget.cpp
     src/ui/catalog/PartsCatalogWidget.h
