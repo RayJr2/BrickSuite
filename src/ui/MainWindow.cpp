@@ -243,6 +243,10 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
                 if (dialog.exec() == QDialog::Accepted) {
                     m_myInventoryWidget->refresh();
 
+                    if (m_backgroundPartColorImageCacheService) {
+                        m_backgroundPartColorImageCacheService->rebuildQueue();
+                    }
+
                     statusBar()->showMessage("Inventory updated.", 5000);
                 }
             });
@@ -274,6 +278,16 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
             &BackgroundPartColorImageCacheService::partColorImageCached,
             m_myInventoryWidget,
             &MyInventoryWidget::updatePartColorImage);
+
+    //
+    // The background queue is a snapshot of inventory. Rebuild it whenever
+    // inventory changes so newly added/imported Part+Color combinations are
+    // picked up without requiring an application restart.
+    //
+    connect(m_myInventoryWidget,
+            &MyInventoryWidget::inventoryChanged,
+            m_backgroundPartColorImageCacheService,
+            &BackgroundPartColorImageCacheService::rebuildQueue);
 
     m_backgroundPartColorImageCacheService->start();
 

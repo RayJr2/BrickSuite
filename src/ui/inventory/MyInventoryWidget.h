@@ -51,6 +51,9 @@ public:
                               int rebrickableColorId,
                               const QString& imagePath);
 
+signals:
+    void inventoryChanged();
+
 protected:
     void showEvent(QShowEvent* event) override;
 

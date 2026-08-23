@@ -915,6 +915,7 @@ void MyInventoryWidget::importCsv()
 
     if (dialog.exec() == QDialog::Accepted) {
         refresh();
+        emit inventoryChanged();
     }
 }
 
@@ -1003,6 +1004,7 @@ void MyInventoryWidget::addPart()
     //
     if (dialog.inventoryWasAdded()) {
         searchInventory();
+        emit inventoryChanged();
     }
 }
 
