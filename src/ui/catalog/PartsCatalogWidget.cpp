@@ -21,6 +21,7 @@
 #include "PartsCatalogWidget.h"
 
 #include "../../import/RebrickablePartCatalogImporter.h"
+#include "../../import/RebrickablePartRelationshipImporter.h"
 #include "../../models/Part.h"
 #include "../../models/PartCategory.h"
 #include "../../models/PartSearchCriteria.h"
@@ -58,11 +59,15 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
 
     m_importPartsButton = new QPushButton("Import Rebrickable parts.csv", this);
 
+    m_importPartRelationshipsButton =
+        new QPushButton("Import part_relationships.csv", this);
+
     mainLayout->addLayout(titleLayout);
 
     titleLayout->addStretch();
 
     titleLayout->addWidget(m_importPartsButton);
+    titleLayout->addWidget(m_importPartRelationshipsButton);
 
     auto* filterLayout = new QHBoxLayout();
 
@@ -231,7 +236,15 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
                 }
             });
 
-    connect(m_importPartsButton, &QPushButton::clicked, this, &PartsCatalogWidget::importPartsCsv);
+    connect(m_importPartsButton,
+            &QPushButton::clicked,
+            this,
+            &PartsCatalogWidget::importPartsCsv);
+
+    connect(m_importPartRelationshipsButton,
+            &QPushButton::clicked,
+            this,
+            &PartsCatalogWidget::importPartRelationshipsCsv);
 
     loadCategories();
 
@@ -533,3 +546,67 @@ void PartsCatalogWidget::importPartsCsv()
 
     searchParts();
 }
+
+void PartsCatalogWidget::importPartRelationshipsCsv()
+{
+    const QString fileName =
+        QFileDialog::getOpenFileName(
+            this,
+            "Import Rebrickable part_relationships.csv",
+            QString(),
+            "CSV Files (*.csv)");
+
+    if (fileName.isEmpty())
+        return;
+
+    const QMessageBox::StandardButton response =
+        QMessageBox::question(
+            this,
+            "Import Part Relationships",
+            "Import/update BrickSuite Part Relationships from this "
+            "Rebrickable part_relationships.csv file?\n\n"
+            "Existing Rebrickable relationships missing from the selected "
+            "file will be deactivated, not deleted.\n\n"
+            "This import does not create aliases or change Add Inventory "
+            "behavior yet.",
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+
+    if (response != QMessageBox::Yes)
+        return;
+
+    RebrickablePartRelationshipImporter importer;
+
+    const RebrickablePartRelationshipImporter::Result result =
+        importer.importFile(fileName);
+
+    if (!result.success) {
+        QMessageBox::critical(
+            this,
+            "Import Part Relationships",
+            result.message);
+        return;
+    }
+
+    QMessageBox::information(
+        this,
+        "Import Part Relationships",
+        QString("Part Relationship import completed.\n\n"
+                "Rows Read: %1\n"
+                "New: %2\n"
+                "Updated / Reactivated: %3\n"
+                "Unchanged: %4\n"
+                "Skipped - Invalid: %5\n"
+                "Skipped - Missing Parent: %6\n"
+                "Skipped - Missing Child: %7\n"
+                "Deactivated: %8")
+            .arg(result.rowsRead)
+            .arg(result.inserted)
+            .arg(result.updated)
+            .arg(result.unchanged)
+            .arg(result.skippedInvalid)
+            .arg(result.skippedMissingParent)
+            .arg(result.skippedMissingChild)
+            .arg(result.deactivated));
+}
+

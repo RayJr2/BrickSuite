@@ -44,6 +44,7 @@ private slots:
     void previousPage();
     void nextPage();
     void importPartsCsv();
+    void importPartRelationshipsCsv();
 
 signals:
     void addPartToInventoryRequested(int partId);
@@ -78,4 +79,5 @@ private:
     QHash<QString, int> m_rowByPartNumber;
 
     QPushButton* m_importPartsButton = nullptr;
+    QPushButton* m_importPartRelationshipsButton = nullptr;
 };
