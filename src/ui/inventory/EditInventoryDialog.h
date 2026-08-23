@@ -53,6 +53,7 @@ private:
 
     void loadConditionOptions();
     void loadOwnershipOptions();
+    void loadManufacturers();
 
     int m_inventoryRecordId = 0;
     int m_partId = 0;
@@ -62,6 +63,7 @@ private:
     QLabel* m_partLabel = nullptr;
 
     QComboBox* m_colorCombo = nullptr;
+    QComboBox* m_manufacturerCombo = nullptr;
     QComboBox* m_conditionCombo = nullptr;
     QComboBox* m_ownershipCombo = nullptr;
 

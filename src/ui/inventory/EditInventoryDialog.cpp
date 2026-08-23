@@ -29,6 +29,7 @@
 
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
+#include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
@@ -66,6 +67,8 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
 
     m_colorCombo = new QComboBox(this);
 
+    m_manufacturerCombo = new QComboBox(this);
+
     m_showAllColorsCheck = new QCheckBox("Show all colors", this);
 
     m_conditionCombo = new QComboBox(this);
@@ -87,6 +90,8 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
     layout->addRow("Part:", m_partLabel);
 
     layout->addRow("Color:", m_colorCombo);
+
+    layout->addRow("Manufacturer:", m_manufacturerCombo);
     layout->addRow(QString(), m_showAllColorsCheck);
 
     layout->addRow("Condition:", m_conditionCombo);
@@ -131,6 +136,7 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     loadAllColors();
+    loadManufacturers();
 
     if (!loadInventoryRecord()) {
         if (QPushButton* saveButton = m_buttonBox->button(QDialogButtonBox::Save)) {
@@ -140,6 +146,18 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
     }
 
     loadKnownColors();
+}
+
+void EditInventoryDialog::loadManufacturers()
+{
+    m_manufacturerCombo->clear();
+
+    ManufacturerRepository repository;
+    const QList<Manufacturer> manufacturers = repository.getAll(true);
+
+    for (const Manufacturer& manufacturer : manufacturers) {
+        m_manufacturerCombo->addItem(manufacturer.name(), manufacturer.id());
+    }
 }
 
 void EditInventoryDialog::loadAllColors()
@@ -172,6 +190,12 @@ bool EditInventoryDialog::loadInventoryRecord()
     m_partId = record->partId();
 
     m_originalColorId = record->colorId();
+
+    const int manufacturerIndex =
+        m_manufacturerCombo->findData(record->manufacturerId());
+
+    if (manufacturerIndex >= 0)
+        m_manufacturerCombo->setCurrentIndex(manufacturerIndex);
 
     // Preserve the current storage location.
     // Physical relocation is handled through
@@ -240,6 +264,8 @@ void EditInventoryDialog::saveChanges()
 
     updated.setStorageLocationId(m_storageLocationId);
 
+    updated.setManufacturerId(m_manufacturerCombo->currentData().toInt());
+
     updated.setCondition(m_conditionCombo->currentText().trimmed());
 
     updated.setOwnershipType(m_ownershipCombo->currentText().trimmed());
@@ -262,6 +288,7 @@ void EditInventoryDialog::saveChanges()
             << "InventoryRecordId:" << m_inventoryRecordId
             << "ColorId:" << updated.colorId()
             << "StorageLocationId:" << updated.storageLocationId()
+            << "ManufacturerId:" << updated.manufacturerId()
             << "Quantity:" << updated.quantity()
             << "Condition:" << updated.condition()
             << "OwnershipType:" << updated.ownershipType();

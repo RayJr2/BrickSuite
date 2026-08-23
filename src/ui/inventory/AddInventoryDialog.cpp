@@ -29,6 +29,7 @@
 
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
+#include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
@@ -147,6 +148,8 @@ void AddInventoryDialog::initializeUi()
 
     m_storageCombo = new QComboBox(this);
 
+    m_manufacturerCombo = new QComboBox(this);
+
     m_conditionCombo = new QComboBox(this);
 
     m_ownershipCombo = new QComboBox(this);
@@ -178,6 +181,8 @@ void AddInventoryDialog::initializeUi()
 
     layout->addRow("Storage:", m_storageCombo);
 
+    layout->addRow("Manufacturer:", m_manufacturerCombo);
+
     layout->addRow("Condition:", m_conditionCombo);
 
     layout->addRow("Ownership:", m_ownershipCombo);
@@ -189,6 +194,8 @@ void AddInventoryDialog::initializeUi()
     }
 
     layout->addRow(m_buttonBox);
+
+    loadManufacturers();
 
     m_rebrickableApiClient = new RebrickableApiClient(this);
 
@@ -323,6 +330,24 @@ void AddInventoryDialog::loadPart()
     m_partLabel->setText(QString("%1 — %2").arg(part->partNumber()).arg(part->name()));
 }
 
+void AddInventoryDialog::loadManufacturers()
+{
+    m_manufacturerCombo->clear();
+
+    ManufacturerRepository repository;
+    const QList<Manufacturer> manufacturers = repository.getAll(true);
+
+    for (const Manufacturer& manufacturer : manufacturers) {
+        m_manufacturerCombo->addItem(manufacturer.name(), manufacturer.id());
+    }
+
+    const int legoId = repository.legoManufacturerId();
+    const int legoIndex = m_manufacturerCombo->findData(legoId);
+
+    if (legoIndex >= 0)
+        m_manufacturerCombo->setCurrentIndex(legoIndex);
+}
+
 void AddInventoryDialog::loadStorageLocations()
 {
     m_storageCombo->clear();
@@ -416,6 +441,8 @@ void AddInventoryDialog::addInventory()
     record.setColorId(colorId);
 
     record.setStorageLocationId(storageLocationId);
+
+    record.setManufacturerId(m_manufacturerCombo->currentData().toInt());
 
     record.setCondition(m_conditionCombo->currentText().trimmed());
 

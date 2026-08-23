@@ -63,6 +63,7 @@ private:
     void loadKnownColors();
     void applyKnownColors(int preferredColorId = 0);
     void loadStorageLocations();
+    void loadManufacturers();
 
     void initializeUi();
     void configureForSelectedPart();
@@ -84,6 +85,7 @@ private:
 
     QComboBox* m_colorCombo = nullptr;
     QComboBox* m_storageCombo = nullptr;
+    QComboBox* m_manufacturerCombo = nullptr;
     QComboBox* m_conditionCombo = nullptr;
     QComboBox* m_ownershipCombo = nullptr;
 

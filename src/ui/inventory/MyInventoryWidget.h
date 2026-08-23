@@ -67,6 +67,7 @@ private slots:
 private:
     void loadCategories();
     void loadColors();
+    void loadManufacturers();
     void loadStorageLocations();
     void updatePagingControls();
     void addPart();
@@ -86,6 +87,7 @@ private:
     QComboBox* m_categoryCombo = nullptr;
     QComboBox* m_colorCombo = nullptr;
     QComboBox* m_storageCombo = nullptr;
+    QComboBox* m_manufacturerCombo = nullptr;
 
     QPushButton* m_searchButton = nullptr;
 

@@ -40,6 +40,7 @@
 
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
+#include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
@@ -122,6 +123,8 @@ MyInventoryWidget::MyInventoryWidget(
     m_storageCombo =
         new QComboBox(this);
 
+    m_manufacturerCombo = new QComboBox(this);
+
     m_searchButton =
         new QPushButton(
             "Search",
@@ -156,6 +159,13 @@ MyInventoryWidget::MyInventoryWidget(
         1);
 
     filterLayout->addWidget(
+        new QLabel("Manufacturer:", this));
+
+    filterLayout->addWidget(
+        m_manufacturerCombo,
+        1);
+
+    filterLayout->addWidget(
         m_searchButton);
 
     m_resultLabel =
@@ -164,7 +174,7 @@ MyInventoryWidget::MyInventoryWidget(
     m_resultsTable =
         new QTableWidget(this);
 
-    m_resultsTable->setColumnCount(10);
+    m_resultsTable->setColumnCount(11);
 
     m_resultsTable->setHorizontalHeaderLabels(QStringList() << "Image"
                                                             << "Part #"
@@ -173,6 +183,7 @@ MyInventoryWidget::MyInventoryWidget(
                                                             << "Color"
                                                             << "Qty"
                                                             << "Storage"
+                                                            << "Manufacturer"
                                                             << "Condition"
                                                             << "Ownership"
                                                             << "Action");
@@ -218,6 +229,8 @@ MyInventoryWidget::MyInventoryWidget(
     m_resultsTable->horizontalHeader()->setSectionResizeMode(8, QHeaderView::ResizeToContents);
 
     m_resultsTable->horizontalHeader()->setSectionResizeMode(9, QHeaderView::ResizeToContents);
+
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(10, QHeaderView::ResizeToContents);
 
     m_previousButton = new QPushButton("Previous", this);
 
@@ -322,6 +335,16 @@ MyInventoryWidget::MyInventoryWidget(
         });
 
     connect(
+        m_manufacturerCombo,
+        &QComboBox::currentIndexChanged,
+        this,
+        [this]()
+        {
+            m_currentPage = 0;
+            searchInventory();
+        });
+
+    connect(
         m_previousButton,
         &QPushButton::clicked,
         this,
@@ -407,6 +430,7 @@ MyInventoryWidget::MyInventoryWidget(
 
     loadCategories();
     loadColors();
+    loadManufacturers();
 
     workspaceChanged(
         m_workspaceContext.currentWorkspaceId());
@@ -473,6 +497,25 @@ void MyInventoryWidget::loadColors()
     for (const Color& color : colors) {
         m_colorCombo->addItem(color.name(), color.id());
     }
+}
+
+void MyInventoryWidget::loadManufacturers()
+{
+    const QSignalBlocker blocker(m_manufacturerCombo);
+    const int selectedManufacturerId = m_manufacturerCombo->currentData().toInt();
+
+    m_manufacturerCombo->clear();
+    m_manufacturerCombo->addItem("All Manufacturers", 0);
+
+    ManufacturerRepository repository;
+    const QList<Manufacturer> manufacturers = repository.getAll(true);
+
+    for (const Manufacturer& manufacturer : manufacturers)
+        m_manufacturerCombo->addItem(manufacturer.name(), manufacturer.id());
+
+    const int restoredIndex = m_manufacturerCombo->findData(selectedManufacturerId);
+    if (restoredIndex >= 0)
+        m_manufacturerCombo->setCurrentIndex(restoredIndex);
 }
 
 void MyInventoryWidget::loadStorageLocations()
@@ -577,6 +620,8 @@ void MyInventoryWidget::searchInventory()
 
     criteria.storageLocationId = m_storageCombo->currentData().toInt();
 
+    criteria.manufacturerId = m_manufacturerCombo->currentData().toInt();
+
     const int resultsPerPage = UserSettings::instance().resultsPerPage();
 
     criteria.limit = resultsPerPage;
@@ -678,6 +723,8 @@ void MyInventoryWidget::searchInventory()
 
         auto* storageItem = new QTableWidgetItem(storagePath);
 
+        auto* manufacturerItem = new QTableWidgetItem(result.manufacturerName);
+
         auto* conditionItem = new QTableWidgetItem(result.condition);
 
         auto* ownershipItem = new QTableWidgetItem(result.ownershipType);
@@ -765,11 +812,13 @@ void MyInventoryWidget::searchInventory()
 
         m_resultsTable->setItem(row, 6, storageItem);
 
-        m_resultsTable->setItem(row, 7, conditionItem);
+        m_resultsTable->setItem(row, 7, manufacturerItem);
 
-        m_resultsTable->setItem(row, 8, ownershipItem);
+        m_resultsTable->setItem(row, 8, conditionItem);
 
-        m_resultsTable->setCellWidget(row, 9, actionCombo);
+        m_resultsTable->setItem(row, 9, ownershipItem);
+
+        m_resultsTable->setCellWidget(row, 10, actionCombo);
 
         //
         // My Loose Inventory prefers an actual Part+Color
@@ -816,8 +865,9 @@ void MyInventoryWidget::searchInventory()
             const bool hasCategoryFilter = criteria.categoryId > 0;
             const bool hasColorFilter = criteria.colorId > 0;
             const bool hasStorageFilter = criteria.storageLocationId > 0;
+            const bool hasManufacturerFilter = criteria.manufacturerId > 0;
 
-            if (hasSearchText || hasCategoryFilter || hasColorFilter || hasStorageFilter) {
+            if (hasSearchText || hasCategoryFilter || hasColorFilter || hasStorageFilter || hasManufacturerFilter) {
                 m_resultLabel->setText(
                     "No inventory records match the current search or filters.");
             } else {
