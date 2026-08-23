@@ -57,6 +57,7 @@ private slots:
 private:
     void loadWorkspaces();
     QWidget* createWorkspaceTab();
+    void ensureBrickLinkColorMappings();
 
     WorkspaceContext& m_workspaceContext;
 

@@ -291,6 +291,14 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_backgroundPartColorImageCacheService->start();
 
+    //
+    // BrickLink Wanted List export depends on the locally cached mapping
+    // between BrickSuite/Rebrickable colors and BrickLink color IDs.
+    // Initialize those mappings automatically when needed so Procurement
+    // never depends on the Test-menu refresh action.
+    //
+    ensureBrickLinkColorMappings();
+
     /***** Menu bar *****/
 
     // File menu
@@ -487,6 +495,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
             if (m_myInventoryWidget) {
                 m_myInventoryWidget->settingsChanged();
             }
+
+            ensureBrickLinkColorMappings();
         });
 
         dialog.exec();
@@ -1321,6 +1331,40 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     //statusBar()->showMessage("BrickSuite Version 1.0");
     statusBar()->showMessage(AppVersion::displayVersion());
+}
+
+void MainWindow::ensureBrickLinkColorMappings()
+{
+    const UserSettings& settings = UserSettings::instance();
+
+    const QString apiKey =
+        settings.rebrickableApiKey().trimmed();
+
+    //
+    // Do not turn provider initialization into an implicit connection test.
+    // Use the credential only after the user has successfully verified it.
+    //
+    if (apiKey.isEmpty()
+        || !settings.rebrickableConnectionPreviouslyVerified()) {
+        return;
+    }
+
+    auto* mappingService = new BrickLinkMappingService(this);
+
+    connect(mappingService,
+            &BrickLinkMappingService::colorMappingsRefreshed,
+            this,
+            [mappingService](
+                const BrickLinkMappingService::ColorRefreshResult& result) {
+                if (!result.success) {
+                    qWarning() << "Unable to initialize BrickLink color mappings:"
+                               << result.message;
+                }
+
+                mappingService->deleteLater();
+            });
+
+    mappingService->ensureColorMappings(apiKey);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)

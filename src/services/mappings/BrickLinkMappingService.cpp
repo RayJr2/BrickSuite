@@ -59,6 +59,63 @@ void BrickLinkMappingService::refreshColorMappings(
     m_rebrickableService->getCatalogColors(apiKey);
 }
 
+void BrickLinkMappingService::ensureColorMappings(
+    const QString& rebrickableApiKey)
+{
+    const QString apiKey = rebrickableApiKey.trimmed();
+
+    ColorRefreshResult result;
+
+    if (apiKey.isEmpty()) {
+        result.message =
+            QStringLiteral("Rebrickable API key is not configured.");
+        emit colorMappingsRefreshed(result);
+        return;
+    }
+
+    ColorRepository colorRepository;
+    ExternalColorMappingRepository mappingRepository;
+
+    const QList<Color> brickSuiteColors = colorRepository.getAll();
+    const QString provider = apiProviderName(ApiProvider::BrickLink);
+
+    const QList<ExternalColorMapping> existingMappings =
+        mappingRepository.getByProvider(provider);
+
+    //
+    // A completed refresh creates exactly one provider mapping row for each
+    // BrickSuite color, including explicit Unknown/Unsupported entries.
+    // If coverage is already complete, avoid another provider request.
+    //
+    if (!brickSuiteColors.isEmpty()
+        && existingMappings.size() >= brickSuiteColors.size()) {
+        result.success = true;
+        result.message =
+            QStringLiteral("BrickLink color mappings are already initialized.");
+        result.brickSuiteColors = brickSuiteColors.size();
+
+        result.mapped =
+            mappingRepository.countByProviderAndStatus(
+                provider,
+                ExternalMappingStatus::Mapped);
+
+        result.unsupported =
+            mappingRepository.countByProviderAndStatus(
+                provider,
+                ExternalMappingStatus::Unsupported);
+
+        result.unknown =
+            mappingRepository.countByProviderAndStatus(
+                provider,
+                ExternalMappingStatus::Unknown);
+
+        emit colorMappingsRefreshed(result);
+        return;
+    }
+
+    refreshColorMappings(apiKey);
+}
+
 bool BrickLinkMappingService::storePartExternalIds(
     int partId,
     const QHash<QString, QStringList>& externalIds) const

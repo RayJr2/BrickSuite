@@ -33,6 +33,8 @@ public:
 
     void refreshColorMappings(const QString& rebrickableApiKey);
 
+    void ensureColorMappings(const QString& rebrickableApiKey);
+
     bool storePartExternalIds(
         int partId,
         const QHash<QString, QStringList>& externalIds) const;
