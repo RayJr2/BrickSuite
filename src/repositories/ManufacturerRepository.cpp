@@ -9,6 +9,7 @@
 
 #include <QDateTime>
 #include <QDebug>
+#include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QVariant>
@@ -93,6 +94,141 @@ std::optional<Manufacturer> ManufacturerRepository::getByCode(const QString& cod
     return fromQuery(query);
 }
 
+std::optional<Manufacturer> ManufacturerRepository::getByName(const QString& name) const
+{
+    QSqlQuery query(DatabaseManager::instance().database());
+    query.prepare(R"(
+        SELECT id, code, name, website_url, supports_lego_element_ids,
+               is_active, notes, created_utc, modified_utc
+        FROM manufacturer
+        WHERE name = :name COLLATE NOCASE
+    )");
+    query.bindValue(":name", name.trimmed());
+
+    if (!query.exec() || !query.next())
+        return std::nullopt;
+
+    return fromQuery(query);
+}
+
+bool ManufacturerRepository::codeExists(
+    const QString& code,
+    int excludeManufacturerId) const
+{
+    const QString normalizedCode = code.trimmed().toUpper();
+
+    if (normalizedCode.isEmpty())
+        return false;
+
+    QSqlQuery query(DatabaseManager::instance().database());
+
+    QString sql = R"(
+        SELECT 1
+        FROM manufacturer
+        WHERE code = :code COLLATE NOCASE
+    )";
+
+    if (excludeManufacturerId > 0)
+        sql += QStringLiteral(" AND id <> :exclude_id");
+
+    sql += QStringLiteral(" LIMIT 1");
+
+    query.prepare(sql);
+    query.bindValue(":code", normalizedCode);
+
+    if (excludeManufacturerId > 0)
+        query.bindValue(":exclude_id", excludeManufacturerId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to validate manufacturer code uniqueness:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    return query.next();
+}
+
+bool ManufacturerRepository::nameExists(
+    const QString& name,
+    int excludeManufacturerId) const
+{
+    const QString normalizedName = name.trimmed();
+
+    if (normalizedName.isEmpty())
+        return false;
+
+    QSqlQuery query(DatabaseManager::instance().database());
+
+    QString sql = R"(
+        SELECT 1
+        FROM manufacturer
+        WHERE name = :name COLLATE NOCASE
+    )";
+
+    if (excludeManufacturerId > 0)
+        sql += QStringLiteral(" AND id <> :exclude_id");
+
+    sql += QStringLiteral(" LIMIT 1");
+
+    query.prepare(sql);
+    query.bindValue(":name", normalizedName);
+
+    if (excludeManufacturerId > 0)
+        query.bindValue(":exclude_id", excludeManufacturerId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to validate manufacturer name uniqueness:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    return query.next();
+}
+
+ManufacturerUsage ManufacturerRepository::usage(int manufacturerId) const
+{
+    ManufacturerUsage result;
+
+    if (manufacturerId <= 0)
+        return result;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    auto countReferences =
+        [&database, manufacturerId](const QString& sql) -> int
+        {
+            QSqlQuery query(database);
+            query.prepare(sql);
+            query.bindValue(":manufacturer_id", manufacturerId);
+
+            if (!query.exec() || !query.next())
+                return 0;
+
+            return query.value(0).toInt();
+        };
+
+    result.inventoryRecordCount = countReferences(R"(
+        SELECT COUNT(*)
+        FROM inventory_record
+        WHERE manufacturer_id = :manufacturer_id
+    )");
+
+    result.buildCount = countReferences(R"(
+        SELECT COUNT(*)
+        FROM build
+        WHERE manufacturer_id = :manufacturer_id
+    )");
+
+    result.provenanceCount = countReferences(R"(
+        SELECT COUNT(*)
+        FROM build_part_provenance
+        WHERE manufacturer_id = :manufacturer_id
+          AND quantity_pulled > 0
+    )");
+
+    return result;
+}
+
 bool ManufacturerRepository::create(Manufacturer& manufacturer) const
 {
     const QString code = manufacturer.code().trimmed().toUpper();
@@ -100,6 +236,13 @@ bool ManufacturerRepository::create(Manufacturer& manufacturer) const
 
     if (code.isEmpty() || name.isEmpty())
         return false;
+
+    if (codeExists(code) || nameExists(name)) {
+        qWarning() << "Manufacturer create rejected due to duplicate identity."
+                   << "Code:" << code
+                   << "Name:" << name;
+        return false;
+    }
 
     const QString now =
         QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
@@ -156,6 +299,35 @@ bool ManufacturerRepository::update(Manufacturer& manufacturer) const
         return false;
     }
 
+    const QString code = manufacturer.code().trimmed().toUpper();
+    const QString name = manufacturer.name().trimmed();
+
+    if (codeExists(code, manufacturer.id())
+        || nameExists(name, manufacturer.id())) {
+        qWarning() << "Manufacturer update rejected due to duplicate identity."
+                   << "ManufacturerId:" << manufacturer.id()
+                   << "Code:" << code
+                   << "Name:" << name;
+        return false;
+    }
+
+    const std::optional<Manufacturer> existing =
+        getById(manufacturer.id());
+
+    if (!existing)
+        return false;
+
+    if (existing->code().compare(QStringLiteral("LEGO"),
+                                 Qt::CaseInsensitive) == 0) {
+        if (code.compare(QStringLiteral("LEGO"),
+                         Qt::CaseInsensitive) != 0
+            || !manufacturer.isActive()) {
+            qWarning() << "System LEGO manufacturer cannot be renamed "
+                          "or deactivated.";
+            return false;
+        }
+    }
+
     const QString now =
         QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 
@@ -172,8 +344,8 @@ bool ManufacturerRepository::update(Manufacturer& manufacturer) const
         WHERE id = :id
     )");
 
-    query.bindValue(":code", manufacturer.code().trimmed().toUpper());
-    query.bindValue(":name", manufacturer.name().trimmed());
+    query.bindValue(":code", code);
+    query.bindValue(":name", name);
     query.bindValue(":website_url",
                     manufacturer.websiteUrl().trimmed().isEmpty()
                         ? QVariant()
@@ -194,12 +366,29 @@ bool ManufacturerRepository::update(Manufacturer& manufacturer) const
         return false;
     }
 
+    manufacturer.setCode(code);
+    manufacturer.setName(name);
     manufacturer.setModifiedUtc(QDateTime::fromString(now, Qt::ISODateWithMs));
     return query.numRowsAffected() > 0;
 }
 
 bool ManufacturerRepository::setActive(int id, bool active) const
 {
+    if (id <= 0)
+        return false;
+
+    const std::optional<Manufacturer> manufacturer = getById(id);
+
+    if (!manufacturer)
+        return false;
+
+    if (!active
+        && manufacturer->code().compare(QStringLiteral("LEGO"),
+                                        Qt::CaseInsensitive) == 0) {
+        qWarning() << "System LEGO manufacturer cannot be deactivated.";
+        return false;
+    }
+
     QSqlQuery query(DatabaseManager::instance().database());
     query.prepare(R"(
         UPDATE manufacturer
