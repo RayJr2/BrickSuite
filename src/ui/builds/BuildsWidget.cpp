@@ -1510,7 +1510,18 @@ void BuildsWidget::loadRequirements()
         }
     }
 
-    m_requirementsLabel->setText(QString("Requirements for: %1").arg(buildDescription));
+    BuildRepository buildRepository;
+    const std::optional<Build> selectedBuild =
+        buildRepository.getById(m_selectedBuildId);
+
+    const bool completeSet =
+        selectedBuild
+        && selectedBuild->inventoryMode() == "CompleteSet";
+
+    m_requirementsLabel->setText(
+        completeSet
+            ? QString("Set Contents for: %1").arg(buildDescription)
+            : QString("Requirements for: %1").arg(buildDescription));
 
     BuildRequirementRepository requirementRepository;
 
@@ -1638,9 +1649,18 @@ void BuildsWidget::loadRequirements()
         auto* actionCombo = new QComboBox(m_requirementsTable);
 
         actionCombo->addItem("Actions...");
-        actionCombo->addItem("Edit", "edit");
-        actionCombo->addItem("Delete", "delete");
-        actionCombo->addItem("Allocate...", "allocate");
+
+        if (!completeSet) {
+            actionCombo->addItem("Edit", "edit");
+            actionCombo->addItem("Delete", "delete");
+            actionCombo->addItem("Allocate...", "allocate");
+        } else {
+            //
+            // Complete Set requirements are canonical box contents loaded
+            // from the Set inventory. They are intentionally read-only here.
+            //
+            actionCombo->setEnabled(false);
+        }
 
         const int requirementId = requirement.id();
         const bool requirementIsSpare = requirement.isSpare();
@@ -2206,6 +2226,31 @@ void BuildsWidget::updateRequirementUiState()
     // but the Build is read-only until reactivated.
     //
     m_requirementsTable->setEnabled(enabled);
+
+    //
+    // Complete Set requirements describe the contents supplied by the box.
+    // Stock-only fulfillment/allocation columns answer the wrong question
+    // for that mode, so hide them rather than manufacturing placeholder
+    // values. Underlying quantity_pulled remains untouched.
+    //
+    const QList<int> stockOnlyColumns = {
+        4,  // Pulled
+        5,  // Remaining
+        6,  // Owned
+        7,  // This Build
+        8,  // Other Builds
+        9,  // Available
+        10  // Missing
+    };
+
+    for (int column : stockOnlyColumns)
+        m_requirementsTable->setColumnHidden(column, completeSet);
+
+    //
+    // Complete Set contents are read-only in M18.2. There are no valid
+    // row-level actions until M18.3 introduces Store Spare for spare rows.
+    //
+    m_requirementsTable->setColumnHidden(12, completeSet);
 
     bool canLoadSet = false;
     bool canAllocateAvailable = false;
