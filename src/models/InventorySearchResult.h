@@ -40,6 +40,10 @@ struct InventorySearchResult
     int storageLocationId = 0;
     QString storageLocationName;
 
+    int manufacturerId = 0;
+    QString manufacturerCode;
+    QString manufacturerName;
+
     QString condition;
     QString ownershipType;
 

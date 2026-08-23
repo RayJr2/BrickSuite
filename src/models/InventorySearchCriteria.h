@@ -31,6 +31,7 @@ struct InventorySearchCriteria
     int categoryId = 0;
     int colorId = 0;
     int storageLocationId = 0;
+    int manufacturerId = 0;
 
     int limit = 250;
     int offset = 0;

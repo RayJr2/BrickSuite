@@ -24,6 +24,7 @@
 
 #include "../models/InventoryMovement.h"
 #include "InventoryMovementRepository.h"
+#include "ManufacturerRepository.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -31,12 +32,31 @@
 #include <QSqlQuery>
 #include <QtGlobal>
 
+namespace
+{
+int normalizedManufacturerId(int requestedManufacturerId)
+{
+    if (requestedManufacturerId > 0)
+        return requestedManufacturerId;
+
+    ManufacturerRepository repository;
+    return repository.legoManufacturerId();
+}
+}
+
 bool InventoryRecordRepository::create(InventoryRecord& record)
 {
     if (record.workspaceId() <= 0 || record.partId() <= 0 || record.colorId() <= 0
         || record.storageLocationId() <= 0 || record.quantity() < 0) {
         return false;
     }
+
+    const int manufacturerId = normalizedManufacturerId(record.manufacturerId());
+
+    if (manufacturerId <= 0)
+        return false;
+
+    record.setManufacturerId(manufacturerId);
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
@@ -51,6 +71,7 @@ bool InventoryRecordRepository::create(InventoryRecord& record)
             part_id,
             color_id,
             storage_location_id,
+            manufacturer_id,
             condition,
             ownership_type,
             quantity,
@@ -63,6 +84,7 @@ bool InventoryRecordRepository::create(InventoryRecord& record)
             :part_id,
             :color_id,
             :storage_location_id,
+            :manufacturer_id,
             :condition,
             :ownership_type,
             :quantity,
@@ -75,6 +97,7 @@ bool InventoryRecordRepository::create(InventoryRecord& record)
     query.bindValue(":part_id", record.partId());
     query.bindValue(":color_id", record.colorId());
     query.bindValue(":storage_location_id", record.storageLocationId());
+    query.bindValue(":manufacturer_id", manufacturerId);
     query.bindValue(":condition", record.condition().trimmed());
     query.bindValue(":ownership_type", record.ownershipType().trimmed());
     query.bindValue(":quantity", record.quantity());
@@ -110,6 +133,7 @@ QList<InventoryRecord> InventoryRecordRepository::getByWorkspace(int workspaceId
             part_id,
             color_id,
             storage_location_id,
+            manufacturer_id,
             condition,
             ownership_type,
             quantity,
@@ -150,6 +174,7 @@ QList<InventoryRecord> InventoryRecordRepository::getByStorageLocation(int works
             part_id,
             color_id,
             storage_location_id,
+            manufacturer_id,
             condition,
             ownership_type,
             quantity,
@@ -189,6 +214,7 @@ std::optional<InventoryRecord> InventoryRecordRepository::getById(int id) const
             part_id,
             color_id,
             storage_location_id,
+            manufacturer_id,
             condition,
             ownership_type,
             quantity,
@@ -275,6 +301,7 @@ bool InventoryRecordRepository::setQuantityWithMovement(
             part_id,
             color_id,
             storage_location_id,
+            manufacturer_id,
             condition,
             ownership_type,
             quantity
@@ -387,6 +414,8 @@ InventoryRecord InventoryRecordRepository::inventoryRecordFromQuery(const QSqlQu
 
     record.setStorageLocationId(query.value("storage_location_id").toInt());
 
+    record.setManufacturerId(query.value("manufacturer_id").toInt());
+
     record.setCondition(query.value("condition").toString());
 
     record.setOwnershipType(query.value("ownership_type").toString());
@@ -430,6 +459,10 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
             sl.id AS storage_location_id,
             sl.name AS storage_location_name,
 
+            m.id AS manufacturer_id,
+            m.code AS manufacturer_code,
+            m.name AS manufacturer_name,
+
             ir.condition,
             ir.ownership_type,
             ir.quantity
@@ -447,6 +480,9 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
 
         INNER JOIN storage_location sl
             ON sl.id = ir.storage_location_id
+
+        INNER JOIN manufacturer m
+            ON m.id = ir.manufacturer_id
 
         WHERE ir.workspace_id = :workspace_id
             AND ir.quantity > 0
@@ -479,6 +515,12 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
     if (criteria.storageLocationId > 0) {
         sql += R"(
             AND ir.storage_location_id = :storage_location_id
+        )";
+    }
+
+    if (criteria.manufacturerId > 0) {
+        sql += R"(
+            AND ir.manufacturer_id = :manufacturer_id
         )";
     }
 
@@ -516,6 +558,10 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
 
     if (criteria.storageLocationId > 0) {
         query.bindValue(":storage_location_id", criteria.storageLocationId);
+    }
+
+    if (criteria.manufacturerId > 0) {
+        query.bindValue(":manufacturer_id", criteria.manufacturerId);
     }
 
     const int safeLimit = qBound(1, criteria.limit, 500);
@@ -558,6 +604,10 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
         result.storageLocationId = query.value("storage_location_id").toInt();
 
         result.storageLocationName = query.value("storage_location_name").toString();
+
+        result.manufacturerId = query.value("manufacturer_id").toInt();
+        result.manufacturerCode = query.value("manufacturer_code").toString();
+        result.manufacturerName = query.value("manufacturer_name").toString();
 
         result.condition = query.value("condition").toString();
 
@@ -620,6 +670,12 @@ int InventoryRecordRepository::count(const InventorySearchCriteria& criteria) co
         )";
     }
 
+    if (criteria.manufacturerId > 0) {
+        sql += R"(
+            AND ir.manufacturer_id = :manufacturer_id
+        )";
+    }
+
     QSqlQuery query(database);
 
     if (!query.prepare(sql)) {
@@ -643,6 +699,10 @@ int InventoryRecordRepository::count(const InventorySearchCriteria& criteria) co
 
     if (criteria.storageLocationId > 0) {
         query.bindValue(":storage_location_id", criteria.storageLocationId);
+    }
+
+    if (criteria.manufacturerId > 0) {
+        query.bindValue(":manufacturer_id", criteria.manufacturerId);
     }
 
     if (!query.exec()) {
@@ -670,6 +730,13 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
         return false;
     }
 
+    const int manufacturerId = normalizedManufacturerId(record.manufacturerId());
+
+    if (manufacturerId <= 0)
+        return false;
+
+    record.setManufacturerId(manufacturerId);
+
     QSqlDatabase database = DatabaseManager::instance().database();
 
     if (manageTransaction) {
@@ -694,6 +761,7 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
           AND part_id = :part_id
           AND color_id = :color_id
           AND storage_location_id = :storage_location_id
+          AND manufacturer_id = :manufacturer_id
           AND condition = :condition
           AND ownership_type = :ownership_type
         LIMIT 1
@@ -706,6 +774,8 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
     existingQuery.bindValue(":color_id", record.colorId());
 
     existingQuery.bindValue(":storage_location_id", record.storageLocationId());
+
+    existingQuery.bindValue(":manufacturer_id", manufacturerId);
 
     existingQuery.bindValue(":condition", record.condition().trimmed());
 
@@ -772,6 +842,7 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
                 part_id,
                 color_id,
                 storage_location_id,
+                manufacturer_id,
                 condition,
                 ownership_type,
                 quantity,
@@ -784,6 +855,7 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
                 :part_id,
                 :color_id,
                 :storage_location_id,
+                :manufacturer_id,
                 :condition,
                 :ownership_type,
                 :quantity,
@@ -799,6 +871,8 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
         insertQuery.bindValue(":color_id", record.colorId());
 
         insertQuery.bindValue(":storage_location_id", record.storageLocationId());
+
+        insertQuery.bindValue(":manufacturer_id", manufacturerId);
 
         insertQuery.bindValue(":condition", record.condition().trimmed());
 
@@ -891,6 +965,13 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
         return false;
     }
 
+    const int manufacturerId = normalizedManufacturerId(record.manufacturerId());
+
+    if (manufacturerId <= 0)
+        return false;
+
+    record.setManufacturerId(manufacturerId);
+
     QSqlDatabase database = DatabaseManager::instance().database();
 
     if (!database.transaction()) {
@@ -911,6 +992,7 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
             part_id,
             color_id,
             storage_location_id,
+            manufacturer_id,
             condition,
             ownership_type,
             quantity
@@ -955,6 +1037,7 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
           AND part_id = :part_id
           AND color_id = :color_id
           AND storage_location_id = :storage_location_id
+          AND manufacturer_id = :manufacturer_id
           AND condition = :condition
           AND ownership_type = :ownership_type
           AND id <> :id
@@ -968,6 +1051,8 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
     destinationQuery.bindValue(":color_id", record.colorId());
 
     destinationQuery.bindValue(":storage_location_id", record.storageLocationId());
+
+    destinationQuery.bindValue(":manufacturer_id", manufacturerId);
 
     destinationQuery.bindValue(":condition", record.condition().trimmed());
 
@@ -1057,6 +1142,7 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
             SET
                 color_id = :color_id,
                 storage_location_id = :storage_location_id,
+                manufacturer_id = :manufacturer_id,
                 condition = :condition,
                 ownership_type = :ownership_type,
                 quantity = :quantity,
@@ -1067,6 +1153,8 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
         updateQuery.bindValue(":color_id", record.colorId());
 
         updateQuery.bindValue(":storage_location_id", record.storageLocationId());
+
+        updateQuery.bindValue(":manufacturer_id", manufacturerId);
 
         updateQuery.bindValue(":condition", record.condition().trimmed());
 
@@ -1282,6 +1370,7 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
             part_id,
             color_id,
             storage_location_id,
+            manufacturer_id,
             condition,
             ownership_type,
             quantity
@@ -1305,6 +1394,8 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
     const int colorId = sourceQuery.value("color_id").toInt();
 
     const int sourceStorageLocationId = sourceQuery.value("storage_location_id").toInt();
+
+    const int manufacturerId = sourceQuery.value("manufacturer_id").toInt();
 
     const QString condition = sourceQuery.value("condition").toString();
 
@@ -1368,6 +1459,7 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
           AND part_id = :part_id
           AND color_id = :color_id
           AND storage_location_id = :storage_location_id
+          AND manufacturer_id = :manufacturer_id
           AND condition = :condition
           AND ownership_type = :ownership_type
           AND id <> :source_id
@@ -1381,6 +1473,8 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
     destinationQuery.bindValue(":color_id", colorId);
 
     destinationQuery.bindValue(":storage_location_id", destinationStorageLocationId);
+
+    destinationQuery.bindValue(":manufacturer_id", manufacturerId);
 
     destinationQuery.bindValue(":condition", condition);
 
@@ -1438,6 +1532,7 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
                 part_id,
                 color_id,
                 storage_location_id,
+                manufacturer_id,
                 condition,
                 ownership_type,
                 quantity,
@@ -1450,6 +1545,7 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
                 :part_id,
                 :color_id,
                 :storage_location_id,
+                :manufacturer_id,
                 :condition,
                 :ownership_type,
                 :quantity,
@@ -1465,6 +1561,8 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
         insertDestinationQuery.bindValue(":color_id", colorId);
 
         insertDestinationQuery.bindValue(":storage_location_id", destinationStorageLocationId);
+
+        insertDestinationQuery.bindValue(":manufacturer_id", manufacturerId);
 
         insertDestinationQuery.bindValue(":condition", condition);
 
@@ -1628,6 +1726,7 @@ QList<InventoryRecord> InventoryRecordRepository::getByPartColor(int workspaceId
             part_id,
             color_id,
             storage_location_id,
+            manufacturer_id,
             condition,
             ownership_type,
             quantity,
@@ -1698,6 +1797,7 @@ bool InventoryRecordRepository::markLost(int inventoryRecordId,
             part_id,
             color_id,
             storage_location_id,
+            manufacturer_id,
             condition,
             ownership_type,
             quantity

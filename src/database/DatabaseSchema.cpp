@@ -62,6 +62,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 11;
     }
 
+    //
+    // Version 15 -> 16 rebuilds inventory_record so manufacturer_id becomes
+    // NOT NULL and participates in the database-level uniqueness rule.
+    // inventory_movement references inventory_record, so perform this rebuild
+    // before the normal migration transaction while foreign keys can be
+    // temporarily disabled.
+    //
+    if (version == 15) {
+        if (!migrateVersion15ToVersion16(database)) {
+            return false;
+        }
+
+        version = 16;
+    }
+
     if (!database.transaction()) {
         qCritical() << "Unable to begin schema transaction:" << database.lastError().text();
 
@@ -292,6 +307,33 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         }
 
         version = 15;
+    }
+
+    //
+    // A brand-new/older database reaching Version 15 inside the normal
+    // transaction cannot toggle foreign_keys for the required table rebuild.
+    // Commit the completed migrations through 15, perform the Version 16
+    // rebuild, then reopen the normal transaction for final validation.
+    //
+    if (version == 15) {
+        if (!database.commit()) {
+            qCritical() << "Unable to commit schema through Version 15:"
+                        << database.lastError().text();
+            database.rollback();
+            return false;
+        }
+
+        if (!migrateVersion15ToVersion16(database)) {
+            return false;
+        }
+
+        version = 16;
+
+        if (!database.transaction()) {
+            qCritical() << "Unable to resume schema transaction after Version 16 migration:"
+                        << database.lastError().text();
+            return false;
+        }
     }
 
     if (version != CurrentSchemaVersion) {
@@ -2081,6 +2123,236 @@ bool DatabaseSchema::seedManufacturers(QSqlDatabase& database)
             return false;
         }
     }
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion15ToVersion16(QSqlDatabase& database)
+{
+    QSqlQuery pragmaQuery(database);
+
+    bool foreignKeysWereEnabled = false;
+
+    if (pragmaQuery.exec("PRAGMA foreign_keys") && pragmaQuery.next()) {
+        foreignKeysWereEnabled = pragmaQuery.value(0).toInt() != 0;
+    }
+
+    pragmaQuery.finish();
+
+    if (foreignKeysWereEnabled) {
+        if (!pragmaQuery.exec("PRAGMA foreign_keys = OFF")) {
+            qCritical() << "Unable to temporarily disable foreign keys for Version 16:"
+                        << pragmaQuery.lastError().text();
+            return false;
+        }
+        pragmaQuery.finish();
+    }
+
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin Version 16 inventory migration:"
+                    << database.lastError().text();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE inventory_record_v16
+        (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id        INTEGER NOT NULL,
+            part_id             INTEGER NOT NULL,
+            color_id            INTEGER NOT NULL,
+            storage_location_id INTEGER NOT NULL,
+            manufacturer_id     INTEGER NOT NULL,
+
+            condition           TEXT NOT NULL DEFAULT 'Used',
+            ownership_type      TEXT NOT NULL DEFAULT 'Owned',
+
+            quantity            INTEGER NOT NULL DEFAULT 0,
+
+            created_utc         TEXT NOT NULL,
+            modified_utc        TEXT NOT NULL,
+
+            FOREIGN KEY (workspace_id)
+                REFERENCES workspace(id),
+
+            FOREIGN KEY (part_id)
+                REFERENCES part(id),
+
+            FOREIGN KEY (color_id)
+                REFERENCES color(id),
+
+            FOREIGN KEY (storage_location_id)
+                REFERENCES storage_location(id),
+
+            FOREIGN KEY (manufacturer_id)
+                REFERENCES manufacturer(id),
+
+            CHECK(quantity >= 0),
+
+            UNIQUE
+            (
+                workspace_id,
+                part_id,
+                color_id,
+                storage_location_id,
+                manufacturer_id,
+                condition,
+                ownership_type
+            )
+        )
+    )")) {
+        qCritical() << "Unable to create Version 16 inventory_record table:"
+                    << query.lastError().text();
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        INSERT INTO inventory_record_v16
+        (
+            id,
+            workspace_id,
+            part_id,
+            color_id,
+            storage_location_id,
+            manufacturer_id,
+            condition,
+            ownership_type,
+            quantity,
+            created_utc,
+            modified_utc
+        )
+        SELECT
+            ir.id,
+            ir.workspace_id,
+            ir.part_id,
+            ir.color_id,
+            ir.storage_location_id,
+            COALESCE(
+                ir.manufacturer_id,
+                (
+                    SELECT id
+                    FROM manufacturer
+                    WHERE code = 'LEGO' COLLATE NOCASE
+                    LIMIT 1
+                )
+            ),
+            ir.condition,
+            ir.ownership_type,
+            ir.quantity,
+            ir.created_utc,
+            ir.modified_utc
+        FROM inventory_record ir
+    )")) {
+        qCritical() << "Unable to copy inventory during Version 16 migration:"
+                    << query.lastError().text();
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!query.exec("DROP TABLE inventory_record")) {
+        qCritical() << "Unable to replace old inventory_record table:"
+                    << query.lastError().text();
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!query.exec("ALTER TABLE inventory_record_v16 RENAME TO inventory_record")) {
+        qCritical() << "Unable to rename Version 16 inventory_record table:"
+                    << query.lastError().text();
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!createInventoryIndexes(database)) {
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_inventory_manufacturer
+        ON inventory_record(manufacturer_id)
+    )")) {
+        qCritical() << "Unable to recreate inventory manufacturer index:"
+                    << query.lastError().text();
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!setSchemaVersion(database, 16)) {
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (!database.commit()) {
+        qCritical() << "Unable to commit Version 16 inventory migration:"
+                    << database.lastError().text();
+        database.rollback();
+
+        if (foreignKeysWereEnabled)
+            pragmaQuery.exec("PRAGMA foreign_keys = ON");
+
+        return false;
+    }
+
+    if (foreignKeysWereEnabled) {
+        if (!pragmaQuery.exec("PRAGMA foreign_keys = ON")) {
+            qCritical() << "Unable to re-enable foreign keys after Version 16:"
+                        << pragmaQuery.lastError().text();
+            return false;
+        }
+    }
+
+    if (!pragmaQuery.exec("PRAGMA foreign_key_check")) {
+        qCritical() << "Unable to validate foreign keys after Version 16:"
+                    << pragmaQuery.lastError().text();
+        return false;
+    }
+
+    if (pragmaQuery.next()) {
+        qCritical() << "Foreign-key validation failed after Version 16 inventory migration."
+                    << "Table:" << pragmaQuery.value(0).toString()
+                    << "RowId:" << pragmaQuery.value(1).toLongLong()
+                    << "Parent:" << pragmaQuery.value(2).toString();
+        return false;
+    }
+
+    qInfo() << "Inventory manufacturer identity migration completed."
+            << "SchemaVersion: 16";
 
     return true;
 }
