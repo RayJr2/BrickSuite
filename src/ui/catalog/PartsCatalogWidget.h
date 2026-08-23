@@ -23,6 +23,8 @@
 #include <QHash>
 #include <QWidget>
 
+#include "../../api/rebrickable/RebrickableService.h"
+
 class QComboBox;
 class QLineEdit;
 class QPushButton;
@@ -45,6 +47,8 @@ private slots:
     void nextPage();
     void importPartsCsv();
     void importPartRelationshipsCsv();
+    void handlePartDetailsForAliasLearning(
+        const RebrickableService::PartDetailsResult& result);
 
 signals:
     void addPartToInventoryRequested(int partId);
@@ -77,6 +81,7 @@ private:
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
 
     QHash<QString, int> m_rowByPartNumber;
+    QString m_pendingAliasLookupPartNumber;
 
     QPushButton* m_importPartsButton = nullptr;
     QPushButton* m_importPartRelationshipsButton = nullptr;

@@ -24,6 +24,8 @@
 #include <QList>
 #include <QModelIndex>
 
+#include "../../api/rebrickable/RebrickableService.h"
+
 class WorkspaceContext;
 class QLabel;
 class QComboBox;
@@ -68,6 +70,8 @@ private:
     void updatePartSearch();
     void selectSearchResult(const QModelIndex& index);
     void resolveEnteredPart();
+    void handlePartDetailsForAliasLearning(
+        const RebrickableService::PartDetailsResult& result);
     void applyResolvedPart(int partId, const QString& displayText, const QString& resolutionText);
     void updateAddButtonState();
 
@@ -94,6 +98,7 @@ private:
     QList<int> m_knownRebrickableColorIds;
 
     QString m_partNumber;
+    QString m_pendingAliasLookupPartNumber;
 
     QLineEdit* m_partSearchEdit = nullptr;
     QCompleter* m_partCompleter = nullptr;

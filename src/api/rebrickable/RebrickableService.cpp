@@ -829,6 +829,8 @@ void RebrickableService::getPartDetails(const QString& partNumber, const QString
     if (isSessionBlocked()) {
         PartDetailsResult result;
 
+        result.requestedPartNumber = partNumber.trimmed();
+
         result.success = false;
         result.httpStatusCode = 403;
 
@@ -847,6 +849,8 @@ void RebrickableService::getPartDetails(const QString& partNumber, const QString
 
     if (trimmedPartNumber.isEmpty() || trimmedApiKey.isEmpty()) {
         PartDetailsResult result;
+
+        result.requestedPartNumber = trimmedPartNumber;
 
         result.part.partNumber = trimmedPartNumber;
 
@@ -874,8 +878,10 @@ void RebrickableService::getPartDetails(const QString& partNumber, const QString
         //
         // Actual reply handler.
         //
-        [this, trimmedPartNumber](QNetworkReply* reply) {
+        [this, trimmedPartNumber, trimmedApiKey](QNetworkReply* reply) {
             PartDetailsResult result;
+
+            result.requestedPartNumber = trimmedPartNumber;
 
             result.part.partNumber = trimmedPartNumber;
 
@@ -922,6 +928,18 @@ void RebrickableService::getPartDetails(const QString& partNumber, const QString
                     result.message = "Rebrickable returned an unexpected response.";
                 } else {
                     const QJsonObject root = document.object();
+
+                    const QJsonArray rebrickablePartIds =
+                        root.value("rebrickable_part_ids").toArray();
+
+                    for (const QJsonValue& value : rebrickablePartIds) {
+                        const QString mappedPartNumber =
+                            value.toString().trimmed();
+
+                        if (!mappedPartNumber.isEmpty()) {
+                            result.rebrickablePartIds.append(mappedPartNumber);
+                        }
+                    }
 
                     PartDetails details;
 
@@ -1000,7 +1018,18 @@ void RebrickableService::getPartDetails(const QString& partNumber, const QString
             } else if (result.httpStatusCode == 401) {
                 result.message = "Rebrickable rejected the API key.";
             } else if (result.httpStatusCode == 404) {
-                result.message = "The part was not found on Rebrickable.";
+                //
+                // The direct endpoint can return 404 for an older external
+                // design number. Fall back to the Parts list/search endpoint
+                // and verify the requested number appears in external_ids.
+                //
+                reply->deleteLater();
+
+                searchPartByExternalId(
+                    trimmedPartNumber,
+                    trimmedApiKey);
+
+                return;
             } else if (reply->error() != QNetworkReply::NoError) {
                 result.message = QString("Unable to retrieve part details: %1")
                                      .arg(reply->errorString());
@@ -1021,6 +1050,8 @@ void RebrickableService::getPartDetails(const QString& partNumber, const QString
         [this, trimmedPartNumber]() {
             PartDetailsResult result;
 
+            result.requestedPartNumber = trimmedPartNumber;
+
             result.success = false;
             result.httpStatusCode = 403;
 
@@ -1028,6 +1059,167 @@ void RebrickableService::getPartDetails(const QString& partNumber, const QString
 
             result.message = sessionBlockReason();
 
+            emit partDetailsFinished(result);
+        });
+}
+
+void RebrickableService::searchPartByExternalId(
+    const QString& requestedPartNumber,
+    const QString& apiKey)
+{
+    const QString requested = requestedPartNumber.trimmed();
+    const QString key = apiKey.trimmed();
+
+    if (requested.isEmpty() || key.isEmpty()) {
+        PartDetailsResult result;
+        result.requestedPartNumber = requested;
+        result.part.partNumber = requested;
+        result.message =
+            QStringLiteral("The part was not found on Rebrickable.");
+        emit partDetailsFinished(result);
+        return;
+    }
+
+    QUrl url(QStringLiteral("https://rebrickable.com/api/v3/lego/parts/"));
+
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("search"), requested);
+    query.addQueryItem(QStringLiteral("inc_part_details"), QStringLiteral("1"));
+    query.addQueryItem(QStringLiteral("page_size"), QStringLiteral("25"));
+    url.setQuery(query);
+
+    QNetworkRequest request(url);
+    request.setRawHeader(
+        "Authorization",
+        QString("key %1").arg(key).toUtf8());
+    request.setHeader(
+        QNetworkRequest::UserAgentHeader,
+        "BrickSuite/1.0");
+
+    enqueueGet(
+        request,
+        QStringLiteral("SearchPartExternalId"),
+        [this, requested](QNetworkReply* reply) {
+            PartDetailsResult result;
+            result.requestedPartNumber = requested;
+            result.part.partNumber = requested;
+
+            const QVariant statusAttribute =
+                reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+
+            if (statusAttribute.isValid())
+                result.httpStatusCode = statusAttribute.toInt();
+
+            const QByteArray responseData = reply->readAll();
+
+            if (reply->error() == QNetworkReply::NoError
+                && result.httpStatusCode == 200) {
+                const QJsonDocument document =
+                    QJsonDocument::fromJson(responseData);
+
+                if (document.isObject()) {
+                    const QJsonArray rows =
+                        document.object()
+                            .value(QStringLiteral("results"))
+                            .toArray();
+
+                    QList<PartDetails> candidates;
+
+                    for (const QJsonValue& rowValue : rows) {
+                        const QJsonObject row = rowValue.toObject();
+
+                        QHash<QString, QStringList> externalIds;
+                        const QJsonObject external =
+                            row.value(QStringLiteral("external_ids")).toObject();
+
+                        bool containsRequested = false;
+
+                        for (auto it = external.constBegin();
+                             it != external.constEnd();
+                             ++it) {
+                            QStringList ids;
+
+                            for (const QJsonValue& value : it.value().toArray()) {
+                                const QString id = value.toString().trimmed();
+
+                                if (id.isEmpty())
+                                    continue;
+
+                                ids.append(id);
+
+                                if (id.compare(requested,
+                                               Qt::CaseInsensitive) == 0) {
+                                    containsRequested = true;
+                                }
+                            }
+
+                            externalIds.insert(it.key(), ids);
+                        }
+
+                        if (!containsRequested)
+                            continue;
+
+                        PartDetails details;
+                        details.partNumber =
+                            row.value(QStringLiteral("part_num")).toString();
+                        details.name =
+                            row.value(QStringLiteral("name")).toString();
+                        details.partCategoryId =
+                            row.value(QStringLiteral("part_cat_id")).toInt();
+                        details.partUrl =
+                            row.value(QStringLiteral("part_url")).toString();
+                        details.partImageUrl =
+                            row.value(QStringLiteral("part_img_url")).toString();
+                        details.externalIds = externalIds;
+
+                        if (!details.partNumber.trimmed().isEmpty())
+                            candidates.append(details);
+                    }
+
+                    if (candidates.size() == 1) {
+                        result.success = true;
+                        result.part = candidates.first();
+                        result.rebrickablePartIds.append(
+                            candidates.first().partNumber);
+                        result.message =
+                            QStringLiteral("External part number %1 resolved to %2.")
+                                .arg(requested,
+                                     candidates.first().partNumber);
+                    } else if (candidates.size() > 1) {
+                        result.message =
+                            QStringLiteral("Rebrickable returned multiple parts for "
+                                           "external ID %1; BrickSuite did not guess.")
+                                .arg(requested);
+                    } else {
+                        result.message =
+                            QStringLiteral("The part was not found on Rebrickable.");
+                    }
+                } else {
+                    result.message =
+                        QStringLiteral("Rebrickable returned an unexpected response.");
+                }
+            } else if (result.httpStatusCode == 401) {
+                result.message =
+                    QStringLiteral("Rebrickable rejected the API key.");
+            } else if (reply->error() != QNetworkReply::NoError) {
+                result.message =
+                    QStringLiteral("Unable to search Rebrickable parts: %1")
+                        .arg(reply->errorString());
+            } else {
+                result.message =
+                    QStringLiteral("Rebrickable returned HTTP status %1.")
+                        .arg(result.httpStatusCode);
+            }
+
+            reply->deleteLater();
+            emit partDetailsFinished(result);
+        },
+        [this, requested]() {
+            PartDetailsResult result;
+            result.requestedPartNumber = requested;
+            result.part.partNumber = requested;
+            result.httpStatusCode = 403;
+            result.message = sessionBlockReason();
             emit partDetailsFinished(result);
         });
 }

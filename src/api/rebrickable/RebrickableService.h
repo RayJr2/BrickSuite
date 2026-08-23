@@ -121,9 +121,18 @@ public:
 
         int httpStatusCode = 0;
 
+        // The number originally submitted to Rebrickable. This remains
+        // available even when Rebrickable canonicalizes the returned Part.
+        QString requestedPartNumber;
+
         QString message;
 
         PartDetails part;
+
+        // When present, Rebrickable says the requested identity is not used
+        // in inventories and these canonical Rebrickable Part IDs should be
+        // used instead.
+        QStringList rebrickablePartIds;
     };
 
     struct PartImageUrl
@@ -281,6 +290,10 @@ signals:
 
 private:
     void handleConnectionTestReply(QNetworkReply* reply);
+
+    void searchPartByExternalId(
+        const QString& requestedPartNumber,
+        const QString& apiKey);
 
     ApiNetworkService* m_networkService = nullptr;
 

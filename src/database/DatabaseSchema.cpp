@@ -20,6 +20,7 @@
 
 #include "DatabaseSchema.h"
 
+#include <QDateTime>
 #include <QDebug>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -261,6 +262,36 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         }
 
         version = 13;
+    }
+
+    // Version 13 -> Version 14.
+    if (version == 13) {
+        if (!migrateVersion13ToVersion14(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 14)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 14;
+    }
+
+    // Version 14 -> Version 15.
+    if (version == 14) {
+        if (!migrateVersion14ToVersion15(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 15)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 15;
     }
 
     if (version != CurrentSchemaVersion) {
@@ -1791,6 +1822,264 @@ bool DatabaseSchema::createPartAliasTable(QSqlDatabase& database)
         qCritical() << "Unable to create part alias source/type index:"
                     << query.lastError().text();
         return false;
+    }
+
+    return true;
+}
+
+
+
+bool DatabaseSchema::migrateVersion13ToVersion14(QSqlDatabase& database)
+{
+    return createExternalPartIdentifierTable(database);
+}
+
+bool DatabaseSchema::createExternalPartIdentifierTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS external_part_identifier
+        (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            part_id      INTEGER NOT NULL,
+            provider     TEXT NOT NULL,
+            external_id  TEXT NOT NULL COLLATE NOCASE,
+            source       TEXT NOT NULL,
+            is_active    INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+            created_utc  TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+
+            FOREIGN KEY(part_id) REFERENCES part(id),
+
+            UNIQUE(part_id, provider, external_id)
+        )
+    )")) {
+        qCritical() << "Unable to create external_part_identifier table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_external_part_identifier_lookup
+        ON external_part_identifier(external_id, is_active)
+    )")) {
+        qCritical() << "Unable to create external part identifier lookup index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion14ToVersion15(QSqlDatabase& database)
+{
+    if (!createManufacturerTable(database))
+        return false;
+
+    if (!seedManufacturers(database))
+        return false;
+
+    QSqlQuery query(database);
+
+    //
+    // SQLite only allows an added REFERENCES column to default to NULL while
+    // foreign-key enforcement is enabled. M17.3.1 therefore adds the column
+    // as nullable, immediately backfills every existing row to LEGO, and the
+    // repository supplies LEGO for all existing workflows. M17.3.2 will
+    // rebuild the inventory identity/uniqueness rule around manufacturer_id.
+    //
+    if (!query.exec(R"(
+        ALTER TABLE inventory_record
+        ADD COLUMN manufacturer_id INTEGER
+        REFERENCES manufacturer(id)
+    )")) {
+        qCritical() << "Unable to add manufacturer_id to inventory_record:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    int legoId = 0;
+
+    query.prepare(R"(
+        SELECT id
+        FROM manufacturer
+        WHERE code = 'LEGO' COLLATE NOCASE
+        LIMIT 1
+    )");
+
+    if (!query.exec() || !query.next()) {
+        qCritical() << "Unable to resolve seeded LEGO manufacturer:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    legoId = query.value(0).toInt();
+
+    query.prepare(R"(
+        UPDATE inventory_record
+        SET manufacturer_id = :manufacturer_id
+        WHERE manufacturer_id IS NULL
+    )");
+    query.bindValue(":manufacturer_id", legoId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to backfill inventory manufacturer:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_inventory_manufacturer
+        ON inventory_record(manufacturer_id)
+    )")) {
+        qCritical() << "Unable to create inventory manufacturer index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    //
+    // Existing application workflows do not expose Manufacturer until
+    // M17.3.2/M17.3.3. Keep them backward-compatible by assigning LEGO
+    // whenever a legacy insert omits manufacturer_id.
+    //
+    if (!query.exec(R"(
+        CREATE TRIGGER IF NOT EXISTS trg_inventory_default_manufacturer
+        AFTER INSERT ON inventory_record
+        FOR EACH ROW
+        WHEN NEW.manufacturer_id IS NULL
+        BEGIN
+            UPDATE inventory_record
+            SET manufacturer_id =
+                (
+                    SELECT id
+                    FROM manufacturer
+                    WHERE code = 'LEGO' COLLATE NOCASE
+                    LIMIT 1
+                )
+            WHERE id = NEW.id;
+        END
+    )")) {
+        qCritical() << "Unable to create inventory default-manufacturer trigger:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    qInfo() << "Manufacturer reference foundation initialized."
+            << "Default manufacturer: LEGO";
+
+    return true;
+}
+
+bool DatabaseSchema::createManufacturerTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS manufacturer
+        (
+            id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+            code                       TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            name                       TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            website_url                TEXT,
+            supports_lego_element_ids  INTEGER NOT NULL DEFAULT 0
+                                       CHECK(supports_lego_element_ids IN (0, 1)),
+            is_active                  INTEGER NOT NULL DEFAULT 1
+                                       CHECK(is_active IN (0, 1)),
+            notes                      TEXT,
+            created_utc                TEXT NOT NULL,
+            modified_utc               TEXT NOT NULL
+        )
+    )")) {
+        qCritical() << "Unable to create manufacturer table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_manufacturer_active_name
+        ON manufacturer(is_active, name)
+    )")) {
+        qCritical() << "Unable to create manufacturer index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::seedManufacturers(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    const QString now =
+        QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+
+    if (!query.prepare(R"(
+        INSERT INTO manufacturer
+        (
+            code,
+            name,
+            website_url,
+            supports_lego_element_ids,
+            is_active,
+            notes,
+            created_utc,
+            modified_utc
+        )
+        VALUES
+        (
+            :code,
+            :name,
+            NULL,
+            :supports_lego_element_ids,
+            1,
+            :notes,
+            :created_utc,
+            :modified_utc
+        )
+        ON CONFLICT(code)
+        DO UPDATE SET
+            name = excluded.name,
+            supports_lego_element_ids = excluded.supports_lego_element_ids,
+            is_active = 1,
+            notes = excluded.notes,
+            modified_utc = excluded.modified_utc
+    )")) {
+        qCritical() << "Unable to prepare manufacturer seed:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    struct Seed
+    {
+        const char* code;
+        const char* name;
+        bool supportsLegoElementIds;
+        const char* notes;
+    };
+
+    const Seed seeds[] = {
+        {"LEGO", "LEGO", true, "Default manufacturer for existing and Rebrickable inventory."},
+        {"NEXUS", "Nexus", false, "Compatible brick manufacturer."},
+        {"MANNIDOO", "Mannidoo", false, "Compatible brick manufacturer."}
+    };
+
+    for (const Seed& seed : seeds) {
+        query.bindValue(":code", QString::fromLatin1(seed.code));
+        query.bindValue(":name", QString::fromLatin1(seed.name));
+        query.bindValue(":supports_lego_element_ids",
+                        seed.supportsLegoElementIds ? 1 : 0);
+        query.bindValue(":notes", QString::fromLatin1(seed.notes));
+        query.bindValue(":created_utc", now);
+        query.bindValue(":modified_utc", now);
+
+        if (!query.exec()) {
+            qCritical() << "Unable to seed manufacturer:"
+                        << seed.code
+                        << query.lastError().text();
+            return false;
+        }
     }
 
     return true;

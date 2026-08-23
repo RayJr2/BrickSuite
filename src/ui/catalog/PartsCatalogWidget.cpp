@@ -29,6 +29,7 @@
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../services/RebrickableApiClient.h"
+#include "../../services/parts/RebrickablePartAliasLearner.h"
 #include "../../services/images/PartImageService.h"
 #include "../../settings/UserSettings.h"
 #include "../parts/PartDetailsDialog.h"
@@ -44,6 +45,7 @@
 #include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -219,6 +221,11 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
             });
 
     connect(m_rebrickableApiClient,
+            &RebrickableApiClient::partDetailsFinished,
+            this,
+            &PartsCatalogWidget::handlePartDetailsForAliasLearning);
+
+    connect(m_rebrickableApiClient,
             &RebrickableApiClient::partImageUrlsFinished,
             this,
             [this](const RebrickableApiClient::PartImageUrlsResult& result) {
@@ -292,6 +299,40 @@ void PartsCatalogWidget::searchParts()
     const QList<PartSearchResult> results = repository.search(criteria);
 
     m_lastResultCount = results.size();
+
+    if (results.isEmpty()
+        && !criteria.searchText.isEmpty()
+        && criteria.categoryId <= 0
+        && m_pendingAliasLookupPartNumber.isEmpty()) {
+        RebrickablePartAliasLearner learner;
+        const auto localLearned =
+            learner.learnFromLocalExternalId(criteria.searchText);
+
+        if (localLearned.learned) {
+            m_currentPage = 0;
+            searchParts();
+            return;
+        }
+
+        static const QRegularExpression partNumberPattern(
+            QStringLiteral("^[A-Za-z0-9._-]+$"));
+
+        const QString apiKey =
+            UserSettings::instance().rebrickableApiKey().trimmed();
+
+        if (partNumberPattern.match(criteria.searchText).hasMatch()
+            && !apiKey.isEmpty()
+            && !RebrickableApiClient::isSessionBlocked()) {
+            m_pendingAliasLookupPartNumber = criteria.searchText;
+
+            m_resultLabel->setText(
+                QStringLiteral("No local match. Checking Rebrickable for a Part Number Mapping..."));
+
+            m_rebrickableApiClient->getPartDetails(
+                criteria.searchText,
+                apiKey);
+        }
+    }
 
     m_resultsTable->setRowCount(0);
 
@@ -478,6 +519,43 @@ void PartsCatalogWidget::requestMissingPartImages(const QStringList& partNumbers
                                                  apiKey,
                                                  RebrickableApiClient::RequestPriority::Background);
     }
+}
+
+void PartsCatalogWidget::handlePartDetailsForAliasLearning(
+    const RebrickableService::PartDetailsResult& providerResult)
+{
+    if (m_pendingAliasLookupPartNumber.isEmpty())
+        return;
+
+    if (providerResult.requestedPartNumber.compare(
+            m_pendingAliasLookupPartNumber,
+            Qt::CaseInsensitive) != 0) {
+        return;
+    }
+
+    const QString requestedPartNumber =
+        m_pendingAliasLookupPartNumber;
+
+    m_pendingAliasLookupPartNumber.clear();
+
+    RebrickablePartAliasLearner learner;
+    const auto learned = learner.learn(providerResult);
+
+    if (!learned.learned) {
+        const QString message =
+            learned.message.trimmed().isEmpty()
+                ? QStringLiteral("Rebrickable could not resolve this part number.")
+                : learned.message;
+
+        m_resultLabel->setText(
+            QStringLiteral("No match. %1").arg(message));
+        return;
+    }
+
+    // The learned alias is now local. Re-run the normal catalog search so
+    // M17.2.6 displays the canonical part and alias provenance.
+    m_currentPage = 0;
+    searchParts();
 }
 
 void PartsCatalogWidget::previousPage()

@@ -34,6 +34,7 @@
 
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/parts/PartResolver.h"
+#include "../../services/parts/RebrickablePartAliasLearner.h"
 #include "../../settings/UserSettings.h"
 
 #include "../helpers/ColorComboHelper.h"
@@ -190,6 +191,11 @@ void AddInventoryDialog::initializeUi()
     layout->addRow(m_buttonBox);
 
     m_rebrickableApiClient = new RebrickableApiClient(this);
+
+    connect(m_rebrickableApiClient,
+            &RebrickableApiClient::partDetailsFinished,
+            this,
+            &AddInventoryDialog::handlePartDetailsForAliasLearning);
 
     connect(m_showAllColorsCheck,
             &QCheckBox::toggled,
@@ -632,6 +638,46 @@ void AddInventoryDialog::resolveEnteredPart()
     const PartResolutionResult result = resolver.resolve(enteredPartNumber);
 
     if (!result.hasResolvedPart) {
+        RebrickablePartAliasLearner learner;
+        const auto localLearned =
+            learner.learnFromLocalExternalId(enteredPartNumber);
+
+        if (localLearned.learned) {
+            const PartResolutionResult localResolved =
+                resolver.resolve(enteredPartNumber);
+
+            if (localResolved.hasResolvedPart) {
+                applyResolvedPart(
+                    localResolved.part.id(),
+                    QString("%1 — %2")
+                        .arg(localResolved.part.partNumber(),
+                             localResolved.part.name()),
+                    QStringLiteral("Alias Match — cached external ID / Rebrickable"));
+                return;
+            }
+        }
+
+        const QString apiKey =
+            UserSettings::instance().rebrickableApiKey().trimmed();
+
+        if (!apiKey.isEmpty()
+            && !RebrickableApiClient::isSessionBlocked()) {
+            m_pendingAliasLookupPartNumber = enteredPartNumber;
+
+            if (m_partResolutionLabel) {
+                m_partResolutionLabel->setText(
+                    QStringLiteral("Not Found locally — checking Rebrickable..."));
+                m_partResolutionLabel->setVisible(true);
+            }
+
+            m_rebrickableApiClient->getPartDetails(
+                enteredPartNumber,
+                apiKey);
+
+            updateAddButtonState();
+            return;
+        }
+
         if (m_partResolutionLabel) {
             m_partResolutionLabel->setText(
                 QStringLiteral("%1 — %2")
@@ -659,6 +705,65 @@ void AddInventoryDialog::resolveEnteredPart()
         QString("%1 — %2")
             .arg(result.part.partNumber(), result.part.name()),
         resolutionText);
+}
+
+void AddInventoryDialog::handlePartDetailsForAliasLearning(
+    const RebrickableService::PartDetailsResult& providerResult)
+{
+    if (m_pendingAliasLookupPartNumber.isEmpty())
+        return;
+
+    if (providerResult.requestedPartNumber.compare(
+            m_pendingAliasLookupPartNumber,
+            Qt::CaseInsensitive) != 0) {
+        return;
+    }
+
+    const QString requestedPartNumber =
+        m_pendingAliasLookupPartNumber;
+
+    m_pendingAliasLookupPartNumber.clear();
+
+    RebrickablePartAliasLearner learner;
+    const auto learned = learner.learn(providerResult);
+
+    if (!learned.learned) {
+        if (m_partResolutionLabel) {
+            const QString message =
+                learned.message.trimmed().isEmpty()
+                    ? QStringLiteral("Rebrickable could not resolve this part number.")
+                    : learned.message;
+
+            m_partResolutionLabel->setText(
+                QStringLiteral("Not Found — %1").arg(message));
+            m_partResolutionLabel->setVisible(true);
+        }
+
+        updateAddButtonState();
+        return;
+    }
+
+    PartResolver resolver;
+    const PartResolutionResult resolved =
+        resolver.resolve(requestedPartNumber);
+
+    if (!resolved.hasResolvedPart) {
+        if (m_partResolutionLabel) {
+            m_partResolutionLabel->setText(
+                QStringLiteral("Alias was learned but could not be resolved locally."));
+            m_partResolutionLabel->setVisible(true);
+        }
+
+        updateAddButtonState();
+        return;
+    }
+
+    applyResolvedPart(
+        resolved.part.id(),
+        QString("%1 — %2")
+            .arg(resolved.part.partNumber(),
+                 resolved.part.name()),
+        QStringLiteral("Alias Match — PartNumberMapping / Rebrickable"));
 }
 
 void AddInventoryDialog::applyResolvedPart(

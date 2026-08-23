@@ -64,10 +64,13 @@ qt_add_executable(BrickSuite
     src/models/Part.cpp
     src/models/InventoryRecord.h
     src/models/InventoryRecord.cpp
+    src/models/Manufacturer.h
     src/repositories/PartRepository.h
     src/repositories/PartRepository.cpp
     src/repositories/InventoryRecordRepository.h
     src/repositories/InventoryRecordRepository.cpp
+    src/repositories/ManufacturerRepository.h
+    src/repositories/ManufacturerRepository.cpp
     src/models/Color.h
     src/models/Color.cpp
     src/repositories/ColorRepository.h
@@ -77,6 +80,7 @@ qt_add_executable(BrickSuite
     src/models/ExternalMappingStatus.h
     src/models/ExternalColorMapping.h
     src/models/ExternalPartMapping.h
+    src/models/ExternalPartIdentifier.h
     src/models/PartRelationship.h
     src/models/PartAlias.h
     src/models/PartResolutionResult.h
@@ -86,6 +90,8 @@ qt_add_executable(BrickSuite
     src/repositories/ExternalColorMappingRepository.cpp
     src/repositories/ExternalPartMappingRepository.h
     src/repositories/ExternalPartMappingRepository.cpp
+    src/repositories/ExternalPartIdentifierRepository.h
+    src/repositories/ExternalPartIdentifierRepository.cpp
     src/repositories/PartRelationshipRepository.h
     src/repositories/PartRelationshipRepository.cpp
     src/repositories/PartAliasRepository.h
@@ -153,6 +159,8 @@ qt_add_executable(BrickSuite
     src/services/images/PartImageService.cpp src/services/images/PartImageService.h
     src/services/parts/PartResolver.h
     src/services/parts/PartResolver.cpp
+    src/services/parts/RebrickablePartAliasLearner.h
+    src/services/parts/RebrickablePartAliasLearner.cpp
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
     src/ui/parts/PartResolverTestDialog.h
     src/ui/parts/PartResolverTestDialog.cpp

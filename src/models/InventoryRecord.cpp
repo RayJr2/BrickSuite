@@ -70,6 +70,16 @@ void InventoryRecord::setStorageLocationId(int storageLocationId)
     m_storageLocationId = storageLocationId;
 }
 
+int InventoryRecord::manufacturerId() const
+{
+    return m_manufacturerId;
+}
+
+void InventoryRecord::setManufacturerId(int manufacturerId)
+{
+    m_manufacturerId = manufacturerId;
+}
+
 QString InventoryRecord::condition() const
 {
     return m_condition;

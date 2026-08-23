@@ -25,6 +25,7 @@
 
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/PartRepository.h"
+#include "../../repositories/ExternalPartIdentifierRepository.h"
 
 #include "../../services/images/PartImageService.h"
 #include "../../services/mappings/BrickLinkMappingService.h"
@@ -418,6 +419,12 @@ PartDetailsDialog::PartDetailsDialog(
                 populateRelatedParts(result);
 
                 populateExternalIds(result);
+
+                ExternalPartIdentifierRepository externalIdentifierRepository;
+                externalIdentifierRepository.replaceProviderIds(
+                    m_partId,
+                    result.part.externalIds,
+                    QStringLiteral("Rebrickable"));
 
                 BrickLinkMappingService mappingService;
                 mappingService.storePartExternalIds(

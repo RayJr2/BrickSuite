@@ -43,6 +43,9 @@ public:
     int storageLocationId() const;
     void setStorageLocationId(int storageLocationId);
 
+    int manufacturerId() const;
+    void setManufacturerId(int manufacturerId);
+
     QString condition() const;
     void setCondition(const QString& condition);
 
@@ -64,6 +67,7 @@ private:
     int m_partId = 0;
     int m_colorId = 0;
     int m_storageLocationId = 0;
+    int m_manufacturerId = 0;
 
     QString m_condition = "Used";
     QString m_ownershipType = "Owned";
