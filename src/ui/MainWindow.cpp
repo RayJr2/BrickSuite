@@ -57,6 +57,7 @@
 #include "catalog/SetsCatalogWidget.h"
 #include "inventory/AddInventoryDialog.h"
 #include "inventory/MyInventoryWidget.h"
+#include "parts/PartResolverTestDialog.h"
 #include "settings/SettingsDialog.h"
 #include "storage/StorageWidget.h"
 
@@ -569,6 +570,19 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     // Test menu
     auto* testMenu = menuBar()->addMenu("Test");
+
+    auto* partIdentityMenu = testMenu->addMenu("Part Identity");
+
+    auto* partResolverAction =
+        partIdentityMenu->addAction("Test Resolver");
+
+    connect(partResolverAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                PartResolverTestDialog dialog(this);
+                dialog.exec();
+            });
 
     auto* rebrickableMenu = testMenu->addMenu("Rebrickable API");
 

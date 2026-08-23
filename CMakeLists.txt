@@ -79,6 +79,7 @@ qt_add_executable(BrickSuite
     src/models/ExternalPartMapping.h
     src/models/PartRelationship.h
     src/models/PartAlias.h
+    src/models/PartResolutionResult.h
     src/repositories/PartCategoryRepository.h
     src/repositories/PartCategoryRepository.cpp
     src/repositories/ExternalColorMappingRepository.h
@@ -150,7 +151,11 @@ qt_add_executable(BrickSuite
     src/services/RebrickableApiClient.h
     src/services/RebrickableApiClient.cpp
     src/services/images/PartImageService.cpp src/services/images/PartImageService.h
+    src/services/parts/PartResolver.h
+    src/services/parts/PartResolver.cpp
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
+    src/ui/parts/PartResolverTestDialog.h
+    src/ui/parts/PartResolverTestDialog.cpp
     src/ui/helpers/ColorComboHelper.cpp src/ui/helpers/ColorComboHelper.h
     src/models/Build.h
     src/models/Build.cpp
