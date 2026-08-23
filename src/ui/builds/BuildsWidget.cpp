@@ -1356,7 +1356,25 @@ void BuildsWidget::addBuild()
 
     m_statusCombo->setCurrentIndex(0);
 
-    loadBuilds();
+    //
+    // Keep the newly created Build selected so its Requirements area is
+    // immediately ready for the canonical Complete Set contents workflow.
+    //
+    selectBuild(build.id());
+
+    if (build.buildType() == "Set"
+        && build.inventoryMode() == "CompleteSet"
+        && !build.setNumber().trimmed().isEmpty()) {
+        SetImportPreviewDialog dialog(build.id(),
+                                      build.setNumber().trimmed(),
+                                      this);
+
+        if (dialog.exec() == QDialog::Accepted) {
+            loadRequirements();
+        }
+
+        updateRequirementUiState();
+    }
 
     QMessageBox::information(this,
                              "BrickSuite",
@@ -1772,6 +1790,29 @@ void BuildsWidget::addRequirement()
         return;
     }
 
+    BuildRepository buildRepository;
+    const std::optional<Build> build =
+        buildRepository.getById(m_selectedBuildId);
+
+    if (!build) {
+        QMessageBox::warning(this,
+                             "BrickSuite",
+                             "Unable to load the selected Build.");
+
+        return;
+    }
+
+    if (build->inventoryMode() == "CompleteSet") {
+        QMessageBox::information(
+            this,
+            "Complete Set Requirements",
+            "Complete Set requirements are sourced from the canonical "
+            "Set contents. Use Load Set from Rebrickable to load or "
+            "refresh them.");
+
+        return;
+    }
+
     const QString partNumber = m_partNumberEdit->text().trimmed();
 
     if (partNumber.isEmpty()) {
@@ -2135,22 +2176,30 @@ void BuildsWidget::updateRequirementUiState()
     const bool enabled = m_workspaceContext.hasCurrentWorkspace() && m_selectedBuildId > 0;
 
     bool buildIsActive = false;
+    bool completeSet = false;
 
     if (enabled) {
         BuildRepository repository;
-        const std::optional<Build> selectedBuild = repository.getById(m_selectedBuildId);
+        const std::optional<Build> selectedBuild =
+            repository.getById(m_selectedBuildId);
+
         buildIsActive = selectedBuild && selectedBuild->isActive();
+        completeSet = selectedBuild
+                      && selectedBuild->inventoryMode() == "CompleteSet";
     }
 
-    m_partNumberEdit->setEnabled(enabled && buildIsActive);
+    const bool canManuallyEditRequirements =
+        enabled && buildIsActive && !completeSet;
 
-    m_colorCombo->setEnabled(enabled && buildIsActive);
+    m_partNumberEdit->setEnabled(canManuallyEditRequirements);
 
-    m_quantitySpin->setEnabled(enabled && buildIsActive);
+    m_colorCombo->setEnabled(canManuallyEditRequirements);
 
-    m_spareCheck->setEnabled(enabled && buildIsActive);
+    m_quantitySpin->setEnabled(canManuallyEditRequirements);
 
-    m_addRequirementButton->setEnabled(enabled && buildIsActive);
+    m_spareCheck->setEnabled(canManuallyEditRequirements);
+
+    m_addRequirementButton->setEnabled(canManuallyEditRequirements);
 
     //
     // Archived requirements remain visible for history/reference,
@@ -2197,6 +2246,11 @@ void BuildsWidget::updateRequirementUiState()
     m_procureMissingPartsButton->setEnabled(canProcureMissingParts);
 
     m_loadSetFromRebrickableButton->setEnabled(canLoadSet);
+
+    m_loadSetFromRebrickableButton->setText(
+        completeSet
+            ? QStringLiteral("Load / Refresh Set Contents")
+            : QStringLiteral("Load Set from Rebrickable"));
 }
 
 void BuildsWidget::exportPullList()
