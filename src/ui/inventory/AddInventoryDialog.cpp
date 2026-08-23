@@ -210,15 +210,12 @@ void AddInventoryDialog::initializeUi()
 
                 if (!result.success) {
                     //
-                    // If the user has already selected Show All
-                    // Colors, don't rebuild the combo again.
+                    // Fall back to the local color catalog, but do not change
+                    // Show All Colors. That checkbox represents an explicit
+                    // user choice, not an internal/provider fallback state.
                     //
                     if (!m_showAllColorsCheck->isChecked()) {
                         loadAllColors();
-
-                        QSignalBlocker blocker(m_showAllColorsCheck);
-
-                        m_showAllColorsCheck->setChecked(true);
                     }
 
                     updateAddButtonState();
@@ -439,9 +436,12 @@ void AddInventoryDialog::loadKnownColors()
     const QString apiKey = UserSettings::instance().rebrickableApiKey();
 
     if (m_partNumber.isEmpty() || apiKey.isEmpty()) {
+        //
+        // There is no provider-specific list available, so use the local
+        // catalog as a fallback. Do not toggle Show All Colors here; only
+        // the user should change that preference.
+        //
         loadAllColors();
-
-        m_showAllColorsCheck->setChecked(true);
 
         return;
     }
@@ -514,11 +514,11 @@ void AddInventoryDialog::applyKnownColors(int preferredColorId)
     // BrickSuite's local Color Catalog, show all.
     //
     if (m_colorCombo->count() == 0) {
+        //
+        // Defensive provider/mapping fallback. Keep the checkbox untouched
+        // so this internal condition cannot masquerade as a user selection.
+        //
         loadAllColors();
-
-        QSignalBlocker blocker(m_showAllColorsCheck);
-
-        m_showAllColorsCheck->setChecked(true);
     }
 
     updateAddButtonState();
@@ -613,12 +613,12 @@ void AddInventoryDialog::selectSearchResult(const QModelIndex& index)
         // available rather than allowing the Part's
         // Rebrickable known-color list to remove it.
         //
-        {
-            QSignalBlocker blocker(m_showAllColorsCheck);
-
-            m_showAllColorsCheck->setChecked(true);
-        }
-
+        //
+        // Load the complete catalog so the preserved working color remains
+        // available even when the next Part's known-color list would omit it.
+        // This is a rapid-entry convenience, not a change to the user's
+        // Show All Colors preference.
+        //
         loadAllColors();
 
         const int colorIndex = m_colorCombo->findData(m_quickEntryColorId);
