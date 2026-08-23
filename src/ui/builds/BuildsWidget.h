@@ -63,6 +63,7 @@ private slots:
 
 private:
     void loadBuilds();
+    void loadManufacturers();
     void updateUiState();
 
     void loadRequirements();
@@ -79,6 +80,7 @@ private:
     QComboBox* m_typeCombo = nullptr;
     QLineEdit* m_setNumberEdit = nullptr;
     QComboBox* m_inventoryModeCombo = nullptr;
+    QComboBox* m_manufacturerCombo = nullptr;
     QLineEdit* m_nameEdit = nullptr;
     QComboBox* m_statusCombo = nullptr;
     QTextEdit* m_notesEdit = nullptr;

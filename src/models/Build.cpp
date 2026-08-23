@@ -80,6 +80,16 @@ void Build::setInventoryMode(const QString& inventoryMode)
     m_inventoryMode = inventoryMode.trimmed();
 }
 
+int Build::manufacturerId() const
+{
+    return m_manufacturerId;
+}
+
+void Build::setManufacturerId(int manufacturerId)
+{
+    m_manufacturerId = manufacturerId;
+}
+
 QString Build::status() const
 {
     return m_status;

@@ -47,6 +47,7 @@ private:
 
     QLineEdit* m_nameEdit = nullptr;
     QComboBox* m_statusCombo = nullptr;
+    QComboBox* m_manufacturerCombo = nullptr;
     QTextEdit* m_notesEdit = nullptr;
 
     QPushButton* m_saveButton = nullptr;

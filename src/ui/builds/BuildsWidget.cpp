@@ -42,6 +42,7 @@
 #include "../../repositories/BuildRequirementRepository.h"
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
+#include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/SetCatalogRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
@@ -185,6 +186,8 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_inventoryModeCombo->addItem("Complete Set", "CompleteSet");
 
+    m_manufacturerCombo = new QComboBox(m_newBuildContent);
+
     m_nameEdit = new QLineEdit(m_newBuildContent);
 
     m_statusCombo = new QComboBox(m_newBuildContent);
@@ -208,6 +211,8 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     formLayout->addRow(numberLabel, m_setNumberEdit);
 
     formLayout->addRow("Inventory Mode:", m_inventoryModeCombo);
+
+    formLayout->addRow("Manufacturer:", m_manufacturerCombo);
 
     formLayout->addRow("Name:", m_nameEdit);
 
@@ -249,11 +254,12 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_buildsTable = new QTableWidget(existingGroup);
 
-    m_buildsTable->setColumnCount(7);
+    m_buildsTable->setColumnCount(8);
 
     m_buildsTable->setHorizontalHeaderLabels(QStringList() << "Type"
                                                            << "Set / MOC #"
                                                            << "Inventory Mode"
+                                                           << "Manufacturer"
                                                            << "Name"
                                                            << "Status"
                                                            << "Notes"
@@ -273,13 +279,15 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
 
     m_buildsTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
 
-    m_buildsTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
 
-    m_buildsTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Stretch);
 
-    m_buildsTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
 
-    m_buildsTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Stretch);
+
+    m_buildsTable->horizontalHeader()->setSectionResizeMode(7, QHeaderView::ResizeToContents);
 
     //
     // Add the Builds table to its group layout.
@@ -540,6 +548,27 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
         }
     });
 
+    connect(m_inventoryModeCombo,
+            &QComboBox::currentIndexChanged,
+            this,
+            [this]() {
+                const bool completeSet =
+                    m_inventoryModeCombo->currentData().toString() == "CompleteSet";
+
+                ManufacturerRepository repository;
+
+                if (!completeSet) {
+                    const int legoIndex =
+                        m_manufacturerCombo->findData(repository.legoManufacturerId());
+
+                    if (legoIndex >= 0)
+                        m_manufacturerCombo->setCurrentIndex(legoIndex);
+                }
+
+                m_manufacturerCombo->setEnabled(
+                    m_workspaceContext.hasCurrentWorkspace() && completeSet);
+            });
+
     connect(m_buildsTable,
             &QTableWidget::itemSelectionChanged,
             this,
@@ -603,6 +632,7 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     });
 
     loadColors();
+    loadManufacturers();
 
     workspaceChanged(m_workspaceContext.currentWorkspaceId());
 
@@ -663,6 +693,7 @@ void BuildsWidget::loadBuilds()
     }
 
     BuildRepository repository;
+    ManufacturerRepository manufacturerRepository;
 
     const QList<Build> builds = repository.getByWorkspace(
         m_workspaceContext.currentWorkspaceId(),
@@ -686,6 +717,20 @@ void BuildsWidget::loadBuilds()
         }
 
         auto* inventoryModeItem = new QTableWidgetItem(inventoryModeText);
+
+        QString manufacturerText;
+
+        if (build.inventoryMode() == "CompleteSet") {
+            const std::optional<Manufacturer> manufacturer =
+                manufacturerRepository.getById(build.manufacturerId());
+
+            manufacturerText =
+                manufacturer ? manufacturer->name() : QString("(Unknown)");
+        } else {
+            manufacturerText = QStringLiteral("From Stock");
+        }
+
+        auto* manufacturerItem = new QTableWidgetItem(manufacturerText);
 
         auto* nameItem = new QTableWidgetItem(build.name());
 
@@ -746,13 +791,15 @@ void BuildsWidget::loadBuilds()
 
         m_buildsTable->setItem(row, 2, inventoryModeItem);
 
-        m_buildsTable->setItem(row, 3, nameItem);
+        m_buildsTable->setItem(row, 3, manufacturerItem);
 
-        m_buildsTable->setItem(row, 4, statusItem);
+        m_buildsTable->setItem(row, 4, nameItem);
 
-        m_buildsTable->setItem(row, 5, notesItem);
+        m_buildsTable->setItem(row, 5, statusItem);
 
-        m_buildsTable->setCellWidget(row, 6, actionCombo);
+        m_buildsTable->setItem(row, 6, notesItem);
+
+        m_buildsTable->setCellWidget(row, 7, actionCombo);
 
         const int buildId = build.id();
 
@@ -1278,6 +1325,8 @@ void BuildsWidget::addBuild()
 
     build.setInventoryMode(inventoryMode);
 
+    build.setManufacturerId(m_manufacturerCombo->currentData().toInt());
+
     build.setName(name);
 
     build.setStatus(status);
@@ -1294,6 +1343,14 @@ void BuildsWidget::addBuild()
 
     m_setNumberEdit->clear();
     m_inventoryModeCombo->setCurrentIndex(0);
+
+    ManufacturerRepository manufacturerRepository;
+    const int legoIndex =
+        m_manufacturerCombo->findData(manufacturerRepository.legoManufacturerId());
+
+    if (legoIndex >= 0)
+        m_manufacturerCombo->setCurrentIndex(legoIndex);
+
     m_nameEdit->clear();
     m_notesEdit->clear();
 
@@ -1320,6 +1377,11 @@ void BuildsWidget::updateUiState()
 
     m_inventoryModeCombo->setEnabled(enabled);
 
+    const bool completeSet =
+        m_inventoryModeCombo->currentData().toString() == "CompleteSet";
+
+    m_manufacturerCombo->setEnabled(enabled && completeSet);
+
     m_nameEdit->setEnabled(enabled);
 
     m_statusCombo->setEnabled(enabled);
@@ -1329,6 +1391,27 @@ void BuildsWidget::updateUiState()
     m_addButton->setEnabled(enabled);
 
     m_newBuildGroup->setEnabled(enabled);
+}
+
+void BuildsWidget::loadManufacturers()
+{
+    m_manufacturerCombo->clear();
+
+    ManufacturerRepository repository;
+    const QList<Manufacturer> manufacturers = repository.getAll(true);
+
+    for (const Manufacturer& manufacturer : manufacturers)
+        m_manufacturerCombo->addItem(manufacturer.name(), manufacturer.id());
+
+    const int legoIndex =
+        m_manufacturerCombo->findData(repository.legoManufacturerId());
+
+    if (legoIndex >= 0)
+        m_manufacturerCombo->setCurrentIndex(legoIndex);
+
+    m_manufacturerCombo->setEnabled(
+        m_workspaceContext.hasCurrentWorkspace()
+        && m_inventoryModeCombo->currentData().toString() == "CompleteSet");
 }
 
 void BuildsWidget::loadColors()
@@ -1358,7 +1441,7 @@ void BuildsWidget::buildSelectionChanged()
         return;
     }
 
-    QTableWidgetItem* nameItem = m_buildsTable->item(row, 3);
+    QTableWidgetItem* nameItem = m_buildsTable->item(row, 4);
 
     m_selectedBuildId = nameItem->data(Qt::UserRole).toInt();
 
@@ -1396,7 +1479,7 @@ void BuildsWidget::loadRequirements()
     if (buildRow >= 0) {
         QTableWidgetItem* setNumberItem = m_buildsTable->item(buildRow, 1);
 
-        QTableWidgetItem* nameItem = m_buildsTable->item(buildRow, 3);
+        QTableWidgetItem* nameItem = m_buildsTable->item(buildRow, 4);
 
         const QString setNumber = setNumberItem ? setNumberItem->text() : QString();
 
@@ -2329,7 +2412,7 @@ void BuildsWidget::selectBuild(int buildId)
     loadBuilds();
 
     for (int row = 0; row < m_buildsTable->rowCount(); ++row) {
-        QTableWidgetItem* nameItem = m_buildsTable->item(row, 3);
+        QTableWidgetItem* nameItem = m_buildsTable->item(row, 4);
 
         if (!nameItem)
             continue;

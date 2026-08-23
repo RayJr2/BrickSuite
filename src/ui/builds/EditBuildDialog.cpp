@@ -22,6 +22,7 @@
 
 #include "../../models/Build.h"
 #include "../../repositories/BuildRepository.h"
+#include "../../repositories/ManufacturerRepository.h"
 
 #include <QDebug>
 #include <QComboBox>
@@ -56,6 +57,8 @@ EditBuildDialog::EditBuildDialog(int buildId, QWidget* parent)
 
     m_statusCombo = new QComboBox(this);
 
+    m_manufacturerCombo = new QComboBox(this);
+
     //
     // Match the status values already accepted by
     // BuildRepository.
@@ -72,11 +75,19 @@ EditBuildDialog::EditBuildDialog(int buildId, QWidget* parent)
 
     m_notesEdit->setMaximumHeight(120);
 
+    ManufacturerRepository manufacturerRepository;
+    const QList<Manufacturer> manufacturers = manufacturerRepository.getAll(true);
+
+    for (const Manufacturer& manufacturer : manufacturers)
+        m_manufacturerCombo->addItem(manufacturer.name(), manufacturer.id());
+
     formLayout->addRow("Type:", m_typeLabel);
 
     formLayout->addRow("Set Number:", m_setNumberLabel);
 
     formLayout->addRow("Inventory Mode:", m_inventoryModeLabel);
+
+    formLayout->addRow("Manufacturer:", m_manufacturerCombo);
 
     formLayout->addRow("Name:", m_nameEdit);
 
@@ -122,9 +133,17 @@ bool EditBuildDialog::loadBuild()
 
     if (build->inventoryMode() == "CompleteSet") {
         m_inventoryModeLabel->setText("Complete Set");
+        m_manufacturerCombo->setEnabled(true);
     } else {
         m_inventoryModeLabel->setText("Build from Stock");
+        m_manufacturerCombo->setEnabled(false);
     }
+
+    const int manufacturerIndex =
+        m_manufacturerCombo->findData(build->manufacturerId());
+
+    if (manufacturerIndex >= 0)
+        m_manufacturerCombo->setCurrentIndex(manufacturerIndex);
 
     m_nameEdit->setText(build->name());
 
@@ -160,6 +179,8 @@ void EditBuildDialog::saveBuild()
     }
 
     build->setName(name);
+
+    build->setManufacturerId(m_manufacturerCombo->currentData().toInt());
 
     build->setStatus(m_statusCombo->currentData().toString());
 

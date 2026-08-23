@@ -46,6 +46,9 @@ public:
     QString inventoryMode() const;
     void setInventoryMode(const QString& inventoryMode);
 
+    int manufacturerId() const;
+    void setManufacturerId(int manufacturerId);
+
     QString status() const;
     void setStatus(const QString& status);
 
@@ -69,6 +72,7 @@ private:
     QString m_name;
     QString m_setNumber;
     QString m_inventoryMode = "Stock";
+    int m_manufacturerId = 0;
     QString m_status = "Planned";
     bool m_isActive = true;
     QString m_notes;

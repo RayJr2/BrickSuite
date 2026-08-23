@@ -19,6 +19,7 @@
  */
 
 #include "BuildRepository.h"
+#include "ManufacturerRepository.h"
 
 #include "../database/DatabaseManager.h"
 
@@ -27,6 +28,18 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QVariant>
+
+namespace
+{
+int normalizedManufacturerId(int manufacturerId)
+{
+    if (manufacturerId > 0)
+        return manufacturerId;
+
+    ManufacturerRepository repository;
+    return repository.legoManufacturerId();
+}
+}
 
 bool BuildRepository::create(Build& build)
 {
@@ -61,6 +74,15 @@ bool BuildRepository::create(Build& build)
         return false;
     }
 
+    const int manufacturerId = normalizedManufacturerId(build.manufacturerId());
+
+    if (manufacturerId <= 0) {
+        qCritical() << "Build create failed: default LEGO manufacturer unavailable.";
+        return false;
+    }
+
+    build.setManufacturerId(manufacturerId);
+
     QSqlDatabase database = DatabaseManager::instance().database();
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
@@ -75,6 +97,7 @@ bool BuildRepository::create(Build& build)
             name,
             set_number,
             inventory_mode,
+            manufacturer_id,
             status,
             is_active,
             notes,
@@ -88,6 +111,7 @@ bool BuildRepository::create(Build& build)
             :name,
             :set_number,
             :inventory_mode,
+            :manufacturer_id,
             :status,
             :is_active,
             :notes,
@@ -109,6 +133,8 @@ bool BuildRepository::create(Build& build)
     }
 
     query.bindValue(":inventory_mode", inventoryMode);
+
+    query.bindValue(":manufacturer_id", manufacturerId);
 
     query.bindValue(":status", status);
 
@@ -155,6 +181,7 @@ std::optional<Build> BuildRepository::getById(int id) const
             name,
             set_number,
             inventory_mode,
+            manufacturer_id,
             status,
             is_active,
             notes,
@@ -195,6 +222,7 @@ QList<Build> BuildRepository::getByWorkspace(int workspaceId, bool includeArchiv
             name,
             set_number,
             inventory_mode,
+            manufacturer_id,
             status,
             is_active,
             notes,
@@ -304,6 +332,15 @@ bool BuildRepository::update(Build& build)
         return false;
     }
 
+    const int manufacturerId = normalizedManufacturerId(build.manufacturerId());
+
+    if (manufacturerId <= 0) {
+        qCritical() << "Build update failed: default LEGO manufacturer unavailable.";
+        return false;
+    }
+
+    build.setManufacturerId(manufacturerId);
+
     QSqlDatabase database = DatabaseManager::instance().database();
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
@@ -318,6 +355,7 @@ bool BuildRepository::update(Build& build)
             name = :name,
             set_number = :set_number,
             inventory_mode = :inventory_mode,
+            manufacturer_id = :manufacturer_id,
             status = :status,
             is_active = :is_active,
             notes = :notes,
@@ -338,6 +376,8 @@ bool BuildRepository::update(Build& build)
     }
 
     query.bindValue(":inventory_mode", inventoryMode);
+
+    query.bindValue(":manufacturer_id", manufacturerId);
 
     query.bindValue(":status", status);
 
@@ -385,6 +425,8 @@ Build BuildRepository::buildFromQuery(const QSqlQuery& query) const
     build.setSetNumber(query.value("set_number").toString());
 
     build.setInventoryMode(query.value("inventory_mode").toString());
+
+    build.setManufacturerId(query.value("manufacturer_id").toInt());
 
     build.setStatus(query.value("status").toString());
 

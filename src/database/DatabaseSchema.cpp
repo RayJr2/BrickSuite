@@ -336,6 +336,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         }
     }
 
+    // Version 16 -> Version 17.
+    if (version == 16) {
+        if (!migrateVersion16ToVersion17(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 17)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 17;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -2353,6 +2368,75 @@ bool DatabaseSchema::migrateVersion15ToVersion16(QSqlDatabase& database)
 
     qInfo() << "Inventory manufacturer identity migration completed."
             << "SchemaVersion: 16";
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion16ToVersion17(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        ALTER TABLE build
+        ADD COLUMN manufacturer_id INTEGER
+        REFERENCES manufacturer(id)
+    )")) {
+        qCritical() << "Unable to add manufacturer_id to build:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    query.prepare(R"(
+        UPDATE build
+        SET manufacturer_id =
+            (
+                SELECT id
+                FROM manufacturer
+                WHERE code = 'LEGO' COLLATE NOCASE
+                LIMIT 1
+            )
+        WHERE manufacturer_id IS NULL
+    )");
+
+    if (!query.exec()) {
+        qCritical() << "Unable to backfill Build manufacturer:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_build_manufacturer
+        ON build(manufacturer_id)
+    )")) {
+        qCritical() << "Unable to create Build manufacturer index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE TRIGGER IF NOT EXISTS trg_build_default_manufacturer
+        AFTER INSERT ON build
+        FOR EACH ROW
+        WHEN NEW.manufacturer_id IS NULL
+        BEGIN
+            UPDATE build
+            SET manufacturer_id =
+                (
+                    SELECT id
+                    FROM manufacturer
+                    WHERE code = 'LEGO' COLLATE NOCASE
+                    LIMIT 1
+                )
+            WHERE id = NEW.id;
+        END
+    )")) {
+        qCritical() << "Unable to create Build default-manufacturer trigger:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    qInfo() << "Build manufacturer migration completed."
+            << "Existing Builds defaulted to LEGO.";
 
     return true;
 }
