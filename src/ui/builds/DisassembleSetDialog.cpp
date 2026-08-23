@@ -30,6 +30,8 @@
 #include "../../models/StorageLocation.h"
 
 #include "../../repositories/BuildRepository.h"
+#include "../../repositories/BuildAllocationRepository.h"
+#include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/BuildRequirementRepository.h"
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
@@ -94,11 +96,12 @@ DisassembleSetDialog::DisassembleSetDialog(int buildId, QWidget* parent)
 
     m_table = new QTableWidget(this);
 
-    m_table->setColumnCount(7);
+    m_table->setColumnCount(8);
 
     m_table->setHorizontalHeaderLabels(QStringList() << "Part #"
                                                      << "Name"
                                                      << "Color"
+                                                     << "Manufacturer"
                                                      << "Set Qty"
                                                      << "Spare"
                                                      << "Qty Returned"
@@ -124,7 +127,9 @@ DisassembleSetDialog::DisassembleSetDialog(int buildId, QWidget* parent)
 
     m_table->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
 
-    m_table->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Stretch);
+    m_table->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
+
+    m_table->horizontalHeader()->setSectionResizeMode(7, QHeaderView::Stretch);
 
     mainLayout->addWidget(m_table, 1);
 
@@ -200,6 +205,8 @@ bool DisassembleSetDialog::loadBuild()
     }
 
     m_workspaceId = build->workspaceId();
+
+    m_buildManufacturerId = build->manufacturerId();
 
     m_buildName = build->name();
 
@@ -330,152 +337,208 @@ QString DisassembleSetDialog::storagePath(int storageLocationId) const
 bool DisassembleSetDialog::loadRequirements()
 {
     BuildRequirementRepository requirementRepository;
+    BuildAllocationRepository allocationRepository;
+    ManufacturerRepository manufacturerRepository;
 
-    const QList<BuildRequirement> requirements = requirementRepository.getByBuild(m_buildId);
+    const QList<BuildRequirement> requirements =
+        requirementRepository.getByBuild(m_buildId);
 
     if (requirements.isEmpty()) {
-        QMessageBox::warning(this, "Disassemble Build", "This Build does not have a parts list.");
-
+        QMessageBox::warning(this,
+                             "Disassemble Build",
+                             "This Build does not have a parts list.");
         return false;
     }
 
-    //
-    // Column 3 represents the source quantity being
-    // returned to loose inventory.
-    //
-    // Complete Set:
-    //     use the published Set requirement quantity.
-    //
-    // Build from Stock / MOC:
-    //     use only the quantity actually pulled into
-    //     the Build.
-    //
     if (m_inventoryMode == "CompleteSet") {
-        m_table->setHorizontalHeaderItem(3, new QTableWidgetItem("Set Qty"));
+        m_table->setHorizontalHeaderItem(4,
+                                         new QTableWidgetItem("Set Qty"));
     } else {
-        m_table->setHorizontalHeaderItem(3, new QTableWidgetItem("Pulled Qty"));
+        m_table->setHorizontalHeaderItem(4,
+                                         new QTableWidgetItem("Pulled Qty"));
     }
 
     PartRepository partRepository;
-
     ColorRepository colorRepository;
 
     m_table->setRowCount(0);
-
     m_rows.clear();
 
     int tableRow = 0;
 
     for (const BuildRequirement& requirement : requirements) {
-        //
-        // Determine how many pieces physically belong
-        // to the source being disassembled.
-        //
-        const int sourceQuantity = m_inventoryMode == "CompleteSet" ? requirement.quantityRequired()
-                                                                    : requirement.quantityPulled();
+        const int pulledOrSetQuantity =
+            m_inventoryMode == "CompleteSet"
+                ? requirement.quantityRequired()
+                : requirement.quantityPulled();
 
-        //
-        // A Build-from-Stock row that was never pulled
-        // does not physically exist in the completed
-        // Build, so there is nothing to return.
-        //
-        if (m_inventoryMode == "Stock" && sourceQuantity <= 0) {
+        if (m_inventoryMode == "Stock" && pulledOrSetQuantity <= 0)
             continue;
+
+        const std::optional<Part> part =
+            partRepository.getById(requirement.partId());
+
+        const std::optional<Color> color =
+            colorRepository.getById(requirement.colorId());
+
+        struct ManufacturerSlice
+        {
+            int manufacturerId = 0;
+            int quantity = 0;
+        };
+
+        QList<ManufacturerSlice> slices;
+
+        if (m_inventoryMode == "CompleteSet") {
+            ManufacturerSlice slice;
+            slice.manufacturerId = m_buildManufacturerId;
+            slice.quantity = pulledOrSetQuantity;
+            slices.append(slice);
+        } else {
+            const QList<BuildPartManufacturerProvenance> provenance =
+                allocationRepository.pulledManufacturerProvenance(
+                    m_buildId,
+                    requirement.partId(),
+                    requirement.colorId());
+
+            int provenanceQuantity = 0;
+
+            for (const BuildPartManufacturerProvenance& item : provenance) {
+                ManufacturerSlice slice;
+                slice.manufacturerId = item.manufacturerId;
+                slice.quantity = item.quantityPulled;
+                slices.append(slice);
+
+                provenanceQuantity += item.quantityPulled;
+            }
+
+            //
+            // Never guess the manufacturer of stock-built pieces. Older
+            // pulled Builds may predate the provenance table; those Builds
+            // require an explicit recovery/migration decision rather than
+            // silently returning everything as LEGO.
+            //
+            if (provenanceQuantity != pulledOrSetQuantity) {
+                QMessageBox::critical(
+                    this,
+                    "Disassemble Build",
+                    QString("Manufacturer provenance is incomplete for "
+                            "Part %1 / Color %2.\n\n"
+                            "Pulled quantity: %3\n"
+                            "Manufacturer-tracked quantity: %4\n\n"
+                            "BrickSuite will not guess the manufacturer. "
+                            "No inventory changes have been made.")
+                        .arg(part ? part->partNumber()
+                                  : QString::number(requirement.partId()))
+                        .arg(color ? color->name()
+                                   : QString::number(requirement.colorId()))
+                        .arg(pulledOrSetQuantity)
+                        .arg(provenanceQuantity));
+
+                m_table->setRowCount(0);
+                m_rows.clear();
+                return false;
+            }
         }
 
-        const std::optional<Part> part = partRepository.getById(requirement.partId());
+        for (const ManufacturerSlice& slice : slices) {
+            if (slice.quantity <= 0)
+                continue;
 
-        const std::optional<Color> color = colorRepository.getById(requirement.colorId());
+            const std::optional<Manufacturer> manufacturer =
+                manufacturerRepository.getById(slice.manufacturerId);
 
-        m_table->insertRow(tableRow);
+            if (!manufacturer) {
+                QMessageBox::critical(
+                    this,
+                    "Disassemble Build",
+                    QString("Unable to resolve Manufacturer ID %1 for "
+                            "Part %2.\n\nNo inventory changes have been made.")
+                        .arg(slice.manufacturerId)
+                        .arg(part ? part->partNumber()
+                                  : QString::number(requirement.partId())));
 
-        auto* partNumberItem = new QTableWidgetItem(part ? part->partNumber()
-                                                         : QString::number(requirement.partId()));
+                m_table->setRowCount(0);
+                m_rows.clear();
+                return false;
+            }
 
-        auto* nameItem = new QTableWidgetItem(part ? part->name() : QString());
+            m_table->insertRow(tableRow);
 
-        auto* colorItem = new QTableWidgetItem(color ? color->name()
-                                                     : QString::number(requirement.colorId()));
+            auto* partNumberItem =
+                new QTableWidgetItem(part ? part->partNumber()
+                                          : QString::number(requirement.partId()));
 
-        auto* sourceQuantityItem = new QTableWidgetItem(QString::number(sourceQuantity));
+            auto* nameItem =
+                new QTableWidgetItem(part ? part->name() : QString());
 
-        auto* spareItem = new QTableWidgetItem(requirement.isSpare() ? "Yes" : "No");
+            auto* colorItem =
+                new QTableWidgetItem(color ? color->name()
+                                           : QString::number(requirement.colorId()));
 
-        auto* quantitySpin = new QSpinBox(m_table);
+            auto* manufacturerItem =
+                new QTableWidgetItem(manufacturer->name());
 
-        quantitySpin->setRange(0, sourceQuantity);
+            auto* sourceQuantityItem =
+                new QTableWidgetItem(QString::number(slice.quantity));
 
-        //
-        // Default assumption:
-        // everything physically present in the
-        // Build/Set is returned to loose inventory.
-        //
-        quantitySpin->setValue(sourceQuantity);
+            auto* spareItem =
+                new QTableWidgetItem(requirement.isSpare() ? "Yes" : "No");
 
-        quantitySpin->setAlignment(Qt::AlignCenter);
+            auto* quantitySpin = new QSpinBox(m_table);
+            quantitySpin->setRange(0, slice.quantity);
+            quantitySpin->setValue(slice.quantity);
+            quantitySpin->setAlignment(Qt::AlignCenter);
 
-        auto* destinationCombo = new QComboBox(m_table);
+            auto* destinationCombo = new QComboBox(m_table);
+            populateLocationCombo(destinationCombo);
 
-        populateLocationCombo(destinationCombo);
+            sourceQuantityItem->setTextAlignment(Qt::AlignCenter);
+            spareItem->setTextAlignment(Qt::AlignCenter);
 
-        sourceQuantityItem->setTextAlignment(Qt::AlignCenter);
+            m_table->setItem(tableRow, 0, partNumberItem);
+            m_table->setItem(tableRow, 1, nameItem);
+            m_table->setItem(tableRow, 2, colorItem);
+            m_table->setItem(tableRow, 3, manufacturerItem);
+            m_table->setItem(tableRow, 4, sourceQuantityItem);
+            m_table->setItem(tableRow, 5, spareItem);
+            m_table->setCellWidget(tableRow, 6, quantitySpin);
+            m_table->setCellWidget(tableRow, 7, destinationCombo);
 
-        spareItem->setTextAlignment(Qt::AlignCenter);
+            RowData row;
+            row.requirementId = requirement.id();
+            row.partId = requirement.partId();
+            row.colorId = requirement.colorId();
+            row.manufacturerId = slice.manufacturerId;
+            row.sourceQuantity = slice.quantity;
+            row.isSpare = requirement.isSpare();
+            row.quantitySpin = quantitySpin;
+            row.destinationCombo = destinationCombo;
 
-        m_table->setItem(tableRow, 0, partNumberItem);
+            m_rows.append(row);
 
-        m_table->setItem(tableRow, 1, nameItem);
+            connect(quantitySpin,
+                    &QSpinBox::valueChanged,
+                    this,
+                    [this]() { updateSummary(); });
 
-        m_table->setItem(tableRow, 2, colorItem);
+            connect(destinationCombo,
+                    &QComboBox::currentIndexChanged,
+                    this,
+                    [this]() { updateSummary(); });
 
-        m_table->setItem(tableRow, 3, sourceQuantityItem);
-
-        m_table->setItem(tableRow, 4, spareItem);
-
-        m_table->setCellWidget(tableRow, 5, quantitySpin);
-
-        m_table->setCellWidget(tableRow, 6, destinationCombo);
-
-        RowData row;
-
-        row.requirementId = requirement.id();
-
-        row.partId = requirement.partId();
-
-        row.colorId = requirement.colorId();
-
-        row.sourceQuantity = sourceQuantity;
-
-        row.isSpare = requirement.isSpare();
-
-        row.quantitySpin = quantitySpin;
-
-        row.destinationCombo = destinationCombo;
-
-        m_rows.append(row);
-
-        connect(quantitySpin, &QSpinBox::valueChanged, this, [this]() { updateSummary(); });
-
-        connect(destinationCombo, &QComboBox::currentIndexChanged, this, [this]() {
-            updateSummary();
-        });
-
-        ++tableRow;
+            ++tableRow;
+        }
     }
 
-    //
-    // A completed Build-from-Stock should normally
-    // contain pulled pieces. If it does not, there
-    // is nothing for this dialog to return.
-    //
     if (m_rows.isEmpty()) {
-        QMessageBox::information(this,
-                                 "Disassemble Build",
-                                 m_inventoryMode == "CompleteSet"
-                                     ? "This Complete Set does not contain "
-                                       "any requirements to disassemble."
-                                     : "This completed Build does not contain "
-                                       "any pulled pieces to return to loose inventory.");
+        QMessageBox::information(
+            this,
+            "Disassemble Build",
+            m_inventoryMode == "CompleteSet"
+                ? "This Complete Set does not contain any requirements to disassemble."
+                : "This completed Build does not contain any pulled pieces "
+                  "to return to loose inventory.");
 
         return false;
     }
@@ -641,6 +704,7 @@ void DisassembleSetDialog::disassembleSet()
 
     InventoryRecordRepository inventoryRepository;
     BuildRequirementRepository requirementRepository;
+    BuildAllocationRepository allocationRepository;
 
     for (const RowData& row : m_rows) {
         const int quantity = row.quantitySpin->value();
@@ -682,6 +746,8 @@ void DisassembleSetDialog::disassembleSet()
 
         record.setStorageLocationId(storageLocationId);
 
+        record.setManufacturerId(row.manufacturerId);
+
         //
         // Once an assembled Set has been disassembled,
         // these pieces are loose workshop pieces.
@@ -698,15 +764,19 @@ void DisassembleSetDialog::disassembleSet()
 
         if (m_inventoryMode == "CompleteSet") {
             notes = QString("Disassembled from %1 (%2), "
-                            "%3 Complete Set requirement.")
+                            "%3 Complete Set requirement. "
+                            "Manufacturer ID: %4.")
                         .arg(m_buildName)
                         .arg(m_setNumber)
-                        .arg(requirementType);
+                        .arg(requirementType)
+                        .arg(row.manufacturerId);
         } else {
-            notes = QString("Returned from completed Build %1%2.")
+            notes = QString("Returned from completed Build %1%2. "
+                            "Manufacturer ID: %3.")
                         .arg(m_buildName)
                         .arg(m_setNumber.trimmed().isEmpty() ? QString()
-                                                             : QString(" (%1)").arg(m_setNumber));
+                                                             : QString(" (%1)").arg(m_setNumber))
+                        .arg(row.manufacturerId);
         }
 
         //
@@ -743,6 +813,30 @@ void DisassembleSetDialog::disassembleSet()
         }
 
         if (m_inventoryMode == "Stock") {
+            if (!allocationRepository.reducePulledManufacturer(
+                    m_buildId,
+                    row.partId,
+                    row.colorId,
+                    row.manufacturerId,
+                    quantity)) {
+                qCritical() << "Build disassembly failed reducing manufacturer provenance."
+                            << "BuildId:" << m_buildId
+                            << "PartId:" << row.partId
+                            << "ColorId:" << row.colorId
+                            << "ManufacturerId:" << row.manufacturerId
+                            << "Quantity:" << quantity;
+
+                database.rollback();
+
+                QMessageBox::critical(
+                    this,
+                    "Disassemble Build",
+                    "Unable to update manufacturer provenance.\n\n"
+                    "No changes were saved.");
+
+                return;
+            }
+
             const std::optional<BuildRequirement> requirement = requirementRepository.getById(
                 row.requirementId);
 

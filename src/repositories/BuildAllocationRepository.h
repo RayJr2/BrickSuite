@@ -27,6 +27,12 @@
 
 class QSqlQuery;
 
+struct BuildPartManufacturerProvenance
+{
+    int manufacturerId = 0;
+    int quantityPulled = 0;
+};
+
 class BuildAllocationRepository
 {
 public:
@@ -53,6 +59,17 @@ public:
     int totalAllocatedForInventoryRecordForBuild(int inventoryRecordId, int buildId) const;
 
     bool recordPulledManufacturer(int buildId,
+                                  int partId,
+                                  int colorId,
+                                  int manufacturerId,
+                                  int quantity);
+
+    QList<BuildPartManufacturerProvenance> pulledManufacturerProvenance(
+        int buildId,
+        int partId,
+        int colorId) const;
+
+    bool reducePulledManufacturer(int buildId,
                                   int partId,
                                   int colorId,
                                   int manufacturerId,

@@ -42,6 +42,7 @@ private:
         int requirementId = 0;
         int partId = 0;
         int colorId = 0;
+        int manufacturerId = 0;
 
         int sourceQuantity = 0;
         bool isSpare = false;
@@ -64,6 +65,7 @@ private:
 
     int m_buildId = 0;
     int m_workspaceId = 0;
+    int m_buildManufacturerId = 0;
 
     QString m_buildName;
     QString m_setNumber;

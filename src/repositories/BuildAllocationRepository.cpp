@@ -606,3 +606,117 @@ bool BuildAllocationRepository::recordPulledManufacturer(int buildId,
     return true;
 }
 
+QList<BuildPartManufacturerProvenance>
+BuildAllocationRepository::pulledManufacturerProvenance(
+    int buildId,
+    int partId,
+    int colorId) const
+{
+    QList<BuildPartManufacturerProvenance> values;
+
+    if (buildId <= 0 || partId <= 0 || colorId <= 0)
+        return values;
+
+    QSqlQuery query(DatabaseManager::instance().database());
+
+    query.prepare(R"(
+        SELECT
+            manufacturer_id,
+            quantity_pulled
+        FROM build_part_provenance
+        WHERE build_id = :build_id
+          AND part_id = :part_id
+          AND color_id = :color_id
+          AND quantity_pulled > 0
+        ORDER BY manufacturer_id
+    )");
+
+    query.bindValue(":build_id", buildId);
+    query.bindValue(":part_id", partId);
+    query.bindValue(":color_id", colorId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to retrieve Build manufacturer provenance:"
+                    << query.lastError().text();
+        return values;
+    }
+
+    while (query.next()) {
+        BuildPartManufacturerProvenance value;
+        value.manufacturerId = query.value("manufacturer_id").toInt();
+        value.quantityPulled = query.value("quantity_pulled").toInt();
+
+        if (value.manufacturerId > 0 && value.quantityPulled > 0)
+            values.append(value);
+    }
+
+    return values;
+}
+
+bool BuildAllocationRepository::reducePulledManufacturer(int buildId,
+                                                          int partId,
+                                                          int colorId,
+                                                          int manufacturerId,
+                                                          int quantity)
+{
+    if (buildId <= 0 || partId <= 0 || colorId <= 0
+        || manufacturerId <= 0 || quantity <= 0) {
+        return false;
+    }
+
+    QSqlQuery query(DatabaseManager::instance().database());
+
+    query.prepare(R"(
+        UPDATE build_part_provenance
+        SET
+            quantity_pulled = quantity_pulled - :quantity,
+            modified_utc = :modified_utc
+        WHERE build_id = :build_id
+          AND part_id = :part_id
+          AND color_id = :color_id
+          AND manufacturer_id = :manufacturer_id
+          AND quantity_pulled >= :quantity
+    )");
+
+    query.bindValue(":quantity", quantity);
+    query.bindValue(":modified_utc",
+                    QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    query.bindValue(":build_id", buildId);
+    query.bindValue(":part_id", partId);
+    query.bindValue(":color_id", colorId);
+    query.bindValue(":manufacturer_id", manufacturerId);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to reduce Build manufacturer provenance:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (query.numRowsAffected() <= 0)
+        return false;
+
+    QSqlQuery cleanup(DatabaseManager::instance().database());
+
+    cleanup.prepare(R"(
+        DELETE FROM build_part_provenance
+        WHERE build_id = :build_id
+          AND part_id = :part_id
+          AND color_id = :color_id
+          AND manufacturer_id = :manufacturer_id
+          AND quantity_pulled = 0
+    )");
+
+    cleanup.bindValue(":build_id", buildId);
+    cleanup.bindValue(":part_id", partId);
+    cleanup.bindValue(":color_id", colorId);
+    cleanup.bindValue(":manufacturer_id", manufacturerId);
+
+    if (!cleanup.exec()) {
+        qCritical() << "Unable to clean completed Build manufacturer provenance:"
+                    << cleanup.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+
