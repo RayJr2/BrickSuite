@@ -40,6 +40,7 @@
 #include "../repositories/WorkspaceRepository.h"
 
 #include "../services/RebrickableApiClient.h"
+#include "../api/ApiProviderStatusRegistry.h"
 #include "../api/brickset/BricksetService.h"
 #include "../services/images/BackgroundPartColorImageCacheService.h"
 #include "../services/images/PartImageService.h"
@@ -292,12 +293,12 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     m_backgroundPartColorImageCacheService->start();
 
     //
-    // BrickLink Wanted List export depends on the locally cached mapping
-    // between BrickSuite/Rebrickable colors and BrickLink color IDs.
-    // Initialize those mappings automatically when needed so Procurement
-    // never depends on the Test-menu refresh action.
+    // Restore provider availability immediately from previously verified
+    // credentials, then validate those credentials in the background.
+    // This prevents Set Details from starting every session with an
+    // in-memory provider registry of Unknown.
     //
-    ensureBrickLinkColorMappings();
+    initializeProviderStatuses();
 
     /***** Menu bar *****/
 
@@ -1331,6 +1332,162 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     //statusBar()->showMessage("BrickSuite Version 1.0");
     statusBar()->showMessage(AppVersion::displayVersion());
+}
+
+void MainWindow::initializeProviderStatuses()
+{
+    UserSettings& settings = UserSettings::instance();
+    ApiProviderStatusRegistry& registry =
+        ApiProviderStatusRegistry::instance();
+
+    const QString rebrickableApiKey =
+        settings.rebrickableApiKey().trimmed();
+
+    if (rebrickableApiKey.isEmpty()) {
+        registry.setStatus(ApiProvider::Rebrickable,
+                           ApiConnectionStatus::NotConfigured);
+    } else if (settings.rebrickableConnectionPreviouslyVerified()) {
+        //
+        // Restore the last known-good state immediately so normal application
+        // features can use the provider while the background validation runs.
+        //
+        registry.setStatus(ApiProvider::Rebrickable,
+                           ApiConnectionStatus::Connected);
+
+        auto* rebrickableService =
+            new RebrickableApiClient(this);
+
+        connect(rebrickableService,
+                &RebrickableApiClient::connectionTestFinished,
+                this,
+                [this, rebrickableService](
+                    const RebrickableApiClient::ConnectionResult& result) {
+                    UserSettings& currentSettings =
+                        UserSettings::instance();
+
+                    ApiProviderStatusRegistry& currentRegistry =
+                        ApiProviderStatusRegistry::instance();
+
+                    if (result.success) {
+                        currentRegistry.setStatus(
+                            ApiProvider::Rebrickable,
+                            ApiConnectionStatus::Connected);
+
+                        currentSettings
+                            .setRebrickableConnectionPreviouslyVerified(true);
+
+                        ensureBrickLinkColorMappings();
+                    } else {
+                        currentSettings
+                            .setRebrickableConnectionPreviouslyVerified(false);
+
+                        if (result.httpStatusCode == 401) {
+                            currentRegistry.setStatus(
+                                ApiProvider::Rebrickable,
+                                ApiConnectionStatus::AuthenticationFailed);
+                        } else if (result.httpStatusCode == 0) {
+                            currentRegistry.setStatus(
+                                ApiProvider::Rebrickable,
+                                ApiConnectionStatus::NetworkError);
+                        } else {
+                            currentRegistry.setStatus(
+                                ApiProvider::Rebrickable,
+                                ApiConnectionStatus::ProviderError);
+                        }
+
+                        qWarning()
+                            << "Rebrickable startup validation failed."
+                            << "HTTP:" << result.httpStatusCode
+                            << "Message:" << result.message;
+                    }
+
+                    rebrickableService->deleteLater();
+                });
+
+        rebrickableService->testConnection(rebrickableApiKey);
+    } else {
+        registry.setStatus(ApiProvider::Rebrickable,
+                           ApiConnectionStatus::Unknown);
+    }
+
+    const QString bricksetApiKey =
+        settings.bricksetApiKey().trimmed();
+
+    if (bricksetApiKey.isEmpty()) {
+        registry.setStatus(ApiProvider::Brickset,
+                           ApiConnectionStatus::NotConfigured);
+    } else if (settings.bricksetConnectionPreviouslyVerified()) {
+        registry.setStatus(ApiProvider::Brickset,
+                           ApiConnectionStatus::Connected);
+
+        auto* bricksetService =
+            new BricksetService(this);
+
+        connect(bricksetService,
+                &BricksetService::connectionTestFinished,
+                this,
+                [bricksetService](
+                    const BricksetService::ConnectionResult& result) {
+                    UserSettings& currentSettings =
+                        UserSettings::instance();
+
+                    ApiProviderStatusRegistry& currentRegistry =
+                        ApiProviderStatusRegistry::instance();
+
+                    if (result.success) {
+                        currentRegistry.setStatus(
+                            ApiProvider::Brickset,
+                            ApiConnectionStatus::Connected);
+
+                        currentSettings
+                            .setBricksetConnectionPreviouslyVerified(true);
+                    } else {
+                        currentSettings
+                            .setBricksetConnectionPreviouslyVerified(false);
+
+                        switch (result.error.type) {
+                        case ApiErrorType::Authentication:
+                            currentRegistry.setStatus(
+                                ApiProvider::Brickset,
+                                ApiConnectionStatus::AuthenticationFailed);
+                            break;
+                        case ApiErrorType::Network:
+                        case ApiErrorType::Timeout:
+                            currentRegistry.setStatus(
+                                ApiProvider::Brickset,
+                                ApiConnectionStatus::NetworkError);
+                            break;
+                        default:
+                            currentRegistry.setStatus(
+                                ApiProvider::Brickset,
+                                ApiConnectionStatus::ProviderError);
+                            break;
+                        }
+
+                        qWarning()
+                            << "Brickset startup validation failed."
+                            << "HTTP:" << result.httpStatusCode
+                            << "Message:" << result.message;
+                    }
+
+                    bricksetService->deleteLater();
+                });
+
+        bricksetService->testConnection(bricksetApiKey);
+    } else {
+        registry.setStatus(ApiProvider::Brickset,
+                           ApiConnectionStatus::Unknown);
+    }
+
+    //
+    // If Rebrickable was already verified, mapping coverage can be checked
+    // immediately as well; ensureColorMappings() avoids an API call when
+    // local coverage is already complete.
+    //
+    if (!rebrickableApiKey.isEmpty()
+        && settings.rebrickableConnectionPreviouslyVerified()) {
+        ensureBrickLinkColorMappings();
+    }
 }
 
 void MainWindow::ensureBrickLinkColorMappings()
