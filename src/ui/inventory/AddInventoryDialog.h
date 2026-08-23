@@ -67,6 +67,8 @@ private:
     void clearPartSelection();
     void updatePartSearch();
     void selectSearchResult(const QModelIndex& index);
+    void resolveEnteredPart();
+    void applyResolvedPart(int partId, const QString& displayText, const QString& resolutionText);
     void updateAddButtonState();
 
     int m_partId = 0;
@@ -74,6 +76,7 @@ private:
     WorkspaceContext& m_workspaceContext;
 
     QLabel* m_partLabel = nullptr;
+    QLabel* m_partResolutionLabel = nullptr;
 
     QComboBox* m_colorCombo = nullptr;
     QComboBox* m_storageCombo = nullptr;

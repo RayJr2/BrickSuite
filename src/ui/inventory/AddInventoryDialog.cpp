@@ -33,6 +33,7 @@
 #include "../../repositories/StorageLocationRepository.h"
 
 #include "../../services/RebrickableApiClient.h"
+#include "../../services/parts/PartResolver.h"
 #include "../../settings/UserSettings.h"
 
 #include "../helpers/ColorComboHelper.h"
@@ -122,6 +123,11 @@ void AddInventoryDialog::initializeUi()
         m_partSearchEdit->setCompleter(m_partCompleter);
 
         layout->addRow("Part:", m_partSearchEdit);
+
+        m_partResolutionLabel = new QLabel(this);
+        m_partResolutionLabel->setWordWrap(true);
+        m_partResolutionLabel->setVisible(false);
+        layout->addRow("Resolved:", m_partResolutionLabel);
 
         m_partSearchTimer = new QTimer(this);
 
@@ -258,6 +264,11 @@ void AddInventoryDialog::initializeUi()
             m_partId = 0;
             m_partNumber.clear();
 
+            if (m_partResolutionLabel) {
+                m_partResolutionLabel->clear();
+                m_partResolutionLabel->setVisible(false);
+            }
+
             m_colorCombo->clear();
             m_colorCombo->setEnabled(false);
 
@@ -267,6 +278,11 @@ void AddInventoryDialog::initializeUi()
         });
 
         connect(m_partSearchTimer, &QTimer::timeout, this, &AddInventoryDialog::updatePartSearch);
+
+        connect(m_partSearchEdit,
+                &QLineEdit::returnPressed,
+                this,
+                &AddInventoryDialog::resolveEnteredPart);
 
         connect(m_partCompleter,
                 QOverload<const QModelIndex&>::of(&QCompleter::activated),
@@ -592,15 +608,82 @@ void AddInventoryDialog::selectSearchResult(const QModelIndex& index)
     if (!part)
         return;
 
-    m_partId = part->id();
+    applyResolvedPart(
+        part->id(),
+        QString("%1 — %2").arg(part->partNumber(), part->name()),
+        QStringLiteral("Exact catalog selection"));
+}
 
+void AddInventoryDialog::resolveEnteredPart()
+{
+    if (!m_quickEntryMode || !m_partSearchEdit)
+        return;
+
+    // A completer selection has already established a valid identity.
+    if (m_partId > 0)
+        return;
+
+    const QString enteredPartNumber = m_partSearchEdit->text().trimmed();
+
+    if (enteredPartNumber.isEmpty())
+        return;
+
+    PartResolver resolver;
+    const PartResolutionResult result = resolver.resolve(enteredPartNumber);
+
+    if (!result.hasResolvedPart) {
+        if (m_partResolutionLabel) {
+            m_partResolutionLabel->setText(
+                QStringLiteral("%1 — %2")
+                    .arg(partResolutionStatusText(result.status), result.message));
+            m_partResolutionLabel->setVisible(true);
+        }
+
+        updateAddButtonState();
+        return;
+    }
+
+    QString resolutionText;
+
+    if (result.status == PartResolutionStatus::AliasMatch) {
+        resolutionText =
+            QStringLiteral("Alias Match — %1 / %2")
+                .arg(partAliasTypeToString(result.alias.aliasType),
+                     result.alias.source);
+    } else {
+        resolutionText = QStringLiteral("Exact Match");
+    }
+
+    applyResolvedPart(
+        result.part.id(),
+        QString("%1 — %2")
+            .arg(result.part.partNumber(), result.part.name()),
+        resolutionText);
+}
+
+void AddInventoryDialog::applyResolvedPart(
+    int partId,
+    const QString& displayText,
+    const QString& resolutionText)
+{
+    if (partId <= 0)
+        return;
+
+    PartRepository repository;
+    const std::optional<Part> part = repository.getById(partId);
+
+    if (!part)
+        return;
+
+    m_partId = part->id();
     m_partNumber = part->partNumber();
 
-    //
-    // Set the displayed text to the validated
-    // catalog selection.
-    //
-    m_partSearchEdit->setText(QString("%1 — %2").arg(part->partNumber(), part->name()));
+    m_partSearchEdit->setText(displayText);
+
+    if (m_partResolutionLabel) {
+        m_partResolutionLabel->setText(resolutionText);
+        m_partResolutionLabel->setVisible(true);
+    }
 
     //
     // During rapid Keep-Open entry, preserve the user's
@@ -649,6 +732,11 @@ void AddInventoryDialog::clearPartSelection()
 
     if (m_partSearchEdit) {
         m_partSearchEdit->clear();
+    }
+
+    if (m_partResolutionLabel) {
+        m_partResolutionLabel->clear();
+        m_partResolutionLabel->setVisible(false);
     }
 
     if (m_partSearchModel) {
