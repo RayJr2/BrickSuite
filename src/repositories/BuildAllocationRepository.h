@@ -52,6 +52,12 @@ public:
 
     int totalAllocatedForInventoryRecordForBuild(int inventoryRecordId, int buildId) const;
 
+    bool recordPulledManufacturer(int buildId,
+                                  int partId,
+                                  int colorId,
+                                  int manufacturerId,
+                                  int quantity);
+
 private:
     BuildAllocation allocationFromQuery(const QSqlQuery& query) const;
 };

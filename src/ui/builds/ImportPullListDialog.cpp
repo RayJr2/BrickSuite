@@ -735,6 +735,28 @@ void ImportPullListDialog::reconcile()
         }
 
         //
+        // The allocation is only a reservation and may be reduced or removed
+        // below. Snapshot the actual manufacturer's identity now, while the
+        // physical source InventoryRecord is still known.
+        //
+        if (!allocationRepository.recordPulledManufacturer(m_buildId,
+                                                           inventoryRecord->partId(),
+                                                           inventoryRecord->colorId(),
+                                                           inventoryRecord->manufacturerId(),
+                                                           row.quantityPulled)) {
+            database.rollback();
+
+            QMessageBox::critical(this,
+                                  "Reconcile Pull List",
+                                  QString("Unable to record manufacturer provenance "
+                                          "for part %1.\n\n"
+                                          "No changes were saved.")
+                                      .arg(row.partNumber));
+
+            return;
+        }
+
+        //
         // Reduce/remove the reservation.
         //
         const int remainingAllocation = allocation->quantityAllocated() - row.quantityPulled;

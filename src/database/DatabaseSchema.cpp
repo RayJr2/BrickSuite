@@ -351,6 +351,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 17;
     }
 
+    // Version 17 -> Version 18.
+    if (version == 17) {
+        if (!migrateVersion17ToVersion18(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 18)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 18;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -2437,6 +2452,56 @@ bool DatabaseSchema::migrateVersion16ToVersion17(QSqlDatabase& database)
 
     qInfo() << "Build manufacturer migration completed."
             << "Existing Builds defaulted to LEGO.";
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion17ToVersion18(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    //
+    // Allocations are reservations and disappear as pieces are physically
+    // pulled. Persist manufacturer provenance separately so a Build-from-Stock
+    // can later return each piece under the manufacturer it actually had.
+    //
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS build_part_provenance
+        (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            build_id           INTEGER NOT NULL,
+            part_id            INTEGER NOT NULL,
+            color_id           INTEGER NOT NULL,
+            manufacturer_id    INTEGER NOT NULL,
+            quantity_pulled    INTEGER NOT NULL DEFAULT 0,
+            created_utc        TEXT NOT NULL,
+            modified_utc       TEXT NOT NULL,
+
+            FOREIGN KEY(build_id) REFERENCES build(id),
+            FOREIGN KEY(part_id) REFERENCES part(id),
+            FOREIGN KEY(color_id) REFERENCES color(id),
+            FOREIGN KEY(manufacturer_id) REFERENCES manufacturer(id),
+
+            CHECK(quantity_pulled >= 0),
+
+            UNIQUE(build_id, part_id, color_id, manufacturer_id)
+        )
+    )")) {
+        qCritical() << "Unable to create build_part_provenance table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_build_part_provenance_build
+        ON build_part_provenance(build_id)
+    )")) {
+        qCritical() << "Unable to create Build provenance index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    qInfo() << "Build manufacturer provenance foundation initialized.";
 
     return true;
 }

@@ -537,3 +537,72 @@ int BuildAllocationRepository::totalAllocatedForInventoryRecordForBuild(int inve
 
     return query.value(0).toInt();
 }
+
+bool BuildAllocationRepository::recordPulledManufacturer(int buildId,
+                                                          int partId,
+                                                          int colorId,
+                                                          int manufacturerId,
+                                                          int quantity)
+{
+    if (buildId <= 0 || partId <= 0 || colorId <= 0
+        || manufacturerId <= 0 || quantity <= 0) {
+        qWarning() << "Build manufacturer provenance rejected due to invalid arguments."
+                   << "BuildId:" << buildId
+                   << "PartId:" << partId
+                   << "ColorId:" << colorId
+                   << "ManufacturerId:" << manufacturerId
+                   << "Quantity:" << quantity;
+        return false;
+    }
+
+    const QString now =
+        QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+
+    QSqlQuery query(DatabaseManager::instance().database());
+
+    query.prepare(R"(
+        INSERT INTO build_part_provenance
+        (
+            build_id,
+            part_id,
+            color_id,
+            manufacturer_id,
+            quantity_pulled,
+            created_utc,
+            modified_utc
+        )
+        VALUES
+        (
+            :build_id,
+            :part_id,
+            :color_id,
+            :manufacturer_id,
+            :quantity,
+            :created_utc,
+            :modified_utc
+        )
+        ON CONFLICT(build_id, part_id, color_id, manufacturer_id)
+        DO UPDATE SET
+            quantity_pulled =
+                build_part_provenance.quantity_pulled
+                + excluded.quantity_pulled,
+            modified_utc = excluded.modified_utc
+    )");
+
+    query.bindValue(":build_id", buildId);
+    query.bindValue(":part_id", partId);
+    query.bindValue(":color_id", colorId);
+    query.bindValue(":manufacturer_id", manufacturerId);
+    query.bindValue(":quantity", quantity);
+    query.bindValue(":created_utc", now);
+    query.bindValue(":modified_utc", now);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to record Build manufacturer provenance:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+
