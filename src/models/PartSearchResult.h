@@ -28,4 +28,14 @@ struct PartSearchResult
 {
     Part part;
     QString categoryName;
+
+    // Populated only when the Parts Catalog search matched an active alias.
+    QString matchedAliasPartNumber;
+    QString matchedAliasType;
+    QString matchedAliasSource;
+
+    bool matchedAlias() const
+    {
+        return !matchedAliasPartNumber.trimmed().isEmpty();
+    }
 };

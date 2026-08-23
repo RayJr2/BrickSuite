@@ -308,6 +308,8 @@ QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteri
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
+    const QString searchText = criteria.searchText.trimmed();
+
     QString sql = R"(
         SELECT
             p.id,
@@ -321,7 +323,61 @@ QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteri
             p.modified_utc,
 
             pc.name AS category_name
+    )";
 
+    if (!searchText.isEmpty()) {
+        sql += R"(,
+            (
+                SELECT pa.alias_part_number
+                FROM part_alias pa
+                WHERE pa.part_id = p.id
+                  AND pa.is_active = 1
+                  AND pa.alias_part_number LIKE :search
+                ORDER BY
+                    CASE
+                        WHEN pa.alias_part_number = :exact COLLATE NOCASE THEN 0
+                        WHEN pa.alias_part_number LIKE :prefix THEN 1
+                        ELSE 2
+                    END,
+                    pa.alias_part_number COLLATE NOCASE
+                LIMIT 1
+            ) AS matched_alias_part_number,
+
+            (
+                SELECT pa.alias_type
+                FROM part_alias pa
+                WHERE pa.part_id = p.id
+                  AND pa.is_active = 1
+                  AND pa.alias_part_number LIKE :search
+                ORDER BY
+                    CASE
+                        WHEN pa.alias_part_number = :exact COLLATE NOCASE THEN 0
+                        WHEN pa.alias_part_number LIKE :prefix THEN 1
+                        ELSE 2
+                    END,
+                    pa.alias_part_number COLLATE NOCASE
+                LIMIT 1
+            ) AS matched_alias_type,
+
+            (
+                SELECT pa.source
+                FROM part_alias pa
+                WHERE pa.part_id = p.id
+                  AND pa.is_active = 1
+                  AND pa.alias_part_number LIKE :search
+                ORDER BY
+                    CASE
+                        WHEN pa.alias_part_number = :exact COLLATE NOCASE THEN 0
+                        WHEN pa.alias_part_number LIKE :prefix THEN 1
+                        ELSE 2
+                    END,
+                    pa.alias_part_number COLLATE NOCASE
+                LIMIT 1
+            ) AS matched_alias_source
+        )";
+    }
+
+    sql += R"(
         FROM part p
 
         LEFT JOIN part_category pc
@@ -330,14 +386,20 @@ QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteri
         WHERE p.is_active = 1
     )";
 
-    const QString searchText = criteria.searchText.trimmed();
-
     if (!searchText.isEmpty()) {
         sql += R"(
             AND
             (
                 p.part_number LIKE :search
                 OR p.name LIKE :search
+                OR EXISTS
+                (
+                    SELECT 1
+                    FROM part_alias pa_search
+                    WHERE pa_search.part_id = p.id
+                      AND pa_search.is_active = 1
+                      AND pa_search.alias_part_number LIKE :search
+                )
             )
         )";
     }
@@ -348,10 +410,39 @@ QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteri
         )";
     }
 
-    sql += R"(
-        ORDER BY
-            p.part_number
+    if (!searchText.isEmpty()) {
+        sql += R"(
+            ORDER BY
+                CASE
+                    WHEN p.part_number = :exact COLLATE NOCASE THEN 0
+                    WHEN EXISTS
+                    (
+                        SELECT 1
+                        FROM part_alias pa_exact
+                        WHERE pa_exact.part_id = p.id
+                          AND pa_exact.is_active = 1
+                          AND pa_exact.alias_part_number = :exact COLLATE NOCASE
+                    ) THEN 1
+                    WHEN p.part_number LIKE :prefix THEN 2
+                    WHEN EXISTS
+                    (
+                        SELECT 1
+                        FROM part_alias pa_prefix
+                        WHERE pa_prefix.part_id = p.id
+                          AND pa_prefix.is_active = 1
+                          AND pa_prefix.alias_part_number LIKE :prefix
+                    ) THEN 3
+                    ELSE 4
+                END,
+                p.part_number
+        )";
+    } else {
+        sql += R"(
+            ORDER BY p.part_number
+        )";
+    }
 
+    sql += R"(
         LIMIT :limit
         OFFSET :offset
     )";
@@ -366,6 +457,8 @@ QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteri
 
     if (!searchText.isEmpty()) {
         query.bindValue(":search", "%" + searchText + "%");
+        query.bindValue(":exact", searchText);
+        query.bindValue(":prefix", searchText + "%");
     }
 
     if (criteria.categoryId > 0) {
@@ -373,11 +466,9 @@ QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteri
     }
 
     const int safeLimit = qBound(1, criteria.limit, 500);
-
     const int safeOffset = qMax(0, criteria.offset);
 
     query.bindValue(":limit", safeLimit);
-
     query.bindValue(":offset", safeOffset);
 
     if (!query.exec()) {
@@ -390,8 +481,16 @@ QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteri
         PartSearchResult result;
 
         result.part = partFromQuery(query);
-
         result.categoryName = query.value("category_name").toString();
+
+        if (!searchText.isEmpty()) {
+            result.matchedAliasPartNumber =
+                query.value("matched_alias_part_number").toString();
+            result.matchedAliasType =
+                query.value("matched_alias_type").toString();
+            result.matchedAliasSource =
+                query.value("matched_alias_source").toString();
+        }
 
         results.append(result);
     }
@@ -418,6 +517,14 @@ int PartRepository::count(const PartSearchCriteria& criteria) const
             (
                 p.part_number LIKE :search
                 OR p.name LIKE :search
+                OR EXISTS
+                (
+                    SELECT 1
+                    FROM part_alias pa
+                    WHERE pa.part_id = p.id
+                      AND pa.is_active = 1
+                      AND pa.alias_part_number LIKE :search
+                )
             )
         )";
     }
@@ -453,6 +560,7 @@ int PartRepository::count(const PartSearchCriteria& criteria) const
 
     return query.value(0).toInt();
 }
+
 
 QList<Part> PartRepository::searchForInventoryEntry(const QString& searchText, int limit) const
 {

@@ -93,13 +93,14 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
 
     m_resultsTable = new QTableWidget(this);
 
-    m_resultsTable->setColumnCount(6);
+    m_resultsTable->setColumnCount(7);
 
     m_resultsTable->setHorizontalHeaderLabels(QStringList() << "Image"
                                                             << "Part #"
                                                             << "Name"
                                                             << "Category"
                                                             << "Material"
+                                                            << "Match"
                                                             << "Action");
 
     m_resultsTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
@@ -127,6 +128,8 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
     m_resultsTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
 
     m_resultsTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
 
     m_resultsTable->setIconSize(QSize(44, 44));
     m_resultsTable->verticalHeader()->setDefaultSectionSize(52);
@@ -326,6 +329,29 @@ void PartsCatalogWidget::searchParts()
 
         auto* materialItem = new QTableWidgetItem(part.material());
 
+        auto* matchItem = new QTableWidgetItem();
+
+        if (result.matchedAlias()) {
+            matchItem->setText(
+                QString("Alias: %1").arg(result.matchedAliasPartNumber));
+
+            QString tooltip =
+                QString("Matched active alias %1")
+                    .arg(result.matchedAliasPartNumber);
+
+            if (!result.matchedAliasType.trimmed().isEmpty()) {
+                tooltip +=
+                    QString("\nType: %1").arg(result.matchedAliasType);
+            }
+
+            if (!result.matchedAliasSource.trimmed().isEmpty()) {
+                tooltip +=
+                    QString("\nSource: %1").arg(result.matchedAliasSource);
+            }
+
+            matchItem->setToolTip(tooltip);
+        }
+
         auto* actionCombo = new QComboBox(m_resultsTable);
 
         actionCombo->addItem("Actions...");
@@ -367,7 +393,9 @@ void PartsCatalogWidget::searchParts()
 
         m_resultsTable->setItem(row, 4, materialItem);
 
-        m_resultsTable->setCellWidget(row, 5, actionCombo);
+        m_resultsTable->setItem(row, 5, matchItem);
+
+        m_resultsTable->setCellWidget(row, 6, actionCombo);
 
         //
         // Resolve thumbnail.
@@ -407,7 +435,21 @@ void PartsCatalogWidget::searchParts()
 
         const int lastResult = criteria.offset + results.size();
 
-        m_resultLabel->setText(QString("Showing results %1 - %2.").arg(firstResult).arg(lastResult));
+        if (results.size() == 1
+            && results.first().matchedAlias()
+            && results.first().matchedAliasPartNumber.compare(
+                   criteria.searchText,
+                   Qt::CaseInsensitive) == 0) {
+            m_resultLabel->setText(
+                QString("Matched alias %1 -> BrickSuite part %2.")
+                    .arg(results.first().matchedAliasPartNumber,
+                         results.first().part.partNumber()));
+        } else {
+            m_resultLabel->setText(
+                QString("Showing results %1 - %2.")
+                    .arg(firstResult)
+                    .arg(lastResult));
+        }
     }
 
     updatePagingControls();
