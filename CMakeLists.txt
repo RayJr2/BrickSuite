@@ -244,7 +244,6 @@ qt_add_executable(BrickSuite
     src/ui/inventory/LostInventoryDialog.h
     src/ui/inventory/LostInventoryDialog.cpp
     README.md
-    CONTRIBUTING.md PUBLIC_RELEASE_AUDIT.md
     src/core/AppVersion.h
     src/core/AppConstants.h
 
