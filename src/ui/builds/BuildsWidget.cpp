@@ -2069,6 +2069,93 @@ void BuildsWidget::allocateAvailable()
         return;
     }
 
+    //
+    // Optional source preference. This is deliberately a preference, not a
+    // restriction: BrickSuite allocates from this storage location first and
+    // then falls back to the normal inventory ordering for anything still
+    // needed.
+    //
+    int preferredStorageLocationId = 0;
+    QString preferredStoragePath;
+
+    {
+        QDialog preferenceDialog(this);
+        preferenceDialog.setWindowTitle("Allocate Available");
+
+        auto* layout = new QFormLayout(&preferenceDialog);
+
+        auto* explanation = new QLabel(
+            "Choose a preferred storage location to allocate from first.\n"
+            "If it does not contain enough available parts, BrickSuite will "
+            "continue allocating from other storage locations.",
+            &preferenceDialog);
+
+        explanation->setWordWrap(true);
+        layout->addRow(explanation);
+
+        auto* storageCombo = new QComboBox(&preferenceDialog);
+        storageCombo->addItem("No Preferred Storage", 0);
+
+        StorageLocationRepository storageRepository;
+        const QList<StorageLocation> locations =
+            storageRepository.getByWorkspace(m_workspaceContext.currentWorkspaceId());
+
+        for (const StorageLocation& location : locations) {
+            //
+            // Match the inventory destination UX and keep the choice list to
+            // actual leaf storage locations.
+            //
+            if (storageRepository.hasChildren(location.id()))
+                continue;
+
+            QStringList pathParts;
+            int currentId = location.id();
+            int safetyCount = 0;
+
+            while (currentId > 0 && safetyCount < 100) {
+                const std::optional<StorageLocation> current =
+                    storageRepository.getById(currentId);
+
+                if (!current)
+                    break;
+
+                pathParts.prepend(current->name());
+                currentId = current->parentLocationId();
+                ++safetyCount;
+            }
+
+            const QString path =
+                pathParts.isEmpty() ? location.name()
+                                    : pathParts.join(" / ");
+
+            storageCombo->addItem(path, location.id());
+        }
+
+        layout->addRow("Preferred Storage:", storageCombo);
+
+        auto* buttonBox =
+            new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                                 &preferenceDialog);
+
+        layout->addRow(buttonBox);
+
+        connect(buttonBox,
+                &QDialogButtonBox::accepted,
+                &preferenceDialog,
+                &QDialog::accept);
+
+        connect(buttonBox,
+                &QDialogButtonBox::rejected,
+                &preferenceDialog,
+                &QDialog::reject);
+
+        if (preferenceDialog.exec() != QDialog::Accepted)
+            return;
+
+        preferredStorageLocationId = storageCombo->currentData().toInt();
+        preferredStoragePath = storageCombo->currentText();
+    }
+
     QSqlDatabase database = DatabaseManager::instance().database();
 
     if (!database.transaction()) {
@@ -2085,6 +2172,7 @@ void BuildsWidget::allocateAvailable()
     int allocationsCreated = 0;
     int allocationsUpdated = 0;
     int piecesAdded = 0;
+    int preferredPiecesAdded = 0;
 
     for (const BuildRequirement& requirement : requirements) {
         //
@@ -2112,14 +2200,32 @@ void BuildsWidget::allocateAvailable()
             continue;
 
         //
-        // InventoryRecordRepository returns deterministic ordering by
-        // storage_location_id, condition, ownership_type. We deliberately
-        // use that existing ordering instead of inventing a storage preference.
+        // InventoryRecordRepository supplies the normal deterministic order.
+        // When the user selected a preferred storage location, stable-partition
+        // those exact records to the front and preserve normal ordering for the
+        // fallback records.
         //
-        const QList<InventoryRecord> records = inventoryRepository.getByPartColor(
-            m_workspaceContext.currentWorkspaceId(),
-            requirement.partId(),
-            requirement.colorId());
+        const QList<InventoryRecord> sourceRecords =
+            inventoryRepository.getByPartColor(
+                m_workspaceContext.currentWorkspaceId(),
+                requirement.partId(),
+                requirement.colorId());
+
+        QList<InventoryRecord> records;
+
+        if (preferredStorageLocationId > 0) {
+            for (const InventoryRecord& record : sourceRecords) {
+                if (record.storageLocationId() == preferredStorageLocationId)
+                    records.append(record);
+            }
+
+            for (const InventoryRecord& record : sourceRecords) {
+                if (record.storageLocationId() != preferredStorageLocationId)
+                    records.append(record);
+            }
+        } else {
+            records = sourceRecords;
+        }
 
         for (const InventoryRecord& record : records) {
             if (stillNeeded <= 0)
@@ -2213,6 +2319,12 @@ void BuildsWidget::allocateAvailable()
             }
 
             piecesAdded += quantityToAdd;
+
+            if (preferredStorageLocationId > 0
+                && record.storageLocationId() == preferredStorageLocationId) {
+                preferredPiecesAdded += quantityToAdd;
+            }
+
             stillNeeded -= quantityToAdd;
             thisBuildAllocated += quantityToAdd;
         }
@@ -2289,6 +2401,13 @@ void BuildsWidget::allocateAvailable()
                       .arg(partiallySatisfiedRequirements)
                       .arg(stillMissingRequirements);
 
+        if (preferredStorageLocationId > 0) {
+            message += QString("\n\nPreferred storage: %1\n"
+                               "Pieces allocated there first: %2")
+                           .arg(preferredStoragePath)
+                           .arg(preferredPiecesAdded);
+        }
+
         if (allocationsCreated > 0 || allocationsUpdated > 0) {
             message += QString("\n\nAllocation records created: %1\n"
                                "Allocation records updated: %2")
@@ -2308,7 +2427,9 @@ void BuildsWidget::allocateAvailable()
             << "RequirementsPartial:" << partiallySatisfiedRequirements
             << "RequirementsMissing:" << stillMissingRequirements
             << "AllocationRowsCreated:" << allocationsCreated
-            << "AllocationRowsUpdated:" << allocationsUpdated;
+            << "AllocationRowsUpdated:" << allocationsUpdated
+            << "PreferredStorageLocationId:" << preferredStorageLocationId
+            << "PreferredPiecesAllocated:" << preferredPiecesAdded;
 
     QMessageBox::information(this, "Allocate Available", message);
 }
