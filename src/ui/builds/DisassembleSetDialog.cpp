@@ -367,12 +367,29 @@ bool DisassembleSetDialog::loadRequirements()
     int tableRow = 0;
 
     for (const BuildRequirement& requirement : requirements) {
-        const int pulledOrSetQuantity =
-            m_inventoryMode == "CompleteSet"
-                ? requirement.quantityRequired()
-                : requirement.quantityPulled();
+        int pulledOrSetQuantity = 0;
 
-        if (m_inventoryMode == "Stock" && pulledOrSetQuantity <= 0)
+        if (m_inventoryMode == "CompleteSet") {
+            //
+            // Regular Complete Set requirements represent assembled pieces and
+            // return in full during disassembly.
+            //
+            // Spare requirements are different: M18.3 may already have moved
+            // some/all boxed spares into My Loose Inventory. Only the
+            // unreleased remainder still belongs to the Complete Set and is
+            // eligible to be returned here.
+            //
+            pulledOrSetQuantity =
+                requirement.isSpare()
+                    ? qMax(requirement.quantityRequired()
+                               - requirement.quantityReleased(),
+                           0)
+                    : requirement.quantityRequired();
+        } else {
+            pulledOrSetQuantity = requirement.quantityPulled();
+        }
+
+        if (pulledOrSetQuantity <= 0)
             continue;
 
         const std::optional<Part> part =
@@ -749,10 +766,15 @@ void DisassembleSetDialog::disassembleSet()
         record.setManufacturerId(row.manufacturerId);
 
         //
-        // Once an assembled Set has been disassembled,
-        // these pieces are loose workshop pieces.
+        // Regular assembled pieces become Used when the model is
+        // disassembled. Unreleased Complete Set spares were never assembled,
+        // so they remain New when they enter loose inventory.
         //
-        record.setCondition("Used");
+        if (m_inventoryMode == "CompleteSet" && row.isSpare) {
+            record.setCondition("New");
+        } else {
+            record.setCondition("Used");
+        }
 
         record.setOwnershipType("Owned");
 
@@ -763,13 +785,20 @@ void DisassembleSetDialog::disassembleSet()
         QString notes;
 
         if (m_inventoryMode == "CompleteSet") {
-            notes = QString("Disassembled from %1 (%2), "
-                            "%3 Complete Set requirement. "
-                            "Manufacturer ID: %4.")
-                        .arg(m_buildName)
-                        .arg(m_setNumber)
-                        .arg(requirementType)
-                        .arg(row.manufacturerId);
+            notes = row.isSpare
+                        ? QString("Unreleased boxed spare returned while "
+                                  "disassembling %1 (%2). "
+                                  "Manufacturer ID: %3.")
+                              .arg(m_buildName)
+                              .arg(m_setNumber)
+                              .arg(row.manufacturerId)
+                        : QString("Disassembled from %1 (%2), "
+                                  "%3 Complete Set requirement. "
+                                  "Manufacturer ID: %4.")
+                              .arg(m_buildName)
+                              .arg(m_setNumber)
+                              .arg(requirementType)
+                              .arg(row.manufacturerId);
         } else {
             notes = QString("Returned from completed Build %1%2. "
                             "Manufacturer ID: %3.")
