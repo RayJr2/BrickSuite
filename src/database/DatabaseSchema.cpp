@@ -366,6 +366,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 18;
     }
 
+    // Version 18 -> Version 19.
+    if (version == 18) {
+        if (!migrateVersion18ToVersion19(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 19)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 19;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -2502,6 +2517,30 @@ bool DatabaseSchema::migrateVersion17ToVersion18(QSqlDatabase& database)
     }
 
     qInfo() << "Build manufacturer provenance foundation initialized.";
+
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion18ToVersion19(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    //
+    // Complete Set spare requirements remain part of the canonical box
+    // contents, while quantity_released records how many boxed spare pieces
+    // have already been transferred into loose inventory.
+    //
+    if (!query.exec(R"(
+        ALTER TABLE build_requirement
+        ADD COLUMN quantity_released INTEGER NOT NULL DEFAULT 0
+        CHECK(quantity_released >= 0)
+    )")) {
+        qCritical() << "Unable to add quantity_released to build_requirement:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    qInfo() << "Complete Set spare-release tracking initialized.";
 
     return true;
 }

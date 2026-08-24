@@ -74,6 +74,7 @@ private:
     void importMocPartsCsv();
     void exportMissingParts();
     void procureMissingParts();
+    void storeSpare(int requirementId);
 
     WorkspaceContext& m_workspaceContext;
 

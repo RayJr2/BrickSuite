@@ -72,6 +72,16 @@ void BuildRequirement::setQuantityRequired(int quantityRequired)
     m_quantityRequired = quantityRequired;
 }
 
+int BuildRequirement::quantityReleased() const
+{
+    return m_quantityReleased;
+}
+
+void BuildRequirement::setQuantityReleased(int quantityReleased)
+{
+    m_quantityReleased = qMax(quantityReleased, 0);
+}
+
 bool BuildRequirement::isSpare() const
 {
     return m_isSpare;

@@ -31,13 +31,16 @@ bool BuildRequirementRepository::create(BuildRequirement& requirement)
 {
     if (requirement.buildId() <= 0 || requirement.partId() <= 0 || requirement.colorId() <= 0
         || requirement.quantityRequired() <= 0 || requirement.quantityPulled() < 0
-        || requirement.quantityPulled() > requirement.quantityRequired()) {
+        || requirement.quantityPulled() > requirement.quantityRequired()
+        || requirement.quantityReleased() < 0
+        || requirement.quantityReleased() > requirement.quantityRequired()) {
         qWarning() << "Build requirement create rejected due to invalid arguments."
                    << "BuildId:" << requirement.buildId()
                    << "PartId:" << requirement.partId()
                    << "ColorId:" << requirement.colorId()
                    << "QuantityRequired:" << requirement.quantityRequired()
-                   << "QuantityPulled:" << requirement.quantityPulled();
+                   << "QuantityPulled:" << requirement.quantityPulled()
+                   << "QuantityReleased:" << requirement.quantityReleased();
         return false;
     }
 
@@ -55,6 +58,7 @@ bool BuildRequirementRepository::create(BuildRequirement& requirement)
         color_id,
         quantity_required,
         quantity_pulled,
+        quantity_released,
         is_spare,
         created_utc,
         modified_utc
@@ -66,6 +70,7 @@ bool BuildRequirementRepository::create(BuildRequirement& requirement)
         :color_id,
         :quantity_required,
         :quantity_pulled,
+        :quantity_released,
         :is_spare,
         :created_utc,
         :modified_utc
@@ -81,6 +86,8 @@ bool BuildRequirementRepository::create(BuildRequirement& requirement)
     query.bindValue(":quantity_required", requirement.quantityRequired());
 
     query.bindValue(":quantity_pulled", requirement.quantityPulled());
+
+    query.bindValue(":quantity_released", requirement.quantityReleased());
 
     query.bindValue(":is_spare", requirement.isSpare() ? 1 : 0);
 
@@ -119,6 +126,7 @@ std::optional<BuildRequirement> BuildRequirementRepository::getById(int id) cons
             color_id,
             quantity_required,
             quantity_pulled,
+            quantity_released,
             is_spare,
             created_utc,
             modified_utc
@@ -159,6 +167,7 @@ QList<BuildRequirement> BuildRequirementRepository::getByBuild(int buildId) cons
             color_id,
             quantity_required,
             quantity_pulled,
+            quantity_released,
             is_spare,
             created_utc,
             modified_utc
@@ -190,7 +199,9 @@ bool BuildRequirementRepository::update(BuildRequirement& requirement)
     if (requirement.id() <= 0 || requirement.buildId() <= 0 || requirement.partId() <= 0
         || requirement.colorId() <= 0 || requirement.quantityRequired() <= 0
         || requirement.quantityPulled() < 0
-        || requirement.quantityPulled() > requirement.quantityRequired()) {
+        || requirement.quantityPulled() > requirement.quantityRequired()
+        || requirement.quantityReleased() < 0
+        || requirement.quantityReleased() > requirement.quantityRequired()) {
         return false;
     }
 
@@ -208,6 +219,7 @@ bool BuildRequirementRepository::update(BuildRequirement& requirement)
             color_id = :color_id,
             quantity_required = :quantity_required,
             quantity_pulled = :quantity_pulled,
+            quantity_released = :quantity_released,
             is_spare = :is_spare,
             modified_utc = :modified_utc
         WHERE id = :id
@@ -222,6 +234,8 @@ bool BuildRequirementRepository::update(BuildRequirement& requirement)
     query.bindValue(":quantity_required", requirement.quantityRequired());
 
     query.bindValue(":quantity_pulled", requirement.quantityPulled());
+
+    query.bindValue(":quantity_released", requirement.quantityReleased());
 
     query.bindValue(":is_spare", requirement.isSpare() ? 1 : 0);
 
@@ -328,6 +342,8 @@ BuildRequirement BuildRequirementRepository::requirementFromQuery(const QSqlQuer
 
     requirement.setQuantityPulled(query.value("quantity_pulled").toInt());
 
+    requirement.setQuantityReleased(query.value("quantity_released").toInt());
+
     requirement.setIsSpare(query.value("is_spare").toInt() != 0);
 
     requirement.setCreatedUtc(
@@ -360,6 +376,7 @@ std::optional<BuildRequirement> BuildRequirementRepository::getByBuildPartColor(
             color_id,
             quantity_required,
             quantity_pulled,
+            quantity_released,
             is_spare,
             created_utc,
             modified_utc

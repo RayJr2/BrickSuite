@@ -34,8 +34,10 @@
 #include "../../models/Build.h"
 #include "../../models/BuildRequirement.h"
 #include "../../models/Color.h"
+#include "../../models/InventoryRecord.h"
 #include "../../models/Part.h"
 #include "../../models/SetCatalogItem.h"
+#include "../../models/StorageLocation.h"
 
 #include "../../repositories/BuildAllocationRepository.h"
 #include "../../repositories/BuildRepository.h"
@@ -58,6 +60,8 @@
 #include <QColor>
 #include <QComboBox>
 #include <QDebug>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -765,9 +769,16 @@ void BuildsWidget::loadBuilds()
             statusItem->setText(build.status() + " / Archived");
         }
 
-        if (build.isActive() && build.inventoryMode() == "Stock" && build.status() != "Complete"
-            && build.status() != "Disassembled" && build.status() != "Cancelled") {
-            actionCombo->addItem("Complete Build...", "complete");
+        if (build.isActive()
+            && build.status() != "Complete"
+            && build.status() != "Disassembled"
+            && build.status() != "Cancelled"
+            && (build.inventoryMode() == "Stock"
+                || build.inventoryMode() == "CompleteSet")) {
+            actionCombo->addItem(build.inventoryMode() == "CompleteSet"
+                                     ? "Complete Set..."
+                                     : "Complete Build...",
+                                 "complete");
         }
 
         if (build.isActive() && build.inventoryMode() == "Stock" && build.status() == "Complete") {
@@ -1120,6 +1131,95 @@ void BuildsWidget::loadBuilds()
                             QMessageBox::information(this,
                                                      "Complete Build",
                                                      "This Build does not have any requirements.");
+
+                            return;
+                        }
+
+                        //
+                        // Complete Set contents are supplied by the box itself.
+                        // They are never required to pass through the Stock
+                        // allocation/pull workflow before the Set can be
+                        // considered built.
+                        //
+                        if (build->inventoryMode() == "CompleteSet") {
+                            int regularRows = 0;
+                            int regularPieces = 0;
+                            int spareRows = 0;
+                            int sparePieces = 0;
+                            int sparePiecesStored = 0;
+
+                            for (const BuildRequirement& requirement : requirements) {
+                                if (requirement.isSpare()) {
+                                    ++spareRows;
+                                    sparePieces += requirement.quantityRequired();
+                                    sparePiecesStored += requirement.quantityReleased();
+                                } else {
+                                    ++regularRows;
+                                    regularPieces += requirement.quantityRequired();
+                                }
+                            }
+
+                            QString message =
+                                QString("Mark this Complete Set Complete?\n\n"
+                                        "%1")
+                                    .arg(build->name());
+
+                            if (!build->setNumber().trimmed().isEmpty())
+                                message += QString("\nSet: %1").arg(build->setNumber());
+
+                            message += QString("\n\nRegular Set Contents: %1 rows / %2 pieces"
+                                               "\nBoxed Spare Contents: %3 rows / %4 pieces")
+                                           .arg(regularRows)
+                                           .arg(regularPieces)
+                                           .arg(spareRows)
+                                           .arg(sparePieces);
+
+                            if (sparePiecesStored > 0) {
+                                message += QString("\nSpare Pieces Already Stored: %1")
+                                               .arg(sparePiecesStored);
+                            }
+
+                            if (sparePieces > sparePiecesStored) {
+                                message +=
+                                    "\n\nAfter completion, boxed spare parts can be "
+                                    "transferred to My Loose Inventory using "
+                                    "Store Spare...";
+                            }
+
+                            const QMessageBox::StandardButton response =
+                                QMessageBox::question(this,
+                                                      "Complete Set",
+                                                      message,
+                                                      QMessageBox::Yes | QMessageBox::No,
+                                                      QMessageBox::No);
+
+                            if (response != QMessageBox::Yes)
+                                return;
+
+                            build->setStatus("Complete");
+
+                            if (!buildRepository.update(*build)) {
+                                qCritical() << "Unable to mark Complete Set Complete."
+                                            << "BuildId:" << buildId;
+                                QMessageBox::critical(this,
+                                                      "Complete Set",
+                                                      "Unable to mark the Complete Set Complete.");
+                                return;
+                            }
+
+                            qInfo() << "Complete Set completed."
+                                    << "BuildId:" << buildId
+                                    << "Name:" << build->name()
+                                    << "RegularPieces:" << regularPieces
+                                    << "SparePieces:" << sparePieces;
+
+                            selectBuild(buildId);
+
+                            QMessageBox::information(
+                                this,
+                                "Complete Set",
+                                QString("\"%1\" is now Complete.")
+                                    .arg(build->name()));
 
                             return;
                         }
@@ -1518,6 +1618,10 @@ void BuildsWidget::loadRequirements()
         selectedBuild
         && selectedBuild->inventoryMode() == "CompleteSet";
 
+    const bool completeSetIsComplete =
+        completeSet
+        && selectedBuild->status() == "Complete";
+
     m_requirementsLabel->setText(
         completeSet
             ? QString("Set Contents for: %1").arg(buildDescription)
@@ -1654,11 +1758,22 @@ void BuildsWidget::loadRequirements()
             actionCombo->addItem("Edit", "edit");
             actionCombo->addItem("Delete", "delete");
             actionCombo->addItem("Allocate...", "allocate");
+        } else if (completeSetIsComplete && requirement.isSpare()) {
+            const int spareRemaining =
+                qMax(requirement.quantityRequired()
+                         - requirement.quantityReleased(),
+                     0);
+
+            if (spareRemaining > 0) {
+                actionCombo->addItem("Store Spare...", "store_spare");
+            } else {
+                actionCombo->clear();
+                actionCombo->addItem("Stored");
+                actionCombo->setEnabled(false);
+            }
         } else {
-            //
-            // Complete Set requirements are canonical box contents loaded
-            // from the Set inventory. They are intentionally read-only here.
-            //
+            actionCombo->clear();
+            actionCombo->addItem("—");
             actionCombo->setEnabled(false);
         }
 
@@ -1673,6 +1788,13 @@ void BuildsWidget::loadRequirements()
                         return;
 
                     const QString action = actionCombo->itemData(index).toString();
+
+                    if (action == "store_spare") {
+                        storeSpare(requirementId);
+                        loadRequirements();
+                        updateRequirementUiState();
+                        return;
+                    }
 
                     if (action == "edit") {
                         EditBuildRequirementDialog dialog(requirementId, this);
@@ -2197,6 +2319,7 @@ void BuildsWidget::updateRequirementUiState()
 
     bool buildIsActive = false;
     bool completeSet = false;
+    bool completeSetIsComplete = false;
 
     if (enabled) {
         BuildRepository repository;
@@ -2206,6 +2329,8 @@ void BuildsWidget::updateRequirementUiState()
         buildIsActive = selectedBuild && selectedBuild->isActive();
         completeSet = selectedBuild
                       && selectedBuild->inventoryMode() == "CompleteSet";
+        completeSetIsComplete = completeSet
+                               && selectedBuild->status() == "Complete";
     }
 
     const bool canManuallyEditRequirements =
@@ -2247,10 +2372,12 @@ void BuildsWidget::updateRequirementUiState()
         m_requirementsTable->setColumnHidden(column, completeSet);
 
     //
-    // Complete Set contents are read-only in M18.2. There are no valid
-    // row-level actions until M18.3 introduces Store Spare for spare rows.
+    // Once a Complete Set is marked Complete, spare rows expose Store Spare...
+    // while regular rows remain non-actionable.
     //
-    m_requirementsTable->setColumnHidden(12, completeSet);
+    m_requirementsTable->setColumnHidden(
+        12,
+        completeSet && !completeSetIsComplete);
 
     bool canLoadSet = false;
     bool canAllocateAvailable = false;
@@ -2296,6 +2423,302 @@ void BuildsWidget::updateRequirementUiState()
         completeSet
             ? QStringLiteral("Load / Refresh Set Contents")
             : QStringLiteral("Load Set from Rebrickable"));
+}
+
+void BuildsWidget::storeSpare(int requirementId)
+{
+    if (requirementId <= 0 || m_selectedBuildId <= 0)
+        return;
+
+    BuildRepository buildRepository;
+    BuildRequirementRepository requirementRepository;
+
+    const std::optional<Build> build =
+        buildRepository.getById(m_selectedBuildId);
+
+    const std::optional<BuildRequirement> requirement =
+        requirementRepository.getById(requirementId);
+
+    if (!build || !requirement) {
+        QMessageBox::critical(this,
+                              "Store Spare",
+                              "Unable to load the Complete Set or spare requirement.");
+        return;
+    }
+
+    if (build->inventoryMode() != "CompleteSet"
+        || build->status() != "Complete") {
+        QMessageBox::information(this,
+                                 "Store Spare",
+                                 "Spare parts can be stored after the Complete Set "
+                                 "has been marked Complete.");
+        return;
+    }
+
+    if (!requirement->isSpare()
+        || requirement->buildId() != build->id()) {
+        QMessageBox::information(this,
+                                 "Store Spare",
+                                 "The selected requirement is not a boxed spare "
+                                 "for this Complete Set.");
+        return;
+    }
+
+    const int quantityRemaining =
+        qMax(requirement->quantityRequired()
+                 - requirement->quantityReleased(),
+             0);
+
+    if (quantityRemaining <= 0) {
+        QMessageBox::information(this,
+                                 "Store Spare",
+                                 "All pieces for this spare requirement have "
+                                 "already been stored.");
+        return;
+    }
+
+    PartRepository partRepository;
+    ColorRepository colorRepository;
+
+    const std::optional<Part> part =
+        partRepository.getById(requirement->partId());
+
+    const std::optional<Color> color =
+        colorRepository.getById(requirement->colorId());
+
+    QDialog dialog(this);
+    dialog.setWindowTitle("Store Spare");
+
+    auto* layout = new QFormLayout(&dialog);
+
+    auto* partLabel =
+        new QLabel(part ? part->partNumber()
+                        : QString::number(requirement->partId()),
+                   &dialog);
+
+    auto* nameLabel =
+        new QLabel(part ? part->name() : QString("(Part unavailable)"),
+                   &dialog);
+
+    auto* colorLabel =
+        new QLabel(color ? color->name()
+                         : QString::number(requirement->colorId()),
+                   &dialog);
+
+    auto* quantitySpin = new QSpinBox(&dialog);
+    quantitySpin->setRange(1, quantityRemaining);
+    quantitySpin->setValue(quantityRemaining);
+
+    auto* storageCombo = new QComboBox(&dialog);
+
+    StorageLocationRepository storageRepository;
+    const QList<StorageLocation> locations =
+        storageRepository.getByWorkspace(build->workspaceId());
+
+    for (const StorageLocation& location : locations) {
+        //
+        // Match the normal inventory-location UX: parent containers that
+        // have active children are organizational nodes rather than a final
+        // loose-inventory destination.
+        //
+        if (storageRepository.hasChildren(location.id()))
+            continue;
+
+        QStringList pathParts;
+        int currentId = location.id();
+        int safetyCount = 0;
+
+        while (currentId > 0 && safetyCount < 100) {
+            const std::optional<StorageLocation> current =
+                storageRepository.getById(currentId);
+
+            if (!current)
+                break;
+
+            pathParts.prepend(current->name());
+            currentId = current->parentLocationId();
+            ++safetyCount;
+        }
+
+        const QString path =
+            pathParts.isEmpty() ? location.name()
+                                : pathParts.join(" / ");
+
+        storageCombo->addItem(path, location.id());
+    }
+
+    if (storageCombo->count() == 0) {
+        QMessageBox::warning(this,
+                             "Store Spare",
+                             "No active leaf storage locations are available.");
+        return;
+    }
+
+    layout->addRow("Part #:", partLabel);
+    layout->addRow("Name:", nameLabel);
+    layout->addRow("Color:", colorLabel);
+    layout->addRow("Available to Store:", new QLabel(QString::number(quantityRemaining), &dialog));
+    layout->addRow("Quantity:", quantitySpin);
+    layout->addRow("Storage:", storageCombo);
+
+    auto* buttonBox =
+        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                             &dialog);
+
+    layout->addRow(buttonBox);
+
+    connect(buttonBox,
+            &QDialogButtonBox::accepted,
+            &dialog,
+            &QDialog::accept);
+
+    connect(buttonBox,
+            &QDialogButtonBox::rejected,
+            &dialog,
+            &QDialog::reject);
+
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    const int quantity = quantitySpin->value();
+    const int storageLocationId = storageCombo->currentData().toInt();
+
+    if (quantity <= 0 || storageLocationId <= 0)
+        return;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    if (!database.transaction()) {
+        QMessageBox::critical(this,
+                              "Store Spare",
+                              "Unable to start the spare-storage transaction.");
+        return;
+    }
+
+    //
+    // Re-read inside the transaction so Store Spare is idempotent even if
+    // state changed while the dialog was open.
+    //
+    const std::optional<Build> currentBuild =
+        buildRepository.getById(m_selectedBuildId);
+
+    std::optional<BuildRequirement> currentRequirement =
+        requirementRepository.getById(requirementId);
+
+    const std::optional<StorageLocation> destination =
+        storageRepository.getById(storageLocationId);
+
+    if (!currentBuild
+        || !currentRequirement
+        || !destination
+        || currentBuild->inventoryMode() != "CompleteSet"
+        || currentBuild->status() != "Complete"
+        || !currentRequirement->isSpare()
+        || currentRequirement->buildId() != currentBuild->id()
+        || !destination->isActive()
+        || destination->workspaceId() != currentBuild->workspaceId()) {
+        database.rollback();
+
+        QMessageBox::critical(this,
+                              "Store Spare",
+                              "The Complete Set, spare requirement, or storage "
+                              "destination changed. No changes were saved.");
+        return;
+    }
+
+    const int currentRemaining =
+        qMax(currentRequirement->quantityRequired()
+                 - currentRequirement->quantityReleased(),
+             0);
+
+    if (quantity > currentRemaining) {
+        database.rollback();
+
+        QMessageBox::warning(this,
+                             "Store Spare",
+                             QString("Only %1 spare piece(s) remain available "
+                                     "to store. No changes were saved.")
+                                 .arg(currentRemaining));
+        return;
+    }
+
+    InventoryRecord record;
+    record.setWorkspaceId(currentBuild->workspaceId());
+    record.setPartId(currentRequirement->partId());
+    record.setColorId(currentRequirement->colorId());
+    record.setStorageLocationId(storageLocationId);
+    record.setManufacturerId(currentBuild->manufacturerId());
+
+    //
+    // Boxed spare pieces were never assembled, so they enter loose
+    // inventory as New rather than Used.
+    //
+    record.setCondition("New");
+    record.setOwnershipType("Owned");
+    record.setQuantity(quantity);
+
+    const QString notes =
+        QString("Stored boxed spare from Complete Set %1%2.")
+            .arg(currentBuild->name())
+            .arg(currentBuild->setNumber().trimmed().isEmpty()
+                     ? QString()
+                     : QString(" (%1)").arg(currentBuild->setNumber()));
+
+    InventoryRecordRepository inventoryRepository;
+
+    if (!inventoryRepository.addOrIncreaseQuantity(record,
+                                                   "SetSpareRelease",
+                                                   "Build",
+                                                   QString::number(currentBuild->id()),
+                                                   notes,
+                                                   false)) {
+        database.rollback();
+
+        QMessageBox::critical(this,
+                              "Store Spare",
+                              "Unable to add the spare part to My Loose Inventory. "
+                              "No changes were saved.");
+        return;
+    }
+
+    currentRequirement->setQuantityReleased(
+        currentRequirement->quantityReleased() + quantity);
+
+    if (!requirementRepository.update(*currentRequirement)) {
+        database.rollback();
+
+        QMessageBox::critical(this,
+                              "Store Spare",
+                              "Unable to record the stored spare quantity. "
+                              "No changes were saved.");
+        return;
+    }
+
+    if (!database.commit()) {
+        database.rollback();
+
+        QMessageBox::critical(this,
+                              "Store Spare",
+                              "Unable to commit the spare-storage transaction. "
+                              "No changes were saved.");
+        return;
+    }
+
+    qInfo() << "Complete Set spare stored."
+            << "BuildId:" << currentBuild->id()
+            << "RequirementId:" << requirementId
+            << "PartId:" << currentRequirement->partId()
+            << "ColorId:" << currentRequirement->colorId()
+            << "ManufacturerId:" << currentBuild->manufacturerId()
+            << "Quantity:" << quantity
+            << "StorageLocationId:" << storageLocationId
+            << "QuantityReleased:" << currentRequirement->quantityReleased();
+
+    QMessageBox::information(
+        this,
+        "Store Spare",
+        QString("%1 spare piece(s) stored in My Loose Inventory.")
+            .arg(quantity));
 }
 
 void BuildsWidget::exportPullList()

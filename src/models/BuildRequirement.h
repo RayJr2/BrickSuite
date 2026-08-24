@@ -45,6 +45,9 @@ public:
     int quantityPulled() const;
     void setQuantityPulled(int quantityPulled);
 
+    int quantityReleased() const;
+    void setQuantityReleased(int quantityReleased);
+
     bool isSpare() const;
     void setIsSpare(bool isSpare);
 
@@ -62,6 +65,7 @@ private:
 
     int m_quantityRequired = 0;
     int m_quantityPulled = 0;
+    int m_quantityReleased = 0;
 
     bool m_isSpare = false;
 
