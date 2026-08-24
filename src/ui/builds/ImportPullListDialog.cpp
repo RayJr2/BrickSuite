@@ -216,7 +216,8 @@ bool ImportPullListDialog::loadCsv()
         return false;
     }
 
-    const QStringList expectedHeaders = {"Build",
+    const QStringList expectedHeaders = {"Allocation ID",
+                                         "Build",
                                          "Set Number",
                                          "Part Number",
                                          "Part Name",
@@ -226,10 +227,14 @@ bool ImportPullListDialog::loadCsv()
                                          "Quantity Pulled"};
 
     if (headers != expectedHeaders) {
-        QMessageBox::warning(this,
-                             "Import Pull List",
-                             "The selected CSV does not have the "
-                             "expected BrickSuite Pull List columns.");
+        QMessageBox::warning(
+            this,
+            "Import Pull List",
+            "The selected CSV does not have the current BrickSuite "
+            "Pull List columns.\n\n"
+            "Pull Lists exported before Allocation ID support cannot be "
+            "reconciled reliably when multiple allocations share the same "
+            "Part / Color / Storage. Please export a new Pull List.");
 
         return false;
     }
@@ -242,7 +247,7 @@ bool ImportPullListDialog::loadCsv()
 
         QStringList fields;
 
-        if (!parseCsvLine(line, fields) || fields.size() != 8) {
+        if (!parseCsvLine(line, fields) || fields.size() != 9) {
             PreviewRow row;
 
             row.status = RowStatus::InvalidRow;
@@ -256,23 +261,26 @@ bool ImportPullListDialog::loadCsv()
 
         PreviewRow row;
 
-        row.buildName = fields.at(0).trimmed();
+        bool allocationIdOk = false;
+        row.allocationIdCsv = fields.at(0).trimmed().toInt(&allocationIdOk);
 
-        row.setNumber = fields.at(1).trimmed();
+        row.buildName = fields.at(1).trimmed();
 
-        row.partNumber = fields.at(2).trimmed();
+        row.setNumber = fields.at(2).trimmed();
 
-        row.partName = fields.at(3).trimmed();
+        row.partNumber = fields.at(3).trimmed();
 
-        row.colorName = fields.at(4).trimmed();
+        row.partName = fields.at(4).trimmed();
 
-        row.storagePath = fields.at(5).trimmed();
+        row.colorName = fields.at(5).trimmed();
+
+        row.storagePath = fields.at(6).trimmed();
 
         bool allocatedOk = false;
 
-        row.quantityAllocatedCsv = fields.at(6).trimmed().toInt(&allocatedOk);
+        row.quantityAllocatedCsv = fields.at(7).trimmed().toInt(&allocatedOk);
 
-        const QString pulledText = fields.at(7).trimmed();
+        const QString pulledText = fields.at(8).trimmed();
 
         if (!pulledText.isEmpty()) {
             bool pulledOk = false;
@@ -287,6 +295,12 @@ bool ImportPullListDialog::loadCsv()
                 row.message = "Quantity Pulled is not a valid "
                               "non-negative integer.";
             }
+        }
+
+        if (!allocationIdOk || row.allocationIdCsv <= 0) {
+            row.status = RowStatus::InvalidRow;
+
+            row.message = "Allocation ID is invalid.";
         }
 
         if (!allocatedOk || row.quantityAllocatedCsv <= 0) {
@@ -363,50 +377,69 @@ void ImportPullListDialog::buildPreview()
             continue;
         }
 
-        bool found = false;
+        const std::optional<BuildAllocation> allocation =
+            allocationRepository.getById(row.allocationIdCsv);
 
-        for (const BuildAllocation& allocation : allocations) {
-            const std::optional<Part> part = partRepository.getById(allocation.partId());
-
-            const std::optional<Color> color = colorRepository.getById(allocation.colorId());
-
-            if (!part || !color) {
-                continue;
-            }
-
-            const QString allocationPath = storagePath(allocation.storageLocationId());
-
-            if (part->partNumber() != row.partNumber || color->name() != row.colorName
-                || allocationPath != row.storagePath) {
-                continue;
-            }
-
-            row.allocationId = allocation.id();
-
-            row.inventoryRecordId = allocation.inventoryRecordId();
-
-            row.partId = allocation.partId();
-
-            row.colorId = allocation.colorId();
-
-            row.storageLocationId = allocation.storageLocationId();
-
-            row.actualAllocated = allocation.quantityAllocated();
-
-            found = true;
-
-            break;
-        }
-
-        if (!found) {
+        if (!allocation || allocation->buildId() != m_buildId) {
             row.status = RowStatus::AllocationNotFound;
 
-            row.message = "Matching Build allocation was not found.";
+            row.message =
+                "The exported Build allocation no longer exists for this Build.";
 
             ++m_problemCount;
 
             continue;
         }
+
+        const std::optional<Part> part =
+            partRepository.getById(allocation->partId());
+
+        const std::optional<Color> color =
+            colorRepository.getById(allocation->colorId());
+
+        if (!part || !color) {
+            row.status = RowStatus::InvalidRow;
+
+            row.message = "Unable to resolve the current allocation Part or Color.";
+
+            ++m_problemCount;
+
+            continue;
+        }
+
+        const QString allocationPath =
+            storagePath(allocation->storageLocationId());
+
+        //
+        // Allocation ID is the stable row identity. Human-readable CSV fields
+        // are still validated so an edited/stale Pull List cannot silently
+        // reconcile against a different allocation.
+        //
+        if (part->partNumber() != row.partNumber
+            || part->name() != row.partName
+            || color->name() != row.colorName
+            || allocationPath != row.storagePath) {
+            row.status = RowStatus::InvalidRow;
+
+            row.message =
+                "Allocation details changed since export.";
+
+            ++m_problemCount;
+
+            continue;
+        }
+
+        row.allocationId = allocation->id();
+
+        row.inventoryRecordId = allocation->inventoryRecordId();
+
+        row.partId = allocation->partId();
+
+        row.colorId = allocation->colorId();
+
+        row.storageLocationId = allocation->storageLocationId();
+
+        row.actualAllocated = allocation->quantityAllocated();
 
         if (row.quantityAllocatedCsv != row.actualAllocated) {
             row.status = RowStatus::InvalidRow;

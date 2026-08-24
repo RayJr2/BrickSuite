@@ -48,6 +48,8 @@ private:
 
     struct PreviewRow
     {
+        int allocationIdCsv = 0;
+
         QString buildName;
         QString setNumber;
         QString partNumber;

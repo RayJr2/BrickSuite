@@ -2931,7 +2931,8 @@ void BuildsWidget::exportPullList()
     // record. Quantity Pulled is deliberately blank
     // for the user to complete during the physical pull.
     //
-    stream << "Build,"
+    stream << "Allocation ID,"
+           << "Build,"
            << "Set Number,"
            << "Part Number,"
            << "Part Name,"
@@ -2988,9 +2989,14 @@ void BuildsWidget::exportPullList()
 
         const QString colorName = color ? color->name() : QString::number(allocation.colorId());
 
-        stream << csvValue(build->name()) << "," << csvValue(build->setNumber()) << ","
-               << csvValue(partNumber) << "," << csvValue(partName) << "," << csvValue(colorName)
-               << "," << csvValue(storagePath) << "," << allocation.quantityAllocated() << ","
+        stream << allocation.id() << ","
+               << csvValue(build->name()) << ","
+               << csvValue(build->setNumber()) << ","
+               << csvValue(partNumber) << ","
+               << csvValue(partName) << ","
+               << csvValue(colorName) << ","
+               << csvValue(storagePath) << ","
+               << allocation.quantityAllocated() << ","
                << ""
                << "\n";
 
