@@ -41,8 +41,6 @@ qt_add_executable(BrickSuite
 
     src/ui/MainWindow.h
     src/ui/MainWindow.cpp
-    src/app/WorkspaceContext.h
-    src/app/WorkspaceContext.cpp
     src/import/RebrickableReferenceImporter.cpp
     src/import/RebrickableReferenceImporter.h
     resources/resources.qrc
@@ -256,9 +254,27 @@ target_link_libraries(BrickSuite PRIVATE
     Qt6::Network
 )
 
-set_target_properties(BrickSuite PROPERTIES
-    WIN32_EXECUTABLE TRUE
-)
+if(WIN32)
+    set_target_properties(BrickSuite PROPERTIES
+        WIN32_EXECUTABLE TRUE
+    )
+endif()
+
+if(APPLE)
+    set_target_properties(BrickSuite PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "BrickSuite"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.rfstateside.bricksuite"
+    )
+endif()
+
+if(UNIX AND NOT APPLE)
+    install(TARGETS BrickSuite
+        RUNTIME DESTINATION bin
+    )
+endif()
+
+
 
 # --------------------------------------------------------------------
 # App constants
