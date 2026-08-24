@@ -283,9 +283,24 @@ set(APP_NAME              "BrickSuite")
 set(APP_COMPANY           "RF StateSide, LLC")
 set(APP_ORGANIZATION_NAME "RFStateSide")
 set(APP_DOMAIN            "rfstateside.com")
-set(APP_COPYRIGHT_YEAR "2026")
+set(APP_COPYRIGHT_YEAR    "2026")
 set(APP_RELEASE           "Development")
 set(APP_RELEASE_DATE      "2026-08-17")
+
+# --------------------------------------------------------------------
+# Windows deployment metadata
+# --------------------------------------------------------------------
+if(WIN32)
+    file(MAKE_DIRECTORY
+        "${CMAKE_BINARY_DIR}/deployment/windows"
+    )
+
+    configure_file(
+        "${CMAKE_SOURCE_DIR}/deployment/windows/BrickSuiteVersion.iss.in"
+        "${CMAKE_BINARY_DIR}/deployment/windows/BrickSuiteVersion.iss"
+        @ONLY
+    )
+endif()
 
 target_compile_definitions(BrickSuite PRIVATE
     BRICKSUITE_VERSION="${PROJECT_VERSION}"

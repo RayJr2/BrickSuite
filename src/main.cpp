@@ -20,7 +20,11 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QDir>
 #include <QIcon>
+#include <QLockFile>
+#include <QMessageBox>
+#include <QStandardPaths>
 
 #include "app/Application.h"
 #include "core/AppConstants.h"
@@ -37,6 +41,22 @@ int main(int argc, char *argv[])
     QApplication::setOrganizationName(AppConstants::OrganizationName());
 
     qtApplication.setWindowIcon(QIcon(QStringLiteral(":/icons/bricksuite.ico")));
+
+    // Check for existing instance of BrickSuite using a lock file in the temporary directory.
+    const QString lockPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                 .filePath("RFStateSide_BrickSuite.lock");
+
+    QLockFile instanceLock(lockPath);
+    instanceLock.setStaleLockTime(0);
+
+    if (!instanceLock.tryLock()) {
+        QMessageBox::information(nullptr,
+                                 "BrickSuite",
+                                 "BrickSuite is already running.\n\n"
+                                 "Only one instance may run at a time.");
+
+        return 0;
+    }
 
     //
     // Install the application-wide Qt message handler after the Qt

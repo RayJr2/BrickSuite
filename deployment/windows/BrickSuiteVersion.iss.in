@@ -1,0 +1,8 @@
+#define AppName "@APP_NAME@"
+#define AppVersion "@PROJECT_VERSION@"
+#define AppCompany "@APP_COMPANY@"
+#define AppOrganizationName "@APP_ORGANIZATION_NAME@"
+#define AppDomain "@APP_DOMAIN@"
+#define AppCopyrightYear "@APP_COPYRIGHT_YEAR@"
+#define AppRelease "@APP_RELEASE@"
+#define AppReleaseDate "@APP_RELEASE_DATE@"
