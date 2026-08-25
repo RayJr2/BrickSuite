@@ -600,11 +600,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
             [this, checkForUpdatesAction](const QString& reason) {
                 checkForUpdatesAction->setEnabled(true);
 
-                QMessageBox::warning(
-                    this,
-                    tr("Check for Updates"),
-                    tr("BrickSuite could not check for updates.\\n\\n%1")
-                        .arg(reason));
+                QMessageBox::warning(this,
+                                     tr("Check for Updates"),
+                                     tr("BrickSuite could not check for updates.\n\n%1").arg(reason));
             });
 
     connect(updater,
@@ -616,14 +614,12 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
                 const QString& releaseNotes) {
                 checkForUpdatesAction->setEnabled(true);
 
-                QString message =
-                    tr("BrickSuite %1 is available.\\n\\n"
-                       "You are currently running version %2.")
-                        .arg(newVersion, AppVersion::version());
+                QString message = tr("BrickSuite %1 is available.\n\n"
+                                     "You are currently running version %2.")
+                                      .arg(newVersion, AppVersion::version());
 
                 if (!releaseNotes.trimmed().isEmpty()) {
-                    message += tr("\\n\\nRelease notes:\\n%1")
-                                   .arg(releaseNotes.trimmed());
+                    message += tr("\n\nRelease notes:\n%1").arg(releaseNotes.trimmed());
                 }
 
                 QMessageBox dialog(

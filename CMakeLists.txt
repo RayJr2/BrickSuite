@@ -288,7 +288,7 @@ set(APP_DOMAIN            "rfstateside.com")
 set(APP_COPYRIGHT_YEAR    "2026")
 set(APP_RELEASE           "Development")
 set(APP_RELEASE_DATE      "2026-08-17")
-set(APP_UPDATE_MANIFEST_URL "https://raw.githubusercontent.com//BrickSuite/main/deployment/update/update.json")
+set(APP_UPDATE_MANIFEST_URL "https://raw.githubusercontent.com/RayJr2/BrickSuite/master/deployment/update/update.json")
 
 # --------------------------------------------------------------------
 # Windows deployment metadata
