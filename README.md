@@ -113,7 +113,7 @@ After installing or building BrickSuite:
 
 BrickSuite also contains a detailed built-in Help system with screenshots and step-by-step instructions.
 
-> **Online User Guide:** planned as part of the v0.2.0 public-repository documentation work. This README will link to the web version when it is published.
+> **Online User Guide:** [BrickSuite Help](https://rayjr2.github.io/BrickSuite/)
 
 ## Building from Source
 
