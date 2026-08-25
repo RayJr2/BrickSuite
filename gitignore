@@ -59,8 +59,6 @@ compile_commands.json
 *.qtc_clangd*
 
 # Builds
-*debug*
-*release*
 build/
 
 # Ignore Old and Original
