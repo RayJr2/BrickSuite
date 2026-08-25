@@ -1,296 +1,210 @@
 # BrickSuite
 
-**The Digital Twin Platform for Your Brick Workshop.**
+**The Digital Twin Platform for Your Brick Workshop**
 
-BrickSuite is a Windows desktop application for managing a physical brick collection as a digital twin. Version 1.0 combines storage organization, loose-part inventory, Rebrickable reference data, Sets and MOCs, build allocation, missing/lost-part workflows, image caching, backup/restore, and application diagnostics in one local application.
+BrickSuite is a free and open-source desktop application for managing a physical brick collection as a digital twin. It combines hierarchical storage, loose-part inventory, searchable reference catalogs, Sets and MOCs, Build planning, part identity resolution, inventory synchronization, missing/lost-part workflows, and local history in one application.
 
-## Version 1.0
+BrickSuite is designed around a simple principle: **your physical inventory, storage locations, and Build activity should remain traceable**. Records that may be referenced elsewhere are preserved, deactivated, archived, or transitioned through lifecycle states rather than casually deleted.
 
-BrickSuite v0.1.0 is the first feature-complete release baseline.
+> **Current release:** BrickSuite **v0.2.0**  
+> **Windows:** packaged installer supported  
+> **macOS / Linux:** source builds validated; packaged distributions are planned for later work
 
-The application is designed around a simple principle: physical inventory, storage locations, and build activity should remain traceable. Records that may be referenced elsewhere are deactivated or archived rather than casually deleted.
+![BrickSuite My Inventory](docs/images/bricksuite_inventory.png)
 
-### Core capabilities
+## What BrickSuite Does
 
-- **Workspaces** provide the top-level container for a brick workshop.
-- **Hierarchical Storage** models areas, cabinets, shelves, cases, drawers, bins, trays, compartments, and dividers.
-- **Operational storage locations** keep inventory assignment and filtering focused on usable leaf locations rather than parent containers.
-- **My Inventory** tracks part, color, quantity, condition, ownership type, and storage location.
-- **Inventory history** records quantity changes, moves, build activity, Lost/Found activity, and other inventory movements.
-- **Parts Catalog** provides searchable and paged Rebrickable part reference data with part details and images.
-- **Sets Catalog** provides searchable, year-filtered, paged Set reference data with Set details and images.
-- **Table summaries** show the number of matching Parts, Sets, or Inventory Records alongside `Page X of Y` paging.
-- **Rebrickable CSV inventory import** imports owned parts and can suggest a destination storage location from the exported CSV filename.
-- **Rebrickable API support** provides connection testing and part/Set detail operations.
-- **Background image caching** downloads general part, color-specific part, and Set images while respecting conservative request pacing.
+BrickSuite is intended for brick collectors and builders who want to know not only *what* parts they own, but **where they are, how they got there, and whether they are available for a Build**.
 
-## Inventory and Storage
+Major capabilities include:
 
-BrickSuite supports the same part/color combination in multiple physical locations. Inventory can be searched and filtered by text, category, color, and storage location.
+- **Workspaces and hierarchical Storage** — model areas, cabinets, shelves, cases, drawers, bins, trays, compartments, and dividers.
+- **My Inventory** — track part, color, manufacturer, quantity, condition, ownership, and physical Storage location.
+- **Inventory history and provenance** — preserve quantity changes, moves, imports, Build activity, Lost/Found activity, and other movements.
+- **Parts Catalog** — maintain a large local Rebrickable-backed reference catalog with images, materials, relationships, external IDs, and identity mappings.
+- **Sets Catalog** — browse local Set reference data with Rebrickable support and optional Brickset enrichment.
+- **Part Resolver** — resolve exact, alternate, aliased, older, superseded, and provider-specific part identities to the catalog identity BrickSuite uses.
+- **Rebrickable inventory synchronization** — Append, Replace, Subtract, and Compare Only workflows with previews and provenance-aware inventory handling.
+- **Sets, MOCs, and Builds** — create requirements, allocate available inventory, identify shortages, pull parts, reconcile results, complete Builds, and preserve lifecycle history.
+- **Complete Set workflows** — populate a Build from a Set's complete requirements, release spare pieces to loose inventory, and later disassemble the Set back into Storage.
+- **Missing Parts procurement** — review shortages and export data for external purchasing/wanted-list workflows.
+- **Lost and Found** — record lost Build inventory and return found pieces to loose Storage without losing history.
+- **Backup / Restore and diagnostics** — integrated SQLite backup/restore, application logging, and troubleshooting tools.
+- **Light and Dark themes** with persistent application preferences.
+- **Check for Updates** — manually check the public BrickSuite GitHub update manifest from the Help menu.
 
-Normal inventory operations include:
+## Parts Catalog and Identity Resolution
 
-- Add loose parts.
-- Increase or decrease quantities.
-- Edit inventory records.
-- Move part or all of a quantity between storage locations.
-- Review movement/history records.
-- Import Rebrickable owned-parts CSV files.
-- Preserve inventory and storage state across application restarts.
+BrickSuite keeps a local reference catalog so common inventory and Build operations do not depend on making a web request for every lookup.
 
-Storage locations form a hierarchy. Locations can be activated or deactivated subject to integrity rules; BrickSuite prevents deactivation when doing so would conflict with child locations or loose inventory. Inactive records remain preserved so existing database references are not broken.
+![BrickSuite Parts Catalog](docs/images/bricksuite_parts_catalog.png)
 
-## Sets, MOCs, and Builds
+Rebrickable `parts.csv` and `part_relationships.csv` data can be imported to refresh the catalog and relationship information. Catalog records are updated or added rather than deleted simply because they disappear from a later provider file.
 
-BrickSuite supports both LEGO Set and MOC workflows.
+### Part Resolver
 
-Builds can progress through their supported lifecycle states and may be archived when they are no longer part of the active working list. Cancelled Builds are supported, and the **Show Archived** preference is remembered between sessions.
+Physical bricks, older inventories, and different providers do not always use the same part number for a related design. BrickSuite's Part Resolver makes that identity work visible instead of silently treating every number as an unrelated part.
 
-Two inventory workflows are supported:
+![BrickSuite Part Resolver](docs/images/bricksuite_part_resolver.png)
 
-- **Build from Stock** — allocate loose inventory to a Build.
-- **Complete Set** — assemble a complete Set from loose inventory and later disassemble it back into storage.
+The resolver can report direct catalog selections as well as supported alias/mapping matches. This helps keep inventory and Build requirements associated with the appropriate catalog identity.
 
-For MOCs, Rebrickable CSV files can be imported to create requirements.
+## Builds, Sets, and MOCs
 
-### Allocate Available
+BrickSuite compares Build requirements with available loose inventory and supports the workflow from planning through allocation, pulling, completion, cancellation, archive, or disassembly.
 
-**Allocate Available** searches loose inventory and automatically allocates available matching parts to Build requirements. This avoids manually selecting `Action -> Allocate` for every requirement and is especially useful for large Sets and MOCs.
+![BrickSuite Builds](docs/images/bricksuite_builds.png)
 
-Allocation preserves inventory quantities and movement history and reports satisfied, partial, and missing requirements.
+**Allocate Available** automatically allocates matching loose inventory to requirements, reducing repetitive manual allocation for larger Sets and MOCs. Missing requirements remain visible and can feed the Missing Parts procurement/export workflow.
 
-## Missing Parts
+### Complete Set Builds
 
-Build requirements are continuously compared with available inventory.
+A new Build of **Type: Set** can use **Mode: Complete Set**. BrickSuite retrieves the Set requirements and presents an import preview before anything is committed.
 
-BrickSuite can:
+![BrickSuite Complete Set Import Preview](docs/images/bricksuite_complete_set.png)
 
-- Show required, available, and missing quantities.
-- Preserve correct part colors in shortage calculations.
-- Refresh requirements after inventory changes.
-- Export Missing Parts to CSV.
+The preview reports regular/spare quantities, matching information, and problems before the requirements are imported. Once the Set is in use, spare pieces can be released to My Loose Inventory. A completed Set can later be disassembled, returning selected quantities to chosen Storage locations while preserving Build and movement history.
 
-## Lost and Found Inventory
+For MOCs, Rebrickable CSV requirements can be imported. The `Is Spare` column is optional; when it is absent, BrickSuite treats the imported rows as non-spare requirements.
 
-Parts associated with Builds can be marked Lost without destroying their history.
+## Rebrickable and Brickset
 
-The Lost Inventory workflow supports:
+BrickSuite uses provider integrations selectively rather than making its local database dependent on constant network access.
 
-- Partial or complete quantity loss.
-- Persistent outstanding Lost quantities.
-- Lost movement/history records.
-- Returning found parts to a selected loose-inventory storage location.
-- Partial or complete Found/Return operations.
-- Automatic removal from the outstanding Lost list once the full quantity has been returned.
+### Rebrickable
 
-## Rebrickable Data
+Rebrickable is the primary source for reference catalog imports and several API-backed operations. BrickSuite includes conservative centralized request throttling, connection testing, image caching, and fallback behavior intended to avoid unnecessary API traffic.
 
-BrickSuite uses Rebrickable data for its reference catalogs and import workflows.
+Users supply their own Rebrickable API key in **Settings → APIs → Rebrickable**.
 
-Version 1.0 supports:
+### Brickset
 
-- Colors and part categories.
-- Parts Catalog CSV updates.
-- Sets Catalog CSV updates.
-- Owned-parts CSV import.
-- MOC CSV import.
-- Rebrickable API connection testing and detail retrieval.
+Brickset is an optional enrichment provider for Set details and instructions. When configured and within the user-defined daily request threshold, BrickSuite can show additional Set metadata and available instruction links. When Brickset is unavailable or over the configured threshold, BrickSuite falls back to Rebrickable-backed Set information where supported.
 
-Catalog imports update existing records and insert newly discovered records rather than deleting catalog records simply because they are absent from a later import.
+Users supply their own Brickset API key in **Settings → APIs → Brickset**.
 
-## Images and Cache
+**API credentials are stored locally. Never post API keys, passwords, tokens, or other credentials in a public GitHub issue.**
 
-BrickSuite maintains a local image cache for faster browsing and offline reuse of previously downloaded images.
+## Installation
 
-The image services support:
+### Windows
 
-- General part images.
-- Color-specific part images.
-- Set images.
-- Background population of required part/color images.
-- Conservative request pacing to reduce the risk of API throttling.
+BrickSuite v0.2.0 has an automated Windows packaging workflow using Qt's `windeployqt` and Inno Setup. The resulting installer includes the Qt runtime dependencies required by BrickSuite and presents the LGPL license during installation.
 
-Color-specific cache entries use the application's mapped color data so cached images correspond to the correct BrickSuite/Rebrickable color.
+For published versions, use the installer attached to the corresponding GitHub Release.
 
-## Backup and Restore
+> The first public v0.2.0 release package will be published as part of the release milestone. Until a release asset is present, developers can build BrickSuite from source using the instructions below.
 
-BrickSuite includes integrated SQLite database backup and restore.
+### macOS and Linux
 
-Backup/restore includes:
+BrickSuite has been built successfully from source on macOS and Ubuntu Linux. Packaged macOS/Linux distributions are not yet part of the v0.2.0 release scope.
 
-- User-selected backup files.
-- Progress feedback.
-- Backup verification.
-- SQLite integrity checking.
-- Schema-version validation.
-- Automatic pre-restore safety backup.
-- Restoration of the complete BrickSuite database, including storage, inventory, Builds/MOCs, movement history, and Lost Inventory.
+## Quick Start
 
-Because the database is the authoritative local data store, regular backups are recommended.
+After installing or building BrickSuite:
 
-## Application Logging
+1. Start BrickSuite and create/select your Workspace.
+2. Open **Settings → APIs** and enter your Rebrickable API key. Brickset is optional but enables additional Set enrichment and instruction features.
+3. Create your physical Storage hierarchy.
+4. Download the current Rebrickable catalog files, unzip them, and use the import buttons in **Parts Catalog** and **Sets Catalog** to refresh the local reference data.
+5. Import `part_relationships.csv` so BrickSuite has relationship data for Part Resolver and related workflows.
+6. Import owned inventory as needed, or begin entering loose parts directly in **My Inventory**.
+7. Create Sets/MOCs/Builds and use Allocate Available, Missing Parts, pull/reconciliation, Complete Set, and other workflows as appropriate.
 
-BrickSuite v0.1.0 includes an application-wide diagnostic logger.
+BrickSuite also contains a detailed built-in Help system with screenshots and step-by-step instructions.
 
-The logger captures Qt `Info`, `Warning`, `Critical`, and fatal messages with timestamps while intentionally avoiding routine UI-action noise.
+> **Online User Guide:** planned as part of the v0.2.0 public-repository documentation work. This README will link to the web version when it is published.
 
-Logging covers high-value operations such as:
+## Building from Source
 
-- Application/database startup and schema initialization.
-- Reference-data seeding.
-- Catalog and inventory imports.
-- Build allocation and completion.
-- Database backup and restore.
-- Inventory and storage persistence failures.
-- Image/cache failures.
-- Other important database and workflow errors.
-
-The built-in **Application Log Viewer** is non-modal and auto-refreshing, allowing it to remain open on a second monitor while BrickSuite is tested or used. Its size and screen position are remembered between sessions. The viewer can also clear the log or open the log folder.
-
-## User Interface
-
-Version 1.0 includes:
-
-- Light and Dark themes.
-- Persistent main-window geometry and state.
-- Persistent splitter/panel positions.
-- Remembered default workspace behavior.
-- Remembered **Show Archived** Build preference.
-- Persistent Log Viewer geometry.
-- Search/filter empty-state messages.
-- Consistent result summaries and `Page X of Y` paging.
-
-## Technology
-
-BrickSuite v0.1.0 is implemented with:
+BrickSuite v0.2.0 is implemented with:
 
 - **C++17**
-- **Qt 6.10.2**
+- **Qt 6.10.3**
 - **Qt Widgets**
 - **Qt SQL**
 - **Qt Network**
 - **SQLite**
 - **CMake**
-- **Windows 11**
 
-The primary development environment for v0.1.0 is Qt Creator 19.0.0 with the Qt 6.10.2 MinGW 64-bit toolchain.
-
-## Building BrickSuite
-
-BrickSuite v0.1.0 is developed with C++17, CMake, and Qt 6.10.2. The v0.1.0
-development environment uses Qt Creator 19.0.0 and the Qt 6.10.2 MinGW
-64-bit toolchain on Windows 11.
+The primary Windows development configuration uses the Qt 6.10.3 MinGW 64-bit toolchain. BrickSuite has also been built successfully on macOS and Ubuntu Linux.
 
 The CMake project requires these Qt 6 modules:
 
-- Qt Core
-- Qt Gui
-- Qt Widgets
-- Qt SQL
-- Qt Network
+- Core
+- Gui
+- Widgets
+- Sql
+- Network
 
-A typical build begins by configuring the repository's `CMakeLists.txt`
-with a Qt 6 development environment in which those modules are available.
+A typical command-line configuration is:
+
+```bash
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/Qt/6.10.3/<kit>
+cmake --build build
+```
+
+The exact Qt kit path and generator vary by operating system and development environment. Qt Creator can also open the repository's `CMakeLists.txt` directly and configure an installed Qt 6 kit.
 
 ### SQLite
 
-BrickSuite uses SQLite as its local database engine through Qt SQL.
+BrickSuite uses SQLite through Qt SQL. A separate SQLite command-line installation is not required to run BrickSuite when the Qt SQLite driver is available.
 
-A separate SQLite command-line installation is not normally required to
-run BrickSuite when the required Qt runtime components and SQLite SQL
-driver are present.
-
-Developers who want the SQLite command-line tools for inspecting,
-troubleshooting, or working directly with `BrickSuite.db` can obtain
-them from the official SQLite project:
-
-https://sqlite.org/download.html
+Developers may optionally install SQLite command-line tools for database inspection and troubleshooting.
 
 ## Local Application Data
 
 BrickSuite uses Qt's `AppLocalDataLocation` for application-managed local data.
 
-On the v0.1.0 Windows development/test system this resolves under:
+On Windows this normally resolves beneath:
 
 ```text
 %LOCALAPPDATA%\RFStateSide\BrickSuite\
 ```
 
-This location contains the live SQLite database and application log, with image-cache data maintained beneath the BrickSuite application-data hierarchy.
+This location contains application-managed data such as the live SQLite database, log, and image cache. User-interface preferences are stored through `QSettings`.
 
-Typical files include:
+Uninstalling BrickSuite intentionally does **not** delete the user's local BrickSuite database or other application data.
 
-```text
-BrickSuite.db
-BrickSuite.log
-```
+## Help, Bugs, and Feature Requests
 
-User-interface preferences are stored through `QSettings`.
+BrickSuite includes an extensive built-in Help system under the **Help** menu.
 
-## Database
+For GitHub:
 
-BrickSuite v0.1.0 uses SQLite and currently initializes **database schema version 11**.
+- Use the **Bug report** issue template for reproducible problems.
+- Use the **Feature request** template for enhancement ideas.
+- Include the BrickSuite version from **Help → About** when reporting a bug.
+- Include only the smallest relevant Application Log excerpt when it helps diagnosis.
+- **Never include API keys, passwords, tokens, private certificates, or other credentials in a public issue.**
 
-Schema migrations are applied by the application as required. The database contains the persistent relationships between workspaces, storage, inventory, Builds, requirements, allocations, movement history, Lost Inventory, and reference catalogs.
-
-The application favors preserving database identity and history. Where practical, records are deactivated or archived rather than deleted.
-
-## Reference Catalog Size
-
-Catalog contents change as new Rebrickable data is imported. During final v0.1.0 testing in August 2026, a monthly `parts.csv` update processed 64,293 rows and added 49 new parts to the existing catalog, bringing the local Parts Catalog to approximately **64,301 parts**.
-
-The application displays current matching totals directly below the Parts Catalog, Sets Catalog, and My Inventory tables, so the live database remains the authoritative source for current counts.
-
-## v0.1.0 Validation
-
-BrickSuite v0.1.0 underwent a fresh-database regression pass covering:
-
-- First-run database creation and reference-data seeding.
-- Real storage hierarchy creation.
-- Rebrickable inventory imports.
-- Storage management.
-- My Inventory operations.
-- Parts and Sets catalogs.
-- Build from Stock.
-- Complete Set workflow.
-- MOC workflow.
-- Missing Parts.
-- Lost Parts and Found/Return.
-- Backup and restore.
-- Settings/UI persistence.
-- Restart and recovery behavior.
-
-Issues discovered during regression testing were corrected before the v0.1.0 feature-complete baseline, followed by additional workflow and diagnostic smoke testing.
+Contributor guidance is available in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Project Status
 
-**BrickSuite 0.1.0 — Feature Complete**
+**BrickSuite v0.2.0** is the current release line.
 
-Version 1.0 establishes the production-use baseline. Further ideas and enhancements can be evaluated from real-world use and developed as post-v0.1.0 work without expanding the initial release indefinitely.
+The v0.2.0 work expands the original baseline with API-provider architecture and Brickset enrichment, Missing Parts procurement/export, Rebrickable inventory comparison/synchronization, manufacturer/provenance and part identity work, catalog/inventory enhancements, Complete Set and Build workflow improvements, cross-platform preparation, automated Windows packaging, update checking, and a comprehensive Help refresh.
 
-## Copyright and License
+The project is developed incrementally using defined milestones, regression testing, and real-world workshop use.
+
+## License
 
 Copyright © 2026 RF StateSide, LLC.
 
-BrickSuite is free and open-source software licensed under the
-**GNU Lesser General Public License, version 3.0 (LGPL-3.0-only)**.
+BrickSuite is free and open-source software licensed under the **GNU Lesser General Public License, version 3.0 (LGPL-3.0-only)**.
 
-You may use, study, modify, and redistribute BrickSuite subject to the
-terms of the LGPL-3.0. See the repository `LICENSE` file for the complete
-license terms.
+See [`LICENSE`](LICENSE) for the complete license terms.
 
-Contributions are welcome. See `CONTRIBUTING.md` for the contribution
-guidelines.
-
-## Trademark and Third-Party Notice
+## Third-Party and Trademark Notice
 
 LEGO® is a trademark of the LEGO Group of companies, which does not sponsor, authorize, or endorse BrickSuite.
 
-Rebrickable is a trademark or brand name of its respective owner. BrickSuite is an independent application and is not affiliated with or endorsed by Rebrickable.
+Rebrickable and Brickset are trademarks or brand names of their respective owners. BrickSuite is an independent application and is not affiliated with or endorsed by those providers.
 
-All other trademarks, product names, company names, services, and third-party content referenced by BrickSuite are the property of their respective owners. Their use is for identification and interoperability purposes only and does not imply sponsorship, affiliation, authorization, or endorsement.
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for additional notices and acknowledgments.
 
 ---
 
 **BrickSuite**  
-*The Digital Twin Platform for Your Brick Workshop.*
+*The Digital Twin Platform for Your Brick Workshop*
