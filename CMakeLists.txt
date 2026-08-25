@@ -246,6 +246,7 @@ qt_add_executable(BrickSuite
     README.md
     src/core/AppVersion.h
     src/core/AppConstants.h
+    CONTRIBUTING.md
 
 )
 target_link_libraries(BrickSuite PRIVATE
