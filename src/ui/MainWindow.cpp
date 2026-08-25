@@ -40,6 +40,7 @@
 #include "../repositories/WorkspaceRepository.h"
 
 #include "../services/RebrickableApiClient.h"
+#include "../services/Updater.h"
 #include "../api/ApiProviderStatusRegistry.h"
 #include "../api/brickset/BricksetService.h"
 #include "../services/images/BackgroundPartColorImageCacheService.h"
@@ -50,6 +51,7 @@
 
 #include "../ui/parts/PartDetailsDialog.h"
 
+#include "../core/AppConstants.h"
 #include "../core/AppVersion.h"
 
 #include "builds/BuildsWidget.h"
@@ -64,6 +66,7 @@
 #include <QAction>
 #include <QCloseEvent>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDebug>
 #include <QDir>
 #include <QFileDialog>
@@ -78,6 +81,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QUrl>
 #include <QScreen>
 #include <QStandardPaths>
 #include <QStatusBar>
@@ -558,6 +562,90 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
         m_logViewerDialog->show();
     });
+
+    helpMenu->addSeparator();
+
+    auto* checkForUpdatesAction =
+        helpMenu->addAction("Check for Updates...");
+
+    auto* updater = new Updater(this);
+
+    connect(checkForUpdatesAction,
+            &QAction::triggered,
+            this,
+            [this, updater, checkForUpdatesAction]() {
+                checkForUpdatesAction->setEnabled(false);
+
+                updater->checkForUpdates(
+                    AppConstants::updateManifestUrl(),
+                    AppVersion::version());
+            });
+
+    connect(updater,
+            &Updater::noUpdateAvailable,
+            this,
+            [this, checkForUpdatesAction]() {
+                checkForUpdatesAction->setEnabled(true);
+
+                QMessageBox::information(
+                    this,
+                    tr("Check for Updates"),
+                    tr("BrickSuite %1 is up to date.")
+                        .arg(AppVersion::version()));
+            });
+
+    connect(updater,
+            &Updater::updateCheckFailed,
+            this,
+            [this, checkForUpdatesAction](const QString& reason) {
+                checkForUpdatesAction->setEnabled(true);
+
+                QMessageBox::warning(
+                    this,
+                    tr("Check for Updates"),
+                    tr("BrickSuite could not check for updates.\\n\\n%1")
+                        .arg(reason));
+            });
+
+    connect(updater,
+            &Updater::updateAvailable,
+            this,
+            [this, checkForUpdatesAction](
+                const QString& newVersion,
+                const QString& downloadUrl,
+                const QString& releaseNotes) {
+                checkForUpdatesAction->setEnabled(true);
+
+                QString message =
+                    tr("BrickSuite %1 is available.\\n\\n"
+                       "You are currently running version %2.")
+                        .arg(newVersion, AppVersion::version());
+
+                if (!releaseNotes.trimmed().isEmpty()) {
+                    message += tr("\\n\\nRelease notes:\\n%1")
+                                   .arg(releaseNotes.trimmed());
+                }
+
+                QMessageBox dialog(
+                    QMessageBox::Information,
+                    tr("BrickSuite Update Available"),
+                    message,
+                    QMessageBox::NoButton,
+                    this);
+
+                QPushButton* downloadButton =
+                    dialog.addButton(
+                        tr("Open Download Page"),
+                        QMessageBox::AcceptRole);
+
+                dialog.addButton(QMessageBox::Close);
+
+                dialog.exec();
+
+                if (dialog.clickedButton() == downloadButton) {
+                    QDesktopServices::openUrl(QUrl(downloadUrl));
+                }
+            });
 
     helpMenu->addSeparator();
 

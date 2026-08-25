@@ -39,4 +39,9 @@ inline QString releaseDate()
     return QString::fromLatin1(APP_RELEASE_DATE);
 }
 
+inline QString updateManifestUrl()
+{
+    return QString::fromLatin1(APP_UPDATE_MANIFEST_URL);
+}
+
 } // namespace AppConstants

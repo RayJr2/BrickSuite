@@ -47,6 +47,8 @@ qt_add_executable(BrickSuite
     src/services/ReferenceDataSeeder.cpp
     src/services/ReferenceDataSeeder.h
     src/services/Logger.h
+    src/services/Updater.h
+    src/services/Updater.cpp
     src/services/Logger.cpp
     src/models/StorageLocationType.h
     src/models/StorageLocationType.cpp
@@ -286,6 +288,7 @@ set(APP_DOMAIN            "rfstateside.com")
 set(APP_COPYRIGHT_YEAR    "2026")
 set(APP_RELEASE           "Development")
 set(APP_RELEASE_DATE      "2026-08-17")
+set(APP_UPDATE_MANIFEST_URL "https://raw.githubusercontent.com//BrickSuite/main/deployment/update/update.json")
 
 # --------------------------------------------------------------------
 # Windows deployment metadata
@@ -311,6 +314,7 @@ target_compile_definitions(BrickSuite PRIVATE
     APP_COPYRIGHT_YEAR="${APP_COPYRIGHT_YEAR}"
     APP_RELEASE="${APP_RELEASE}"
     APP_RELEASE_DATE="${APP_RELEASE_DATE}"
+    APP_UPDATE_MANIFEST_URL="${APP_UPDATE_MANIFEST_URL}"
 )
 
 set(BRICKSUITE_REBRICKABLE_API_BLOCKED OFF)
