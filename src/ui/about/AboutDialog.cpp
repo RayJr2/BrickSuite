@@ -69,11 +69,22 @@ AboutDialog::AboutDialog(QWidget* parent)
     iconLabel->setFixedSize(112, 112);
     iconLabel->setAlignment(Qt::AlignCenter);
 
-    QPixmap iconPixmap(QStringLiteral(":/icons/bricksuite.ico"));
+    // Request the About artwork through QIcon at the size actually needed.
+    // Loading an .ico directly into QPixmap can select a small embedded
+    // representation and then scale it up, producing a pixelated image.
+    // QIcon selects the best available resolution from the multi-size icon.
+    const qreal devicePixelRatio = iconLabel->devicePixelRatioF();
+
+    const QSize iconPixelSize(
+        static_cast<int>(iconLabel->width() * devicePixelRatio),
+        static_cast<int>(iconLabel->height() * devicePixelRatio));
+
+    QPixmap iconPixmap =
+        QApplication::windowIcon().pixmap(iconPixelSize);
 
     if (!iconPixmap.isNull()) {
-        iconLabel->setPixmap(
-            iconPixmap.scaled(iconLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        iconPixmap.setDevicePixelRatio(devicePixelRatio);
+        iconLabel->setPixmap(iconPixmap);
     }
 
     headerLayout->addWidget(iconLabel, 0, Qt::AlignTop);
