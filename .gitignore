@@ -1,8 +1,9 @@
-# The Executable
+# BrickSuite executables / application bundles
 BrickSuite.exe
 BrickSuite
+BrickSuite.app/
 
-# C++ objects and libs
+# C++ objects and libraries
 *.slo
 *.lo
 *.o
@@ -14,7 +15,7 @@ BrickSuite
 *.dll
 *.dylib
 
-# Qt-es
+# Qt generated files
 object_script.*.Release
 object_script.*.Debug
 *_plugin_import.cpp
@@ -35,42 +36,54 @@ Makefile*
 *build-*
 *.qm
 *.prl
-
-# Qt unit tests
 target_wrapper.*
-
-# QtCreator
-*.autosave
-
-# QtCreator Qml
-*.qmlproject.user
-*.qmlproject.user.*
-
-# QtCreator CMake
-CMakeLists.txt.user*
-
-# QtCreator 4.8< compilation database
-compile_commands.json
-
-# QtCreator local machine specific files for imported projects
-*creator.user*
-
 *_qmlcache.qrc
 *.qtc_clangd*
 
-# Builds
+# Build directories
 build/
 
-# Ignore Old and Original
+# Qt Creator / IDE local files
+*.autosave
+*.qmlproject.user
+*.qmlproject.user.*
+CMakeLists.txt.user*
+compile_commands.json
+*creator.user*
+.vscode/
+.idea/
+
+# Old / backup working files
 *_old*
 *_bak*
 *_org*
 
-# Ignore Visual Studio files
+# Visual Studio local files
 .vs/
 *.vcxproj.user
 
-# MacOS specific
+# Operating-system / editor temporary files
 .DS_Store
-BrickSuite.app
+Thumbs.db
+*.swp
+*~
 
+# BrickSuite runtime / user data
+BrickSuite.db
+BrickSuite.db-*
+*.db-wal
+*.db-shm
+*.log
+cache/
+
+# User inventory / private exports
+rebrickable_parts_*.csv
+
+# Credentials / private configuration
+*.apikey
+*.pem
+*.p12
+*.pfx
+*.key
+.env
+.env.*
