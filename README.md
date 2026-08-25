@@ -10,6 +10,12 @@ BrickSuite is designed around a simple principle: **your physical inventory, sto
 > **Windows:** packaged installer supported  
 > **macOS / Linux:** source builds validated; packaged distributions are planned for later work
 
+### 📖 Online User Guide
+
+**[Open the BrickSuite Online Help](https://rayjr2.github.io/BrickSuite/)**
+
+The complete BrickSuite User Guide is available online, including Quick Start, workflow instructions, troubleshooting information, and application screenshots.
+
 ![BrickSuite My Inventory](docs/images/bricksuite_inventory.png)
 
 ## What BrickSuite Does
