@@ -568,6 +568,10 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
         dialog.exec();
     });
 
+    // Developer-only Test menu.
+    // Debug builds expose internal diagnostic/test tools.
+    // Release builds omit the Test menu entirely.
+#ifndef NDEBUG
     // Test menu
     auto* testMenu = menuBar()->addMenu("Test");
 
@@ -1300,6 +1304,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
         apiClient->getPartColorDetails(partNumber, rebrickableColorId, apiKey);
     });
+#endif // !NDEBUG
 
     //
     // Restore the Main Window geometry and state from
