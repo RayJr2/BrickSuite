@@ -188,6 +188,10 @@ The v0.2.0 work expands the original baseline with API-provider architecture and
 
 The project is developed incrementally using defined milestones, regression testing, and real-world workshop use.
 
+## Acknowledgments
+
+BrickSuite was designed and developed by RF StateSide, LLC with development assistance from OpenAI's ChatGPT, including support with software design, code review, documentation, testing strategy, and implementation.
+
 ## License
 
 Copyright © 2026 RF StateSide, LLC.
