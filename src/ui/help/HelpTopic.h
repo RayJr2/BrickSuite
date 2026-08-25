@@ -24,6 +24,7 @@ enum class HelpTopic
 {
     Home,
     GettingStarted,
+    QuickStart,
     Storage,
     PartsCatalog,
     SetsCatalog,

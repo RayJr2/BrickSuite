@@ -34,6 +34,7 @@ const QList<HelpTopicInfo>& helpTopics()
     static const QList<HelpTopicInfo> topics = {
         {HelpTopic::Home, "Help Home", ":/help/index.html"},
         {HelpTopic::GettingStarted, "Getting Started", ":/help/getting_started.html"},
+        {HelpTopic::QuickStart, "Quick Start", ":/help/quick_start.html"},
         {HelpTopic::Storage, "Storage", ":/help/storage.html"},
         {HelpTopic::PartsCatalog, "Parts Catalog", ":/help/parts_catalog.html"},
         {HelpTopic::SetsCatalog, "Sets Catalog", ":/help/sets_catalog.html"},

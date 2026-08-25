@@ -7,130 +7,143 @@
 body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
 h1 { margin-bottom: 0.35em; }
 h2 { margin-top: 1.5em; }
+h3 { margin-top: 1.2em; }
 img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
-img.dialog { display:block; max-width:92%; height:auto; margin:14px auto 18px auto; }
+img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px auto; }
 .note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+code { font-family: monospace; }
 </style>
 </head>
 <body>
 
 <h1>Parts Catalog</h1>
 
-<p>The Parts Catalog is BrickSuite's local reference library of part designs. Use it to answer
-questions such as <b>What is this part?</b>, <b>What category does it belong to?</b>, and
-<b>How can I add it to my inventory?</b></p>
-
-<p>The catalog is different from <a href="inventory.html">My Inventory</a>. A catalog row describes
-a part design; My Inventory describes the parts you actually own, including their color, quantity,
-condition, ownership type, and physical storage location.</p>
-
-<h2>Browsing the Catalog</h2>
-
-<p>The main table shows the part image, part number, name, category, material, and an
-<b>Actions</b> menu. BrickSuite keeps the reference catalog locally so normal browsing and
-searching do not require a live API request.</p>
+<p>The <b>Parts Catalog</b> is BrickSuite's local reference catalog of part designs. It is used
+for catalog browsing, inventory entry, part identity resolution, Build requirements, and other
+workflows that need a stable local part reference.</p>
 
 <img class="screenshot" src="images/parts_catalog_overview.png"
      alt="BrickSuite Parts Catalog overview">
 
-<p>The summary at the lower left shows the number of parts matching the current search and filter.
-When the result contains more than one page, use <b>Previous</b> and <b>Next</b> at the lower
-right to move through it.</p>
+<h2>Refresh the Parts Catalog</h2>
 
-<p>In the example above the local catalog contains <b>64,301 parts</b>. This number can change
-when newer Rebrickable reference data is imported.</p>
+<p>Use the <b>Import Rebrickable parts.csv</b> button to populate or refresh the local Parts
+Catalog from Rebrickable catalog data. Rebrickable distributes the catalog download as a ZIP
+archive, so extract it first and select the resulting <code>parts.csv</code> file in BrickSuite.</p>
 
-<h2>Searching for a Part</h2>
+<p>The import adds new parts and updates changed provider data. BrickSuite does not delete an
+existing local part merely because it is absent from the imported CSV.</p>
 
-<p>Enter all or part of a part number or name in <b>Search</b>, optionally choose a
-<b>Category</b>, and choose <b>Search</b>. The search is intentionally broad: entering
-<code>3001</code> finds part 3001 as well as other part numbers containing the same text.</p>
+<p>For the complete first-time setup sequence, see
+<a href="quick_start.html"><b>Quick Start</b></a>.</p>
 
-<img class="screenshot" src="images/parts_catalog_search.png"
-     alt="Parts Catalog search for 3001">
+<h2>Import Part Relationships</h2>
 
-<p>Here, searching for <b>3001</b> produces 113 matching parts. The familiar
-<b>3001 — Brick 2 x 4</b> appears first, along with related part numbers such as 30014, 30016,
-3001a, and printed variants whose identifiers also contain 3001.</p>
+<p>Use the <b>Import part_relationships.csv</b> button to import the relationship data used by
+BrickSuite when interpreting supported relationships between part numbers.</p>
 
-<div class="note"><b>Tip:</b> If a text search returns too many results, select a Category as well.
-The catalog requires search criteria or a selected category rather than loading an unrestricted
-search operation unnecessarily.</div>
+<div class="note"><b>Why this matters:</b> Part relationships support relationship-aware identity
+resolution and Build/inventory workflows. Keeping this data current improves BrickSuite's ability
+to understand older, superseded, alternate, or otherwise related part numbers.</div>
+
+<p>See <a href="inventory.html"><b>My Inventory</b></a> for the Part Resolver workflow.</p>
+
+<h2>Search and Browse</h2>
+
+<p>Use the Search field to find a part by part number or name. The Category filter can narrow
+results to a specific part category. Choose <b>Search</b> to apply the current criteria.</p>
+
+<p>The results table shows the part image, part number, name, category, material, match information,
+and an <b>Actions...</b> control. The summary below the table shows the number of matching parts,
+and paging controls let you move through larger result sets.</p>
+
+<h3>Material</h3>
+
+<p>The <b>Material</b> column shows the catalog material associated with the part when that
+information is available from the imported reference data.</p>
+
+<h3>Match</h3>
+
+<p>The <b>Match</b> column is used by BrickSuite's part identity/mapping workflows to indicate
+whether relevant mapping or resolution information is available for the displayed catalog part.</p>
+
+<h2>Part Actions</h2>
+
+<p>Open a row's <b>Actions...</b> control to work with that catalog part.</p>
+
+<img class="screenshot" src="images/parts_catalog_actions.png"
+     alt="BrickSuite Parts Catalog Actions menu">
+
+<ul>
+<li><b>Details</b> — open the current Part Details dialog.</li>
+<li><b>Add to Inventory</b> — begin adding the selected part to My Inventory.</li>
+</ul>
 
 <h2>Part Details</h2>
 
-<p>Choose <b>Details</b> from a part's Actions menu to inspect its reference information.</p>
+<p>Choose <b>Details</b> to view the current catalog and provider information for a part.</p>
 
 <img class="dialog" src="images/parts_catalog_details.png"
-     alt="Part Details for LEGO part 3001">
+     alt="BrickSuite Part Details dialog">
 
-<p>The Part Details dialog can show the part number, name, category, material, known production
-years, Rebrickable details, and related reference information. For part 3001, the Related Parts
-view shows known molds, alternates, and printed variants.</p>
+<p>The <b>General</b> tab shows the part number, name, category, material, Rebrickable status,
+available year information, and the cached part image when one is available.</p>
 
-<p>Additional tabs can expose other reference identifiers associated with the part. The exact
-information available depends on the reference data known for that part.</p>
+<p>The provider link at the bottom of the dialog opens the corresponding Rebrickable part page in
+your system's default browser.</p>
 
-<h2>Parts and Colors</h2>
+<h3>Related Parts</h3>
 
-<p>A Parts Catalog entry represents the <b>part design</b>, not a single owned part/color
-combination. The same design can exist in multiple colors. BrickSuite therefore keeps the main
-catalog focused on part identity and lets color become relevant when viewing reference information
-or creating inventory.</p>
+<p>The <b>Related Parts</b> tab shows relationship information BrickSuite has for the selected
+part. This information comes from BrickSuite's imported relationship/reference data and supports
+the same identity-resolution concepts used by the Part Resolver.</p>
 
-<p>This is an important distinction:</p>
+<h3>External IDs</h3>
 
-<pre>
-Parts Catalog
-  What part designs exist?
+<p>The <b>External IDs</b> tab shows supported external part identifiers or mappings associated
+with the catalog part. These identifiers help BrickSuite reconcile provider-specific part numbers
+without treating every provider identity as a separate physical part.</p>
 
-My Inventory
-  Which parts do I own?
-  What colors are they?
-  How many do I have?
-  Where are they stored?
-</pre>
+<div class="note"><b>Reference data vs. inventory:</b> Part Details describes the catalog identity.
+It does not mean you own the part. Use My Inventory to see the actual quantities and Storage
+locations you own.</div>
 
-<h2>Adding a Catalog Part to My Inventory</h2>
+<h2>Add a Catalog Part to Inventory</h2>
 
-<p>Choose <b>Add to Inventory</b> from the Actions menu when you own a part and want BrickSuite to
-track it. The dialog begins with the selected catalog part and lets you describe the actual piece
-or pieces being added.</p>
+<p>Choose <b>Add to Inventory</b> from the row's Actions menu when you want to add loose pieces of
+the selected part to your Workspace. BrickSuite opens the Add Part dialog, where the current Part
+Resolver confirms or resolves the part identity before you choose Color, Storage, Manufacturer,
+Condition, Ownership, and Quantity.</p>
 
-<img class="dialog" src="images/parts_catalog_add_inventory.png"
-     alt="Add part 3001 in Black to My Inventory">
+<p>See <a href="inventory.html"><b>My Inventory</b></a> for the full Add Part and Part Resolver
+workflow.</p>
 
-<p>For the example shown, BrickSuite is ready to add one used, owned
-<b>3001 — Brick 2 x 4</b> in <b>Black</b> to
-<b>Cabinet Bricks / Basic Bricks / Black</b>.</p>
+<h2>Images and Caching</h2>
 
-<p>The <b>Show all colors</b> option can be used when the color you need is not in the normal known
-color list for the part. This allows BrickSuite to accommodate unusual, non-brand, or otherwise
-valid inventory without weakening the normal color guidance.</p>
+<p>BrickSuite caches part images locally when they are available. This lets catalog and inventory
+views reuse an image without repeatedly requesting it from the provider.</p>
 
-<p>Choose an appropriate active Storage location, Condition, Ownership type, and Quantity, then
-choose <b>Add</b>. This creates or updates owned inventory; it does not change the catalog
-definition itself.</p>
+<p>If a color-specific image is unavailable, BrickSuite can use the more general part image where
+appropriate rather than repeatedly requesting an image known to be unavailable.</p>
 
-<p>See <a href="inventory.html"><b>My Inventory</b></a> for editing quantities, moving parts,
-viewing movement history, and other owned-inventory workflows.</p>
+<h2>How the Parts Catalog Is Used Elsewhere</h2>
 
-<h2>Updating Rebrickable Reference Data</h2>
+<p>The Parts Catalog is reference data shared by several BrickSuite features:</p>
 
-<p>The <b>Import Rebrickable parts.csv</b> action updates BrickSuite's local Parts Catalog from a
-Rebrickable parts CSV file. Existing catalog records can be updated and newly published part
-records can be added without removing older catalog entries merely because they are absent from a
-later import.</p>
-
-<p>This catalog-reference import is separate from importing your personal Rebrickable parts list.
-See <a href="rebrickable_import.html"><b>Rebrickable Import</b></a> for owned inventory imports.</p>
+<ul>
+<li>My Inventory uses catalog identity when adding and resolving loose parts.</li>
+<li>The Part Resolver uses current catalog and relationship/mapping data to interpret part numbers.</li>
+<li>Build and MOC workflows use catalog identities when comparing requirements with available inventory.</li>
+<li>Part Details uses provider-backed information to enrich the local reference record.</li>
+</ul>
 
 <h2>Related Help</h2>
 
-<p><a href="getting_started.html">Getting Started</a> |
+<p><a href="quick_start.html">Quick Start</a> |
 <a href="inventory.html">My Inventory</a> |
 <a href="rebrickable_import.html">Rebrickable Import</a> |
-<a href="sets_catalog.html">Sets Catalog</a></p>
+<a href="builds.html">Builds</a> |
+<a href="troubleshooting.html">Troubleshooting</a></p>
 
 </body>
 </html>

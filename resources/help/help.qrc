@@ -2,6 +2,7 @@
     <qresource prefix="/help">
         <file>index.html</file>
         <file>getting_started.html</file>
+        <file>quick_start.html</file>
         <file>storage.html</file>
         <file>parts_catalog.html</file>
         <file>sets_catalog.html</file>
@@ -16,6 +17,14 @@
         <file>settings.html</file>
         <file>logging.html</file>
         <file>troubleshooting.html</file>
+        <file>images/quick_start_rebrickable_api.png</file>
+        <file>images/quick_start_brickset_api.png</file>
+        <file>images/quick_start_rebrickable_downloads.png</file>
+        <file>images/quick_start_parts_catalog_import.png</file>
+        <file>images/quick_start_sets_catalog_import.png</file>
+        <file>images/quick_start_part_relationships.png</file>
+        <file>images/quick_start_storage.png</file>
+        <file>images/quick_start_inventory_import.png</file>
         <file>images/getting_started_workspace.png</file>
         <file>images/getting_started_storage.png</file>
         <file>images/getting_started_inventory.png</file>
@@ -27,9 +36,12 @@
         <file>images/parts_catalog_search.png</file>
         <file>images/parts_catalog_details.png</file>
         <file>images/parts_catalog_add_inventory.png</file>
+        <file>images/sets_catalog.png</file>
         <file>images/sets_catalog_overview.png</file>
         <file>images/sets_catalog_search.png</file>
         <file>images/sets_catalog_details.png</file>
+        <file>images/sets_catalog_instructions.png</file>
+        <file>images/sets_catalog_details_brickset.png</file>
         <file>images/sets_catalog_create_build.png</file>
         <file>images/inventory_overview.png</file>
         <file>images/inventory_add.png</file>
@@ -74,9 +86,22 @@
         <file>images/backup_restore_successful.png</file>
         <file>images/settings_general.png</file>
         <file>images/settings_appearance.png</file>
-        <file>images/settings_rebrickable.png</file>
+        <file>images/settings_apis_overview.png</file>
         <file>images/application_log_viewer.png</file>
         <file>images/application_log_folder.png</file>
         <file>images/application_log_clear.png</file>
+        <file>images/inventory_actions.png</file>
+        <file>images/rebrickable_import_operations.png</file>
+        <file>images/rebrickable_import_sync_preview.png</file>
+        <file>images/inventory_part_resolver.png</file>
+        <file>images/parts_catalog_actions.png</file>
+        <file>images/builds_actions.png</file>
+        <file>images/builds_new_complete_set.png</file>
+        <file>images/builds_new_complete_set_preview.png</file>
+        <file>images/builds_complete_set_requirements.png</file>
+        <file>images/builds_release_spares.png</file>
+        <file>images/builds_release_spares_complete.png</file>
+        <file>images/builds_disassemble_set.png</file>
+        <file>images/builds_disassembled.png</file>
     </qresource>
 </RCC>

@@ -1,125 +1,130 @@
 <!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Sets Catalog</title>
+<html><head><meta charset="utf-8"><title>Sets Catalog</title>
 <style>
 body { font-family: sans-serif; line-height: 1.5; margin: 22px; }
-h1 { margin-bottom: 0.35em; }
-h2 { margin-top: 1.5em; }
-img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
-img.dialog { display:block; max-width:92%; height:auto; margin:14px auto 18px auto; }
-.note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
-</style>
-</head>
-<body>
+h1 { margin-bottom: .35em; } h2 { margin-top: 1.5em; } h3 { margin-top: 1.2em; }
+img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px; }
+.note, .recommended { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+code { font-family: monospace; }
+</style></head><body>
 
 <h1>Sets Catalog</h1>
 
-<p>The Sets Catalog is BrickSuite's local reference library of Rebrickable Set data. Use it to
-find a Set by number or name, review its reference information, and create a BrickSuite Build
-from the Set.</p>
+<p>The <b>Sets Catalog</b> is BrickSuite's local reference catalog for LEGO Sets. It is populated
+from Rebrickable CSV data and can be searched without making a live API request for ordinary
+catalog browsing.</p>
 
-<p>The catalog is reference data. A Set does not become something BrickSuite is actively managing
-until you create a <a href="builds.html">Build</a> from it.</p>
+<img class="screenshot" src="images/sets_catalog.png"
+     alt="BrickSuite Sets Catalog">
 
-<h2>Browsing the Catalog</h2>
+<h2>Populate or Refresh the Sets Catalog</h2>
 
-<p>The main table shows the Set number, name, year, Rebrickable Theme ID, part count, and an
-<b>Actions</b> menu.</p>
+<p>Use the <b>Import Rebrickable sets.csv</b> button at the top of the Sets Catalog to populate
+or refresh the local catalog. Rebrickable distributes catalog downloads as ZIP archives, so
+extract the archive before selecting the resulting <code>sets.csv</code> file in BrickSuite.</p>
 
-<img class="screenshot" src="images/sets_catalog_overview.png"
-     alt="BrickSuite Sets Catalog overview">
+<p>For the full first-time setup sequence, see
+<a href="quick_start.html"><b>Quick Start</b></a>.</p>
 
-<p>The summary at the lower left shows the number of Sets matching the current search and year
-filter. The pager at the lower right moves through larger result sets.</p>
+<h2>Search the Catalog</h2>
 
-<p>In the example above, the local catalog contains <b>28,099 Sets</b> across 113 pages. The
-catalog count can change when newer Rebrickable reference data is imported.</p>
+<p>Use the Search field to look for a Set by number or name. The Year filter can narrow the
+results to a specific year. Choose <b>Search</b> to apply the current criteria.</p>
 
-<h2>Searching for a Set</h2>
-
-<p>Enter a Set number or part of a Set name in <b>Search</b>. You can also select a year to narrow
-the results before choosing <b>Search</b>.</p>
-
-<img class="screenshot" src="images/sets_catalog_search.png"
-     alt="Sets Catalog search for Set 77239">
-
-<p>Searching for <b>77239</b> identifies Set <b>77239-1 — Porsche 911 GT3 RS Super Car</b>,
-released in 2025. The catalog shows its Rebrickable Theme ID as 601 and its reference part count
-as 355.</p>
-
-<div class="note"><b>Tip:</b> Set numbers are often the quickest way to locate a specific Set.
-Name searches are useful when you know only part of the title, and the Year filter can further
-reduce a broad result.</div>
+<p>The results table shows the Set number, name, year, Theme ID, parts count, and an
+<b>Actions...</b> control for each row. Paging controls at the bottom of the catalog let you move
+through larger result sets.</p>
 
 <h2>Set Details</h2>
 
-<p>Choose <b>Details</b> from the Set's Actions menu to inspect the available reference
-information.</p>
+<p>Open <b>Actions... → Details</b> for a Set to view its reference information and, when
+available, provider enrichment.</p>
 
-<img class="dialog" src="images/sets_catalog_details.png"
-     alt="Set Details for 77239-1 Porsche 911 GT3 RS Super Car">
+<img class="screenshot" src="images/sets_catalog_details_brickset.png"
+     alt="BrickSuite Set Details with Brickset enrichment">
 
-<p>The Set Details dialog shows the Set number, name, year, Theme ID, part count, and cached Set
-image. BrickSuite caches reference images locally so they can be reused after they have been
-retrieved.</p>
+<p>The upper portion of Set Details shows the local BrickSuite/Rebrickable reference information,
+including the Set number, name, year, Theme ID, parts count, and cached Set image when available.</p>
 
-<p>The part count shown here is catalog reference information. The detailed Build workflow uses
-the Set's requirements when BrickSuite prepares the inventory work needed to assemble it.</p>
+<h3>Provider Enrichment</h3>
 
-<h2>Creating a Build from a Set</h2>
+<p>The <b>Provider Enrichment</b> section identifies the active provider used for additional
+Set information. When Brickset is connected and within the configured daily request threshold,
+BrickSuite can use Brickset enrichment.</p>
 
-<p>Choose the Set's Build action when you want BrickSuite to begin managing that Set as an actual
-project. BrickSuite confirms the Set and the inventory mode before creating the Build.</p>
+<p>Brickset enrichment can include:</p>
+<ul>
+<li>Brickset Set ID</li>
+<li>Theme and subtheme information</li>
+<li>Minifigure count</li>
+<li>Availability/category information</li>
+<li>Brickset rating</li>
+<li>Instruction count</li>
+<li>Additional-image count</li>
+<li>A provider link that opens the Set on Brickset</li>
+</ul>
 
-<img class="dialog" src="images/sets_catalog_create_build.png"
-     alt="Create Build confirmation for Set 77239-1">
+<p>The <b>Status</b> line summarizes the provider state for the current Set and can also show
+session information such as how many Brickset <code>getSets</code> calls have been made.</p>
 
-<p>In the example shown, BrickSuite will create a Build for
-<b>77239-1 — Porsche 911 GT3 RS Super Car</b> using <b>Complete Set</b> inventory mode. The new
-Build begins with status <b>Planned</b>.</p>
+<div class="note"><b>Provider fallback:</b> If Brickset is unavailable or BrickSuite has reached
+the configured Brickset daily request threshold, supported Set Details workflows can fall back to
+Rebrickable. BrickSuite identifies the active provider in the Set Details dialog so you can see
+which source supplied the information.</div>
 
-<p>Choose <b>Yes</b> to create the Build or <b>No</b> to leave the Sets Catalog unchanged.</p>
+<p>Provider configuration, connection testing, and the Brickset daily request threshold are
+described in <a href="settings.html"><b>Settings</b></a>.</p>
 
-<p>After creation, continue on the <a href="builds.html"><b>Builds</b></a> page. From there,
-BrickSuite can manage requirements, inventory allocation, missing parts, pulling pieces, Build
-completion, and later lifecycle operations.</p>
+<h2>View Instructions</h2>
 
-<h2>Sets Catalog vs. Builds</h2>
+<p>When Brickset enrichment is active and instruction information is available, Set Details shows
+a <b>View Instructions</b> button. Choose it to open the instruction list.</p>
 
-<p>The distinction between the two areas is important:</p>
+<img class="screenshot" src="images/sets_catalog_instructions.png"
+     alt="BrickSuite Set Instructions dialog">
 
-<pre>
-Sets Catalog
-  What Sets exist?
-  What reference information is known about a Set?
+<p>The Instructions dialog lists the available instruction files and identifies their type and
+description. Choose <b>Open</b> for the instruction you want to view.</p>
 
-Builds
-  Which Set or MOC am I actually planning or assembling?
-  What pieces does it require?
-  Which pieces are available?
-  Which pieces are missing?
-  What inventory has been allocated or pulled?
-</pre>
+<p>BrickSuite does not host the instruction PDF itself. Instruction information is provided by
+Brickset and the PDF is hosted by LEGO. Choosing <b>Open</b> launches the selected PDF using your
+system's default web browser.</p>
 
-<p>Creating a Build does not remove or alter the Set in the catalog. The catalog remains the
-reference source while the Build records your working state.</p>
+<div class="note"><b>Why the button may not appear:</b> <b>View Instructions</b> is shown only
+when the active provider supports instruction information and instructions are available for the
+Set. When BrickSuite is using a Rebrickable fallback, Brickset-only instruction controls are not
+shown.</div>
 
-<h2>Updating Rebrickable Set Reference Data</h2>
+<h2>Provider Links</h2>
 
-<p>Use <b>Import Rebrickable sets.csv</b> to update BrickSuite's local Sets Catalog from a
-Rebrickable Sets CSV file. This keeps normal catalog browsing local while allowing newer Set
-reference data to be incorporated into BrickSuite.</p>
+<p>The provider link near the bottom of Set Details opens the current Set on the active provider's
+website using the system's default browser. For Brickset enrichment, the link is labeled
+<b>Open on Brickset</b>.</p>
 
-<p>This reference-data import is separate from importing your owned loose-parts inventory.</p>
+<h2>Create a Build from a Set</h2>
+
+<p>Use the Set row's <b>Actions...</b> control to create a Build from the selected Set when you
+want BrickSuite to track that Set as a buildable project. BrickSuite can then compare the Build's
+requirements with your available inventory.</p>
+
+<img class="screenshot" src="images/sets_catalog_create_build.png"
+     alt="Create a BrickSuite Build from a Set">
+
+<p>For Build lifecycle and requirement management, see
+<a href="builds.html"><b>Builds</b></a>. For allocation behavior, see
+<a href="allocate_available.html"><b>Allocate Available</b></a>.</p>
+
+<h2>Set Images</h2>
+
+<p>BrickSuite caches Set images locally when they are available. A cached image can be displayed
+without downloading it again each time Set Details is opened.</p>
 
 <h2>Related Help</h2>
 
-<p><a href="getting_started.html">Getting Started</a> |
-<a href="parts_catalog.html">Parts Catalog</a> |
+<p><a href="quick_start.html">Quick Start</a> |
+<a href="settings.html">Settings</a> |
 <a href="builds.html">Builds</a> |
-<a href="missing_parts.html">Missing Parts</a></p>
+<a href="allocate_available.html">Allocate Available</a> |
+<a href="troubleshooting.html">Troubleshooting</a></p>
 
-</body>
-</html>
+</body></html>

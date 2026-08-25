@@ -231,6 +231,8 @@ void HelpDialog::buildContents()
     gettingStarted->setText(0, "Getting Started");
     gettingStarted->setData(0, TopicRole, static_cast<int>(HelpTopic::GettingStarted));
 
+    addTopicItem(m_contentsTree, HelpTopic::QuickStart, "Quick Start");
+
     auto* inventoryGroup = new QTreeWidgetItem(m_contentsTree);
     inventoryGroup->setText(0, "Inventory & Storage");
 

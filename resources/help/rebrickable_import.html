@@ -16,122 +16,130 @@ img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px au
 
 <h1>Rebrickable Import</h1>
 
-<p>BrickSuite can import an owned-parts CSV exported from Rebrickable into
-<a href="inventory.html">My Inventory</a>. The import workflow lets you choose the destination
-Storage location and inventory attributes, preview exactly what the CSV will do, and then decide
-whether to apply the changes.</p>
+<p>BrickSuite can use an owned-parts or parts-list CSV exported from Rebrickable to add, replace,
+subtract, or compare loose inventory in <a href="inventory.html">My Inventory</a>. Every operation
+is previewed first so you can review its effect before changing BrickSuite inventory.</p>
 
-<h2>Import Workflow</h2>
+<h2>Select the CSV and Operation</h2>
 
-<pre>
-Rebrickable owned-parts CSV
-          |
-      Select File
-          |
- Choose Storage, Condition,
-      and Ownership
-          |
-        Preview
-          |
-   Review Before / After
-          |
-        Import
-          |
-     My Inventory
-          |
-   Inventory History
-</pre>
+<p>From <b>My Inventory</b>, choose the <b>Import CSV</b> button and browse to the Rebrickable CSV
+you want to use. Choose the operation before continuing.</p>
 
-<h2>Selecting the CSV and Destination</h2>
+<img class="dialog" src="images/rebrickable_import_operations.png"
+     alt="Rebrickable inventory import operation choices">
 
-<p>From <b>My Inventory</b>, choose <b>Import CSV</b>. Browse to the Rebrickable owned-parts CSV
-you want to import.</p>
+<p>BrickSuite provides four operations:</p>
+
+<ul>
+<li><b>Append</b> — add the CSV quantities to the matching BrickSuite inventory.</li>
+<li><b>Replace</b> — make the matching BrickSuite inventory reflect the quantities represented by
+the selected CSV for the chosen import context.</li>
+<li><b>Subtract</b> — remove the CSV quantities from matching BrickSuite inventory.</li>
+<li><b>Compare Only</b> — compare Rebrickable quantities with BrickSuite without changing local
+inventory.</li>
+</ul>
+
+<div class="note"><b>Choose the operation deliberately.</b> Append, Replace, and Subtract can
+change inventory after you approve their previews. Compare Only is read-only with respect to
+BrickSuite inventory.</div>
+
+<h2>Append, Replace, and Subtract Setup</h2>
+
+<p>For inventory-changing operations, choose the destination Storage location and the Condition
+and Ownership values that apply to the imported parts. Then choose <b>Preview</b>.</p>
 
 <img class="dialog" src="images/rebrickable_import_file.png"
      alt="Import Rebrickable Inventory CSV dialog">
 
-<p>Choose the Storage location where the imported loose parts physically belong, along with the
-Condition and Ownership values that should be assigned to the imported inventory.</p>
+<p>When a Rebrickable parts-list filename corresponds closely to an existing Storage location,
+BrickSuite can use that information to help select the destination. Always verify the Storage field
+before continuing.</p>
 
-<p>In this example, the file <b>rebrickable_parts_bricks-curved (1).csv</b> is being imported as
-<b>Used</b>, <b>Owned</b> inventory into
-<b>Cabinet Bricks / Round Curved Bricks</b>.</p>
+<h2>Preview Before Applying</h2>
 
-<div class="note"><b>Filename assistance:</b> When a Rebrickable parts-list filename corresponds
-closely to an existing Storage location, BrickSuite can use that information to help select the
-destination. Always verify the Storage field before continuing; the selected location is where the
-imported inventory will be recorded.</div>
-
-<h2>Previewing the Import</h2>
-
-<p>Choosing <b>Import</b> from the first dialog opens an <b>Import Preview</b> before any inventory
-changes are committed. Use this preview to verify the CSV contents and the effect each row will
-have.</p>
+<p>The preview shows the CSV quantity, current BrickSuite quantity, the projected result for the
+selected operation, the difference, status, and any validation error.</p>
 
 <img class="screenshot" src="images/rebrickable_import_preview.png"
-     alt="Rebrickable inventory Import Preview">
+     alt="Append Inventory Preview">
 
-<p>The preview summary shows the source filename, rows processed, valid rows, errors, and total
-piece quantity. The table then compares each CSV row with the current BrickSuite inventory.</p>
+<p>For an Append operation, <b>After Append</b> shows the quantity that will exist after the CSV
+quantity is added. The preview button changes to an operation-specific action such as
+<b>Apply Append</b>.</p>
 
-<p>The key columns are:</p>
+<div class="note"><b>Preview is the safety check.</b> Review the rows, quantities, colors, projected
+results, and errors before applying the operation. Choose <b>Cancel</b> if the result is not what
+you expected.</div>
+
+<h2>Compare Only</h2>
+
+<p><b>Compare Only</b> is intended for reconciling a Rebrickable parts list with the corresponding
+BrickSuite inventory without changing BrickSuite.</p>
+
+<img class="screenshot" src="images/rebrickable_import_sync_preview.png"
+     alt="Compare Only Inventory Preview">
+
+<p>The comparison identifies the Rebrickable quantity, BrickSuite quantity, Difference, and the
+action needed to make Rebrickable agree with BrickSuite.</p>
+
+<p>The Action column can show:</p>
 
 <ul>
-<li><b>CSV Qty</b> — quantity requested by the CSV.</li>
-<li><b>Current Qty</b> — quantity BrickSuite currently has for the matching inventory.</li>
-<li><b>After Sync</b> — quantity that will exist after the import is applied.</li>
-<li><b>Status</b> — the action represented by the row, such as <b>New Inventory</b>.</li>
-<li><b>Error</b> — validation information when a row cannot be processed normally.</li>
+<li><b>Append to Rebrickable</b> — BrickSuite has more pieces than the Rebrickable list.</li>
+<li><b>Subtract from Rebrickable</b> — Rebrickable has more pieces than BrickSuite.</li>
 </ul>
 
-<p>In the example shown, BrickSuite processed <b>95 rows</b>, all 95 were valid, there were
-<b>0 errors</b>, and the CSV represents <b>169 total pieces</b>.</p>
+<p>The summary above the table reports compared rows, matches, the number of rows/pieces that would
+need to be appended to Rebrickable, the number that would need to be subtracted from Rebrickable,
+and any errors.</p>
 
-<div class="note"><b>Preview is the safety check.</b> Review the rows, quantities, colors, and
-statuses before committing the import. Choose <b>Cancel</b> if the preview is not what you
-expected.</div>
+<h2>Export Reconciliation CSV Files</h2>
 
-<h2>Completing the Import</h2>
+<p>The Compare Only preview can create two reconciliation files:</p>
 
-<p>When the preview is correct, choose <b>Import</b>. BrickSuite applies the previewed inventory
-changes and reports the completed result.</p>
+<ul>
+<li><b>Export Append CSV...</b> — quantities that need to be added to Rebrickable.</li>
+<li><b>Export Subtract CSV...</b> — quantities that need to be removed from Rebrickable.</li>
+</ul>
+
+<p>These files let you make the corresponding changes on the Rebrickable side while keeping the
+comparison itself read-only in BrickSuite.</p>
+
+<div class="note"><b>Direction matters:</b> The actions and export files are described from the
+perspective of changing Rebrickable to match BrickSuite. Compare Only does not alter BrickSuite
+inventory.</div>
+
+<h2>Completing an Inventory-Changing Operation</h2>
+
+<p>When an Append, Replace, or Subtract preview is correct, choose its operation-specific Apply
+button. BrickSuite performs the previewed changes and reports the result.</p>
 
 <img class="dialog" src="images/rebrickable_import_complete.png"
-     alt="Successful Rebrickable inventory import">
+     alt="Successful Rebrickable inventory operation">
 
-<p>The example import completed successfully with <b>95 rows imported</b> and
-<b>169 total pieces added</b>.</p>
-
-<p>If the preview contains invalid rows or an import encounters a genuine failure, review the
+<p>If the preview contains invalid rows or the operation encounters a genuine failure, review the
 reported error information rather than assuming all CSV rows were applied.</p>
 
-<h2>Verifying the Result in My Inventory</h2>
+<h2>Verify the Result in My Inventory</h2>
 
-<p>After the import, return to My Inventory and filter by the destination Storage location or
-search for one of the imported parts.</p>
+<p>After an inventory-changing operation, return to My Inventory and filter by the applicable
+Storage location or search for one of the affected parts.</p>
 
 <img class="screenshot" src="images/rebrickable_import_inventory.png"
-     alt="Imported Rebrickable inventory in My Inventory">
+     alt="Rebrickable inventory result in My Inventory">
 
-<p>Here, filtering Storage to <b>Shelf Top / Bricks Round &amp; Curved</b> shows the resulting
-inventory records, including multiple colors of <b>11477 — Brick Curved 2 x 1 No Studs
-[1/2 Bow]</b>. The result contains <b>120 inventory records</b>.</p>
+<p>The resulting records appear with their part/color quantities, physical Storage location,
+Manufacturer, Condition, and Ownership values just like inventory entered manually.</p>
 
-<p>The inventory table now shows the imported part/color quantities alongside their physical
-Storage location, Condition, and Ownership values just like inventory entered manually.</p>
+<h2>Inventory History and Provenance</h2>
 
-<h2>Import and Inventory History</h2>
+<p>Inventory-changing Rebrickable CSV operations are recorded in BrickSuite's inventory history.
+History can include the operation, quantity, Storage information, and source CSV filename. This
+makes it possible to trace how inventory entered or changed within the Workspace.</p>
 
-<p>Rebrickable CSV imports are recorded in BrickSuite's inventory history. The history can include
-the import event, quantity, destination Storage location, and the source CSV filename. This makes
-it possible to trace how inventory entered the Workspace later.</p>
-
-<p>Choose <b>History</b> from an inventory row's Actions menu to inspect those events. See
-<a href="inventory.html"><b>My Inventory</b></a> for more information about movement history.</p>
+<p>Choose <b>View History</b> from an inventory row's Actions menu to inspect those events.</p>
 
 <h2>Different Rebrickable CSV Files Have Different Purposes</h2>
-
-<p>BrickSuite uses several kinds of Rebrickable CSV data. They should not be confused:</p>
 
 <pre>
 parts.csv
@@ -140,27 +148,32 @@ parts.csv
 sets.csv
   Updates Sets Catalog reference data.
 
+part_relationships.csv
+  Updates part relationship reference data.
+
 Owned-parts / parts-list CSV
-  Synchronizes your physical loose parts into My Inventory.
+  Adds, replaces, subtracts, or compares loose inventory.
 
 MOC CSV
   Supplies part requirements for a MOC Build.
 </pre>
 
-<p>The Parts and Sets Catalog imports maintain BrickSuite's local reference library. An
-owned-parts CSV represents physical inventory. A MOC CSV represents Build requirements rather than
-loose inventory.</p>
+<p>The catalog CSV files maintain BrickSuite's local reference data. An owned-parts or parts-list
+CSV represents physical inventory or a comparison source. A MOC CSV represents Build requirements
+rather than loose inventory.</p>
 
-<h2>Practical Import Guidance</h2>
+<h2>Practical Guidance</h2>
 
 <ul>
-<li>Export a Rebrickable parts list that represents the physical group of parts you intend to
-store together.</li>
-<li>Choose or verify the matching BrickSuite Storage location.</li>
-<li>Set the appropriate Condition and Ownership values.</li>
-<li>Read the preview before committing the import.</li>
-<li>After importing, verify the result in My Inventory.</li>
-<li>Use History later if you need to determine where an inventory quantity originated.</li>
+<li>Choose the operation before reviewing the rest of the import settings.</li>
+<li>For Append, Replace, or Subtract, verify Storage, Condition, and Ownership.</li>
+<li>Read the preview before applying any inventory-changing operation.</li>
+<li>Use Compare Only when you want to reconcile Rebrickable against BrickSuite without modifying
+BrickSuite inventory.</li>
+<li>Use the exported Append/Subtract CSV files when you need to update Rebrickable to match the
+comparison result.</li>
+<li>After a changing operation, verify the result in My Inventory and use View History if you need
+to trace its origin.</li>
 </ul>
 
 <h2>Related Help</h2>
@@ -168,6 +181,7 @@ store together.</li>
 <p><a href="inventory.html">My Inventory</a> |
 <a href="storage.html">Storage</a> |
 <a href="parts_catalog.html">Parts Catalog</a> |
+<a href="quick_start.html">Quick Start</a> |
 <a href="mocs.html">MOCs</a></p>
 
 </body>

@@ -18,47 +18,101 @@ img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px au
 
 <p><b>My Inventory</b> is the working view of the loose parts you own and can use. Unlike the
 <a href="parts_catalog.html">Parts Catalog</a>, which describes part designs, My Inventory records
-the actual part/color combinations in your Workspace, their quantities, condition, ownership, and
-physical Storage locations.</p>
+the actual part/color combinations in your Workspace, their quantities, Storage locations,
+manufacturer, condition, and ownership.</p>
 
 <h2>Browsing and Finding Inventory</h2>
-
-<p>The inventory table shows the part image, part number, name, category, color, quantity, Storage
-location, condition, ownership, and an <b>Actions</b> menu.</p>
 
 <img class="screenshot" src="images/inventory_overview.png"
      alt="BrickSuite My Inventory overview">
 
-<p>Use <b>Search</b> to find inventory by part number or name. Category, Color, and Storage filters
-can be used independently or together to narrow the result. Choose <b>Search</b> after selecting
-the criteria you want to apply.</p>
+<p>Use the Search field to find inventory by part number or name. The Category, Color, Storage,
+and Manufacturer filters can be used independently or together to narrow the results. Choose
+<b>Search</b> after selecting the criteria you want to apply.</p>
+
+<p>The inventory table shows the part image, part number, name, category, color, quantity,
+Storage location, Manufacturer, Condition, Ownership, and an <b>Actions...</b> control.</p>
 
 <p>The message above the table identifies the currently displayed result range. The summary below
 the table shows the number of inventory records matching the current criteria, while the pager at
 the lower right moves through larger result sets.</p>
 
 <div class="note"><b>Inventory record vs. quantity:</b> An inventory record represents a particular
-part/color/condition/ownership/location combination. Its <b>Qty</b> column tells you how many
-pieces that record currently represents.</div>
+part/color/location/manufacturer/condition/ownership combination. Its <b>Qty</b> column tells you
+how many pieces that record currently represents.</div>
+
+<h2>Inventory Actions</h2>
+
+<p>Open a row's <b>Actions...</b> control to work with that inventory record.</p>
+
+<img class="screenshot" src="images/inventory_actions.png"
+     alt="BrickSuite My Inventory Actions menu">
+
+<p>The current actions are:</p>
+
+<ul>
+<li><b>Details</b> — view the selected part/inventory details.</li>
+<li><b>Edit</b> — maintain editable inventory attributes and quantity.</li>
+<li><b>Move</b> — physically relocate some or all of the quantity to another Storage location.</li>
+<li><b>Mark Lost</b> — report pieces that BrickSuite expects to exist but that cannot currently be found.</li>
+<li><b>View History</b> — review the events that produced the current inventory state.</li>
+</ul>
 
 <h2>Adding Loose Parts</h2>
 
-<p>Choose <b>Add Part...</b> when you want to add loose pieces directly from My Inventory. Select
-the part, color, Storage location, condition, ownership type, and quantity.</p>
+<p>Choose <b>Add Part...</b> when you want to add loose pieces directly from My Inventory.
+Begin by entering or selecting the part in the <b>Part</b> field. BrickSuite's Part Resolver
+interprets the entry and shows the result on the <b>Resolved</b> line before the inventory is
+added.</p>
 
 <img class="dialog" src="images/inventory_add.png"
-     alt="Add Part to Inventory dialog for part 3001 in Black">
+     alt="Add Part to Inventory dialog with Part Resolver">
 
-<p>In this example, BrickSuite is ready to add ten used, owned
-<b>3001 — Brick 2 x 4</b> pieces in <b>Black</b> to
-<b>Cabinet Bricks / Basic Bricks / Black</b>.</p>
+<p>For example, when the entered part matches a catalog part directly, the resolver reports
+<b>Exact catalog selection</b>. This gives you a visible confirmation of the part identity before
+you choose the remaining inventory attributes.</p>
 
-<p>The <b>Show all colors</b> option makes the complete color list available when the normal known
-colors for the selected part do not include the color you need. <b>Keep Open</b> is useful when
-entering several parts in succession.</p>
+<p>After the part is resolved, select the Color, Storage location, Manufacturer, Condition,
+Ownership, and Quantity. The <b>Show all colors</b> option makes the complete color list available
+when the normal known colors for the selected part do not include the color you need.
+<b>Keep Open</b> is useful when entering several parts in succession.</p>
 
 <p>You can also begin this workflow from <a href="parts_catalog.html">Parts Catalog</a> by choosing
 <b>Add to Inventory</b> for a catalog part.</p>
+
+<h2>Part Resolver</h2>
+
+<p>The <b>Part Resolver</b> helps BrickSuite identify the part you mean even when the number you
+have is not the catalog identity BrickSuite ultimately uses. This is especially useful when
+working with older LEGO parts whose molded or historical part number has been superseded, aliased,
+or otherwise mapped to another part number.</p>
+
+<p>As you enter or select a part in the Add Part dialog, BrickSuite evaluates the identity and
+reports the result on the <b>Resolved</b> line. A direct current-catalog match is reported as an
+exact catalog selection. When BrickSuite recognizes another supported identity, the resolver can
+follow its mapping data and identify the corresponding catalog part.</p>
+
+<img class="dialog" src="images/inventory_part_resolver.png"
+     alt="BrickSuite Part Resolver showing an alias match">
+
+<p>In the example above, BrickSuite reports <b>Alias Match — PartNumberMapping / Rebrickable</b>.
+This tells you that the entered/selected identity was resolved through BrickSuite's part-number
+mapping data rather than being treated as an unrelated new part.</p>
+
+<div class="note"><b>Why this matters:</b> Physical LEGO parts, older inventories, provider data,
+and current catalogs do not always use the same part number for the same related design. Resolving
+those identities helps BrickSuite keep inventory and Build comparisons associated with the
+appropriate catalog part instead of unnecessarily fragmenting them across alternate numbers.</div>
+
+<p>The resolver uses BrickSuite's available part identity and relationship data. This is one
+reason the <code>part_relationships.csv</code> setup step is important. Keeping the Parts Catalog
+and relationship data current gives BrickSuite more information to use when interpreting older,
+alternate, or related part numbers.</p>
+
+<p>The resolution is deliberately visible before you add the inventory. Check the <b>Resolved</b>
+line whenever BrickSuite reports an alias or relationship-based match so you can confirm that the
+identified part is the one you intend to inventory. After confirming the resolution, choose the
+remaining Color, Storage, Manufacturer, Condition, Ownership, and Quantity values normally.</p>
 
 <h2>Editing an Inventory Record</h2>
 
@@ -66,11 +120,7 @@ entering several parts in succession.</p>
 attributes or quantity.</p>
 
 <img class="dialog" src="images/inventory_edit.png"
-     alt="Edit Inventory dialog for part 3002 in Blue">
-
-<p>The example shows four used, owned <b>3002 — Brick 2 x 3</b> pieces in Blue. The Edit workflow
-lets you maintain the color, condition, ownership, and quantity associated with the selected
-inventory record.</p>
+     alt="Edit Inventory dialog">
 
 <div class="note"><b>Edit does not relocate inventory.</b> If the physical pieces are moving to a
 different Storage location, use <b>Move</b> instead. This lets BrickSuite preserve the movement in
@@ -78,76 +128,63 @@ the inventory history.</div>
 
 <h2>Moving Inventory</h2>
 
-<p>Choose <b>Move</b> from the Actions menu when pieces are physically relocated. BrickSuite shows
-the current Storage location and available quantity, then asks for the destination and the number
-of pieces to move.</p>
+<p>Choose <b>Move</b> when pieces are physically relocated. BrickSuite shows the current Storage
+location and available quantity, then asks for the destination and the number of pieces to move.</p>
 
 <img class="dialog" src="images/inventory_move.png"
-     alt="Move Inventory dialog for part 3002">
-
-<p>Here, all four available 3002 pieces are being prepared to move from
-<b>Shelf Top / Bricks</b> to <b>Cabinet Bricks / Basic Bricks / Other Colors</b>.</p>
+     alt="Move Inventory dialog">
 
 <p>You do not have to move the entire available quantity. Enter a smaller quantity to perform a
-partial move. BrickSuite keeps the remaining pieces in the source record and transfers the selected
-quantity to the destination as appropriate.</p>
+partial move. BrickSuite keeps the remaining pieces in the source record and transfers the
+selected quantity to the destination as appropriate.</p>
 
 <h2>Inventory History</h2>
 
-<p>Choose <b>History</b> to see how a selected part/color inventory has changed over time. History
-is useful for answering questions such as where pieces came from, when they were imported, and
-where they were moved.</p>
+<p>Choose <b>View History</b> to see how a selected part/color inventory has changed over time.
+History is useful for answering questions such as where pieces came from, when they were imported,
+and where they were moved.</p>
 
 <img class="screenshot" src="images/inventory_history.png"
-     alt="Inventory History for part 3002 in Blue">
+     alt="BrickSuite Inventory History">
 
-<p>The example history for <b>3002 — Brick 2 x 3 / Blue</b> shows several CSV imports followed by
-a Move event. Each row can record the date and time, event type, quantity, source and destination,
-condition, ownership, reference, and details or notes.</p>
+<p>History can record the date and time, event type, quantity, source and destination, condition,
+ownership, reference, and details or notes. References such as a Rebrickable CSV filename make
+imported inventory traceable to the operation that created it.</p>
 
-<p>References such as the Rebrickable CSV filename make imported inventory traceable to the
-operation that created it.</p>
+<h2>Manufacturer and Provenance</h2>
 
-<h2>Edit, Move, and History</h2>
+<p>The Manufacturer column and filter help distinguish LEGO inventory from supported non-LEGO or
+otherwise identified inventory. BrickSuite keeps manufacturer/provenance information as part of
+the inventory identity so different sources are not silently treated as the same physical stock.</p>
 
-<p>These three operations have different purposes:</p>
+<p>When importing or resolving provider data, BrickSuite uses its current identity and mapping
+information to maintain that distinction. If a manufacturer value is important to your workflow,
+verify it in My Inventory after the related import or resolution operation.</p>
 
-<pre>
-Edit
-  Maintain the inventory record and quantity.
+<h2>Importing and Comparing Inventory</h2>
 
-Move
-  Physically relocate pieces and record the movement.
+<p>Choose <b>Import CSV</b> to work with an owned-parts or parts-list CSV exported from
+Rebrickable. BrickSuite supports Append, Replace, Subtract, and Compare Only operations, all of
+which are previewed before any changes are committed.</p>
 
-History
-  Review the events that produced the current inventory state.
-</pre>
-
-<p>Using the dedicated Move workflow rather than treating a location change as a simple edit is
-what allows BrickSuite to maintain the digital history of the physical inventory.</p>
-
-<h2>Importing Inventory</h2>
-
-<p>Choose <b>Import CSV</b> to preview and import an owned-parts CSV exported from Rebrickable.
-Imported rows become loose inventory in the selected Workspace and are recorded in inventory
-history.</p>
-
-<p>See <a href="rebrickable_import.html"><b>Rebrickable Import</b></a> for the complete preview,
-Storage selection, and import workflow.</p>
+<p>See <a href="rebrickable_import.html"><b>Rebrickable Import</b></a> for the complete workflow,
+including comparison and reconciliation exports.</p>
 
 <h2>Lost Inventory</h2>
 
 <p>If pieces that BrickSuite expects to be in inventory cannot be physically located, use
-<b>Lost Inventory...</b> rather than deleting or artificially adjusting the record. The Lost/Found
-workflow preserves what happened and supports returning a piece when it is found later.</p>
+<b>Lost Inventory...</b> or <b>Mark Lost</b> rather than deleting or artificially adjusting the
+record. The Lost/Found workflow preserves what happened and supports returning a piece when it is
+found later.</p>
 
 <p>See <a href="lost_found.html"><b>Lost / Found</b></a> for details.</p>
 
 <h2>Inventory and Builds</h2>
 
 <p>Build workflows can allocate, pull, return, or otherwise change the availability of loose
-inventory. BrickSuite keeps those operations connected to the Build workflow so the current
-inventory state remains traceable.</p>
+inventory. Complete Set Builds can also release spare pieces to My Loose Inventory and, when
+disassembled, return selected Set pieces to chosen Storage locations. BrickSuite keeps those
+operations connected to the Build workflow so the current inventory state remains traceable.</p>
 
 <p>See <a href="builds.html"><b>Builds</b></a>,
 <a href="allocate_available.html"><b>Allocate Available</b></a>, and

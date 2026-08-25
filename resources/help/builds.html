@@ -11,263 +11,240 @@ h3 { margin-top: 1.2em; }
 img.screenshot { display:block; max-width:100%; height:auto; margin:14px auto 18px auto; }
 img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px auto; }
 .note { border-left:4px solid #888; padding-left:10px; margin:14px 0; }
+code { font-family: monospace; }
 </style>
 </head>
 <body>
 
 <h1>Builds</h1>
 
-<p>A <b>Build</b> is BrickSuite's working representation of a Set or MOC that you plan to assemble
-or manage. The catalog or MOC definition supplies the requirements; the Build records the working
-state as pieces are allocated, physically pulled, reconciled, and ultimately completed.</p>
-
-<p>The Builds page is where BrickSuite connects digital requirements to your physical loose
-inventory.</p>
-
-<h2>Builds Overview</h2>
+<p><b>Builds</b> represent Sets and MOCs that you want BrickSuite to track against your available
+inventory. A Build contains requirements, allocations, status, and the activity needed to move
+from planning through pulling, completion, cancellation, or disassembly.</p>
 
 <img class="screenshot" src="images/builds_overview.png"
-     alt="BrickSuite Builds page">
+     alt="BrickSuite Builds overview">
 
-<p>The upper <b>New Build</b> area can create a Set or MOC Build. The Builds table lists existing
-projects with their type, Set or MOC number, Inventory Mode, name, status, notes, and Actions menu.
-Selecting a Build displays its requirements in the lower portion of the page.</p>
+<h2>Build List</h2>
 
-<p>The example contains a completed MOC Build named <b>Car</b> and two Planned Complete Set Builds,
-including <b>77239-1 — Porsche</b>. The summary at the bottom reports three Builds.</p>
+<p>The Builds tab shows your current Builds and provides filters for finding the project you want
+to work with. Each Build row includes its identity, type/status information, and an
+<b>Actions...</b> control for the workflows available in its current state.</p>
 
-<p><b>Show Archived</b> includes archived Builds in the list. BrickSuite remembers this setting
-between sessions.</p>
+<p>BrickSuite keeps Build lifecycle changes in the database rather than deleting completed or
+inactive work. This preserves history and lets archived or cancelled Builds remain traceable.</p>
 
-<h2>Set Builds and MOC Builds</h2>
+<h2>Build Actions</h2>
 
-<p>A Set Build is based on a Set definition, while a MOC Build uses custom requirements. Both
-ultimately use the same Build Requirements model: each required part/color combination is compared
-with inventory and tracked through the Build lifecycle.</p>
-
-<p>Set Builds can be created directly from the <a href="sets_catalog.html">Sets Catalog</a>.
-MOC requirements can be imported from CSV. See <a href="mocs.html">MOCs</a> for the MOC-specific
-workflow.</p>
-
-<h2>Inventory Modes</h2>
-
-<p>The Build records an <b>Inventory Mode</b>. The screenshots in this guide show both
-<b>Complete Set</b> and <b>Build from Stock</b> Builds. The mode describes how the Build is being
-managed and determines the appropriate inventory workflow.</p>
-
-<h2>Loading and Reviewing Requirements</h2>
-
-<p>Selecting a Planned Build displays its requirements. For a Set Build, use
-<b>Load Set from Rebrickable</b> when the Set requirements need to be loaded.</p>
-
-<img class="screenshot" src="images/builds_planned_details.png"
-     alt="Planned Porsche Build and its requirements">
-
-<p>Each requirement identifies the part and color and shows quantities that describe the current
-Build and inventory state. Important columns include:</p>
-
-<ul>
-<li><b>Required</b> — total quantity required by the Build.</li>
-<li><b>Pulled</b> — quantity physically pulled and reconciled for the Build.</li>
-<li><b>Remaining</b> — quantity still required after pulled pieces.</li>
-<li><b>Owned</b> — matching loose inventory owned by the Workspace.</li>
-<li><b>This Build</b> — matching inventory currently allocated to this Build.</li>
-<li><b>Other Builds</b> — matching inventory allocated elsewhere.</li>
-<li><b>Available</b> — inventory currently available for allocation.</li>
-<li><b>Missing</b> — quantity the Build still cannot satisfy from available inventory.</li>
-<li><b>Spare</b> — identifies a spare requirement.</li>
-</ul>
-
-<img class="screenshot" src="images/builds_requirements.png"
-     alt="Build Requirements table">
-
-<p>This view is the central picture of Build readiness. It lets you see not only what the Build
-needs, but how those requirements relate to the inventory shared across the Workspace.</p>
-
-<h2>Allocate Available</h2>
-
-<p><b>Allocate Available</b> reserves available loose inventory for the selected Build. Allocation
-answers the question: <b>Which pieces in my inventory are intended for this Build?</b></p>
-
-<img class="dialog" src="images/builds_auto_allocate.png"
-     alt="Allocate Available result">
-
-<p>In the example, BrickSuite allocated <b>231 pieces</b>. All <b>93 requirements</b> were fully
-satisfied, with 0 partial requirements and 0 missing requirements.</p>
-
-<div class="note"><b>Allocation is not the same as pulling.</b> Allocated pieces are still part of
-the physical loose inventory. Allocation reserves them for the Build. They are not treated as
-physically removed from storage until the pull-list reconciliation workflow records what was
-actually pulled.</div>
-
-<p>See <a href="allocate_available.html"><b>Allocate Available</b></a> for the detailed allocation
-workflow.</p>
-
-<h2>Checking for Missing Parts</h2>
-
-<p>If available inventory cannot satisfy every non-spare requirement, BrickSuite can identify and
-export the shortage. If nothing is missing, BrickSuite reports that directly.</p>
-
-<img class="dialog" src="images/builds_missing_parts.png"
-     alt="Build has no missing non-spare parts">
-
-<p>In this example, the Build has no missing non-spare parts and is ready to proceed to physical
-pulling. See <a href="missing_parts.html"><b>Missing Parts</b></a> for shortage handling and
-export.</p>
-
-<h2>Exporting the Pull List</h2>
-
-<p>When inventory has been allocated and you are ready to retrieve the pieces from physical
-storage, choose <b>Export Pull List CSV</b>.</p>
-
-<img class="dialog" src="images/builds_export_pull_list.png"
-     alt="Export Build Pull List CSV">
-
-<p>Save the CSV in a convenient working location. The pull list is the bridge between BrickSuite's
-digital allocation and the physical task of collecting the pieces.</p>
-
-<h2>Physically Pull the Parts and Record the Result</h2>
-
-<p>Open the exported CSV in your preferred spreadsheet or CSV editor. Work through the list at the
-physical storage locations and enter the quantity you actually pulled in the CSV's
-<b>Pulled</b> field. Save the file when the physical pull is complete.</p>
-
-<p>Recording the actual quantity matters. The exported allocation describes what BrickSuite
-expects to be available; the completed pull list records what you physically found and removed
-from storage.</p>
-
-<h2>Importing the Completed Pull List</h2>
-
-<p>Return to the Build and choose <b>Import Pull List CSV</b>. Select the CSV that now contains the
-actual Pulled quantities.</p>
-
-<img class="screenshot" src="images/builds_import_pull_list_pulled.png"
-     alt="Import Pull List reconciliation preview">
-
-<p>BrickSuite previews the reconciliation before changing inventory. In the example, all
-<b>95 rows</b> are classified as <b>Exact Pull</b>, with 0 Partial Pull, 0 Zero Pull, and
-0 Problems.</p>
-
-<p>The preview compares the allocated quantity with the reported pulled quantity and classifies
-each row. This is the opportunity to review the physical results before committing them to the
-database.</p>
-
-<div class="note"><b>No database changes have been made at the preview stage.</b> If the imported
-results do not match what you intended, cancel the reconciliation and correct the CSV or physical
-pull information first.</div>
-
-<h2>Reconciling the Pull List</h2>
-
-<p>When the preview is correct, choose <b>Reconcile Pull List</b>. BrickSuite displays a final
-confirmation describing the database changes that will occur.</p>
-
-<img class="dialog" src="images/builds_reconcile.png"
-     alt="Confirm pull-list reconciliation">
-
-<p>Reconciliation records the pieces as physically pulled for the Build, removes the reconciled
-quantities from loose inventory as appropriate, and updates the Build requirements and allocations
-to reflect what actually happened.</p>
-
-<p>Choose <b>Yes</b> only after verifying the preview and confirming that the CSV represents the
-physical pull.</p>
-
-<h2>After Reconciliation</h2>
-
-<img class="screenshot" src="images/builds_after_reconciled.png"
-     alt="Build Requirements after pull-list reconciliation">
-
-<p>After reconciliation, the Build Requirements table reflects the pulled pieces. The
-<b>Pulled</b> quantities are populated and the Build's working state now agrees with the pieces
-that were physically removed from loose storage.</p>
-
-<p>This is the point at which the digital Build and the physical parts have been reconciled. The
-pieces can now be assembled with confidence that BrickSuite has recorded the pull.</p>
-
-<h2>Completing the Build</h2>
-
-<p>When assembly is complete and the Build requirements are fulfilled, use the Build's
-<b>Complete</b> action. BrickSuite verifies the requirement state before asking for final
-confirmation.</p>
-
-<img class="dialog" src="images/builds_completed.png"
-     alt="Complete Build confirmation">
-
-<p>The example confirmation for the <b>Car</b> Build shows 93 regular requirement rows,
-231 regular pieces required, and all 231 pieces pulled. BrickSuite reports that all non-spare
-requirements are fulfilled before allowing the Build to be marked Complete.</p>
-
-<p>Completion records the lifecycle state of the Build; it is not a substitute for allocation or
-pull reconciliation. Those steps establish how the physical inventory reached the completed
+<p>Open a Build row's <b>Actions...</b> control to see the actions currently available for that
 Build.</p>
 
-<h2>The Build Workflow</h2>
+<img class="screenshot" src="images/builds_actions.png"
+     alt="BrickSuite Builds Actions menu">
 
-<pre>
-Set Catalog or MOC
-        |
-      Planned
-        |
- Load / Import Requirements
-        |
- Allocate Available
-        |
-  +------------------+
-  | Missing pieces?  |
-  +------------------+
-     | No        | Yes
-     |           |
-     |       Export Missing Parts
-     |       Acquire / Add Parts
-     |       Allocate Again
-     |           |
-     +-----------+
-          |
-   Export Pull List CSV
-          |
- Physically Pull Pieces
-          |
- Record Actual "Pulled"
-   Quantities in CSV
-          |
-  Import Pull List CSV
-          |
- Review Reconciliation
-   (no DB changes yet)
-          |
-  Reconcile Pull List
-          |
-   Assemble the Build
-          |
-     Complete Build
-</pre>
+<p>The available actions depend on the Build type and current status. Typical actions include
+opening details, allocating available inventory, working with missing parts, importing or
+reconciling pull lists, changing lifecycle status, cancelling, archiving, or disassembling a
+completed Build.</p>
 
-<h2>Why the Pull-List Round Trip Matters</h2>
+<div class="note"><b>Status matters:</b> BrickSuite intentionally changes the available actions as
+a Build moves through its lifecycle. If an action is not shown, review the Build's current status
+before assuming the feature is unavailable.</div>
 
-<p>BrickSuite deliberately separates <b>allocation</b> from <b>physical pulling</b>. A database
-can determine that a piece should be available, but only the person standing at the storage
-location can confirm that the piece was actually found and pulled.</p>
+<h2>Build Details</h2>
 
-<p>The exported CSV provides a practical working list for that physical task. Importing the
-completed list lets BrickSuite reconcile its digital state with the real workshop. This is a core
-part of BrickSuite's digital-twin approach.</p>
+<p>Open <b>Details</b> to review the Build's requirements, allocations, shortages, and current
+state.</p>
 
-<h2>Build Lifecycle and History</h2>
+<img class="screenshot" src="images/builds_details.png"
+     alt="BrickSuite Build Details">
 
-<p>Builds can progress through additional lifecycle operations such as cancellation, disassembly,
-and archiving where supported by the current Build state. These operations preserve the
-relationship between the Build and inventory rather than treating the Build as an isolated list of
-parts.</p>
+<p>Build Details is the working view of the parts required for the project. It lets you compare
+what the Build needs with what BrickSuite knows is available in My Inventory.</p>
 
-<p>Use <b>Show Archived</b> when you need to include archived Builds in the Builds table.</p>
+<h2>Creating a Complete Set Build</h2>
+
+<p>When creating a new Build of <b>Type: Set</b>, BrickSuite supports a
+<b>Mode: Complete Set</b> workflow. This mode is designed for creating a Build from the complete
+part requirements of a known LEGO Set rather than starting with an empty requirement list.</p>
+
+<img class="dialog" src="images/builds_new_complete_set.png"
+     alt="New Build configured as a Complete Set">
+
+<p>Select the Set and choose <b>Complete Set</b>. BrickSuite retrieves the Set requirement data
+and prepares it for review before adding the requirements to the new Build.</p>
+
+<h3>Review the Set Import Preview</h3>
+
+<img class="screenshot" src="images/builds_new_complete_set_preview.png"
+     alt="Rebrickable Set Import Preview for a Complete Set Build">
+
+<p>The preview is a validation step. It shows the Set identity, returned part rows, regular and
+spare piece counts, matching information, and any problems detected while resolving the imported
+requirements.</p>
+
+<div class="note"><b>No database changes have been made yet.</b> Review the preview before choosing
+<b>Import Requirements</b>. If part/color matching or other validation results are not what you
+expect, cancel and correct the issue before committing the requirements.</div>
+
+<h3>Populated Requirements</h3>
+
+<img class="screenshot" src="images/builds_complete_set_requirements.png"
+     alt="Build requirements populated from a Complete Set">
+
+<p>After the import is accepted, BrickSuite populates the Build with the Set's requirements. You
+can then use the normal allocation, missing-parts, pull, and completion workflows against those
+requirements.</p>
+
+<p>This workflow depends on current Set and part reference data. For first-time setup, see
+<a href="quick_start.html"><b>Quick Start</b></a>.</p>
+
+<h2>Releasing Spare Parts from a Complete Set</h2>
+
+<p>A Complete Set can include spare pieces in addition to the regular pieces required to assemble
+the model. BrickSuite identifies those requirements with <b>Spare = Yes</b>. After the Complete
+Set is established, you can release an available spare from the Set so it can be used as loose
+inventory elsewhere in the workshop.</p>
+
+<img class="screenshot" src="images/builds_release_spares.png"
+     alt="Complete Set requirement with Store Spare action">
+
+<p>Open the spare requirement's <b>Actions...</b> control and choose <b>Store Spare...</b>.
+BrickSuite opens the Store Spare dialog for that specific part and color.</p>
+
+<img class="dialog" src="images/builds_release_spares_complete.png"
+     alt="Store Spare dialog">
+
+<p>The dialog shows the quantity currently available to store. Choose the quantity and the
+destination Storage location, then choose <b>OK</b>. The released pieces are stored in
+<b>My Loose Inventory</b> at the selected location and become available for other inventory and
+Build workflows.</p>
+
+<div class="note"><b>Spare release is selective.</b> You do not have to disassemble the Complete
+Set to make its available spare pieces useful elsewhere. Store Spare lets you release those pieces
+while the Set itself remains intact and tracked as a Complete Set Build.</div>
+
+<h2>Allocate Available Inventory</h2>
+
+<p>Use <b>Allocate Available</b> to let BrickSuite compare Build requirements with loose inventory
+and allocate quantities that are currently available.</p>
+
+<img class="screenshot" src="images/builds_auto_allocate.png"
+     alt="Allocate Available workflow">
+
+<p>The allocation process reduces repetitive manual work when many requirements can be satisfied
+from existing inventory. Review the resulting allocations before continuing with physical pulling.</p>
+
+<p>See <a href="allocate_available.html"><b>Allocate Available</b></a> for the detailed workflow.</p>
+
+<h2>Missing Parts</h2>
+
+<p>When requirements cannot be fully satisfied from available inventory, use the Missing Parts
+workflow to review the shortage.</p>
+
+<img class="screenshot" src="images/builds_missing_parts.png"
+     alt="Build Missing Parts">
+
+<p>Missing Parts can feed the procurement/export workflow so shortages can be prepared for external
+store or wanted-list use.</p>
+
+<p>See <a href="missing_parts.html"><b>Missing Parts</b></a> for details.</p>
+
+<h2>Pull Lists and Reconciliation</h2>
+
+<p>BrickSuite can export and re-import pull-list information so the physical act of pulling parts
+from Storage can be reconciled with the Build requirements and inventory records.</p>
+
+<img class="screenshot" src="images/builds_export_pull_list.png"
+     alt="Export Build pull list">
+
+<p>After working from the exported list, import the resulting pull information back into BrickSuite.</p>
+
+<img class="screenshot" src="images/builds_import_pull_list_pulled.png"
+     alt="Import pulled Build parts">
+
+<p>The reconciliation workflow lets you review what was expected versus what was actually pulled.</p>
+
+<img class="screenshot" src="images/builds_reconcile.png"
+     alt="Build pull reconciliation">
+
+<p>After reconciliation, BrickSuite updates the Build/inventory state so the recorded result matches
+the physical pull activity.</p>
+
+<img class="screenshot" src="images/builds_after_reconciled.png"
+     alt="Build after reconciliation">
+
+<h2>Completing a Build</h2>
+
+<p>When the required workflow is finished, move the Build to the appropriate completion state.
+BrickSuite preserves the Build record and its history rather than deleting it.</p>
+
+<img class="screenshot" src="images/builds_completed.png"
+     alt="Completed BrickSuite Build">
+
+<h2>Disassembling a Complete Set</h2>
+
+<p>When a completed Complete Set is physically taken apart, use the Complete Set disassembly
+workflow to return its selected pieces to <b>My Loose Inventory</b> instead of manually recreating
+the inventory records.</p>
+
+<img class="screenshot" src="images/builds_disassemble_set.png"
+     alt="Disassemble Complete Set dialog">
+
+<p>The Disassemble Complete Set dialog lists each part/color row, manufacturer, Set quantity,
+whether the row is a spare, the quantity to return, and the destination Storage location. Choose a
+<b>Default Destination</b> and use <b>Apply to All</b> when the returned pieces should go to the
+same location, or choose destinations and returned quantities individually.</p>
+
+<p>The summary at the bottom reports the regular pieces, spare pieces, and total loose pieces that
+will be returned. At this stage BrickSuite explicitly reports that <b>no inventory changes have
+been made yet</b>, allowing you to review the disassembly before committing it.</p>
+
+<p>Choose <b>Disassemble Set</b> when the quantities and destinations are correct. BrickSuite then
+shows a final confirmation.</p>
+
+<img class="dialog" src="images/builds_disassembled.png"
+     alt="Disassemble Build confirmation">
+
+<p>The confirmation reports the number of part/color rows and loose pieces that will be returned.
+If you choose <b>Yes</b>, the selected quantities are added to My Loose Inventory at their chosen
+Storage locations, inventory movement history is recorded, and the Build status changes to
+<b>Disassembled</b>.</p>
+
+<div class="note"><b>This is a lifecycle and inventory operation.</b> Disassembly does not delete
+the Build. BrickSuite preserves the Build and its history while returning the physical pieces to
+loose inventory.</div>
+
+<h2>Cancelled, Archived, and Disassembled Builds</h2>
+
+<p>BrickSuite distinguishes between Builds that are completed, cancelled, archived, or
+disassembled. These lifecycle states preserve what happened without deleting the Build record.</p>
+
+<ul>
+<li><b>Cancelled</b> — the Build is no longer being pursued.</li>
+<li><b>Archive</b> — removes inactive work from the normal active workflow while preserving it.</li>
+<li><b>Disassembled</b> — the completed Build has been taken apart and its selected pieces have
+been returned to loose inventory through the disassembly workflow.</li>
+</ul>
+
+<div class="note"><b>BrickSuite favors preservation over deletion.</b> Lifecycle actions retain
+Build history and inventory traceability.</div>
+
+<h2>Sets and MOCs</h2>
+
+<p>Builds can represent both LEGO Sets and MOCs. Complete Set mode is specific to Set-based Build
+creation, while MOC requirements normally come from their own parts-list/import workflow.</p>
+
+<p>See <a href="mocs.html"><b>MOCs</b></a> for the MOC-specific workflow.</p>
 
 <h2>Related Help</h2>
 
-<p><a href="sets_catalog.html">Sets Catalog</a> |
+<p><a href="quick_start.html">Quick Start</a> |
+<a href="sets_catalog.html">Sets Catalog</a> |
 <a href="mocs.html">MOCs</a> |
 <a href="allocate_available.html">Allocate Available</a> |
 <a href="missing_parts.html">Missing Parts</a> |
-<a href="inventory.html">My Inventory</a> |
-<a href="lost_found.html">Lost / Found</a></p>
+<a href="inventory.html">My Inventory</a></p>
 
 </body>
 </html>
