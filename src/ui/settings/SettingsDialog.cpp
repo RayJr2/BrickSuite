@@ -271,20 +271,45 @@ void SettingsDialog::saveSettings()
 
     settings.setTheme(theme);
 
-    const bool rebrickableKeyChanged = (apiKey != m_originalRebrickableApiKey.trimmed());
+    const bool rebrickableKeyChanged =
+        (apiKey != m_originalRebrickableApiKey.trimmed());
 
-    settings.setRebrickableApiKey(apiKey);
+    QString credentialError;
 
-    if (rebrickableKeyChanged && m_rebrickableConnectionStatus != ApiConnectionStatus::Connected) {
+    if (!settings.setRebrickableApiKey(apiKey, &credentialError)) {
+        QMessageBox::critical(
+            this,
+            tr("Rebrickable API Key"),
+            tr("BrickSuite could not save the Rebrickable API key securely.\n\n"
+               "%1\n\n"
+               "No plaintext API key was written to application settings.")
+                .arg(credentialError));
+        return;
+    }
+
+    if (rebrickableKeyChanged
+        && m_rebrickableConnectionStatus != ApiConnectionStatus::Connected) {
         settings.setRebrickableConnectionPreviouslyVerified(false);
     }
 
     const bool bricksetKeyChanged =
         (bricksetApiKey != m_originalBricksetApiKey.trimmed());
 
-    settings.setBricksetApiKey(bricksetApiKey);
+    credentialError.clear();
 
-    if (bricksetKeyChanged && m_bricksetConnectionStatus != ApiConnectionStatus::Connected) {
+    if (!settings.setBricksetApiKey(bricksetApiKey, &credentialError)) {
+        QMessageBox::critical(
+            this,
+            tr("Brickset API Key"),
+            tr("BrickSuite could not save the Brickset API key securely.\n\n"
+               "%1\n\n"
+               "No plaintext API key was written to application settings.")
+                .arg(credentialError));
+        return;
+    }
+
+    if (bricksetKeyChanged
+        && m_bricksetConnectionStatus != ApiConnectionStatus::Connected) {
         settings.setBricksetConnectionPreviouslyVerified(false);
     }
 

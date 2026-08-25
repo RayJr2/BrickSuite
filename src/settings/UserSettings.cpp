@@ -20,6 +20,9 @@
 
 #include "UserSettings.h"
 
+#include "../services/CredentialStore.h"
+
+#include <QDebug>
 #include <QSettings>
 
 namespace {
@@ -40,6 +43,9 @@ constexpr auto kRebrickableApiKey = "ApiKey";
 constexpr auto kRebrickableConnectionPreviouslyVerifiedKey = "ConnectionPreviouslyVerified";
 
 constexpr auto kBricksetApiKey = "ApiKey";
+
+constexpr auto kRebrickableCredentialName = "RebrickableApiKey";
+constexpr auto kBricksetCredentialName = "BricksetApiKey";
 constexpr auto kBricksetConnectionPreviouslyVerifiedKey = "ConnectionPreviouslyVerified";
 constexpr auto kBricksetDailyGetSetsThresholdKey = "DailyGetSetsThreshold";
 
@@ -165,26 +171,74 @@ void UserSettings::setDefaultWorkspaceId(int workspaceId)
 
 QString UserSettings::rebrickableApiKey() const
 {
+    const auto result =
+        CredentialStore::read(QString::fromLatin1(kRebrickableCredentialName));
+
+    if (result.success && result.found) {
+        return result.value.trimmed();
+    }
+
     QSettings settings;
-
     settings.beginGroup(kGroupRebrickable);
-
-    const QString apiKey = settings.value(kRebrickableApiKey).toString();
-
+    const QString legacyApiKey =
+        settings.value(kRebrickableApiKey).toString().trimmed();
     settings.endGroup();
 
-    return apiKey;
+    if (legacyApiKey.isEmpty()) {
+        if (!result.success) {
+            qWarning()
+                << "Unable to read Rebrickable API credential from"
+                << CredentialStore::backendName() << ":" << result.error;
+        }
+
+        return {};
+    }
+
+    QString migrationError;
+
+    if (CredentialStore::write(
+            QString::fromLatin1(kRebrickableCredentialName),
+            legacyApiKey,
+            &migrationError)) {
+        settings.beginGroup(kGroupRebrickable);
+        settings.remove(kRebrickableApiKey);
+        settings.endGroup();
+        settings.sync();
+
+        qInfo()
+            << "Migrated Rebrickable API credential from QSettings to"
+            << CredentialStore::backendName() << ".";
+
+        return legacyApiKey;
+    }
+
+    qWarning()
+        << "Unable to migrate Rebrickable API credential to"
+        << CredentialStore::backendName() << ":" << migrationError
+        << "The existing QSettings value has been preserved.";
+
+    return legacyApiKey;
 }
 
-void UserSettings::setRebrickableApiKey(const QString& apiKey)
+bool UserSettings::setRebrickableApiKey(const QString& apiKey,
+                                        QString* error)
 {
+    const QString value = apiKey.trimmed();
+
+    if (!CredentialStore::write(
+            QString::fromLatin1(kRebrickableCredentialName),
+            value,
+            error)) {
+        return false;
+    }
+
     QSettings settings;
-
     settings.beginGroup(kGroupRebrickable);
-
-    settings.setValue(kRebrickableApiKey, apiKey.trimmed());
-
+    settings.remove(kRebrickableApiKey);
     settings.endGroup();
+    settings.sync();
+
+    return true;
 }
 
 bool UserSettings::rebrickableConnectionPreviouslyVerified() const
@@ -209,22 +263,74 @@ void UserSettings::setRebrickableConnectionPreviouslyVerified(bool verified)
 
 QString UserSettings::bricksetApiKey() const
 {
-    QSettings settings;
+    const auto result =
+        CredentialStore::read(QString::fromLatin1(kBricksetCredentialName));
 
+    if (result.success && result.found) {
+        return result.value.trimmed();
+    }
+
+    QSettings settings;
     settings.beginGroup(kGroupBrickset);
-    const QString apiKey = settings.value(kBricksetApiKey).toString();
+    const QString legacyApiKey =
+        settings.value(kBricksetApiKey).toString().trimmed();
     settings.endGroup();
 
-    return apiKey;
+    if (legacyApiKey.isEmpty()) {
+        if (!result.success) {
+            qWarning()
+                << "Unable to read Brickset API credential from"
+                << CredentialStore::backendName() << ":" << result.error;
+        }
+
+        return {};
+    }
+
+    QString migrationError;
+
+    if (CredentialStore::write(
+            QString::fromLatin1(kBricksetCredentialName),
+            legacyApiKey,
+            &migrationError)) {
+        settings.beginGroup(kGroupBrickset);
+        settings.remove(kBricksetApiKey);
+        settings.endGroup();
+        settings.sync();
+
+        qInfo()
+            << "Migrated Brickset API credential from QSettings to"
+            << CredentialStore::backendName() << ".";
+
+        return legacyApiKey;
+    }
+
+    qWarning()
+        << "Unable to migrate Brickset API credential to"
+        << CredentialStore::backendName() << ":" << migrationError
+        << "The existing QSettings value has been preserved.";
+
+    return legacyApiKey;
 }
 
-void UserSettings::setBricksetApiKey(const QString& apiKey)
+bool UserSettings::setBricksetApiKey(const QString& apiKey,
+                                     QString* error)
 {
-    QSettings settings;
+    const QString value = apiKey.trimmed();
 
+    if (!CredentialStore::write(
+            QString::fromLatin1(kBricksetCredentialName),
+            value,
+            error)) {
+        return false;
+    }
+
+    QSettings settings;
     settings.beginGroup(kGroupBrickset);
-    settings.setValue(kBricksetApiKey, apiKey.trimmed());
+    settings.remove(kBricksetApiKey);
     settings.endGroup();
+    settings.sync();
+
+    return true;
 }
 
 bool UserSettings::bricksetConnectionPreviouslyVerified() const

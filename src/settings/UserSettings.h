@@ -61,13 +61,13 @@ public:
     static Theme themeFromString(const QString& value);
 
     QString rebrickableApiKey() const;
-    void setRebrickableApiKey(const QString& apiKey);
+    bool setRebrickableApiKey(const QString& apiKey, QString* error = nullptr);
 
     bool rebrickableConnectionPreviouslyVerified() const;
     void setRebrickableConnectionPreviouslyVerified(bool verified);
 
     QString bricksetApiKey() const;
-    void setBricksetApiKey(const QString& apiKey);
+    bool setBricksetApiKey(const QString& apiKey, QString* error = nullptr);
 
     bool bricksetConnectionPreviouslyVerified() const;
     void setBricksetConnectionPreviouslyVerified(bool verified);

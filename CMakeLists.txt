@@ -50,6 +50,8 @@ qt_add_executable(BrickSuite
     src/services/Updater.h
     src/services/Updater.cpp
     src/services/Logger.cpp
+    src/services/CredentialStore.h
+    src/services/CredentialStore.cpp
     src/models/StorageLocationType.h
     src/models/StorageLocationType.cpp
     src/models/StorageLocation.h
@@ -261,6 +263,10 @@ if(WIN32)
     set_target_properties(BrickSuite PROPERTIES
         WIN32_EXECUTABLE TRUE
     )
+
+    target_link_libraries(BrickSuite PRIVATE
+        Advapi32
+    )
 endif()
 
 if(APPLE)
@@ -268,6 +274,10 @@ if(APPLE)
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "BrickSuite"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.rfstateside.bricksuite"
+    )
+
+    target_link_libraries(BrickSuite PRIVATE
+        "-framework Security"
     )
 endif()
 
