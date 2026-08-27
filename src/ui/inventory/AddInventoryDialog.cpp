@@ -25,12 +25,14 @@
 #include "../../models/Color.h"
 #include "../../models/InventoryRecord.h"
 #include "../../models/Part.h"
+#include "../../models/PartCategory.h"
 #include "../../models/StorageLocation.h"
 
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/PartRepository.h"
+#include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
 #include "../../services/RebrickableApiClient.h"
@@ -47,6 +49,7 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHash>
+#include <QHBoxLayout>
 #include <QSet>
 #include <QLabel>
 #include <QLineEdit>
@@ -58,6 +61,7 @@
 #include <QStandardItemModel>
 #include <QStringList>
 #include <QTimer>
+#include <QWidget>
 
 AddInventoryDialog::AddInventoryDialog(int partId,
                                        WorkspaceContext& workspaceContext,
@@ -124,12 +128,28 @@ void AddInventoryDialog::initializeUi()
 
         m_partSearchEdit->setCompleter(m_partCompleter);
 
-        layout->addRow("Part:", m_partSearchEdit);
+        m_rememberPartCheck = new QCheckBox("Remember Part", this);
+
+        auto* partRowWidget = new QWidget(this);
+        auto* partRowLayout = new QHBoxLayout(partRowWidget);
+        partRowLayout->setContentsMargins(0, 0, 0, 0);
+        partRowLayout->addWidget(m_partSearchEdit, 1);
+        partRowLayout->addWidget(m_rememberPartCheck);
+        layout->addRow("Part:", partRowWidget);
 
         m_partResolutionLabel = new QLabel(this);
         m_partResolutionLabel->setWordWrap(true);
         m_partResolutionLabel->setVisible(false);
-        layout->addRow("Resolved:", m_partResolutionLabel);
+
+        m_partCategoryLabel = new QLabel(this);
+        m_partCategoryLabel->setVisible(false);
+
+        auto* resolvedRowWidget = new QWidget(this);
+        auto* resolvedRowLayout = new QHBoxLayout(resolvedRowWidget);
+        resolvedRowLayout->setContentsMargins(0, 0, 0, 0);
+        resolvedRowLayout->addWidget(m_partResolutionLabel, 1);
+        resolvedRowLayout->addWidget(m_partCategoryLabel, 0, Qt::AlignRight);
+        layout->addRow("Resolved:", resolvedRowWidget);
 
         m_partSearchTimer = new QTimer(this);
 
@@ -175,9 +195,24 @@ void AddInventoryDialog::initializeUi()
         okButton->setText("Add");
     }
 
-    layout->addRow("Color:", m_colorCombo);
+    m_statusLabel = new QLabel(this);
+    m_statusLabel->setVisible(false);
 
-    layout->addRow(QString(), m_showAllColorsCheck);
+    m_statusClearTimer = new QTimer(this);
+    m_statusClearTimer->setSingleShot(true);
+    m_statusClearTimer->setInterval(4000);
+
+    connect(m_statusClearTimer, &QTimer::timeout, this, [this]() {
+        m_statusLabel->clear();
+        m_statusLabel->setVisible(false);
+    });
+
+    auto* colorRowWidget = new QWidget(this);
+    auto* colorRowLayout = new QHBoxLayout(colorRowWidget);
+    colorRowLayout->setContentsMargins(0, 0, 0, 0);
+    colorRowLayout->addWidget(m_colorCombo, 1);
+    colorRowLayout->addWidget(m_showAllColorsCheck);
+    layout->addRow("Color:", colorRowWidget);
 
     layout->addRow("Storage:", m_storageCombo);
 
@@ -193,7 +228,12 @@ void AddInventoryDialog::initializeUi()
         layout->addRow(QString(), m_keepOpenCheck);
     }
 
-    layout->addRow(m_buttonBox);
+    auto* bottomRowWidget = new QWidget(this);
+    auto* bottomRowLayout = new QHBoxLayout(bottomRowWidget);
+    bottomRowLayout->setContentsMargins(0, 0, 0, 0);
+    bottomRowLayout->addWidget(m_statusLabel, 1);
+    bottomRowLayout->addWidget(m_buttonBox);
+    layout->addRow(bottomRowWidget);
 
     loadManufacturers();
 
@@ -280,6 +320,11 @@ void AddInventoryDialog::initializeUi()
             if (m_partResolutionLabel) {
                 m_partResolutionLabel->clear();
                 m_partResolutionLabel->setVisible(false);
+            }
+
+            if (m_partCategoryLabel) {
+                m_partCategoryLabel->clear();
+                m_partCategoryLabel->setVisible(false);
             }
 
             m_colorCombo->clear();
@@ -461,6 +506,18 @@ void AddInventoryDialog::addInventory()
     m_inventoryWasAdded = true;
 
     if (m_quickEntryMode && m_keepOpenCheck->isChecked()) {
+        const int addedQuantity = m_quantitySpin->value();
+        const QString addedPartNumber = m_partNumber;
+        const QString addedStorage = m_storageCombo->currentText().trimmed();
+
+        m_statusLabel->setText(
+            tr("Added %1 × Part %2 to %3")
+                .arg(addedQuantity)
+                .arg(addedPartNumber)
+                .arg(addedStorage));
+        m_statusLabel->setVisible(true);
+        m_statusClearTimer->start();
+
         //
         // Preserve the Color and Quantity for rapid entry.
         // Storage, Condition and Ownership already remain
@@ -468,7 +525,13 @@ void AddInventoryDialog::addInventory()
         //
         m_quickEntryColorId = m_colorCombo->currentData().toInt();
 
-        clearPartSelection();
+        if (!m_rememberPartCheck || !m_rememberPartCheck->isChecked()) {
+            clearPartSelection();
+        } else if (m_partSearchEdit) {
+            // Keep the resolved Part selected for another inventory record.
+            // Move focus to Color so the next variation can be entered immediately.
+            m_colorCombo->setFocus();
+        }
 
         return;
     }
@@ -817,6 +880,28 @@ void AddInventoryDialog::applyResolvedPart(
         m_partResolutionLabel->setVisible(true);
     }
 
+    if (m_partCategoryLabel) {
+        QString categoryName;
+
+        if (part->partCategoryId() > 0) {
+            PartCategoryRepository categoryRepository;
+            const std::optional<PartCategory> category =
+                categoryRepository.getById(part->partCategoryId());
+
+            if (category) {
+                categoryName = category->name().trimmed();
+            }
+        }
+
+        if (categoryName.isEmpty()) {
+            m_partCategoryLabel->clear();
+            m_partCategoryLabel->setVisible(false);
+        } else {
+            m_partCategoryLabel->setText(QStringLiteral("Category: %1").arg(categoryName));
+            m_partCategoryLabel->setVisible(true);
+        }
+    }
+
     //
     // During rapid Keep-Open entry, preserve the user's
     // working color across Parts.
@@ -869,6 +954,11 @@ void AddInventoryDialog::clearPartSelection()
     if (m_partResolutionLabel) {
         m_partResolutionLabel->clear();
         m_partResolutionLabel->setVisible(false);
+    }
+
+    if (m_partCategoryLabel) {
+        m_partCategoryLabel->clear();
+        m_partCategoryLabel->setVisible(false);
     }
 
     if (m_partSearchModel) {

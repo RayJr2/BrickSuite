@@ -82,6 +82,8 @@ private:
 
     QLabel* m_partLabel = nullptr;
     QLabel* m_partResolutionLabel = nullptr;
+    QLabel* m_partCategoryLabel = nullptr;
+    QLabel* m_statusLabel = nullptr;
 
     QComboBox* m_colorCombo = nullptr;
     QComboBox* m_storageCombo = nullptr;
@@ -94,6 +96,7 @@ private:
     QDialogButtonBox* m_buttonBox = nullptr;
 
     QCheckBox* m_showAllColorsCheck = nullptr;
+    QCheckBox* m_rememberPartCheck = nullptr;
 
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
 
@@ -106,6 +109,7 @@ private:
     QCompleter* m_partCompleter = nullptr;
     QStandardItemModel* m_partSearchModel = nullptr;
     QTimer* m_partSearchTimer = nullptr;
+    QTimer* m_statusClearTimer = nullptr;
 
     QCheckBox* m_keepOpenCheck = nullptr;
 
