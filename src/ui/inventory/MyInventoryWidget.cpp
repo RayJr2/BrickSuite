@@ -21,6 +21,8 @@
 #include "MyInventoryWidget.h"
 #include "AddInventoryDialog.h"
 #include "EditInventoryDialog.h"
+#include "CorrectInventoryDialog.h"
+#include "RemoveInventoryDialog.h"
 #include "ImportInventoryDialog.h"
 #include "InventoryHistoryDialog.h"
 #include "LostInventoryDialog.h"
@@ -735,6 +737,8 @@ void MyInventoryWidget::searchInventory()
         actionCombo->addItem("Details", "details");
         actionCombo->addItem("Edit", "edit");
         actionCombo->addItem("Move", "move");
+        actionCombo->addItem("Correct Entry...", "correct");
+        actionCombo->addItem("Remove Entry...", "remove");
         actionCombo->addItem("Mark Lost...", "lost");
         actionCombo->addItem("View History", "history");
 
@@ -774,6 +778,22 @@ void MyInventoryWidget::searchInventory()
 
                         if (dialog.exec() == QDialog::Accepted) {
                             refresh();
+                        }
+                    } else if (action == "correct") {
+                        CorrectInventoryDialog dialog(inventoryRecordId, m_workspaceContext, this);
+
+                        if (dialog.exec() == QDialog::Accepted) {
+                            searchInventory();
+                            emit inventoryChanged();
+                            return;
+                        }
+                    } else if (action == "remove") {
+                        RemoveInventoryDialog dialog(inventoryRecordId, this);
+
+                        if (dialog.exec() == QDialog::Accepted) {
+                            searchInventory();
+                            emit inventoryChanged();
+                            return;
                         }
                     } else if (action == "lost") {
                         MarkLostInventoryDialog dialog(inventoryRecordId, this);
@@ -1045,17 +1065,14 @@ void MyInventoryWidget::addPart()
     if (filteredStorageLocationId > 0)
         dialog.setPreferredStorageLocationId(filteredStorageLocationId);
 
-    dialog.exec();
-
-    //
-    // Multiple items may have been entered while
-    // Keep Open was enabled. Refresh only once when
-    // the rapid-entry session finishes.
-    //
-    if (dialog.inventoryWasAdded()) {
+    // Refresh immediately after every successful Add, including while
+    // Keep Open leaves the rapid-entry dialog on screen.
+    connect(&dialog, &AddInventoryDialog::inventoryAdded, this, [this]() {
         searchInventory();
         emit inventoryChanged();
-    }
+    });
+
+    dialog.exec();
 }
 
 void MyInventoryWidget::showLostInventory()

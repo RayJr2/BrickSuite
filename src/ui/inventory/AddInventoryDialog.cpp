@@ -106,6 +106,12 @@ void AddInventoryDialog::initializeUi()
 
     resize(m_quickEntryMode ? 650 : 500, 340);
 
+    if (m_quickEntryMode) {
+        const QByteArray geometry = UserSettings::instance().addInventoryDialogGeometry();
+        if (!geometry.isEmpty())
+            restoreGeometry(geometry);
+    }
+
     auto* layout = new QFormLayout(this);
 
     //
@@ -504,6 +510,7 @@ void AddInventoryDialog::addInventory()
     }
 
     m_inventoryWasAdded = true;
+    emit inventoryAdded();
 
     if (m_quickEntryMode && m_keepOpenCheck->isChecked()) {
         const int addedQuantity = m_quantitySpin->value();
@@ -1011,4 +1018,13 @@ void AddInventoryDialog::setPreferredStorageLocationId(
 bool AddInventoryDialog::inventoryWasAdded() const
 {
     return m_inventoryWasAdded;
+}
+
+
+void AddInventoryDialog::done(int result)
+{
+    if (m_quickEntryMode)
+        UserSettings::instance().setAddInventoryDialogGeometry(saveGeometry());
+
+    QDialog::done(result);
 }

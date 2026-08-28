@@ -114,6 +114,10 @@ qt_add_executable(BrickSuite
     src/ui/inventory/ImportInventoryDialog.cpp
     src/ui/inventory/EditInventoryDialog.h
     src/ui/inventory/EditInventoryDialog.cpp
+    src/ui/inventory/CorrectInventoryDialog.h
+    src/ui/inventory/CorrectInventoryDialog.cpp
+    src/ui/inventory/RemoveInventoryDialog.h
+    src/ui/inventory/RemoveInventoryDialog.cpp
     src/models/InventoryMovement.h
     src/models/InventoryMovement.cpp
     src/repositories/InventoryMovementRepository.h

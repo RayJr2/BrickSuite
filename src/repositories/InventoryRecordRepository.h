@@ -65,6 +65,15 @@ public:
 
     bool remove(int inventoryRecordId);
 
+    bool correctEntry(int inventoryRecordId,
+                      int replacementPartId,
+                      int quantityToCorrect,
+                      const QString& notes = QString());
+
+    bool removeEntry(int inventoryRecordId,
+                     int quantityToRemove,
+                     const QString& notes = QString());
+
     bool moveInventory(int inventoryRecordId, int destinationStorageLocationId, int quantityToMove);
 
     int totalQuantityForPartColor(int workspaceId, int partId, int colorId) const;

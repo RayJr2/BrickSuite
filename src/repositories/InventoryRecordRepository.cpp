@@ -25,6 +25,8 @@
 #include "../models/InventoryMovement.h"
 #include "InventoryMovementRepository.h"
 #include "ManufacturerRepository.h"
+#include "PartRepository.h"
+#include "../models/Part.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -1340,6 +1342,112 @@ bool InventoryRecordRepository::remove(int inventoryRecordId)
     }
 
     return query.numRowsAffected() > 0;
+}
+
+
+bool InventoryRecordRepository::correctEntry(int inventoryRecordId,
+                                             int replacementPartId,
+                                             int quantityToCorrect,
+                                             const QString& notes)
+{
+    if (inventoryRecordId <= 0 || replacementPartId <= 0 || quantityToCorrect <= 0)
+        return false;
+
+    const std::optional<InventoryRecord> source = getById(inventoryRecordId);
+
+    if (!source || source->quantity() <= 0 || quantityToCorrect > source->quantity())
+        return false;
+
+    if (source->partId() == replacementPartId)
+        return false;
+
+    PartRepository partRepository;
+    const std::optional<Part> sourcePart = partRepository.getById(source->partId());
+    const std::optional<Part> replacementPart = partRepository.getById(replacementPartId);
+
+    if (!sourcePart || !replacementPart)
+        return false;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin inventory correction transaction:"
+                    << database.lastError().text();
+        return false;
+    }
+
+    const QString sourceNotes = notes.trimmed().isEmpty()
+                                    ? QString("Corrected to Part %1").arg(replacementPart->partNumber())
+                                    : QString("Corrected to Part %1. %2")
+                                          .arg(replacementPart->partNumber(), notes.trimmed());
+
+    if (!setQuantityWithMovement(inventoryRecordId,
+                                 source->quantity() - quantityToCorrect,
+                                 QStringLiteral("CorrectionRemoved"),
+                                 QStringLiteral("Part"),
+                                 replacementPart->partNumber(),
+                                 sourceNotes,
+                                 false)) {
+        database.rollback();
+        return false;
+    }
+
+    InventoryRecord replacement;
+    replacement.setWorkspaceId(source->workspaceId());
+    replacement.setPartId(replacementPartId);
+    replacement.setColorId(source->colorId());
+    replacement.setStorageLocationId(source->storageLocationId());
+    replacement.setManufacturerId(source->manufacturerId());
+    replacement.setCondition(source->condition());
+    replacement.setOwnershipType(source->ownershipType());
+    replacement.setQuantity(quantityToCorrect);
+
+    const QString destinationNotes = notes.trimmed().isEmpty()
+                                         ? QString("Corrected from Part %1").arg(sourcePart->partNumber())
+                                         : QString("Corrected from Part %1. %2")
+                                               .arg(sourcePart->partNumber(), notes.trimmed());
+
+    if (!addOrIncreaseQuantity(replacement,
+                               QStringLiteral("CorrectionAdded"),
+                               QStringLiteral("Part"),
+                               sourcePart->partNumber(),
+                               destinationNotes,
+                               false)) {
+        database.rollback();
+        return false;
+    }
+
+    if (!database.commit()) {
+        qCritical() << "Unable to commit inventory correction transaction:"
+                    << database.lastError().text();
+        database.rollback();
+        return false;
+    }
+
+    return true;
+}
+
+bool InventoryRecordRepository::removeEntry(int inventoryRecordId,
+                                            int quantityToRemove,
+                                            const QString& notes)
+{
+    if (inventoryRecordId <= 0 || quantityToRemove <= 0)
+        return false;
+
+    const std::optional<InventoryRecord> record = getById(inventoryRecordId);
+
+    if (!record || record->quantity() <= 0 || quantityToRemove > record->quantity())
+        return false;
+
+    return setQuantityWithMovement(inventoryRecordId,
+                                   record->quantity() - quantityToRemove,
+                                   QStringLiteral("EntryRemoved"),
+                                   QStringLiteral("Correction"),
+                                   QString(),
+                                   notes.trimmed().isEmpty()
+                                       ? QStringLiteral("Inventory entry removed as a correction.")
+                                       : notes.trimmed(),
+                                   true);
 }
 
 bool InventoryRecordRepository::moveInventory(int inventoryRecordId,

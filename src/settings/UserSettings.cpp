@@ -63,6 +63,9 @@ constexpr auto kGroupHelpViewer = "HelpViewer";
 constexpr auto kHelpViewerGeometryKey = "Geometry";
 constexpr auto kHelpViewerSplitterStateKey = "SplitterState";
 
+constexpr auto kGroupAddInventoryDialog = "AddInventoryDialog";
+constexpr auto kAddInventoryDialogGeometryKey = "Geometry";
+
 constexpr auto kGroupBuilds = "Builds";
 constexpr auto kShowArchivedBuildsKey = "ShowArchived";
 
@@ -573,6 +576,24 @@ void UserSettings::setHelpViewerSplitterState(const QByteArray& state)
 
     settings.setValue(kHelpViewerSplitterStateKey, state);
 
+    settings.endGroup();
+}
+
+
+QByteArray UserSettings::addInventoryDialogGeometry() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupAddInventoryDialog);
+    const QByteArray geometry = settings.value(kAddInventoryDialogGeometryKey).toByteArray();
+    settings.endGroup();
+    return geometry;
+}
+
+void UserSettings::setAddInventoryDialogGeometry(const QByteArray& geometry)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupAddInventoryDialog);
+    settings.setValue(kAddInventoryDialogGeometryKey, geometry);
     settings.endGroup();
 }
 

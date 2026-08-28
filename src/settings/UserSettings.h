@@ -51,6 +51,9 @@ public:
     QByteArray helpViewerGeometry() const;
     void setHelpViewerGeometry(const QByteArray& geometry);
 
+    QByteArray addInventoryDialogGeometry() const;
+    void setAddInventoryDialogGeometry(const QByteArray& geometry);
+
     QByteArray helpViewerSplitterState() const;
     void setHelpViewerSplitterState(const QByteArray& state);
 

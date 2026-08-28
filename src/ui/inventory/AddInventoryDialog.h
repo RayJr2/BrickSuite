@@ -53,6 +53,12 @@ public:
 
     void setPreferredStorageLocationId(int storageLocationId);
 
+signals:
+    void inventoryAdded();
+
+protected:
+    void done(int result) override;
+
 private slots:
     void addInventory();
     void showAllColorsToggled(bool checked);
