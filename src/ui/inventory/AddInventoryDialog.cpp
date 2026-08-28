@@ -355,6 +355,41 @@ void AddInventoryDialog::initializeUi()
     }
 }
 
+void AddInventoryDialog::setPartFromReference(const QString& partNumber)
+{
+    if (!m_quickEntryMode || !m_partSearchEdit)
+        return;
+
+    const QString requested = partNumber.trimmed();
+    if (requested.isEmpty())
+        return;
+
+    PartRepository repository;
+    const std::optional<Part> part = repository.getByPartNumber(requested);
+
+    if (!part) {
+        m_partId = 0;
+        m_partNumber.clear();
+        m_partSearchEdit->setText(requested);
+
+        if (m_partResolutionLabel) {
+            m_partResolutionLabel->setText(QStringLiteral("Part Reference selection is not available in the local catalog."));
+            m_partResolutionLabel->setVisible(true);
+        }
+
+        updateAddButtonState();
+        return;
+    }
+
+    applyResolvedPart(part->id(),
+                      QString("%1 — %2").arg(part->partNumber(), part->name()),
+                      QStringLiteral("Part Reference"));
+
+    show();
+    raise();
+    activateWindow();
+}
+
 void AddInventoryDialog::loadPart()
 {
     PartRepository repository;

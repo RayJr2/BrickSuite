@@ -274,6 +274,69 @@ bool PartRepository::update(Part& part)
     return true;
 }
 
+
+QList<Part> PartRepository::getReferencePartsByCategoryIds(const QList<int>& categoryIds,
+                                                           int limit) const
+{
+    QList<Part> parts;
+
+    if (categoryIds.isEmpty() || limit <= 0)
+        return parts;
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlQuery query(database);
+
+    QStringList placeholders;
+    placeholders.reserve(categoryIds.size());
+
+    for (int i = 0; i < categoryIds.size(); ++i)
+        placeholders.append(QString(":category_%1").arg(i));
+
+    const QString sql = QString(R"(
+        SELECT
+            id,
+            part_number,
+            name,
+            part_category_id,
+            rebrickable_part_id,
+            material,
+            is_active,
+            created_utc,
+            modified_utc
+        FROM part
+        WHERE is_active = 1
+          AND part_category_id IN (%1)
+          AND LOWER(part_number) NOT LIKE '%%pr%%'
+          AND LOWER(name) NOT LIKE '%%print%%'
+        ORDER BY
+            CASE
+                WHEN part_number GLOB '[0-9]*' THEN 0
+                ELSE 1
+            END,
+            LENGTH(part_number),
+            part_number
+        LIMIT :limit
+    )").arg(placeholders.join(", "));
+
+    query.prepare(sql);
+
+    for (int i = 0; i < categoryIds.size(); ++i)
+        query.bindValue(placeholders.at(i), categoryIds.at(i));
+
+    query.bindValue(":limit", limit);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to retrieve Part Reference category parts:"
+                    << query.lastError().text();
+        return parts;
+    }
+
+    while (query.next())
+        parts.append(partFromQuery(query));
+
+    return parts;
+}
+
 Part PartRepository::partFromQuery(const QSqlQuery& query) const
 {
     Part part;

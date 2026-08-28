@@ -1047,32 +1047,61 @@ void MyInventoryWidget::updatePartColorImage(const QString& partNumber,
 
 void MyInventoryWidget::addPart()
 {
-    if (!m_workspaceContext.hasCurrentWorkspace()) {
+    if (!m_workspaceContext.hasCurrentWorkspace())
+        return;
+
+    // M23.3: keep one rapid-entry dialog alive non-modally so Part Reference
+    // can remain interactive on another monitor and send selected parts
+    // directly into it.
+    if (m_activeAddInventoryDialog) {
+        m_activeAddInventoryDialog->show();
+        m_activeAddInventoryDialog->raise();
+        m_activeAddInventoryDialog->activateWindow();
         return;
     }
 
-    AddInventoryDialog dialog(m_workspaceContext, this);
+    auto* dialog = new AddInventoryDialog(m_workspaceContext, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowModality(Qt::NonModal);
+    dialog->setModal(false);
 
-    //
-    // When My Inventory is scoped to a specific operational storage
-    // location, use that location as the initial Add Part destination.
-    // "All Locations" remains neutral and leaves the dialog's normal
-    // default unchanged.
-    //
-    const int filteredStorageLocationId =
-        m_storageCombo->currentData().toInt();
-
+    const int filteredStorageLocationId = m_storageCombo->currentData().toInt();
     if (filteredStorageLocationId > 0)
-        dialog.setPreferredStorageLocationId(filteredStorageLocationId);
+        dialog->setPreferredStorageLocationId(filteredStorageLocationId);
 
-    // Refresh immediately after every successful Add, including while
-    // Keep Open leaves the rapid-entry dialog on screen.
-    connect(&dialog, &AddInventoryDialog::inventoryAdded, this, [this]() {
+    connect(dialog, &AddInventoryDialog::inventoryAdded, this, [this]() {
         searchInventory();
         emit inventoryChanged();
     });
 
-    dialog.exec();
+    m_activeAddInventoryDialog = dialog;
+    emit addInventoryDialogAvailabilityChanged(true);
+
+    connect(dialog, &QDialog::finished, this, [this, dialog](int) {
+        if (m_activeAddInventoryDialog == dialog) {
+            m_activeAddInventoryDialog = nullptr;
+            emit addInventoryDialogAvailabilityChanged(false);
+        }
+
+        dialog->deleteLater();
+    });
+
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
+}
+
+bool MyInventoryWidget::hasActiveAddInventoryDialog() const
+{
+    return m_activeAddInventoryDialog != nullptr;
+}
+
+void MyInventoryWidget::sendPartToActiveAddInventoryDialog(const QString& partNumber)
+{
+    if (!m_activeAddInventoryDialog)
+        return;
+
+    m_activeAddInventoryDialog->setPartFromReference(partNumber);
 }
 
 void MyInventoryWidget::showLostInventory()

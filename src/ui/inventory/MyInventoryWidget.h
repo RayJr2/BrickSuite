@@ -34,6 +34,7 @@ class QShowEvent;
 class QLabel;
 class PartImageService;
 class RebrickableApiClient;
+class AddInventoryDialog;
 
 class MyInventoryWidget : public QWidget
 {
@@ -51,8 +52,12 @@ public:
                               int rebrickableColorId,
                               const QString& imagePath);
 
+    bool hasActiveAddInventoryDialog() const;
+    void sendPartToActiveAddInventoryDialog(const QString& partNumber);
+
 signals:
     void inventoryChanged();
+    void addInventoryDialogAvailabilityChanged(bool available);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -107,6 +112,7 @@ private:
 
     PartImageService* m_partImageService = nullptr;
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
+    AddInventoryDialog* m_activeAddInventoryDialog = nullptr;
 
     QHash<QString, QList<int>> m_rowsByPartNumber;
     QSet<QString> m_partDetailsRequested;

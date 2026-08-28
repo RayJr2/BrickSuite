@@ -168,6 +168,8 @@ qt_add_executable(BrickSuite
     src/services/parts/RebrickablePartAliasLearner.h
     src/services/parts/RebrickablePartAliasLearner.cpp
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
+    src/ui/parts/PartReferenceDialog.h
+    src/ui/parts/PartReferenceDialog.cpp
     src/ui/parts/PartResolverTestDialog.h
     src/ui/parts/PartResolverTestDialog.cpp
     src/ui/helpers/ColorComboHelper.cpp src/ui/helpers/ColorComboHelper.h

@@ -48,6 +48,12 @@ public:
 
     QList<Part> searchForInventoryEntry(const QString& searchText, int limit = 20) const;
 
+    // M23.3 Part Reference: retrieve active, non-printed parts from one or
+    // more local Part Category IDs. Used only for the curated reference
+    // galleries, not as a replacement for Parts Catalog search.
+    QList<Part> getReferencePartsByCategoryIds(const QList<int>& categoryIds,
+                                               int limit = 160) const;
+
 private:
     Part partFromQuery(const QSqlQuery& query) const;
 };

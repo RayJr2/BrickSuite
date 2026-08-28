@@ -53,6 +53,12 @@ public:
 
     void setPreferredStorageLocationId(int storageLocationId);
 
+public slots:
+    // M23.3 Part Reference integration. Resolves an exact local catalog
+    // part and places it into the rapid-entry dialog without using the
+    // clipboard.
+    void setPartFromReference(const QString& partNumber);
+
 signals:
     void inventoryAdded();
 

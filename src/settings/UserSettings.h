@@ -54,6 +54,15 @@ public:
     QByteArray addInventoryDialogGeometry() const;
     void setAddInventoryDialogGeometry(const QByteArray& geometry);
 
+    QByteArray partReferenceGeometry() const;
+    void setPartReferenceGeometry(const QByteArray& geometry);
+
+    int partReferenceGroupIndex() const;
+    void setPartReferenceGroupIndex(int index);
+
+    int partReferencePageIndex(int groupIndex) const;
+    void setPartReferencePageIndex(int groupIndex, int pageIndex);
+
     QByteArray helpViewerSplitterState() const;
     void setHelpViewerSplitterState(const QByteArray& state);
 

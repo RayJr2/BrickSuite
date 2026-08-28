@@ -60,6 +60,7 @@
 #include "inventory/AddInventoryDialog.h"
 #include "inventory/MyInventoryWidget.h"
 #include "parts/PartResolverTestDialog.h"
+#include "parts/PartReferenceDialog.h"
 #include "settings/SettingsDialog.h"
 #include "storage/StorageWidget.h"
 
@@ -506,6 +507,38 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
         });
 
         dialog.exec();
+    });
+
+    // Tools menu
+    auto* toolsMenu = menuBar()->addMenu("Tools");
+
+    auto* partReferenceAction = toolsMenu->addAction("Part Reference...");
+
+    connect(partReferenceAction, &QAction::triggered, this, [this]() {
+        if (!m_partReferenceDialog) {
+            m_partReferenceDialog = new PartReferenceDialog(this);
+            m_partReferenceDialog->setAddInventoryAvailable(
+                m_myInventoryWidget && m_myInventoryWidget->hasActiveAddInventoryDialog());
+
+            connect(m_partReferenceDialog,
+                    &PartReferenceDialog::sendToAddInventoryRequested,
+                    this,
+                    [this](const QString& partNumber) {
+                        if (m_myInventoryWidget)
+                            m_myInventoryWidget->sendPartToActiveAddInventoryDialog(partNumber);
+                    });
+
+            if (m_myInventoryWidget) {
+                connect(m_myInventoryWidget,
+                        &MyInventoryWidget::addInventoryDialogAvailabilityChanged,
+                        m_partReferenceDialog,
+                        &PartReferenceDialog::setAddInventoryAvailable);
+            }
+        }
+
+        m_partReferenceDialog->show();
+        m_partReferenceDialog->raise();
+        m_partReferenceDialog->activateWindow();
     });
 
     // Help menu

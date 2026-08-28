@@ -24,6 +24,7 @@
 
 #include <QDebug>
 #include <QSettings>
+#include <QtGlobal>
 
 namespace {
 constexpr auto kGroupGeneral = "General";
@@ -65,6 +66,11 @@ constexpr auto kHelpViewerSplitterStateKey = "SplitterState";
 
 constexpr auto kGroupAddInventoryDialog = "AddInventoryDialog";
 constexpr auto kAddInventoryDialogGeometryKey = "Geometry";
+
+constexpr auto kGroupPartReference = "PartReference";
+constexpr auto kPartReferenceGeometryKey = "Geometry";
+constexpr auto kPartReferenceGroupIndexKey = "GroupIndex";
+constexpr auto kPartReferencePageIndexPrefix = "PageIndex";
 
 constexpr auto kGroupBuilds = "Builds";
 constexpr auto kShowArchivedBuildsKey = "ShowArchived";
@@ -594,6 +600,60 @@ void UserSettings::setAddInventoryDialogGeometry(const QByteArray& geometry)
     QSettings settings;
     settings.beginGroup(kGroupAddInventoryDialog);
     settings.setValue(kAddInventoryDialogGeometryKey, geometry);
+    settings.endGroup();
+}
+
+
+QByteArray UserSettings::partReferenceGeometry() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    const QByteArray geometry = settings.value(kPartReferenceGeometryKey).toByteArray();
+    settings.endGroup();
+    return geometry;
+}
+
+void UserSettings::setPartReferenceGeometry(const QByteArray& geometry)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    settings.setValue(kPartReferenceGeometryKey, geometry);
+    settings.endGroup();
+}
+
+int UserSettings::partReferenceGroupIndex() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    const int index = settings.value(kPartReferenceGroupIndexKey, 0).toInt();
+    settings.endGroup();
+    return qMax(0, index);
+}
+
+void UserSettings::setPartReferenceGroupIndex(int index)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    settings.setValue(kPartReferenceGroupIndexKey, qMax(0, index));
+    settings.endGroup();
+}
+
+int UserSettings::partReferencePageIndex(int groupIndex) const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    const QString key = QString("%1_%2").arg(kPartReferencePageIndexPrefix).arg(qMax(0, groupIndex));
+    const int index = settings.value(key, 0).toInt();
+    settings.endGroup();
+    return qMax(0, index);
+}
+
+void UserSettings::setPartReferencePageIndex(int groupIndex, int pageIndex)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    const QString key = QString("%1_%2").arg(kPartReferencePageIndexPrefix).arg(qMax(0, groupIndex));
+    settings.setValue(key, qMax(0, pageIndex));
     settings.endGroup();
 }
 

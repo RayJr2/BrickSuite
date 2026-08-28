@@ -38,6 +38,7 @@ class BuildsWidget;
 class SetsCatalogWidget;
 class BackgroundPartColorImageCacheService;
 class LogViewerDialog;
+class PartReferenceDialog;
 
 class MainWindow : public QMainWindow
 {
@@ -78,4 +79,5 @@ private:
 
     BackgroundPartColorImageCacheService* m_backgroundPartColorImageCacheService = nullptr;
     LogViewerDialog* m_logViewerDialog = nullptr;
+    PartReferenceDialog* m_partReferenceDialog = nullptr;
 };
