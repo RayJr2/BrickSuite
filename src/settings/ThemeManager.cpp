@@ -293,6 +293,10 @@ QString ThemeManager::globalStyleSheet(UserSettings::Theme theme)
             color: white;
         }
 
+        QMenu::item:disabled {
+            color: %7;
+        }
+
         QTabWidget::pane {
             border: 1px solid %1;
             background-color: %4;

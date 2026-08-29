@@ -23,6 +23,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QMenu>
 #include <QPixmap>
 #include <QPushButton>
 #include <QScrollArea>
@@ -217,20 +218,8 @@ void PartReferenceDialog::initializeUi()
         refreshSearchResults();
     });
 
-    connect(m_copyButton, &QPushButton::clicked, this, [this]() {
-        if (m_selectedPartNumber.isEmpty())
-            return;
-
-        if (QClipboard* clipboard = QGuiApplication::clipboard())
-            clipboard->setText(m_selectedPartNumber);
-    });
-
-    connect(m_sendButton, &QPushButton::clicked, this, [this]() {
-        if (m_selectedPartNumber.isEmpty() || !m_addInventoryAvailable)
-            return;
-
-        emit sendToAddInventoryRequested(m_selectedPartNumber);
-    });
+    connect(m_copyButton, &QPushButton::clicked, this, &PartReferenceDialog::copySelectedPart);
+    connect(m_sendButton, &QPushButton::clicked, this, &PartReferenceDialog::sendSelectedPartToInventory);
 }
 
 QList<PartReferenceDialog::DimensionEntry> PartReferenceDialog::makeDimensionEntries(
@@ -738,6 +727,29 @@ QToolButton* PartReferenceDialog::createPartCard(QWidget* parent,
         selectPart(partNumber, partName);
     });
 
+    button->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(button,
+            &QWidget::customContextMenuRequested,
+            this,
+            [this, button, partNumber, partName](const QPoint& pos) {
+                // Right-click always makes the card the active selection first so
+                // there is no ambiguity about which part the commands apply to.
+                selectPart(partNumber, partName);
+
+                QMenu menu(button);
+                QAction* copyAction = menu.addAction(tr("Copy Part #"));
+                QAction* sendAction = menu.addAction(tr("Send to Add Inventory"));
+                sendAction->setEnabled(m_sendButton && m_sendButton->isEnabled());
+
+                QAction* chosen = menu.exec(button->mapToGlobal(pos));
+                if (chosen == copyAction)
+                    copySelectedPart();
+                else if (chosen == sendAction)
+                    sendSelectedPartToInventory();
+            });
+
+    setCardSelected(button, normalizedKey(partNumber) == normalizedKey(m_selectedPartNumber));
+
     return button;
 }
 
@@ -795,14 +807,72 @@ void PartReferenceDialog::requestMissingImages(const QStringList& partNumbers)
 
 void PartReferenceDialog::selectPart(const QString& partNumber, const QString& partName)
 {
+    const QString previousPartNumber = m_selectedPartNumber;
+
     m_selectedPartNumber = partNumber.trimmed();
     m_selectedPartName = partName.trimmed();
+
+    if (normalizedKey(previousPartNumber) != normalizedKey(m_selectedPartNumber)) {
+        setPartCardsSelected(previousPartNumber, false);
+        setPartCardsSelected(m_selectedPartNumber, true);
+    } else {
+        // A page may have been built after the part was selected. Ensure every
+        // visible instance of the selected reference has the selected styling.
+        setPartCardsSelected(m_selectedPartNumber, true);
+    }
 
     m_selectedLabel->setText(
         tr("Selected: %1 — %2").arg(m_selectedPartNumber, m_selectedPartName));
 
     m_copyButton->setEnabled(!m_selectedPartNumber.isEmpty());
     m_sendButton->setEnabled(m_addInventoryAvailable && !m_selectedPartNumber.isEmpty());
+}
+
+void PartReferenceDialog::setCardSelected(QToolButton* card, bool selected)
+{
+    if (!card)
+        return;
+
+    card->setProperty("partReferenceSelected", selected);
+
+    // Keep the application's normal card styling intact and add only a
+    // theme-aware selection border. palette(highlight) follows the active
+    // BrickSuite/Qt theme instead of hard-coding a color.
+    if (selected) {
+        card->setStyleSheet(
+            QStringLiteral("QToolButton { border: 3px solid palette(highlight); "
+                           "border-radius: 4px; }"));
+    } else {
+        card->setStyleSheet(QString());
+    }
+}
+
+void PartReferenceDialog::setPartCardsSelected(const QString& partNumber, bool selected)
+{
+    const QString key = normalizedKey(partNumber);
+    if (key.isEmpty())
+        return;
+
+    const QList<QToolButton*> cards = m_cardsByPartNumber.value(key);
+    for (QToolButton* card : cards)
+        setCardSelected(card, selected);
+}
+
+void PartReferenceDialog::copySelectedPart()
+{
+    if (m_selectedPartNumber.isEmpty())
+        return;
+
+    if (QClipboard* clipboard = QGuiApplication::clipboard())
+        clipboard->setText(m_selectedPartNumber);
+}
+
+void PartReferenceDialog::sendSelectedPartToInventory()
+{
+    if (m_selectedPartNumber.isEmpty() || !m_addInventoryAvailable)
+        return;
+
+    emit sendToAddInventoryRequested(m_selectedPartNumber);
 }
 
 void PartReferenceDialog::restoreUiState()

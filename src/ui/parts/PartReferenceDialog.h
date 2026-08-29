@@ -106,6 +106,10 @@ private:
     void refreshSearchResults();
     void showCurrentCatalogPage();
     void selectPart(const QString& partNumber, const QString& partName);
+    void setCardSelected(QToolButton* card, bool selected);
+    void setPartCardsSelected(const QString& partNumber, bool selected);
+    void copySelectedPart();
+    void sendSelectedPartToInventory();
 
     static QList<DimensionEntry> makeDimensionEntries(
         const QStringList& columnLabels,
