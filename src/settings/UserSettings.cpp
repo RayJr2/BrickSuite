@@ -69,6 +69,9 @@ constexpr auto kAddInventoryDialogGeometryKey = "Geometry";
 
 constexpr auto kGroupPartReference = "PartReference";
 constexpr auto kPartReferenceGeometryKey = "Geometry";
+constexpr auto kPartReferenceCatalogKey = "Catalog";
+constexpr auto kPartReferenceSplitterStateKey = "SplitterState";
+constexpr auto kPartReferenceViewModePrefix = "ViewMode";
 constexpr auto kPartReferenceGroupIndexKey = "GroupIndex";
 constexpr auto kPartReferencePageIndexPrefix = "PageIndex";
 
@@ -618,6 +621,65 @@ void UserSettings::setPartReferenceGeometry(const QByteArray& geometry)
     QSettings settings;
     settings.beginGroup(kGroupPartReference);
     settings.setValue(kPartReferenceGeometryKey, geometry);
+    settings.endGroup();
+}
+
+QString UserSettings::partReferenceCatalog() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    const QString catalog = settings.value(kPartReferenceCatalogKey).toString();
+    settings.endGroup();
+    return catalog;
+}
+
+void UserSettings::setPartReferenceCatalog(const QString& catalog)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    settings.setValue(kPartReferenceCatalogKey, catalog.trimmed());
+    settings.endGroup();
+}
+
+QByteArray UserSettings::partReferenceSplitterState() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    const QByteArray state = settings.value(kPartReferenceSplitterStateKey).toByteArray();
+    settings.endGroup();
+    return state;
+}
+
+void UserSettings::setPartReferenceSplitterState(const QByteArray& state)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    settings.setValue(kPartReferenceSplitterStateKey, state);
+    settings.endGroup();
+}
+
+QString UserSettings::partReferenceViewMode(const QString& catalog) const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    const QString key = QString("%1/%2").arg(kPartReferenceViewModePrefix, catalog.trimmed());
+    const QString mode = settings.value(key, QStringLiteral("Gallery")).toString();
+    settings.endGroup();
+    return mode;
+}
+
+void UserSettings::setPartReferenceViewMode(const QString& catalog, const QString& viewMode)
+{
+    const QString trimmedCatalog = catalog.trimmed();
+    if (trimmedCatalog.isEmpty())
+        return;
+
+    QSettings settings;
+    settings.beginGroup(kGroupPartReference);
+    const QString key = QString("%1/%2").arg(kPartReferenceViewModePrefix, trimmedCatalog);
+    settings.setValue(key, viewMode == QStringLiteral("DimensionGrid")
+                               ? QStringLiteral("DimensionGrid")
+                               : QStringLiteral("Gallery"));
     settings.endGroup();
 }
 

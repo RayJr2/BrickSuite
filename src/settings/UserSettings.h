@@ -57,6 +57,16 @@ public:
     QByteArray partReferenceGeometry() const;
     void setPartReferenceGeometry(const QByteArray& geometry);
 
+    QString partReferenceCatalog() const;
+    void setPartReferenceCatalog(const QString& catalog);
+
+    QByteArray partReferenceSplitterState() const;
+    void setPartReferenceSplitterState(const QByteArray& state);
+
+    QString partReferenceViewMode(const QString& catalog) const;
+    void setPartReferenceViewMode(const QString& catalog, const QString& viewMode);
+
+    // Legacy prototype settings retained for backward compatibility.
     int partReferenceGroupIndex() const;
     void setPartReferenceGroupIndex(int index);
 

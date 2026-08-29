@@ -8,19 +8,24 @@
 
 #pragma once
 
+#include "../../models/PartReferenceEntry.h"
 #include "../../services/parts/PartReferenceManifest.h"
 
 #include <QDialog>
 #include <QHash>
 #include <QList>
 #include <QPair>
+#include <QSet>
 #include <QStringList>
 
 class QCloseEvent;
+class QComboBox;
 class QLabel;
 class QLineEdit;
+class QListWidget;
 class QPushButton;
-class QTabWidget;
+class QSplitter;
+class QStackedWidget;
 class QToolButton;
 class QWidget;
 class PartImageService;
@@ -52,64 +57,82 @@ private:
         QString partNumber;
     };
 
-    struct PageDefinition
+    struct DimensionDefinition
     {
-        QString name;
-        bool dimensionGrid = false;
-        QList<int> rebrickableCategoryIds;
-        QList<DimensionEntry> dimensionEntries;
-        int galleryLimit = 160;
-        QWidget* page = nullptr;
-        bool loaded = false;
+        QString catalog;
+        QString section;
+        QString title;
+        QList<DimensionEntry> entries;
     };
 
-    struct GroupDefinition
+    enum class ViewMode
     {
-        QString name;
-        QTabWidget* tabs = nullptr;
-        QList<PageDefinition> pages;
+        Gallery,
+        DimensionGrid
     };
 
     void initializeUi();
-    void initializeDefinitions();
+    void initializeDimensionDefinitions();
     void restoreUiState();
     void saveUiState();
 
-    PageDefinition* currentPageDefinition();
-    void ensureCurrentPageLoaded();
-    void buildDimensionPage(PageDefinition& definition);
-    void buildGalleryPage(PageDefinition& definition);
+    void populateCatalogList();
+    void catalogSelectionChanged();
+    void updateViewSelector();
+    QString currentCatalog() const;
+    ViewMode currentViewMode() const;
 
-    QList<int> localCategoryIds(const QList<int>& rebrickableCategoryIds) const;
-    bool partMatchesCategories(int partCategoryId, const QList<int>& localCategoryIds) const;
-    bool isPrintedPartNumber(const QString& partNumber) const;
+    QWidget* ensureCatalogPage(const QString& catalog, ViewMode mode);
+    QWidget* buildCatalogGalleryPage(const QString& catalog);
+    QWidget* buildCatalogDimensionPage(const QString& catalog);
+    QWidget* buildSearchPage(const QList<PartReferenceEntry>& entries,
+                             int totalMatches);
+    QWidget* buildGalleryContent(const QList<PartReferenceEntry>& entries,
+                                 QWidget* parent,
+                                 bool includeSectionHeadings = true);
+
+    bool catalogSupportsDimensionGrid(const QString& catalog) const;
+    QList<DimensionDefinition> dimensionDefinitionsForCatalog(const QString& catalog) const;
+    QList<PartReferenceEntry> entriesNotInDimensionGrid(
+        const QList<PartReferenceEntry>& catalogEntries,
+        const QList<DimensionDefinition>& definitions) const;
 
     QToolButton* createPartCard(QWidget* parent,
                                 const QString& partNumber,
                                 const QString& partName);
     void setCardImage(const QString& partNumber, const QString& imagePath);
+    void loadCardImageOrQueue(const QString& partNumber, QSet<QString>& missingImages);
     void requestMissingImages(const QStringList& partNumbers);
-    void applySearchFilter();
+    void refreshSearchResults();
+    void showCurrentCatalogPage();
     void selectPart(const QString& partNumber, const QString& partName);
 
     static QList<DimensionEntry> makeDimensionEntries(
         const QStringList& columnLabels,
         const QList<QPair<QString, QStringList>>& rows);
+    static QString pageKey(const QString& catalog, ViewMode mode);
 
     QLineEdit* m_searchEdit = nullptr;
-    QTabWidget* m_groupTabs = nullptr;
+    QListWidget* m_catalogList = nullptr;
+    QComboBox* m_viewCombo = nullptr;
+    QLabel* m_catalogTitleLabel = nullptr;
+    QLabel* m_catalogCountLabel = nullptr;
+    QSplitter* m_splitter = nullptr;
+    QStackedWidget* m_contentStack = nullptr;
     QLabel* m_selectedLabel = nullptr;
     QPushButton* m_copyButton = nullptr;
     QPushButton* m_sendButton = nullptr;
 
-    QList<GroupDefinition> m_groups;
+    QList<DimensionDefinition> m_dimensionDefinitions;
+    QHash<QString, QWidget*> m_pagesByKey;
+    QWidget* m_searchPage = nullptr;
 
     QString m_selectedPartNumber;
     QString m_selectedPartName;
     bool m_addInventoryAvailable = false;
+    bool m_restoringUiState = false;
 
     QHash<QString, QList<QToolButton*>> m_cardsByPartNumber;
-    QList<QToolButton*> m_currentCards;
 
     PartReferenceManifest m_manifest;
 
@@ -117,4 +140,6 @@ private:
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
 
     static constexpr int ImageBatchSize = 20;
+    static constexpr int GalleryColumns = 6;
+    static constexpr int SearchDisplayLimit = 240;
 };
