@@ -568,7 +568,6 @@ void AddInventoryDialog::addInventory()
     }
 
     m_inventoryWasAdded = true;
-    emit inventoryAdded();
 
     if (m_quickEntryMode && m_keepOpenCheck->isChecked()) {
         const int addedQuantity = m_quantitySpin->value();
@@ -598,9 +597,15 @@ void AddInventoryDialog::addInventory()
             m_colorCombo->setFocus();
         }
 
+        // Notify listeners only after the rapid-entry UI has been updated.
+        // My Inventory handles this notification asynchronously so its table
+        // refresh cannot delay the confirmation/status feedback above.
+        emit inventoryAdded();
+
         return;
     }
 
+    emit inventoryAdded();
     accept();
 }
 

@@ -1069,18 +1069,39 @@ void MyInventoryWidget::addPart()
     if (filteredStorageLocationId > 0)
         dialog->setPreferredStorageLocationId(filteredStorageLocationId);
 
-    connect(dialog, &AddInventoryDialog::inventoryAdded, this, [this]() {
-        searchInventory();
-        emit inventoryChanged();
-    });
+    // Rapid-entry mode may add many parts while this non-modal dialog stays
+    // open. Rebuilding My Inventory (and the background part-color image
+    // cache queue via inventoryChanged) after every single Add is expensive
+    // and blocks the GUI thread. Mark the view dirty here and perform one
+    // refresh when the dialog closes.
+    dialog->setProperty("brickSuiteInventoryAddedWhileOpen", false);
+
+    connect(
+        dialog,
+        &AddInventoryDialog::inventoryAdded,
+        this,
+        [dialog]()
+        {
+            dialog->setProperty("brickSuiteInventoryAddedWhileOpen", true);
+        });
 
     m_activeAddInventoryDialog = dialog;
     emit addInventoryDialogAvailabilityChanged(true);
 
     connect(dialog, &QDialog::finished, this, [this, dialog](int) {
+        const bool inventoryAddedWhileOpen =
+            dialog->property("brickSuiteInventoryAddedWhileOpen").toBool();
+
         if (m_activeAddInventoryDialog == dialog) {
             m_activeAddInventoryDialog = nullptr;
             emit addInventoryDialogAvailabilityChanged(false);
+        }
+
+        // Refresh the inventory table and rebuild dependent background queues
+        // once per rapid-entry session instead of once per added part.
+        if (inventoryAddedWhileOpen) {
+            searchInventory();
+            emit inventoryChanged();
         }
 
         dialog->deleteLater();
