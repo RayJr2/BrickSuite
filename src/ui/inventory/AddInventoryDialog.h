@@ -87,6 +87,7 @@ private:
         const RebrickableService::PartDetailsResult& result);
     void applyResolvedPart(int partId, const QString& displayText, const QString& resolutionText);
     void updateAddButtonState();
+    bool tryResolveBrickLinkExternalId(const QString& externalId);
 
     int m_partId = 0;
 
@@ -109,6 +110,7 @@ private:
 
     QCheckBox* m_showAllColorsCheck = nullptr;
     QCheckBox* m_rememberPartCheck = nullptr;
+    QCheckBox* m_tryBrickLinkIdCheck = nullptr;
 
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
 

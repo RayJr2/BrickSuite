@@ -27,9 +27,12 @@
 #include "../../models/PartSearchCriteria.h"
 #include "../../models/PartSearchResult.h"
 #include "../../repositories/PartCategoryRepository.h"
+#include "../../repositories/ExternalPartIdentifierRepository.h"
+#include "../../repositories/ExternalPartMappingRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/parts/RebrickablePartAliasLearner.h"
+#include "../../services/mappings/BrickLinkMappingService.h"
 #include "../../services/images/PartImageService.h"
 #include "../../settings/UserSettings.h"
 #include "../parts/PartDetailsDialog.h"
@@ -46,9 +49,38 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSet>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
+
+namespace
+{
+bool hasProviderId(const QHash<QString, QStringList>& externalIds,
+                   const QString& provider)
+{
+    for (auto it = externalIds.constBegin(); it != externalIds.constEnd(); ++it) {
+        if (it.key().compare(provider, Qt::CaseInsensitive) != 0)
+            continue;
+
+        for (const QString& id : it.value()) {
+            if (!id.trimmed().isEmpty())
+                return true;
+        }
+    }
+
+    return false;
+}
+
+bool isLikelyPrintedPartNumber(const QString& partNumber)
+{
+    static const QRegularExpression printedPattern(
+        QStringLiteral("p(?:r|b)\\d"),
+        QRegularExpression::CaseInsensitiveOption);
+
+    return printedPattern.match(partNumber).hasMatch();
+}
+}
 
 PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
     : QWidget(parent)
@@ -226,23 +258,87 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
             &PartsCatalogWidget::handlePartDetailsForAliasLearning);
 
     connect(m_rebrickableApiClient,
+            &RebrickableApiClient::partDetailsFinished,
+            this,
+            &PartsCatalogWidget::handlePartDetailsForExternalIdEnrichment);
+
+    connect(m_rebrickableApiClient,
             &RebrickableApiClient::partImageUrlsFinished,
             this,
             [this](const RebrickableApiClient::PartImageUrlsResult& result) {
                 if (!result.success)
                     return;
 
+                ExternalPartIdentifierRepository externalIdentifierRepository;
+                BrickLinkMappingService mappingService;
+                PartRepository partRepository;
+                QSet<QString> returnedPartNumbers;
+
                 for (const RebrickableApiClient::PartImageUrl& part : result.parts) {
-                    if (part.partImageUrl.isEmpty())
+                    returnedPartNumbers.insert(part.partNumber.toLower());
+
+                    const std::optional<Part> localPart =
+                        partRepository.getByPartNumber(part.partNumber);
+
+                    if (localPart) {
+                        externalIdentifierRepository.replaceProviderIds(
+                            localPart->id(),
+                            part.externalIds,
+                            QStringLiteral("Rebrickable"));
+
+                        mappingService.storePartExternalIds(
+                            localPart->id(),
+                            part.externalIds);
+
+                        const bool hasBrickLink =
+                            hasProviderId(part.externalIds, QStringLiteral("BrickLink"));
+
+                        if (hasBrickLink) {
+                            externalIdentifierRepository.setLookupStatus(
+                                localPart->id(),
+                                QStringLiteral("Rebrickable"),
+                                QStringLiteral("Loaded"));
+                        } else if (isLikelyPrintedPartNumber(part.partNumber)) {
+                            // Rebrickable's batched parts-list response can omit
+                            // BrickLink IDs that are present on the direct Part
+                            // Details endpoint. Printed variants are the main
+                            // BrickScan workflow, so fill that gap with a
+                            // throttled background detail request instead of
+                            // incorrectly marking the lookup complete.
+                            requestPrintedPartExternalIdDetails(part.partNumber);
+                        } else {
+                            externalIdentifierRepository.setLookupStatus(
+                                localPart->id(),
+                                QStringLiteral("Rebrickable"),
+                                QStringLiteral("Loaded"));
+                        }
+                    }
+
+                    if (!part.partImageUrl.isEmpty()) {
+                        // Cache the image even if the user has already moved
+                        // to another catalog page. imageReady() updates a row
+                        // only when that part is currently visible.
+                        m_partImageService->requestPartImage(part.partNumber,
+                                                             part.partImageUrl);
+                    }
+                }
+
+                // A successful batch can legitimately omit a requested part.
+                // Remember that terminal result so we do not continuously
+                // retry it while browsing the same catalog page.
+                for (const QString& requestedPartNumber : result.requestedPartNumbers) {
+                    if (returnedPartNumbers.contains(requestedPartNumber.toLower()))
                         continue;
 
-                    //
-                    // Cache the image even if the user has already moved
-                    // to another catalog page. imageReady() updates a row
-                    // only when that part is currently visible.
-                    //
-                    m_partImageService->requestPartImage(part.partNumber,
-                                                         part.partImageUrl);
+                    const std::optional<Part> localPart =
+                        partRepository.getByPartNumber(requestedPartNumber);
+
+                    if (localPart) {
+                        externalIdentifierRepository.setLookupStatus(
+                            localPart->id(),
+                            QStringLiteral("Rebrickable"),
+                            QStringLiteral("Unavailable"));
+                    }
                 }
             });
 
@@ -338,7 +434,9 @@ void PartsCatalogWidget::searchParts()
 
     m_rowByPartNumber.clear();
 
-    QStringList missingPartImages;
+    QStringList missingPartEnrichment;
+    ExternalPartIdentifierRepository externalIdentifierRepository;
+    ExternalPartMappingRepository externalPartMappingRepository;
 
     int row = 0;
 
@@ -443,20 +541,40 @@ void PartsCatalogWidget::searchParts()
         //
         const QString cachedPath = m_partImageService->cachedImagePath(partNumber);
 
-        if (!cachedPath.isEmpty()) {
-            //
-            // requestPartImage() will immediately emit
-            // imageReady() when the file is already cached.
-            //
-            m_partImageService->requestPartImage(partNumber, QString());
-        } else {
-            missingPartImages.append(partNumber);
+        bool needsExternalIds =
+            !externalIdentifierRepository.isLookupComplete(
+                part.id(), QStringLiteral("Rebrickable"));
+
+        // Schema v20 initially marked a successful parts-list lookup as
+        // Loaded even when that response omitted BrickLink IDs. Printed
+        // parts are the BrickScan use case, so treat a missing BrickLink
+        // mapping as still needing enrichment. This also repairs databases
+        // that were already marked Loaded by the first v20 implementation.
+        if (isLikelyPrintedPartNumber(partNumber)) {
+            const auto brickLinkMapping =
+                externalPartMappingRepository.getByPartAndProvider(
+                    part.id(), QStringLiteral("BrickLink"));
+
+            if (!brickLinkMapping
+                || brickLinkMapping->externalId.trimmed().isEmpty()) {
+                needsExternalIds = true;
+            }
         }
+
+        if (!cachedPath.isEmpty()) {
+            // requestPartImage() will immediately emit imageReady() when the
+            // file is already cached. External-ID enrichment is independent
+            // of image state and may still be needed below.
+            m_partImageService->requestPartImage(partNumber, QString());
+        }
+
+        if (cachedPath.isEmpty() || needsExternalIds)
+            missingPartEnrichment.append(partNumber);
 
         ++row;
     }
 
-    requestMissingPartImages(missingPartImages);
+    requestMissingPartEnrichment(missingPartEnrichment);
 
     if (results.isEmpty()) {
         if (m_currentPage > 0) {
@@ -496,7 +614,75 @@ void PartsCatalogWidget::searchParts()
     updatePagingControls();
 }
 
-void PartsCatalogWidget::requestMissingPartImages(const QStringList& partNumbers)
+void PartsCatalogWidget::requestPrintedPartExternalIdDetails(
+    const QString& partNumber)
+{
+    const QString requested = partNumber.trimmed();
+    if (requested.isEmpty())
+        return;
+
+    const QString key = requested.toLower();
+    if (m_pendingExternalIdDetailLookups.contains(key))
+        return;
+
+    const QString apiKey = UserSettings::instance().rebrickableApiKey().trimmed();
+    if (apiKey.isEmpty() || RebrickableApiClient::isSessionBlocked())
+        return;
+
+    m_pendingExternalIdDetailLookups.insert(key);
+    m_rebrickableApiClient->getPartDetails(
+        requested,
+        apiKey,
+        RebrickableApiClient::RequestPriority::Background);
+}
+
+void PartsCatalogWidget::handlePartDetailsForExternalIdEnrichment(
+    const RebrickableService::PartDetailsResult& providerResult)
+{
+    const QString requested = providerResult.requestedPartNumber.trimmed();
+    const QString key = requested.toLower();
+
+    if (key.isEmpty() || !m_pendingExternalIdDetailLookups.contains(key))
+        return;
+
+    m_pendingExternalIdDetailLookups.remove(key);
+
+    PartRepository partRepository;
+    const std::optional<Part> localPart =
+        partRepository.getByPartNumber(requested);
+
+    if (!localPart)
+        return;
+
+    ExternalPartIdentifierRepository externalIdentifierRepository;
+
+    if (!providerResult.success) {
+        externalIdentifierRepository.setLookupStatus(
+            localPart->id(),
+            QStringLiteral("Rebrickable"),
+            QStringLiteral("Unavailable"));
+        return;
+    }
+
+    externalIdentifierRepository.replaceProviderIds(
+        localPart->id(),
+        providerResult.part.externalIds,
+        QStringLiteral("Rebrickable"));
+
+    BrickLinkMappingService mappingService;
+    mappingService.storePartExternalIds(
+        localPart->id(),
+        providerResult.part.externalIds);
+
+    externalIdentifierRepository.setLookupStatus(
+        localPart->id(),
+        QStringLiteral("Rebrickable"),
+        hasProviderId(providerResult.part.externalIds, QStringLiteral("BrickLink"))
+            ? QStringLiteral("Loaded")
+            : QStringLiteral("Unavailable"));
+}
+
+void PartsCatalogWidget::requestMissingPartEnrichment(const QStringList& partNumbers)
 {
     if (partNumbers.isEmpty())
         return;
@@ -507,8 +693,10 @@ void PartsCatalogWidget::requestMissingPartImages(const QStringList& partNumbers
         return;
 
     //
-    // Rebrickable recommends batching part detail lookups. Keep each
-    // BrickSuite background request deliberately conservative at 20 parts.
+    // Rebrickable's parts-list response supplies both the image URL and
+    // external provider IDs when inc_part_details=1. One conservative
+    // background request therefore fills both caches without a second API
+    // call per part. Keep each batch deliberately small at 20 parts.
     // The central API request queue still applies its normal rate limit and
     // gives foreground/user requests priority.
     //

@@ -66,6 +66,7 @@ constexpr auto kHelpViewerSplitterStateKey = "SplitterState";
 
 constexpr auto kGroupAddInventoryDialog = "AddInventoryDialog";
 constexpr auto kAddInventoryDialogGeometryKey = "Geometry";
+constexpr auto kAddInventoryTryBrickLinkIdKey = "TryBrickLinkId";
 
 constexpr auto kGroupPartReference = "PartReference";
 constexpr auto kPartReferenceGeometryKey = "Geometry";
@@ -603,6 +604,23 @@ void UserSettings::setAddInventoryDialogGeometry(const QByteArray& geometry)
     QSettings settings;
     settings.beginGroup(kGroupAddInventoryDialog);
     settings.setValue(kAddInventoryDialogGeometryKey, geometry);
+    settings.endGroup();
+}
+
+bool UserSettings::addInventoryTryBrickLinkId() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupAddInventoryDialog);
+    const bool enabled = settings.value(kAddInventoryTryBrickLinkIdKey, false).toBool();
+    settings.endGroup();
+    return enabled;
+}
+
+void UserSettings::setAddInventoryTryBrickLinkId(bool enabled)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupAddInventoryDialog);
+    settings.setValue(kAddInventoryTryBrickLinkIdKey, enabled);
     settings.endGroup();
 }
 

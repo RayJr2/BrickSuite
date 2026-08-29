@@ -707,6 +707,8 @@ void RebrickableService::getPartImageUrls(const QStringList& partNumbers,
         }
     }
 
+    invalidResult.requestedPartNumbers = cleanedPartNumbers;
+
     if (cleanedPartNumbers.isEmpty() || trimmedApiKey.isEmpty()) {
         invalidResult.message = "Part numbers or Rebrickable API key are missing.";
 
@@ -736,8 +738,9 @@ void RebrickableService::getPartImageUrls(const QStringList& partNumbers,
     enqueueGet(
         request,
         QStringLiteral("GetPartImageUrls"),
-        [this](QNetworkReply* reply) {
+        [this, cleanedPartNumbers](QNetworkReply* reply) {
             PartImageUrlsResult result;
+            result.requestedPartNumbers = cleanedPartNumbers;
 
             const QVariant statusAttribute = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
 
@@ -789,6 +792,24 @@ void RebrickableService::getPartImageUrls(const QStringList& partNumbers,
                         part.partNumber = partObject.value("part_num").toString().trimmed();
                         part.partImageUrl = partObject.value("part_img_url").toString().trimmed();
 
+                        const QJsonObject externalIds =
+                            partObject.value(QStringLiteral("external_ids")).toObject();
+
+                        for (auto it = externalIds.constBegin();
+                             it != externalIds.constEnd(); ++it) {
+                            QStringList ids;
+                            const QJsonArray values = it.value().toArray();
+
+                            for (const QJsonValue& idValue : values) {
+                                const QString id = idValue.toString().trimmed();
+                                if (!id.isEmpty())
+                                    ids.append(id);
+                            }
+
+                            if (!ids.isEmpty())
+                                part.externalIds.insert(it.key(), ids);
+                        }
+
                         if (!part.partNumber.isEmpty()) {
                             result.parts.append(part);
                         }
@@ -811,9 +832,10 @@ void RebrickableService::getPartImageUrls(const QStringList& partNumbers,
             reply->deleteLater();
             emit partImageUrlsFinished(result);
         },
-        [this]() {
+        [this, cleanedPartNumbers]() {
             PartImageUrlsResult result;
             result.success = false;
+            result.requestedPartNumbers = cleanedPartNumbers;
             result.httpStatusCode = 403;
             result.message = sessionBlockReason();
 
@@ -824,7 +846,9 @@ void RebrickableService::getPartImageUrls(const QStringList& partNumbers,
         ApiLogPolicy::ErrorsOnly);
 }
 
-void RebrickableService::getPartDetails(const QString& partNumber, const QString& apiKey)
+void RebrickableService::getPartDetails(const QString& partNumber,
+                                         const QString& apiKey,
+                                         RequestPriority priority)
 {
     if (isSessionBlocked()) {
         PartDetailsResult result;
@@ -873,7 +897,7 @@ void RebrickableService::getPartDetails(const QString& partNumber, const QString
 
     enqueueGet(
         request,
-        QStringLiteral("GetPartDetails"),
+        QStringLiteral("GetPartDetails[%1]").arg(trimmedPartNumber),
 
         //
         // Actual reply handler.
@@ -1060,7 +1084,8 @@ void RebrickableService::getPartDetails(const QString& partNumber, const QString
             result.message = sessionBlockReason();
 
             emit partDetailsFinished(result);
-        });
+        },
+        priority);
 }
 
 void RebrickableService::searchPartByExternalId(

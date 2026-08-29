@@ -381,6 +381,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 19;
     }
 
+    // Version 19 -> Version 20.
+    if (version == 19) {
+        if (!migrateVersion19ToVersion20(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 20)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 20;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -2545,3 +2560,33 @@ bool DatabaseSchema::migrateVersion18ToVersion19(QSqlDatabase& database)
     return true;
 }
 
+
+
+bool DatabaseSchema::migrateVersion19ToVersion20(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    // A successful Rebrickable enrichment may return no external IDs. Keep a
+    // separate terminal lookup state so background catalog browsing does not
+    // repeatedly request those parts on every visit.
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS external_part_identifier_lookup
+        (
+            part_id     INTEGER NOT NULL,
+            source      TEXT NOT NULL,
+            status      TEXT NOT NULL DEFAULT 'Unknown'
+                        CHECK(status IN ('Unknown', 'Loaded', 'Unavailable')),
+            checked_utc TEXT NOT NULL,
+
+            PRIMARY KEY(part_id, source),
+            FOREIGN KEY(part_id) REFERENCES part(id)
+        )
+    )")) {
+        qCritical() << "Unable to create external part identifier lookup table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    qInfo() << "External part identifier enrichment tracking initialized.";
+    return true;
+}

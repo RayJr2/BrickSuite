@@ -21,6 +21,7 @@
 #pragma once
 
 #include <QHash>
+#include <QSet>
 #include <QWidget>
 
 #include "../../api/rebrickable/RebrickableService.h"
@@ -56,7 +57,10 @@ signals:
 private:
     void loadCategories();
     void updatePagingControls();
-    void requestMissingPartImages(const QStringList& partNumbers);
+    void requestMissingPartEnrichment(const QStringList& partNumbers);
+    void handlePartDetailsForExternalIdEnrichment(
+        const RebrickableService::PartDetailsResult& result);
+    void requestPrintedPartExternalIdDetails(const QString& partNumber);
 
     static constexpr int ResultsPerPage = 250;
     static constexpr int PartImageBatchSize = 20;
@@ -82,6 +86,7 @@ private:
 
     QHash<QString, int> m_rowByPartNumber;
     QString m_pendingAliasLookupPartNumber;
+    QSet<QString> m_pendingExternalIdDetailLookups;
 
     QPushButton* m_importPartsButton = nullptr;
     QPushButton* m_importPartRelationshipsButton = nullptr;

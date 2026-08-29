@@ -66,6 +66,52 @@ ExternalPartMappingRepository::getByPartAndProvider(
     return mappingFromQuery(query);
 }
 
+QList<ExternalPartMapping>
+ExternalPartMappingRepository::findByProviderAndExternalId(
+    const QString& provider,
+    const QString& externalId) const
+{
+    QList<ExternalPartMapping> results;
+
+    const QString providerValue = provider.trimmed();
+    const QString externalIdValue = externalId.trimmed();
+
+    if (providerValue.isEmpty() || externalIdValue.isEmpty())
+        return results;
+
+    QSqlQuery query(DatabaseManager::instance().database());
+
+    query.prepare(R"(
+        SELECT
+            id,
+            part_id,
+            provider,
+            external_id,
+            mapping_status,
+            source,
+            notes
+        FROM external_part_mapping
+        WHERE provider = :provider COLLATE NOCASE
+          AND external_id = :external_id COLLATE NOCASE
+          AND mapping_status = 'Mapped'
+        ORDER BY part_id
+    )");
+
+    query.bindValue(":provider", providerValue);
+    query.bindValue(":external_id", externalIdValue);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to reverse-search external part mapping:"
+                    << query.lastError().text();
+        return results;
+    }
+
+    while (query.next())
+        results.append(mappingFromQuery(query));
+
+    return results;
+}
+
 bool ExternalPartMappingRepository::upsert(
     const ExternalPartMapping& mapping) const
 {

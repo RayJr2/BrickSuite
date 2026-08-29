@@ -54,6 +54,9 @@ public:
     QByteArray addInventoryDialogGeometry() const;
     void setAddInventoryDialogGeometry(const QByteArray& geometry);
 
+    bool addInventoryTryBrickLinkId() const;
+    void setAddInventoryTryBrickLinkId(bool enabled);
+
     QByteArray partReferenceGeometry() const;
     void setPartReferenceGeometry(const QByteArray& geometry);
 

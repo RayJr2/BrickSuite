@@ -425,6 +425,10 @@ PartDetailsDialog::PartDetailsDialog(
                     m_partId,
                     result.part.externalIds,
                     QStringLiteral("Rebrickable"));
+                externalIdentifierRepository.setLookupStatus(
+                    m_partId,
+                    QStringLiteral("Rebrickable"),
+                    QStringLiteral("Loaded"));
 
                 BrickLinkMappingService mappingService;
                 mappingService.storePartExternalIds(

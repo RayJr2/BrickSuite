@@ -29,6 +29,8 @@
 #include "../../models/StorageLocation.h"
 
 #include "../../repositories/ColorRepository.h"
+#include "../../repositories/ExternalPartIdentifierRepository.h"
+#include "../../repositories/ExternalPartMappingRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/PartRepository.h"
@@ -52,6 +54,7 @@
 #include <QHBoxLayout>
 #include <QSet>
 #include <QLabel>
+#include <QInputDialog>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
@@ -150,11 +153,19 @@ void AddInventoryDialog::initializeUi()
         m_partCategoryLabel = new QLabel(this);
         m_partCategoryLabel->setVisible(false);
 
+        m_tryBrickLinkIdCheck = new QCheckBox("Try BrickLink ID", this);
+        m_tryBrickLinkIdCheck->setChecked(
+            UserSettings::instance().addInventoryTryBrickLinkId());
+        m_tryBrickLinkIdCheck->setToolTip(
+            "If normal resolution fails, try the entered value as a BrickLink "
+            "external part ID and cross-reference it to the local Rebrickable part.");
+
         auto* resolvedRowWidget = new QWidget(this);
         auto* resolvedRowLayout = new QHBoxLayout(resolvedRowWidget);
         resolvedRowLayout->setContentsMargins(0, 0, 0, 0);
         resolvedRowLayout->addWidget(m_partResolutionLabel, 1);
         resolvedRowLayout->addWidget(m_partCategoryLabel, 0, Qt::AlignRight);
+        resolvedRowLayout->addWidget(m_tryBrickLinkIdCheck);
         layout->addRow("Resolved:", resolvedRowWidget);
 
         m_partSearchTimer = new QTimer(this);
@@ -352,6 +363,18 @@ void AddInventoryDialog::initializeUi()
                 QOverload<const QModelIndex&>::of(&QCompleter::activated),
                 this,
                 &AddInventoryDialog::selectSearchResult);
+
+        connect(m_tryBrickLinkIdCheck, &QCheckBox::toggled, this, [this](bool checked) {
+            UserSettings::instance().setAddInventoryTryBrickLinkId(checked);
+
+            // A common workflow is to type a BrickLink ID, see Not Found, then
+            // enable this option. Re-run resolution immediately so the user does
+            // not need to press Enter a second time.
+            if (checked && m_partId <= 0 && m_partSearchEdit
+                && !m_partSearchEdit->text().trimmed().isEmpty()) {
+                resolveEnteredPart();
+            }
+        });
     }
 }
 
@@ -770,6 +793,30 @@ void AddInventoryDialog::resolveEnteredPart()
     const PartResolutionResult result = resolver.resolve(enteredPartNumber);
 
     if (!result.hasResolvedPart) {
+        const bool tryBrickLinkId =
+            m_tryBrickLinkIdCheck && m_tryBrickLinkIdCheck->isChecked();
+
+        if (tryBrickLinkId) {
+            if (tryResolveBrickLinkExternalId(enteredPartNumber))
+                return;
+
+            // When BrickLink cross-reference mode is enabled, a local miss
+            // must not be sent to Rebrickable's Part Details endpoint as if
+            // the BrickLink identifier were a Rebrickable part number.
+            // That request is expected to return HTTP 404 and adds no useful
+            // information. The mapping must first be learned from a
+            // Rebrickable part's external IDs.
+            if (m_partResolutionLabel) {
+                m_partResolutionLabel->setText(
+                    QStringLiteral("BrickLink ID not cached yet — browse the matching "
+                                   "Rebrickable part in Parts Catalog to learn its external IDs."));
+                m_partResolutionLabel->setVisible(true);
+            }
+
+            updateAddButtonState();
+            return;
+        }
+
         RebrickablePartAliasLearner learner;
         const auto localLearned =
             learner.learnFromLocalExternalId(enteredPartNumber);
@@ -837,6 +884,109 @@ void AddInventoryDialog::resolveEnteredPart()
         QString("%1 — %2")
             .arg(result.part.partNumber(), result.part.name()),
         resolutionText);
+}
+
+bool AddInventoryDialog::tryResolveBrickLinkExternalId(const QString& externalId)
+{
+    const QString requested = externalId.trimmed();
+    if (requested.isEmpty())
+        return false;
+
+    const QString provider = QStringLiteral("BrickLink");
+
+    // Consult both forms of locally cached mapping data. external_part_mapping
+    // includes Rebrickable-derived mappings and user overrides used by the
+    // BrickLink export framework. external_part_identifier contains the full
+    // provider ID set cached from Rebrickable Part Details.
+    QSet<int> mappedPartIds;
+
+    ExternalPartMappingRepository mappingRepository;
+    const QList<ExternalPartMapping> providerMappings =
+        mappingRepository.findByProviderAndExternalId(provider, requested);
+    for (const ExternalPartMapping& mapping : providerMappings) {
+        if (mapping.partId > 0)
+            mappedPartIds.insert(mapping.partId);
+    }
+
+    ExternalPartIdentifierRepository externalRepository;
+    const QList<ExternalPartIdentifier> identifiers =
+        externalRepository.findByProviderAndExternalId(provider, requested, true);
+    for (const ExternalPartIdentifier& identifier : identifiers) {
+        if (identifier.partId > 0)
+            mappedPartIds.insert(identifier.partId);
+    }
+
+    if (mappedPartIds.isEmpty())
+        return false;
+
+    PartRepository partRepository;
+    QList<Part> candidates;
+
+    for (const int partId : mappedPartIds) {
+        const std::optional<Part> part = partRepository.getById(partId);
+        if (!part || !part->isActive())
+            continue;
+
+        candidates.append(*part);
+    }
+
+    if (candidates.isEmpty())
+        return false;
+
+    Part selectedPart;
+
+    if (candidates.size() == 1) {
+        selectedPart = candidates.first();
+    } else {
+        QStringList choices;
+        QHash<QString, int> partIdByChoice;
+
+        for (const Part& part : candidates) {
+            const QString choice =
+                QStringLiteral("%1 — %2").arg(part.partNumber(), part.name());
+            choices.append(choice);
+            partIdByChoice.insert(choice, part.id());
+        }
+
+        bool accepted = false;
+        const QString choice = QInputDialog::getItem(
+            this,
+            QStringLiteral("BrickLink Cross-Reference"),
+            QStringLiteral("BrickLink ID %1 maps to multiple Rebrickable parts.\n"
+                           "Select the correct part:")
+                .arg(requested),
+            choices,
+            0,
+            false,
+            &accepted);
+
+        if (!accepted || choice.isEmpty()) {
+            if (m_partResolutionLabel) {
+                m_partResolutionLabel->setText(
+                    QStringLiteral("BrickLink %1 — multiple matches; no part selected.")
+                        .arg(requested));
+                m_partResolutionLabel->setVisible(true);
+            }
+            updateAddButtonState();
+            return true;
+        }
+
+        const std::optional<Part> selected =
+            partRepository.getById(partIdByChoice.value(choice));
+        if (!selected)
+            return false;
+
+        selectedPart = *selected;
+    }
+
+    applyResolvedPart(
+        selectedPart.id(),
+        QStringLiteral("%1 — %2")
+            .arg(selectedPart.partNumber(), selectedPart.name()),
+        QStringLiteral("BrickLink %1 → Rebrickable %2")
+            .arg(requested, selectedPart.partNumber()));
+
+    return true;
 }
 
 void AddInventoryDialog::handlePartDetailsForAliasLearning(

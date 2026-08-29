@@ -139,6 +139,12 @@ public:
     {
         QString partNumber;
         QString partImageUrl;
+
+        // The Parts list endpoint already returns provider identifiers when
+        // inc_part_details=1. Keep them with the image metadata so callers
+        // can enrich the local cross-reference cache without a second API
+        // request per part.
+        QHash<QString, QStringList> externalIds;
     };
 
     struct PartImageUrlsResult
@@ -148,6 +154,10 @@ public:
         int httpStatusCode = 0;
 
         QString message;
+
+        // Preserve the requested batch so callers can distinguish a
+        // successful lookup that returned no row for a particular part.
+        QStringList requestedPartNumbers;
 
         QList<PartImageUrl> parts;
     };
@@ -252,7 +262,9 @@ public:
 
     void getCatalogColors(const QString& apiKey);
 
-    void getPartDetails(const QString& partNumber, const QString& apiKey);
+    void getPartDetails(const QString& partNumber,
+                        const QString& apiKey,
+                        RequestPriority priority = RequestPriority::Foreground);
 
     void getPartImageUrls(const QStringList& partNumbers,
                           const QString& apiKey,
