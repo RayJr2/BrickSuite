@@ -38,6 +38,7 @@
 #include "../parts/PartDetailsDialog.h"
 
 #include <QComboBox>
+#include <QDebug>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -334,10 +335,23 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
                         partRepository.getByPartNumber(requestedPartNumber);
 
                     if (localPart) {
-                        externalIdentifierRepository.setLookupStatus(
-                            localPart->id(),
-                            QStringLiteral("Rebrickable"),
-                            QStringLiteral("Unavailable"));
+                        if (isLikelyPrintedPartNumber(requestedPartNumber)) {
+                            // Printed/decorated variants are sometimes omitted
+                            // from Rebrickable's batched parts-list response
+                            // even though the direct Part Details endpoint can
+                            // resolve them. Do not mark these terminally
+                            // unavailable until the direct lookup has run.
+                            qInfo() << "BrickLink external ID enrichment: batch omitted printed part;"
+                                    << "requesting direct details."
+                                    << "RebrickablePart:" << requestedPartNumber;
+
+                            requestPrintedPartExternalIdDetails(requestedPartNumber);
+                        } else {
+                            externalIdentifierRepository.setLookupStatus(
+                                localPart->id(),
+                                QStringLiteral("Rebrickable"),
+                                QStringLiteral("Unavailable"));
+                        }
                     }
                 }
             });
@@ -630,6 +644,11 @@ void PartsCatalogWidget::requestPrintedPartExternalIdDetails(
         return;
 
     m_pendingExternalIdDetailLookups.insert(key);
+
+    qInfo() << "BrickLink external ID enrichment pending."
+            << "RebrickablePart:" << requested
+            << "Source: direct Part Details";
+
     m_rebrickableApiClient->getPartDetails(
         requested,
         apiKey,
@@ -657,6 +676,10 @@ void PartsCatalogWidget::handlePartDetailsForExternalIdEnrichment(
     ExternalPartIdentifierRepository externalIdentifierRepository;
 
     if (!providerResult.success) {
+        qWarning() << "BrickLink external ID enrichment failed."
+                   << "RebrickablePart:" << requested
+                   << "Message:" << providerResult.message;
+
         externalIdentifierRepository.setLookupStatus(
             localPart->id(),
             QStringLiteral("Rebrickable"),
@@ -674,10 +697,36 @@ void PartsCatalogWidget::handlePartDetailsForExternalIdEnrichment(
         localPart->id(),
         providerResult.part.externalIds);
 
+    QStringList brickLinkIds;
+    for (auto it = providerResult.part.externalIds.constBegin();
+         it != providerResult.part.externalIds.constEnd();
+         ++it) {
+        if (it.key().compare(QStringLiteral("BrickLink"), Qt::CaseInsensitive) == 0) {
+            for (QString id : it.value()) {
+                id = id.trimmed();
+                if (!id.isEmpty())
+                    brickLinkIds.append(id);
+            }
+            break;
+        }
+    }
+    brickLinkIds.removeDuplicates();
+
+    const bool hasBrickLink = !brickLinkIds.isEmpty();
+
+    if (hasBrickLink) {
+        qInfo() << "BrickLink external ID enrichment loaded."
+                << "RebrickablePart:" << requested
+                << "BrickLink:" << brickLinkIds;
+    } else {
+        qInfo() << "BrickLink external ID enrichment complete; no BrickLink ID returned."
+                << "RebrickablePart:" << requested;
+    }
+
     externalIdentifierRepository.setLookupStatus(
         localPart->id(),
         QStringLiteral("Rebrickable"),
-        hasProviderId(providerResult.part.externalIds, QStringLiteral("BrickLink"))
+        hasBrickLink
             ? QStringLiteral("Loaded")
             : QStringLiteral("Unavailable"));
 }

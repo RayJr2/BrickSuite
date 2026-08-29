@@ -48,6 +48,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
+#include <QDebug>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHash>
@@ -811,10 +812,15 @@ void AddInventoryDialog::resolveEnteredPart()
             // That request is expected to return HTTP 404 and adds no useful
             // information. The mapping must first be learned from a
             // Rebrickable part's external IDs.
+            qInfo() << "BrickLink resolver local cross-reference miss."
+                    << "BrickLink:" << enteredPartNumber
+                    << "The ID may be uncached or may not have a Rebrickable equivalent.";
+
             if (m_partResolutionLabel) {
                 m_partResolutionLabel->setText(
-                    QStringLiteral("BrickLink ID not cached yet — browse the matching "
-                                   "Rebrickable part in Parts Catalog to learn its external IDs."));
+                    QStringLiteral("BrickLink ID not found in local cross-reference — "
+                                   "browse the matching Rebrickable part in Parts Catalog "
+                                   "if one exists."));
                 m_partResolutionLabel->setVisible(true);
             }
 
@@ -983,6 +989,10 @@ bool AddInventoryDialog::tryResolveBrickLinkExternalId(const QString& externalId
 
         selectedPart = *selected;
     }
+
+    qInfo() << "BrickLink resolver cross-reference matched."
+            << "BrickLink:" << requested
+            << "RebrickablePart:" << selectedPart.partNumber();
 
     applyResolvedPart(
         selectedPart.id(),
