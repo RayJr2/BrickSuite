@@ -26,6 +26,7 @@
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
 #include <QScrollArea>
@@ -58,6 +59,14 @@ PartReferenceDialog::PartReferenceDialog(QWidget* parent)
 
     m_partImageService = new PartImageService(this);
     m_rebrickableApiClient = new RebrickableApiClient(this);
+
+    QString manifestError;
+    if (!m_manifest.load(&manifestError)) {
+        QMessageBox::warning(this,
+                             tr("Part Reference"),
+                             tr("The Part Reference manifest could not be loaded.\n\n%1")
+                                 .arg(manifestError));
+    }
 
     initializeDefinitions();
     initializeUi();

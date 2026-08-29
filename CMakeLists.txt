@@ -64,6 +64,7 @@ qt_add_executable(BrickSuite
     src/ui/storage/StorageWidget.h
     src/models/Part.h
     src/models/Part.cpp
+    src/models/PartReferenceEntry.h
     src/models/InventoryRecord.h
     src/models/InventoryRecord.cpp
     src/models/Manufacturer.h
@@ -165,6 +166,8 @@ qt_add_executable(BrickSuite
     src/services/images/PartImageService.cpp src/services/images/PartImageService.h
     src/services/parts/PartResolver.h
     src/services/parts/PartResolver.cpp
+    src/services/parts/PartReferenceManifest.h
+    src/services/parts/PartReferenceManifest.cpp
     src/services/parts/RebrickablePartAliasLearner.h
     src/services/parts/RebrickablePartAliasLearner.cpp
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h

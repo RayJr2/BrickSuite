@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "../../services/parts/PartReferenceManifest.h"
+
 #include <QDialog>
 #include <QHash>
 #include <QList>
@@ -108,6 +110,8 @@ private:
 
     QHash<QString, QList<QToolButton*>> m_cardsByPartNumber;
     QList<QToolButton*> m_currentCards;
+
+    PartReferenceManifest m_manifest;
 
     PartImageService* m_partImageService = nullptr;
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
