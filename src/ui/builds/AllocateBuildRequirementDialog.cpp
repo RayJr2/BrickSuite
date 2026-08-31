@@ -66,23 +66,15 @@ AllocateBuildRequirementDialog::AllocateBuildRequirementDialog(int workspaceId,
     auto* formLayout = new QFormLayout();
 
     m_partLabel = new QLabel(this);
-
     m_colorLabel = new QLabel(this);
-
     m_requiredLabel = new QLabel(this);
-
     m_pulledLabel = new QLabel(this);
-
     m_remainingLabel = new QLabel(this);
 
     formLayout->addRow("Part:", m_partLabel);
-
     formLayout->addRow("Color:", m_colorLabel);
-
     formLayout->addRow("Required:", m_requiredLabel);
-
     formLayout->addRow("Pulled:", m_pulledLabel);
-
     formLayout->addRow("Remaining:", m_remainingLabel);
 
     mainLayout->addLayout(formLayout);
@@ -93,17 +85,14 @@ AllocateBuildRequirementDialog::AllocateBuildRequirementDialog(int workspaceId,
 
     m_table->setHorizontalHeaderLabels(QStringList() << "Storage Location"
                                                      << "Owned"
-                                                     << "Other Builds"
-                                                     << "This Build"
+                                                     << "Other Alloc."
+                                                     << "This Requirement"
                                                      << "Available"
                                                      << "Allocate");
 
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-
     m_table->verticalHeader()->setVisible(false);
-
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
 
     for (int column = 1; column <= 5; ++column) {
@@ -113,15 +102,12 @@ AllocateBuildRequirementDialog::AllocateBuildRequirementDialog(int workspaceId,
     mainLayout->addWidget(m_table, 1);
 
     m_summaryLabel = new QLabel(this);
-
     m_summaryLabel->setWordWrap(true);
-
     mainLayout->addWidget(m_summaryLabel);
 
     auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
 
     m_saveButton = buttonBox->button(QDialogButtonBox::Save);
-
     m_cancelButton = buttonBox->button(QDialogButtonBox::Cancel);
 
     mainLayout->addWidget(buttonBox);
@@ -135,7 +121,6 @@ AllocateBuildRequirementDialog::AllocateBuildRequirementDialog(int workspaceId,
 
     if (!loadRequirement()) {
         m_saveButton->setEnabled(false);
-
         return;
     }
 
@@ -153,7 +138,6 @@ bool AllocateBuildRequirementDialog::loadRequirement()
     for (const BuildRequirement& item : requirements) {
         if (item.id() == m_requirementId) {
             requirement = item;
-
             break;
         }
     }
@@ -163,7 +147,6 @@ bool AllocateBuildRequirementDialog::loadRequirement()
                               "Allocate Requirement",
                               "Unable to load the selected "
                               "Build Requirement.");
-
         return false;
     }
 
@@ -172,20 +155,20 @@ bool AllocateBuildRequirementDialog::loadRequirement()
                               "Allocate Requirement",
                               "The selected requirement does not "
                               "belong to this Build.");
-
         return false;
     }
 
-    m_partId = requirement->partId();
-
-    m_colorId = requirement->colorId();
+    //
+    // Allocation works against the effective fulfillment
+    // identity. If no substitute is selected these resolve
+    // to the original requirement Part / Color.
+    //
+    m_partId = requirement->effectivePartId();
+    m_colorId = requirement->effectiveColorId();
 
     m_quantityRequired = requirement->quantityRequired();
-
     m_quantityPulled = requirement->quantityPulled();
-
     m_quantityRemaining = qMax(m_quantityRequired - m_quantityPulled, 0);
-
     m_isSpare = requirement->isSpare();
 
     if (m_isSpare) {
@@ -194,7 +177,6 @@ bool AllocateBuildRequirementDialog::loadRequirement()
                                  "Spare requirements are optional and "
                                  "are not allocated from workshop "
                                  "inventory by default.");
-
         return false;
     }
 
@@ -202,7 +184,6 @@ bool AllocateBuildRequirementDialog::loadRequirement()
     ColorRepository colorRepository;
 
     const std::optional<Part> part = partRepository.getById(m_partId);
-
     const std::optional<Color> color = colorRepository.getById(m_colorId);
 
     if (part) {
@@ -218,11 +199,7 @@ bool AllocateBuildRequirementDialog::loadRequirement()
     }
 
     m_requiredLabel->setText(QString::number(m_quantityRequired));
-
-    m_requiredLabel->setText(QString::number(m_quantityRequired));
-
     m_pulledLabel->setText(QString::number(m_quantityPulled));
-
     m_remainingLabel->setText(QString::number(m_quantityRemaining));
 
     if (m_quantityRemaining <= 0) {
@@ -230,7 +207,6 @@ bool AllocateBuildRequirementDialog::loadRequirement()
                                  "Allocate Requirement",
                                  "This Build Requirement has already "
                                  "been completely pulled.");
-
         return false;
     }
 
@@ -240,11 +216,9 @@ bool AllocateBuildRequirementDialog::loadRequirement()
 void AllocateBuildRequirementDialog::loadInventory()
 {
     m_table->setRowCount(0);
-
     m_rows.clear();
 
     InventoryRecordRepository inventoryRepository;
-
     BuildAllocationRepository allocationRepository;
 
     const QList<InventoryRecord> records = inventoryRepository.getByPartColor(m_workspaceId,
@@ -254,75 +228,63 @@ void AllocateBuildRequirementDialog::loadInventory()
     int tableRow = 0;
 
     for (const InventoryRecord& record : records) {
-        const int totalAllocated = allocationRepository.totalAllocatedForInventoryRecord(
-            record.id());
-
-        const int thisBuildAllocated
-            = allocationRepository.totalAllocatedForInventoryRecordForBuild(record.id(), m_buildId);
-
-        const int otherBuildsAllocated = qMax(totalAllocated - thisBuildAllocated, 0);
+        const int totalAllocated =
+            allocationRepository.totalAllocatedForInventoryRecord(record.id());
 
         //
-        // When editing an existing allocation,
-        // this Build's own allocation is available
-        // to it again.
+        // The current requirement gets only its own reservation
+        // back while editing. Allocations for other requirements
+        // in this same Build remain unavailable.
         //
-        const int maximumForThisBuild = qMax(record.quantity() - otherBuildsAllocated, 0);
+        int currentRequirementAllocated = 0;
+
+        const QList<BuildAllocation> recordAllocations =
+            allocationRepository.getByInventoryRecord(record.id());
+
+        for (const BuildAllocation& allocation : recordAllocations) {
+            if (allocation.buildRequirementId() == m_requirementId) {
+                currentRequirementAllocated += allocation.quantityAllocated();
+            }
+        }
+
+        const int otherAllocated = qMax(totalAllocated - currentRequirementAllocated, 0);
+
+        const int maximumForThisRequirement = qMax(record.quantity() - otherAllocated, 0);
 
         const int currentlyUnallocated = qMax(record.quantity() - totalAllocated, 0);
 
         m_table->insertRow(tableRow);
 
         auto* locationItem = new QTableWidgetItem(storageLocationName(record.storageLocationId()));
-
         auto* ownedItem = new QTableWidgetItem(QString::number(record.quantity()));
-
-        auto* otherBuildsItem = new QTableWidgetItem(QString::number(otherBuildsAllocated));
-
-        auto* thisBuildItem = new QTableWidgetItem(QString::number(thisBuildAllocated));
-
+        auto* otherBuildsItem = new QTableWidgetItem(QString::number(otherAllocated));
+        auto* thisBuildItem = new QTableWidgetItem(QString::number(currentRequirementAllocated));
         auto* availableItem = new QTableWidgetItem(QString::number(currentlyUnallocated));
 
         auto* allocationSpin = new QSpinBox(m_table);
-
-        allocationSpin->setRange(0, maximumForThisBuild);
-
-        allocationSpin->setValue(thisBuildAllocated);
-
+        allocationSpin->setRange(0, maximumForThisRequirement);
+        allocationSpin->setValue(currentRequirementAllocated);
         allocationSpin->setAlignment(Qt::AlignCenter);
 
         ownedItem->setTextAlignment(Qt::AlignCenter);
-
         otherBuildsItem->setTextAlignment(Qt::AlignCenter);
-
         thisBuildItem->setTextAlignment(Qt::AlignCenter);
-
         availableItem->setTextAlignment(Qt::AlignCenter);
 
         m_table->setItem(tableRow, 0, locationItem);
-
         m_table->setItem(tableRow, 1, ownedItem);
-
         m_table->setItem(tableRow, 2, otherBuildsItem);
-
         m_table->setItem(tableRow, 3, thisBuildItem);
-
         m_table->setItem(tableRow, 4, availableItem);
-
         m_table->setCellWidget(tableRow, 5, allocationSpin);
 
         AllocationRow row;
 
         row.inventoryRecordId = record.id();
-
         row.storageLocationId = record.storageLocationId();
-
         row.quantityOwned = record.quantity();
-
-        row.otherBuildsAllocated = otherBuildsAllocated;
-
-        row.currentBuildAllocated = thisBuildAllocated;
-
+        row.otherBuildsAllocated = otherAllocated;
+        row.currentBuildAllocated = currentRequirementAllocated;
         row.allocationSpin = allocationSpin;
 
         m_rows.append(row);
@@ -334,10 +296,8 @@ void AllocateBuildRequirementDialog::loadInventory()
 
     if (records.isEmpty()) {
         m_summaryLabel->setText("No matching inventory records are "
-                                "available for this Part and Color.");
-
+                                "available for this requirement's effective Part and Color.");
         m_saveButton->setEnabled(false);
-
         return;
     }
 
@@ -353,13 +313,12 @@ void AllocateBuildRequirementDialog::updateSummary()
     }
 
     const int stillNeeded = qMax(m_quantityRemaining - proposedAllocation, 0);
-
     const bool overAllocated = proposedAllocation > m_quantityRemaining;
 
     m_summaryLabel->setText(QString("Required: %1     "
                                     "Pulled: %2     "
                                     "Remaining: %3     "
-                                    "This Build Allocation: %4     "
+                                    "This Requirement Allocation: %4     "
                                     "Still Needed: %5")
                                 .arg(m_quantityRequired)
                                 .arg(m_quantityPulled)
@@ -399,12 +358,11 @@ void AllocateBuildRequirementDialog::saveAllocations()
         proposedTotal += row.allocationSpin->value();
     }
 
-    if ((proposedTotal > m_quantityRemaining)) {
+    if (proposedTotal > m_quantityRemaining) {
         QMessageBox::warning(this,
                              "Allocate Requirement",
                              "The proposed allocation exceeds "
                              "the remaining quantity required.");
-
         return;
     }
 
@@ -415,7 +373,6 @@ void AllocateBuildRequirementDialog::saveAllocations()
                               "Allocate Requirement",
                               "Unable to start the allocation "
                               "transaction.");
-
         return;
     }
 
@@ -424,27 +381,19 @@ void AllocateBuildRequirementDialog::saveAllocations()
     for (const AllocationRow& row : m_rows) {
         const int proposedQuantity = row.allocationSpin->value();
 
-        //
-        // Find this Build's existing allocation
-        // against this exact inventory record.
-        //
-        const QList<BuildAllocation> allocations = allocationRepository.getByInventoryRecord(
-            row.inventoryRecordId);
+        const QList<BuildAllocation> allocations =
+            allocationRepository.getByInventoryRecord(row.inventoryRecordId);
 
         std::optional<BuildAllocation> existingAllocation;
 
         for (const BuildAllocation& allocation : allocations) {
-            if (allocation.buildId() == m_buildId) {
+            if (allocation.buildId() == m_buildId
+                && allocation.buildRequirementId() == m_requirementId) {
                 existingAllocation = allocation;
-
                 break;
             }
         }
 
-        //
-        // Existing allocation -> zero:
-        // remove the reservation.
-        //
         if (existingAllocation && proposedQuantity == 0) {
             if (!allocationRepository.remove(existingAllocation->id())) {
                 database.rollback();
@@ -453,17 +402,12 @@ void AllocateBuildRequirementDialog::saveAllocations()
                                       "Allocate Requirement",
                                       "Unable to remove an existing "
                                       "Build allocation.");
-
                 return;
             }
 
             continue;
         }
 
-        //
-        // Existing allocation -> different quantity:
-        // update it.
-        //
         if (existingAllocation) {
             if (existingAllocation->quantityAllocated() == proposedQuantity) {
                 continue;
@@ -478,26 +422,17 @@ void AllocateBuildRequirementDialog::saveAllocations()
                                       "Allocate Requirement",
                                       "Unable to update an existing "
                                       "Build allocation.");
-
                 return;
             }
 
             continue;
         }
 
-        //
-        // Nothing allocated and still zero:
-        // nothing to do.
-        //
         if (proposedQuantity == 0)
             continue;
 
-        //
-        // Create a new allocation tied to this
-        // exact inventory/storage record.
-        //
-        const std::optional<InventoryRecord> inventoryRecord = InventoryRecordRepository().getById(
-            row.inventoryRecordId);
+        const std::optional<InventoryRecord> inventoryRecord =
+            InventoryRecordRepository().getById(row.inventoryRecordId);
 
         if (!inventoryRecord) {
             database.rollback();
@@ -506,22 +441,17 @@ void AllocateBuildRequirementDialog::saveAllocations()
                                   "Allocate Requirement",
                                   "Unable to reload the inventory "
                                   "record being allocated.");
-
             return;
         }
 
         BuildAllocation allocation;
 
         allocation.setBuildId(m_buildId);
-
+        allocation.setBuildRequirementId(m_requirementId);
         allocation.setInventoryRecordId(row.inventoryRecordId);
-
         allocation.setPartId(m_partId);
-
         allocation.setColorId(m_colorId);
-
         allocation.setStorageLocationId(inventoryRecord->storageLocationId());
-
         allocation.setQuantityAllocated(proposedQuantity);
 
         if (!allocationRepository.create(allocation)) {
@@ -531,7 +461,6 @@ void AllocateBuildRequirementDialog::saveAllocations()
                                   "Allocate Requirement",
                                   "Unable to create the Build "
                                   "allocation.");
-
             return;
         }
     }
@@ -543,7 +472,6 @@ void AllocateBuildRequirementDialog::saveAllocations()
                               "Allocate Requirement",
                               "Unable to commit the Build "
                               "allocation.");
-
         return;
     }
 

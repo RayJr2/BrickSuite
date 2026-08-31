@@ -80,26 +80,42 @@ MissingPartsService::getMissingParts(
         if (remaining <= 0)
             continue;
 
+        //
+        // A substituted requirement is fulfilled by its
+        // effective Part / Color identity. The original
+        // requirement identity remains unchanged for the
+        // Build definition itself.
+        //
+        const int effectivePartId =
+            requirement.effectivePartId();
+
+        const int effectiveColorId =
+            requirement.effectiveColorId();
+
         const int owned =
             inventoryRepository
                 .totalQuantityForPartColor(
                     workspaceId,
-                    requirement.partId(),
-                    requirement.colorId());
+                    effectivePartId,
+                    effectiveColorId);
 
         const int totalAllocated =
             allocationRepository
                 .totalAllocatedForPartColor(
                     workspaceId,
-                    requirement.partId(),
-                    requirement.colorId());
+                    effectivePartId,
+                    effectiveColorId);
 
+        //
+        // Requirement-aware allocation is critical when
+        // more than one requirement resolves to the same
+        // effective Part / Color. Only allocations tied to
+        // this requirement satisfy this requirement.
+        //
         const int thisBuildAllocated =
             allocationRepository
-                .totalAllocatedForPartColorForBuild(
-                    buildId,
-                    requirement.partId(),
-                    requirement.colorId());
+                .totalAllocatedForRequirement(
+                    requirement.id());
 
         const int otherBuildsAllocated =
             qMax(
@@ -125,25 +141,25 @@ MissingPartsService::getMissingParts(
 
         const std::optional<Part> part =
             partRepository.getById(
-                requirement.partId());
+                effectivePartId);
 
         const std::optional<Color> color =
             colorRepository.getById(
-                requirement.colorId());
+                effectiveColorId);
 
         MissingPart item;
 
         item.partId =
-            requirement.partId();
+            effectivePartId;
 
         item.colorId =
-            requirement.colorId();
+            effectiveColorId;
 
         item.partNumber =
             part
                 ? part->partNumber()
                 : QString::number(
-                      requirement.partId());
+                      effectivePartId);
 
         item.partName =
             part
@@ -154,7 +170,7 @@ MissingPartsService::getMissingParts(
             color
                 ? color->name()
                 : QString::number(
-                      requirement.colorId());
+                      effectiveColorId);
 
         item.required =
             requirement.quantityRequired();

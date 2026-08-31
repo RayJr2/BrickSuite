@@ -426,6 +426,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 22;
     }
 
+    // Version 22 -> Version 23.
+    if (version == 22) {
+        if (!migrateVersion22ToVersion23(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 23)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 23;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -2811,3 +2826,242 @@ bool DatabaseSchema::migrateVersion21ToVersion22(QSqlDatabase& database)
     qInfo() << "Build requirement substitution and allocation linkage initialized.";
     return true;
 }
+
+bool DatabaseSchema::migrateVersion22ToVersion23(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    //
+    // Version 22 introduced requirement-specific allocation ownership, but
+    // historical allocation rows were deliberately preserved with a NULL
+    // build_requirement_id. Those rows still reserve physical stock, while
+    // requirement-aware Phase 3 code cannot credit them to a requirement.
+    //
+    // Safely repair only allocations for which exactly one non-spare Build
+    // Requirement in the same Build matches the allocation's physical
+    // Part/Color using the requirement's CURRENT EFFECTIVE identity.
+    //
+    // A legacy row can coexist with a newer Phase-3 row for the same
+    // requirement + inventory record. In that case the newer linked row is
+    // authoritative and the old NULL row is a superseded duplicate. Remove
+    // that stale legacy row first so the v22 UNIQUE
+    // (build_requirement_id, inventory_record_id) rule is never violated.
+    //
+    // Effective identity:
+    //   part  = substitute_part_id  when present, otherwise part_id
+    //   color = substitute_color_id when present, otherwise color_id
+    //
+    // If zero or multiple requirements match, leave the allocation unresolved
+    // rather than guessing ownership.
+    //
+
+    const QString matchingRequirementCount = QStringLiteral(R"(
+        (
+            SELECT COUNT(*)
+            FROM build_requirement br
+            WHERE br.build_id = ba.build_id
+              AND br.is_spare = 0
+              AND COALESCE(br.substitute_part_id, br.part_id) = ba.part_id
+              AND COALESCE(br.substitute_color_id, br.color_id) = ba.color_id
+        )
+    )");
+
+    auto countLegacyAllocations = [&](const QString& predicate, int& count) -> bool {
+        QSqlQuery countQuery(database);
+
+        countQuery.prepare(QStringLiteral(R"(
+            SELECT COUNT(*)
+            FROM build_allocation ba
+            WHERE (ba.build_requirement_id IS NULL OR ba.build_requirement_id <= 0)
+              AND %1
+        )").arg(predicate));
+
+        if (!countQuery.exec() || !countQuery.next()) {
+            qCritical() << "Unable to inspect legacy Build allocations during Version 23 migration:"
+                        << countQuery.lastError().text();
+            return false;
+        }
+
+        count = countQuery.value(0).toInt();
+        return true;
+    };
+
+    int legacyCount = 0;
+    int supersededCount = 0;
+    int repairableCount = 0;
+    int ambiguousCount = 0;
+    int unmatchedCount = 0;
+
+    if (!countLegacyAllocations(QStringLiteral("1 = 1"), legacyCount))
+        return false;
+
+    if (!countLegacyAllocations(matchingRequirementCount + QStringLiteral(" > 1"),
+                                ambiguousCount)) {
+        return false;
+    }
+
+    if (!countLegacyAllocations(matchingRequirementCount + QStringLiteral(" = 0"),
+                                unmatchedCount)) {
+        return false;
+    }
+
+    //
+    // Count legacy rows for which the uniquely matching requirement already
+    // has a requirement-linked allocation using the same inventory record.
+    // These are stale duplicates left behind when a pre-v23 allocation was
+    // edited/reallocated after Phase 3 became requirement-aware.
+    //
+    if (!countLegacyAllocations(QStringLiteral(R"(
+            %1 = 1
+            AND EXISTS
+            (
+                SELECT 1
+                FROM build_allocation linked
+                WHERE linked.build_requirement_id =
+                    (
+                        SELECT br.id
+                        FROM build_requirement br
+                        WHERE br.build_id = ba.build_id
+                          AND br.is_spare = 0
+                          AND COALESCE(br.substitute_part_id, br.part_id) = ba.part_id
+                          AND COALESCE(br.substitute_color_id, br.color_id) = ba.color_id
+                        LIMIT 1
+                    )
+                  AND linked.inventory_record_id = ba.inventory_record_id
+            )
+        )").arg(matchingRequirementCount),
+        supersededCount)) {
+        return false;
+    }
+
+    //
+    // Remove only the stale NULL legacy copy. The already-linked Phase-3 row
+    // remains untouched and is the authoritative current reservation.
+    //
+    query.prepare(R"(
+        DELETE FROM build_allocation
+        WHERE (build_requirement_id IS NULL OR build_requirement_id <= 0)
+          AND
+              (
+                  SELECT COUNT(*)
+                  FROM build_requirement br
+                  WHERE br.build_id = build_allocation.build_id
+                    AND br.is_spare = 0
+                    AND COALESCE(br.substitute_part_id, br.part_id)
+                        = build_allocation.part_id
+                    AND COALESCE(br.substitute_color_id, br.color_id)
+                        = build_allocation.color_id
+              ) = 1
+          AND EXISTS
+              (
+                  SELECT 1
+                  FROM build_allocation linked
+                  WHERE linked.build_requirement_id =
+                      (
+                          SELECT br.id
+                          FROM build_requirement br
+                          WHERE br.build_id = build_allocation.build_id
+                            AND br.is_spare = 0
+                            AND COALESCE(br.substitute_part_id, br.part_id)
+                                = build_allocation.part_id
+                            AND COALESCE(br.substitute_color_id, br.color_id)
+                                = build_allocation.color_id
+                          LIMIT 1
+                      )
+                    AND linked.inventory_record_id =
+                        build_allocation.inventory_record_id
+              )
+    )");
+
+    if (!query.exec()) {
+        qCritical() << "Unable to remove superseded legacy Build allocations:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    const int removedSupersededCount = query.numRowsAffected();
+
+    if (removedSupersededCount >= 0
+        && removedSupersededCount != supersededCount) {
+        qWarning() << "Superseded legacy Build allocation count differed from preflight count."
+                   << "Expected:" << supersededCount
+                   << "Removed:" << removedSupersededCount;
+    }
+
+    //
+    // After removing superseded duplicates, every remaining uniquely matching
+    // legacy row can be linked without colliding with an existing
+    // requirement + inventory-record allocation.
+    //
+    if (!countLegacyAllocations(matchingRequirementCount + QStringLiteral(" = 1"),
+                                repairableCount)) {
+        return false;
+    }
+
+    query.prepare(R"(
+        UPDATE build_allocation
+        SET
+            build_requirement_id =
+                (
+                    SELECT br.id
+                    FROM build_requirement br
+                    WHERE br.build_id = build_allocation.build_id
+                      AND br.is_spare = 0
+                      AND COALESCE(br.substitute_part_id, br.part_id)
+                          = build_allocation.part_id
+                      AND COALESCE(br.substitute_color_id, br.color_id)
+                          = build_allocation.color_id
+                    LIMIT 1
+                ),
+            modified_utc = :modified_utc
+        WHERE (build_requirement_id IS NULL OR build_requirement_id <= 0)
+          AND
+              (
+                  SELECT COUNT(*)
+                  FROM build_requirement br
+                  WHERE br.build_id = build_allocation.build_id
+                    AND br.is_spare = 0
+                    AND COALESCE(br.substitute_part_id, br.part_id)
+                        = build_allocation.part_id
+                    AND COALESCE(br.substitute_color_id, br.color_id)
+                        = build_allocation.color_id
+              ) = 1
+    )");
+
+    query.bindValue(
+        ":modified_utc",
+        QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+
+    if (!query.exec()) {
+        qCritical() << "Unable to backfill legacy Build allocation requirement ownership:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    const int repairedCount = query.numRowsAffected();
+
+    if (repairedCount >= 0 && repairedCount != repairableCount) {
+        qWarning() << "Legacy Build allocation repair count differed from preflight count."
+                   << "Expected:" << repairableCount
+                   << "Affected:" << repairedCount;
+    }
+
+    qInfo() << "Legacy Build allocation requirement repair completed."
+            << "Legacy:" << legacyCount
+            << "Superseded:" << supersededCount
+            << "RemovedSuperseded:" << removedSupersededCount
+            << "Repairable:" << repairableCount
+            << "Repaired:" << repairedCount
+            << "Ambiguous:" << ambiguousCount
+            << "Unmatched:" << unmatchedCount;
+
+    if (ambiguousCount > 0 || unmatchedCount > 0) {
+        qWarning() << "Some legacy Build allocations remain without requirement ownership."
+                   << "Ambiguous:" << ambiguousCount
+                   << "Unmatched:" << unmatchedCount
+                   << "These rows were preserved rather than guessed.";
+    }
+
+    return true;
+}
+

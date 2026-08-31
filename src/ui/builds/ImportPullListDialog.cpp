@@ -67,15 +67,11 @@ ImportPullListDialog::ImportPullListDialog(int buildId, const QString& fileName,
     auto* mainLayout = new QVBoxLayout(this);
 
     m_summaryLabel = new QLabel(this);
-
     m_summaryLabel->setWordWrap(true);
-
     mainLayout->addWidget(m_summaryLabel);
 
     m_statusLabel = new QLabel(this);
-
     m_statusLabel->setWordWrap(true);
-
     mainLayout->addWidget(m_statusLabel);
 
     m_table = new QTableWidget(this);
@@ -93,19 +89,13 @@ ImportPullListDialog::ImportPullListDialog(int buildId, const QString& fileName,
                                                      << "Message");
 
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
-
     m_table->verticalHeader()->setVisible(false);
 
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-
     m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-
     m_table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
 
     for (int column = 4; column <= 7; ++column) {
@@ -119,7 +109,6 @@ ImportPullListDialog::ImportPullListDialog(int buildId, const QString& fileName,
     auto* buttonBox = new QDialogButtonBox(this);
 
     m_reconcileButton = buttonBox->addButton("Reconcile Pull List", QDialogButtonBox::AcceptRole);
-
     m_closeButton = buttonBox->addButton("Close", QDialogButtonBox::RejectRole);
 
     m_reconcileButton->setEnabled(false);
@@ -127,12 +116,10 @@ ImportPullListDialog::ImportPullListDialog(int buildId, const QString& fileName,
     mainLayout->addWidget(buttonBox);
 
     connect(m_reconcileButton, &QPushButton::clicked, this, &ImportPullListDialog::reconcile);
-
     connect(m_closeButton, &QPushButton::clicked, this, &QDialog::reject);
 
     if (!loadCsv()) {
         m_reconcileButton->setEnabled(false);
-
         return;
     }
 
@@ -144,7 +131,6 @@ bool ImportPullListDialog::parseCsvLine(const QString& line, QStringList& fields
     fields.clear();
 
     QString field;
-
     bool inQuotes = false;
 
     for (int index = 0; index < line.size(); ++index) {
@@ -153,7 +139,6 @@ bool ImportPullListDialog::parseCsvLine(const QString& line, QStringList& fields
         if (ch == '"') {
             if (inQuotes && index + 1 < line.size() && line.at(index + 1) == '"') {
                 field += '"';
-
                 ++index;
             } else {
                 inQuotes = !inQuotes;
@@ -164,9 +149,7 @@ bool ImportPullListDialog::parseCsvLine(const QString& line, QStringList& fields
 
         if (ch == ',' && !inQuotes) {
             fields.append(field);
-
             field.clear();
-
             continue;
         }
 
@@ -187,7 +170,6 @@ bool ImportPullListDialog::loadCsv()
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QMessageBox::critical(this, "Import Pull List", "Unable to open the selected CSV file.");
-
         return false;
     }
 
@@ -195,15 +177,11 @@ bool ImportPullListDialog::loadCsv()
 
     if (stream.atEnd()) {
         QMessageBox::warning(this, "Import Pull List", "The selected CSV file is empty.");
-
         return false;
     }
 
     QString headerLine = stream.readLine();
 
-    //
-    // Remove UTF-8 BOM if QTextStream exposes it.
-    //
     if (!headerLine.isEmpty() && headerLine.front() == QChar(0xFEFF)) {
         headerLine.remove(0, 1);
     }
@@ -212,7 +190,6 @@ bool ImportPullListDialog::loadCsv()
 
     if (!parseCsvLine(headerLine, headers)) {
         QMessageBox::warning(this, "Import Pull List", "The CSV header is invalid.");
-
         return false;
     }
 
@@ -249,13 +226,9 @@ bool ImportPullListDialog::loadCsv()
 
         if (!parseCsvLine(line, fields) || fields.size() != 9) {
             PreviewRow row;
-
             row.status = RowStatus::InvalidRow;
-
             row.message = "Invalid CSV row.";
-
             m_rows.append(row);
-
             continue;
         }
 
@@ -265,19 +238,13 @@ bool ImportPullListDialog::loadCsv()
         row.allocationIdCsv = fields.at(0).trimmed().toInt(&allocationIdOk);
 
         row.buildName = fields.at(1).trimmed();
-
         row.setNumber = fields.at(2).trimmed();
-
         row.partNumber = fields.at(3).trimmed();
-
         row.partName = fields.at(4).trimmed();
-
         row.colorName = fields.at(5).trimmed();
-
         row.storagePath = fields.at(6).trimmed();
 
         bool allocatedOk = false;
-
         row.quantityAllocatedCsv = fields.at(7).trimmed().toInt(&allocatedOk);
 
         const QString pulledText = fields.at(8).trimmed();
@@ -286,12 +253,10 @@ bool ImportPullListDialog::loadCsv()
             bool pulledOk = false;
 
             row.quantityPulled = pulledText.toInt(&pulledOk);
-
             row.pulledEntered = pulledOk && row.quantityPulled >= 0;
 
             if (!row.pulledEntered) {
                 row.status = RowStatus::InvalidRow;
-
                 row.message = "Quantity Pulled is not a valid "
                               "non-negative integer.";
             }
@@ -299,13 +264,11 @@ bool ImportPullListDialog::loadCsv()
 
         if (!allocationIdOk || row.allocationIdCsv <= 0) {
             row.status = RowStatus::InvalidRow;
-
             row.message = "Allocation ID is invalid.";
         }
 
         if (!allocatedOk || row.quantityAllocatedCsv <= 0) {
             row.status = RowStatus::InvalidRow;
-
             row.message = "Quantity Allocated is invalid.";
         }
 
@@ -318,7 +281,6 @@ bool ImportPullListDialog::loadCsv()
         QMessageBox::warning(this,
                              "Import Pull List",
                              "The Pull List does not contain any data rows.");
-
         return false;
     }
 
@@ -338,23 +300,16 @@ void ImportPullListDialog::buildPreview()
 
     const std::optional<Build> build = buildRepository.getById(m_buildId);
 
-    int reconciledRows = 0;
-    int reconciledPieces = 0;
-
     if (!build) {
         m_statusLabel->setText("Unable to load the selected Build.");
-
         ++m_problemCount;
-
         return;
     }
 
     BuildAllocationRepository allocationRepository;
-
+    BuildRequirementRepository requirementRepository;
     PartRepository partRepository;
     ColorRepository colorRepository;
-
-    const QList<BuildAllocation> allocations = allocationRepository.getByBuild(m_buildId);
 
     for (PreviewRow& row : m_rows) {
         if (row.status == RowStatus::InvalidRow) {
@@ -362,18 +317,11 @@ void ImportPullListDialog::buildPreview()
             continue;
         }
 
-        //
-        // Protect against importing a Pull List
-        // generated for another Build.
-        //
         if (row.buildName != build->name() || row.setNumber != build->setNumber()) {
             row.status = RowStatus::InvalidRow;
-
             row.message = "CSV Build/Set does not match "
                           "the selected Build.";
-
             ++m_problemCount;
-
             continue;
         }
 
@@ -382,12 +330,29 @@ void ImportPullListDialog::buildPreview()
 
         if (!allocation || allocation->buildId() != m_buildId) {
             row.status = RowStatus::AllocationNotFound;
-
             row.message =
                 "The exported Build allocation no longer exists for this Build.";
-
             ++m_problemCount;
+            continue;
+        }
 
+        //
+        // Phase 3 allocations must identify the exact Build Requirement
+        // they satisfy. This prevents two requirements that share the same
+        // effective Part / Color from being reconciled against one another.
+        //
+        const std::optional<BuildRequirement> requirement =
+            requirementRepository.getById(allocation->buildRequirementId());
+
+        if (!requirement
+            || requirement->buildId() != m_buildId
+            || requirement->isSpare()
+            || requirement->effectivePartId() != allocation->partId()
+            || requirement->effectiveColorId() != allocation->colorId()) {
+            row.status = RowStatus::InvalidRow;
+            row.message =
+                "Allocation is no longer linked to the matching Build Requirement.";
+            ++m_problemCount;
             continue;
         }
 
@@ -399,93 +364,65 @@ void ImportPullListDialog::buildPreview()
 
         if (!part || !color) {
             row.status = RowStatus::InvalidRow;
-
             row.message = "Unable to resolve the current allocation Part or Color.";
-
             ++m_problemCount;
-
             continue;
         }
 
         const QString allocationPath =
             storagePath(allocation->storageLocationId());
 
-        //
-        // Allocation ID is the stable row identity. Human-readable CSV fields
-        // are still validated so an edited/stale Pull List cannot silently
-        // reconcile against a different allocation.
-        //
         if (part->partNumber() != row.partNumber
             || part->name() != row.partName
             || color->name() != row.colorName
             || allocationPath != row.storagePath) {
             row.status = RowStatus::InvalidRow;
-
             row.message =
                 "Allocation details changed since export.";
-
             ++m_problemCount;
-
             continue;
         }
 
         row.allocationId = allocation->id();
-
         row.inventoryRecordId = allocation->inventoryRecordId();
-
         row.partId = allocation->partId();
-
         row.colorId = allocation->colorId();
-
         row.storageLocationId = allocation->storageLocationId();
-
         row.actualAllocated = allocation->quantityAllocated();
 
         if (row.quantityAllocatedCsv != row.actualAllocated) {
             row.status = RowStatus::InvalidRow;
-
             row.message = QString("Allocation changed since export "
                                   "(CSV %1, current %2).")
                               .arg(row.quantityAllocatedCsv)
                               .arg(row.actualAllocated);
-
             ++m_problemCount;
-
             continue;
         }
 
         if (!row.pulledEntered) {
             row.status = RowStatus::NotEntered;
-
             row.message = "Quantity Pulled has not been entered.";
-
             ++m_problemCount;
-
             continue;
         }
 
         if (row.quantityPulled > row.actualAllocated) {
             row.status = RowStatus::OverPull;
-
             row.message = "Quantity Pulled exceeds the "
                           "current allocation.";
-
             ++m_problemCount;
-
             continue;
         }
 
         if (row.quantityPulled == 0) {
             row.status = RowStatus::ZeroPull;
-
             ++m_zeroCount;
         } else if (row.quantityPulled == row.actualAllocated) {
             row.status = RowStatus::ExactPull;
-
             ++m_exactCount;
         } else {
             row.status = RowStatus::PartialPull;
-
             ++m_partialCount;
         }
     }
@@ -539,12 +476,10 @@ void ImportPullListDialog::buildPreview()
     if (m_problemCount == 0) {
         m_statusLabel->setText("All Pull List rows are valid. "
                                "No database changes have been made yet.");
-
         m_reconcileButton->setEnabled(true);
     } else {
         m_statusLabel->setText("Reconciliation is disabled until "
                                "all Pull List rows are valid.");
-
         m_reconcileButton->setEnabled(false);
     }
 }
@@ -586,7 +521,6 @@ QString ImportPullListDialog::storagePath(int storageLocationId) const
     QStringList parts;
 
     int currentId = storageLocationId;
-
     int safetyCount = 0;
 
     while (currentId > 0 && safetyCount < 100) {
@@ -640,18 +574,13 @@ void ImportPullListDialog::reconcile()
                               "Reconcile Pull List",
                               "Unable to start the reconciliation "
                               "transaction.");
-
         return;
     }
 
     BuildAllocationRepository allocationRepository;
-
     InventoryRecordRepository inventoryRepository;
-
     InventoryMovementRepository movementRepository;
-
     BuildRepository buildRepository;
-
     BuildRequirementRepository requirementRepository;
 
     const std::optional<Build> build = buildRepository.getById(m_buildId);
@@ -663,7 +592,6 @@ void ImportPullListDialog::reconcile()
         database.rollback();
 
         QMessageBox::critical(this, "Reconcile Pull List", "Unable to load the selected Build.");
-
         return;
     }
 
@@ -671,11 +599,11 @@ void ImportPullListDialog::reconcile()
         if (row.quantityPulled == 0)
             continue;
 
-        const std::optional<InventoryRecord> inventoryRecord = inventoryRepository.getById(
-            row.inventoryRecordId);
+        const std::optional<InventoryRecord> inventoryRecord =
+            inventoryRepository.getById(row.inventoryRecordId);
 
-        const std::optional<BuildAllocation> allocation = allocationRepository.getById(
-            row.allocationId);
+        const std::optional<BuildAllocation> allocation =
+            allocationRepository.getById(row.allocationId);
 
         if (!inventoryRecord || !allocation) {
             database.rollback();
@@ -686,45 +614,48 @@ void ImportPullListDialog::reconcile()
                                           "changed for part %1.\n\n"
                                           "No changes were saved.")
                                       .arg(row.partNumber));
-
             return;
         }
 
-        //
-        // Revalidate inside the transaction.
-        //
-        if (allocation->quantityAllocated() != row.actualAllocated
+        if (allocation->buildId() != m_buildId
+            || allocation->inventoryRecordId() != inventoryRecord->id()
+            || allocation->partId() != inventoryRecord->partId()
+            || allocation->colorId() != inventoryRecord->colorId()
+            || allocation->quantityAllocated() != row.actualAllocated
             || row.quantityPulled > allocation->quantityAllocated()
             || row.quantityPulled > inventoryRecord->quantity()) {
             database.rollback();
 
             QMessageBox::critical(this,
                                   "Reconcile Pull List",
-                                  QString("Quantity validation failed "
+                                  QString("Quantity or identity validation failed "
                                           "for part %1.\n\n"
                                           "No changes were saved.")
                                       .arg(row.partNumber));
-
             return;
         }
 
         //
-        // Load the Build Requirement before making
-        // the fulfillment update.
+        // Requirement identity is now authoritative for fulfillment.
+        // The allocation's Part / Color may be a substitute and therefore
+        // cannot be used to look up the original requirement by Part / Color.
         //
-        const std::optional<BuildRequirement> requirement
-            = requirementRepository.getByBuildPartColor(m_buildId, row.partId, row.colorId, false);
+        const std::optional<BuildRequirement> requirement =
+            requirementRepository.getById(allocation->buildRequirementId());
 
-        if (!requirement) {
+        if (!requirement
+            || requirement->buildId() != m_buildId
+            || requirement->isSpare()
+            || requirement->effectivePartId() != allocation->partId()
+            || requirement->effectiveColorId() != allocation->colorId()) {
             database.rollback();
 
             QMessageBox::critical(this,
                                   "Reconcile Pull List",
-                                  QString("Unable to locate the Build Requirement "
+                                  QString("Unable to locate the matching Build Requirement "
                                           "for part %1.\n\n"
                                           "No changes were saved.")
                                       .arg(row.partNumber));
-
             return;
         }
 
@@ -745,13 +676,9 @@ void ImportPullListDialog::reconcile()
                                       .arg(requirement->quantityRequired())
                                       .arg(requirement->quantityPulled())
                                       .arg(row.quantityPulled));
-
             return;
         }
 
-        //
-        // Reduce loose inventory.
-        //
         const int newInventoryQuantity = inventoryRecord->quantity() - row.quantityPulled;
 
         if (!inventoryRepository.updateQuantity(inventoryRecord->id(), newInventoryQuantity)) {
@@ -763,15 +690,9 @@ void ImportPullListDialog::reconcile()
                                           "for part %1.\n\n"
                                           "No changes were saved.")
                                       .arg(row.partNumber));
-
             return;
         }
 
-        //
-        // The allocation is only a reservation and may be reduced or removed
-        // below. Snapshot the actual manufacturer's identity now, while the
-        // physical source InventoryRecord is still known.
-        //
         if (!allocationRepository.recordPulledManufacturer(m_buildId,
                                                            inventoryRecord->partId(),
                                                            inventoryRecord->colorId(),
@@ -785,13 +706,9 @@ void ImportPullListDialog::reconcile()
                                           "for part %1.\n\n"
                                           "No changes were saved.")
                                       .arg(row.partNumber));
-
             return;
         }
 
-        //
-        // Reduce/remove the reservation.
-        //
         const int remainingAllocation = allocation->quantityAllocated() - row.quantityPulled;
 
         if (remainingAllocation == 0) {
@@ -802,7 +719,6 @@ void ImportPullListDialog::reconcile()
                                       "Reconcile Pull List",
                                       "Unable to remove the completed "
                                       "Build allocation.");
-
                 return;
             }
         } else {
@@ -817,15 +733,10 @@ void ImportPullListDialog::reconcile()
                                       "Reconcile Pull List",
                                       "Unable to reduce the remaining "
                                       "Build allocation.");
-
                 return;
             }
         }
 
-        //
-        // Persist how many pieces have now been
-        // physically pulled for this requirement.
-        //
         BuildRequirement updatedRequirement = *requirement;
 
         updatedRequirement.setQuantityPulled(newPulledQuantity);
@@ -839,35 +750,21 @@ void ImportPullListDialog::reconcile()
                                           "for part %1.\n\n"
                                           "No changes were saved.")
                                       .arg(row.partNumber));
-
             return;
         }
 
-        //
-        // Record physical inventory history.
-        //
         InventoryMovement movement;
 
         movement.setWorkspaceId(inventoryRecord->workspaceId());
-
         movement.setInventoryRecordId(inventoryRecord->id());
-
         movement.setPartId(inventoryRecord->partId());
-
         movement.setColorId(inventoryRecord->colorId());
-
         movement.setMovementType("BuildPull");
-
         movement.setQuantityChange(-row.quantityPulled);
-
         movement.setFromStorageLocationId(inventoryRecord->storageLocationId());
-
         movement.setCondition(inventoryRecord->condition());
-
         movement.setOwnershipType(inventoryRecord->ownershipType());
-
         movement.setReferenceType("Build");
-
         movement.setReferenceId(QString::number(m_buildId));
 
         movement.setNotes(QString("Pulled for %1%2.")
@@ -890,7 +787,6 @@ void ImportPullListDialog::reconcile()
                                   "Unable to create inventory "
                                   "movement history.\n\n"
                                   "No changes were saved.");
-
             return;
         }
 
@@ -909,7 +805,6 @@ void ImportPullListDialog::reconcile()
                               "Reconcile Pull List",
                               "Unable to commit the Pull List "
                               "reconciliation.");
-
         return;
     }
 
