@@ -71,6 +71,7 @@ private:
     void updateRequirementUiState();
     void exportPullList();
     void importPullList();
+    void interactivePulling();
     void importMocPartsCsv();
     void exportMissingParts();
     void procureMissingParts();
@@ -111,6 +112,7 @@ private:
     QPushButton* m_procureMissingPartsButton = nullptr;
     QPushButton* m_exportPullListButton = nullptr;
     QPushButton* m_importPullListButton = nullptr;
+    QPushButton* m_interactivePullButton = nullptr;
 
     QTableWidget* m_requirementsTable = nullptr;
 

@@ -29,6 +29,7 @@
 #include "EditBuildDialog.h"
 #include "EditBuildRequirementDialog.h"
 #include "ImportPullListDialog.h"
+#include "InteractiveBuildPullingDialog.h"
 #include "SetImportPreviewDialog.h"
 
 #include "../../models/Build.h"
@@ -238,6 +239,7 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     m_procureMissingPartsButton = new QPushButton("Procure Missing Parts...", requirementsGroup);
     m_exportPullListButton = new QPushButton("Export Pull List CSV", requirementsGroup);
     m_importPullListButton = new QPushButton("Import Pull List CSV", requirementsGroup);
+    m_interactivePullButton = new QPushButton("Pull Build...", requirementsGroup);
 
     requirementsHeaderLayout->addWidget(m_requirementsLabel, 1);
     requirementsHeaderLayout->addWidget(m_loadSetFromRebrickableButton);
@@ -247,6 +249,7 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     requirementsHeaderLayout->addWidget(m_procureMissingPartsButton);
     requirementsHeaderLayout->addWidget(m_exportPullListButton);
     requirementsHeaderLayout->addWidget(m_importPullListButton);
+    requirementsHeaderLayout->addWidget(m_interactivePullButton);
 
     requirementsLayout->addLayout(requirementsHeaderLayout);
 
@@ -351,6 +354,7 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
             &BuildsWidget::procureMissingParts);
     connect(m_exportPullListButton, &QPushButton::clicked, this, &BuildsWidget::exportPullList);
     connect(m_importPullListButton, &QPushButton::clicked, this, &BuildsWidget::importPullList);
+    connect(m_interactivePullButton, &QPushButton::clicked, this, &BuildsWidget::interactivePulling);
 
     connect(&m_workspaceContext,
             &WorkspaceContext::currentWorkspaceChanged,
@@ -2219,6 +2223,7 @@ void BuildsWidget::updateRequirementUiState()
     m_allocateAvailableButton->setEnabled(canAllocateAvailable);
     m_exportPullListButton->setEnabled(canExportPullList);
     m_importPullListButton->setEnabled(canExportPullList);
+    m_interactivePullButton->setEnabled(canExportPullList);
     m_importMocPartsButton->setEnabled(canImportMoc);
     m_exportMissingPartsButton->setEnabled(canExportMissingParts);
     m_procureMissingPartsButton->setEnabled(canProcureMissingParts);
@@ -2719,6 +2724,34 @@ void BuildsWidget::importPullList()
 
     if (dialog.exec() == QDialog::Accepted)
         loadRequirements();
+}
+
+void BuildsWidget::interactivePulling()
+{
+    if (m_selectedBuildId <= 0) {
+        QMessageBox::warning(this,
+                             "Interactive Build Pulling",
+                             "Select a Build first.");
+        return;
+    }
+
+    BuildRepository repository;
+    const std::optional<Build> build = repository.getById(m_selectedBuildId);
+
+    if (!build)
+        return;
+
+    if (build->inventoryMode() != "Stock") {
+        QMessageBox::information(this,
+                                 "Interactive Build Pulling",
+                                 "Interactive pulling is available only for Build from Stock.");
+        return;
+    }
+
+    InteractiveBuildPullingDialog dialog(m_selectedBuildId, this);
+    dialog.exec();
+
+    loadRequirements();
 }
 
 void BuildsWidget::selectBuild(int buildId)

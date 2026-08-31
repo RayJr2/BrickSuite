@@ -199,6 +199,8 @@ qt_add_executable(BrickSuite
     src/ui/builds/AllocateBuildRequirementDialog.cpp
     src/ui/builds/ImportPullListDialog.h
     src/ui/builds/ImportPullListDialog.cpp
+    src/ui/builds/InteractiveBuildPullingDialog.h
+    src/ui/builds/InteractiveBuildPullingDialog.cpp
     src/models/SetCatalogItem.h
     src/models/SetCatalogItem.cpp
     src/models/SetCatalogSearchCriteria.h
