@@ -278,8 +278,9 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
 
     if (QPushButton* okButton =
             m_buttonBox->button(QDialogButtonBox::Ok)) {
-        if (brickOwl
-            || m_preview.operation == InventoryCsvOperation::CompareOnly) {
+        if (brickOwl) {
+            okButton->setText(QStringLiteral("Receive Resolved Rows"));
+        } else if (m_preview.operation == InventoryCsvOperation::CompareOnly) {
             okButton->setText(QStringLiteral("Done"));
         } else {
             okButton->setText(
@@ -289,8 +290,10 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
 
         okButton->setEnabled(
             brickOwl
-            || (m_preview.failedRows == 0
-                && m_preview.validRows > 0));
+                ? (m_preview.failedRows == 0
+                   && m_preview.validRows > 0)
+                : (m_preview.failedRows == 0
+                   && m_preview.validRows > 0));
     }
 
     connect(m_buttonBox, &QDialogButtonBox::accepted,
@@ -918,6 +921,15 @@ void InventoryImportPreviewDialog::recountBrickOwlResolution()
 
     m_preview.validRows = validRows;
     m_preview.failedRows = failedRows;
+
+    if (m_buttonBox) {
+        if (QPushButton* okButton =
+                m_buttonBox->button(QDialogButtonBox::Ok)) {
+            okButton->setEnabled(
+                m_preview.failedRows == 0
+                && m_preview.validRows > 0);
+        }
+    }
 }
 
 void InventoryImportPreviewDialog::exportAppendCsv()

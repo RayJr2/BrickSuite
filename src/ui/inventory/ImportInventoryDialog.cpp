@@ -606,13 +606,102 @@ void ImportInventoryDialog::importFile()
     if (previewDialog.exec() != QDialog::Accepted)
         return;
 
+    // Manual BrickOwl resolution and Skip/Unskip operate on the dialog's
+    // editable preview copy. Use that reviewed copy for the receiving commit.
+    preview = previewDialog.preview();
+
     if (source == InventoryImportSource::BrickOwlOrderCsv) {
+        if (preview.failedRows > 0) {
+            QMessageBox::warning(
+                this,
+                QStringLiteral("BrickSuite"),
+                QStringLiteral(
+                    "BrickOwl receiving cannot continue while %1 row(s) still "
+                    "need review. Resolve or explicitly skip those rows first.")
+                    .arg(preview.failedRows));
+            return;
+        }
+
+        int skippedRows = 0;
+        int skippedPieces = 0;
+        int importRows = 0;
+        int importPieces = 0;
+
+        for (const InventoryImportPreviewRow& row : preview.rows) {
+            if (row.status == QStringLiteral("Skipped")) {
+                ++skippedRows;
+                skippedPieces += row.sourceQuantity;
+                continue;
+            }
+
+            ++importRows;
+            importPieces += row.sourceQuantity;
+        }
+
+        if (importRows <= 0 || importPieces <= 0) {
+            QMessageBox::warning(
+                this,
+                QStringLiteral("BrickSuite"),
+                QStringLiteral("There are no resolved BrickOwl rows to import."));
+            return;
+        }
+
+        const QMessageBox::StandardButton confirmation =
+            QMessageBox::question(
+                this,
+                QStringLiteral("Receive BrickOwl Order"),
+                QStringLiteral(
+                    "Receive this BrickOwl order into:\n\n"
+                    "%1\n\n"
+                    "Rows to import: %2\n"
+                    "Pieces to import: %3\n"
+                    "Rows skipped: %4\n"
+                    "Pieces skipped: %5\n\n"
+                    "Continue?")
+                    .arg(preview.storageDisplayName)
+                    .arg(importRows)
+                    .arg(importPieces)
+                    .arg(skippedRows)
+                    .arg(skippedPieces),
+                QMessageBox::Yes | QMessageBox::No,
+                QMessageBox::No);
+
+        if (confirmation != QMessageBox::Yes)
+            return;
+
+        BrickOwlInventoryImporter importer(database);
+
+        if (!importer.importPreview(preview, options, result)) {
+            qCritical() << "BrickOwl inventory receive failed."
+                        << "File:" << filePath
+                        << "RowsProcessed:" << result.rowsProcessed
+                        << "RowsImported:" << result.rowsImported
+                        << "RowsFailed:" << result.rowsFailed;
+
+            QMessageBox::critical(
+                this,
+                QStringLiteral("BrickSuite"),
+                QStringLiteral(
+                    "BrickOwl receiving failed. No partial order was committed."));
+            return;
+        }
+
         QMessageBox::information(
             this,
             QStringLiteral("BrickSuite"),
             QStringLiteral(
-                "BrickOwl parsing and part/color resolution preview completed. "
-                "No BrickSuite inventory was changed."));
+                "BrickOwl order received successfully.\n\n"
+                "Rows imported: %1\n"
+                "Pieces imported: %2\n"
+                "Rows skipped: %3\n"
+                "Pieces skipped: %4\n\n"
+                "The received parts are now ordinary BrickSuite inventory.")
+                .arg(result.rowsImported)
+                .arg(result.totalQuantityImported)
+                .arg(skippedRows)
+                .arg(skippedPieces));
+
+        accept();
         return;
     }
 

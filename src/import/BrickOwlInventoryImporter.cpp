@@ -16,10 +16,12 @@
 #include "../models/ExternalPartIdentifier.h"
 #include "../models/ExternalPartMapping.h"
 #include "../models/Part.h"
+#include "../models/InventoryRecord.h"
 #include "../repositories/ExternalColorMappingRepository.h"
 #include "../repositories/ExternalPartIdentifierRepository.h"
 #include "../repositories/ExternalPartMappingRepository.h"
 #include "../repositories/PartRepository.h"
+#include "../repositories/InventoryRecordRepository.h"
 #include "../services/parts/PartResolver.h"
 
 #include <QDebug>
@@ -576,6 +578,131 @@ bool BrickOwlInventoryImporter::previewOrder(
             << "Resolved:" << preview.validRows
             << "NeedsReview:" << preview.failedRows
             << "NetPieces:" << preview.totalSourceQuantity;
+
+    return true;
+}
+
+
+bool BrickOwlInventoryImporter::importPreview(
+    const InventoryImportPreview& preview,
+    const InventoryImportOptions& options,
+    InventoryImportResult& result)
+{
+    result = {};
+
+    if (preview.source != InventoryImportSource::BrickOwlOrderCsv
+        || options.workspaceId <= 0
+        || options.storageLocationId <= 0
+        || options.operation != InventoryCsvOperation::Append) {
+        qCritical() << "Invalid BrickOwl inventory import request.";
+        return false;
+    }
+
+    // A row still needing review must never be silently dropped. Skipped rows
+    // are the explicit user-approved exception.
+    for (const InventoryImportPreviewRow& row : preview.rows) {
+        if (row.status == QStringLiteral("Skipped"))
+            continue;
+
+        if (row.status == QStringLiteral("Needs Review")
+            || row.status == QStringLiteral("Error")
+            || row.partId <= 0
+            || row.colorId <= 0
+            || row.sourceQuantity <= 0) {
+            qWarning() << "BrickOwl import blocked by unresolved row."
+                       << "SourcePart:" << row.sourcePartNumber
+                       << "Status:" << row.status
+                       << "Error:" << row.errorMessage;
+            return false;
+        }
+    }
+
+    if (!m_database.transaction()) {
+        qCritical() << "Unable to begin BrickOwl receiving transaction:"
+                    << m_database.lastError().text();
+        return false;
+    }
+
+    InventoryRecordRepository inventoryRepository;
+
+    for (const InventoryImportPreviewRow& row : preview.rows) {
+        ++result.rowsProcessed;
+
+        if (row.status == QStringLiteral("Skipped"))
+            continue;
+
+        InventoryRecord record;
+        record.setWorkspaceId(options.workspaceId);
+        record.setPartId(row.partId);
+        record.setColorId(row.colorId);
+        record.setStorageLocationId(options.storageLocationId);
+
+        QString condition = row.sourceCondition.trimmed();
+
+        if (condition.compare(QStringLiteral("New"), Qt::CaseInsensitive) == 0)
+            condition = QStringLiteral("New");
+        else if (condition.compare(QStringLiteral("Used"), Qt::CaseInsensitive) == 0)
+            condition = QStringLiteral("Used");
+        else
+            condition = options.condition.trimmed();
+
+        record.setCondition(condition);
+        record.setOwnershipType(options.ownershipType.trimmed());
+        record.setQuantity(row.sourceQuantity);
+
+        const QString referenceId =
+            row.sourceOrderId.trimmed().isEmpty()
+                ? preview.sourceFileName
+                : row.sourceOrderId.trimmed();
+
+        QStringList noteParts;
+        noteParts.append(QStringLiteral("BrickOwl received order"));
+
+        if (!row.sourceLotId.trimmed().isEmpty())
+            noteParts.append(QStringLiteral("Lot %1").arg(row.sourceLotId.trimmed()));
+
+        if (!row.sourceBoid.trimmed().isEmpty())
+            noteParts.append(QStringLiteral("BOID %1").arg(row.sourceBoid.trimmed()));
+
+        if (!row.sourcePartNumber.trimmed().isEmpty())
+            noteParts.append(
+                QStringLiteral("Source part %1").arg(row.sourcePartNumber.trimmed()));
+
+        if (!inventoryRepository.addOrIncreaseQuantity(
+                record,
+                QStringLiteral("InventoryImport"),
+                QStringLiteral("BrickOwlOrder"),
+                referenceId,
+                noteParts.join(QStringLiteral("; ")),
+                false)) {
+            ++result.rowsFailed;
+
+            qCritical() << "Unable to receive BrickOwl inventory row."
+                        << "Order:" << referenceId
+                        << "PartId:" << row.partId
+                        << "ColorId:" << row.colorId
+                        << "Quantity:" << row.sourceQuantity;
+
+            m_database.rollback();
+            return false;
+        }
+
+        ++result.rowsImported;
+        result.totalQuantityImported += row.sourceQuantity;
+    }
+
+    if (!m_database.commit()) {
+        qCritical() << "Unable to commit BrickOwl receiving transaction:"
+                    << m_database.lastError().text();
+        m_database.rollback();
+        return false;
+    }
+
+    qInfo() << "BrickOwl order imported."
+            << "RowsProcessed:" << result.rowsProcessed
+            << "RowsImported:" << result.rowsImported
+            << "RowsSkipped:" << (result.rowsProcessed - result.rowsImported)
+            << "PiecesImported:" << result.totalQuantityImported;
 
     return true;
 }

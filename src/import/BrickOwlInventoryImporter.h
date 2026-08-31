@@ -24,12 +24,13 @@ class BrickOwlInventoryImporter
 public:
     explicit BrickOwlInventoryImporter(QSqlDatabase& database);
 
-    // M23.5.4 is intentionally preview/resolution only. Inventory mutation
-    // remains in M23.5.6 after the provider-specific receiving preview is
-    // finalized.
     bool previewOrder(const QString& filePath,
                       const InventoryImportOptions& options,
                       InventoryImportPreview& preview);
+
+    bool importPreview(const InventoryImportPreview& preview,
+                       const InventoryImportOptions& options,
+                       InventoryImportResult& result);
 
 private:
     QStringList parseCsvLine(const QString& line) const;
