@@ -411,6 +411,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 21;
     }
 
+    // Version 21 -> Version 22.
+    if (version == 21) {
+        if (!migrateVersion21ToVersion22(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 22)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 22;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -2642,5 +2657,157 @@ bool DatabaseSchema::migrateVersion20ToVersion21(QSqlDatabase& database)
     }
 
     qInfo() << "Bag storage location type initialized.";
+    return true;
+}
+
+
+bool DatabaseSchema::migrateVersion21ToVersion22(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    // Preserve the canonical requirement identity while allowing a
+    // Build-from-Stock requirement to select an alternate part and/or color.
+    // NULL means "use the original requirement value".
+    if (!query.exec(R"(
+        ALTER TABLE build_requirement
+        ADD COLUMN substitute_part_id INTEGER
+        REFERENCES part(id)
+    )")) {
+        qCritical() << "Unable to add substitute_part_id to build_requirement:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        ALTER TABLE build_requirement
+        ADD COLUMN substitute_color_id INTEGER
+        REFERENCES color(id)
+    )")) {
+        qCritical() << "Unable to add substitute_color_id to build_requirement:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    // Requirement-specific allocation ownership needs a different uniqueness
+    // rule from the historical Build + inventory-record rule. Rebuild the
+    // table so one inventory record can participate in two separate
+    // requirements of the same Build when necessary. Existing allocations are
+    // deliberately preserved with a NULL requirement id; Phase 3 will create
+    // requirement-linked allocations and can safely replace legacy rows during
+    // reallocation. We do not guess which requirement owns historical rows.
+    if (!query.exec(R"(
+        CREATE TABLE build_allocation_v22
+        (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            build_id              INTEGER NOT NULL,
+            build_requirement_id  INTEGER,
+            inventory_record_id   INTEGER NOT NULL,
+            part_id               INTEGER NOT NULL,
+            color_id              INTEGER NOT NULL,
+            storage_location_id   INTEGER NOT NULL,
+            quantity_allocated    INTEGER NOT NULL,
+            created_utc           TEXT NOT NULL,
+            modified_utc          TEXT NOT NULL,
+
+            FOREIGN KEY (build_id)
+                REFERENCES build(id),
+            FOREIGN KEY (build_requirement_id)
+                REFERENCES build_requirement(id),
+            FOREIGN KEY (inventory_record_id)
+                REFERENCES inventory_record(id),
+            FOREIGN KEY (part_id)
+                REFERENCES part(id),
+            FOREIGN KEY (color_id)
+                REFERENCES color(id),
+            FOREIGN KEY (storage_location_id)
+                REFERENCES storage_location(id),
+
+            CHECK(quantity_allocated > 0),
+
+            UNIQUE
+            (
+                build_requirement_id,
+                inventory_record_id
+            )
+        )
+    )")) {
+        qCritical() << "Unable to create v22 build_allocation table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        INSERT INTO build_allocation_v22
+        (
+            id,
+            build_id,
+            build_requirement_id,
+            inventory_record_id,
+            part_id,
+            color_id,
+            storage_location_id,
+            quantity_allocated,
+            created_utc,
+            modified_utc
+        )
+        SELECT
+            id,
+            build_id,
+            NULL,
+            inventory_record_id,
+            part_id,
+            color_id,
+            storage_location_id,
+            quantity_allocated,
+            created_utc,
+            modified_utc
+        FROM build_allocation
+    )")) {
+        qCritical() << "Unable to preserve existing build allocations during v22 migration:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(QStringLiteral("DROP TABLE build_allocation"))) {
+        qCritical() << "Unable to replace legacy build_allocation table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(QStringLiteral(
+            "ALTER TABLE build_allocation_v22 RENAME TO build_allocation"))) {
+        qCritical() << "Unable to rename v22 build_allocation table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_build_allocation_build
+        ON build_allocation(build_id)
+    )")) {
+        qCritical() << "Unable to recreate build allocation Build index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_build_allocation_inventory
+        ON build_allocation(inventory_record_id)
+    )")) {
+        qCritical() << "Unable to recreate build allocation inventory index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_build_allocation_requirement
+        ON build_allocation(build_requirement_id)
+    )")) {
+        qCritical() << "Unable to create build allocation requirement index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    qInfo() << "Build requirement substitution and allocation linkage initialized.";
     return true;
 }

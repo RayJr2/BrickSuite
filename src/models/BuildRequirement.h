@@ -1,23 +1,3 @@
-/*
- * BrickSuite - The Digital Twin Platform for Your Brick Workshop
- *
- * Copyright (C) 2026 RF StateSide, LLC
- *
- * This file is part of BrickSuite.
- *
- * BrickSuite is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as
- * published by the Free Software Foundation, version 3 of the License.
- *
- * BrickSuite is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
- */
-
 #pragma once
 
 #include <QDateTime>
@@ -38,6 +18,15 @@ public:
 
     int colorId() const;
     void setColorId(int colorId);
+
+    int substitutePartId() const;
+    void setSubstitutePartId(int partId);
+
+    int substituteColorId() const;
+    void setSubstituteColorId(int colorId);
+
+    int effectivePartId() const;
+    int effectiveColorId() const;
 
     int quantityRequired() const;
     void setQuantityRequired(int quantityRequired);
@@ -62,13 +51,12 @@ private:
     int m_buildId = 0;
     int m_partId = 0;
     int m_colorId = 0;
-
+    int m_substitutePartId = 0;
+    int m_substituteColorId = 0;
     int m_quantityRequired = 0;
     int m_quantityPulled = 0;
     int m_quantityReleased = 0;
-
     bool m_isSpare = false;
-
     QDateTime m_createdUtc;
     QDateTime m_modifiedUtc;
 };
