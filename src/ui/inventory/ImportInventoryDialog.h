@@ -22,11 +22,14 @@
 
 #include <QDialog>
 
+#include "../../import/InventoryImportTypes.h"
+
 class WorkspaceContext;
 class QLineEdit;
 class QComboBox;
 class QPushButton;
 class QDialogButtonBox;
+class QLabel;
 
 class ImportInventoryDialog : public QDialog
 {
@@ -42,12 +45,17 @@ private slots:
 private:
     void loadStorageLocations();
     void suggestStorageFromFileName(const QString& filePath);
+    InventoryImportSource selectedImportSource() const;
+    InventoryImportSource detectImportSource(const QString& filePath) const;
+    void refreshImportFormatState();
     static QString normalizedStorageKey(const QString& text);
 
     WorkspaceContext& m_workspaceContext;
 
     QLineEdit* m_fileEdit = nullptr;
     QPushButton* m_browseButton = nullptr;
+    QComboBox* m_formatCombo = nullptr;
+    QLabel* m_formatStatusLabel = nullptr;
 
     QComboBox* m_operationCombo = nullptr;
     QComboBox* m_storageCombo = nullptr;

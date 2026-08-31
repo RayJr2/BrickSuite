@@ -33,6 +33,7 @@
 #include <QDebug>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QFile>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -44,14 +45,17 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSqlDatabase>
+#include <QStandardItem>
+#include <QStandardItemModel>
 #include <QStringList>
+#include <QTextStream>
 #include <QVBoxLayout>
 
 ImportInventoryDialog::ImportInventoryDialog(WorkspaceContext& workspaceContext, QWidget* parent)
     : QDialog(parent)
     , m_workspaceContext(workspaceContext)
 {
-    setWindowTitle("Import Rebrickable Inventory CSV");
+    setWindowTitle("Import Inventory");
     resize(620, 340);
 
     auto* mainLayout = new QVBoxLayout(this);
@@ -74,6 +78,22 @@ ImportInventoryDialog::ImportInventoryDialog(WorkspaceContext& workspaceContext,
     auto* fileWidget = new QWidget(this);
 
     fileWidget->setLayout(fileLayout);
+
+    // Provider / format
+    m_formatCombo = new QComboBox(this);
+    m_formatCombo->addItem(
+        QStringLiteral("Auto Detect"),
+        static_cast<int>(InventoryImportSource::Unknown));
+    m_formatCombo->addItem(
+        QStringLiteral("Rebrickable Inventory"),
+        static_cast<int>(InventoryImportSource::RebrickableCsv));
+    m_formatCombo->addItem(
+        QStringLiteral("BrickOwl Order"),
+        static_cast<int>(InventoryImportSource::BrickOwlOrderCsv));
+
+    m_formatStatusLabel = new QLabel(this);
+    m_formatStatusLabel->setWordWrap(true);
+    m_formatStatusLabel->setText(QStringLiteral("Select an inventory CSV file."));
 
     // Operation
     m_operationCombo = new QComboBox(this);
@@ -110,7 +130,9 @@ ImportInventoryDialog::ImportInventoryDialog(WorkspaceContext& workspaceContext,
 
     m_ownershipCombo->addItem("Owned");
 
-    formLayout->addRow("CSV File:", fileWidget);
+    formLayout->addRow("File:", fileWidget);
+    formLayout->addRow("Format:", m_formatCombo);
+    formLayout->addRow(QString(), m_formatStatusLabel);
 
     formLayout->addRow("Operation:", m_operationCombo);
 
@@ -131,6 +153,13 @@ ImportInventoryDialog::ImportInventoryDialog(WorkspaceContext& workspaceContext,
     mainLayout->addWidget(m_buttonBox);
 
     connect(m_browseButton, &QPushButton::clicked, this, &ImportInventoryDialog::browseForFile);
+
+    connect(m_formatCombo,
+            &QComboBox::currentIndexChanged,
+            this,
+            [this]() {
+                refreshImportFormatState();
+            });
 
     connect(m_operationCombo,
             &QComboBox::currentIndexChanged,
@@ -157,12 +186,13 @@ ImportInventoryDialog::ImportInventoryDialog(WorkspaceContext& workspaceContext,
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     loadStorageLocations();
+    refreshImportFormatState();
 }
 
 void ImportInventoryDialog::browseForFile()
 {
     const QString filePath = QFileDialog::getOpenFileName(this,
-                                                          "Select Rebrickable Inventory CSV",
+                                                          "Select Inventory CSV",
                                                           QString(),
                                                           "CSV Files (*.csv);;All Files (*.*)");
 
@@ -172,6 +202,7 @@ void ImportInventoryDialog::browseForFile()
     m_fileEdit->setText(filePath);
 
     suggestStorageFromFileName(filePath);
+    refreshImportFormatState();
 }
 
 void ImportInventoryDialog::loadStorageLocations()
@@ -223,6 +254,136 @@ void ImportInventoryDialog::loadStorageLocations()
         }
 
         m_storageCombo->addItem(pathParts.join(" / "), location.id());
+    }
+}
+
+InventoryImportSource ImportInventoryDialog::detectImportSource(
+    const QString& filePath) const
+{
+    if (filePath.trimmed().isEmpty())
+        return InventoryImportSource::Unknown;
+
+    QFile file(filePath);
+
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return InventoryImportSource::Unknown;
+
+    QTextStream stream(&file);
+    QString headerLine = stream.readLine();
+
+    if (!headerLine.isEmpty() && headerLine.front() == QChar(0xFEFF))
+        headerLine.remove(0, 1);
+
+    const QStringList rawHeaders = headerLine.split(',', Qt::KeepEmptyParts);
+    QSet<QString> headers;
+
+    for (QString header : rawHeaders) {
+        header = header.trimmed();
+
+        if (header.size() >= 2
+            && header.startsWith(QLatin1Char('"'))
+            && header.endsWith(QLatin1Char('"'))) {
+            header = header.mid(1, header.size() - 2);
+        }
+
+        headers.insert(header.toLower());
+    }
+
+    // Actual BrickOwl received-order CSV headers include these fields.
+    if (headers.contains(QStringLiteral("order id"))
+        && headers.contains(QStringLiteral("name"))
+        && headers.contains(QStringLiteral("color name"))
+        && headers.contains(QStringLiteral("boid"))
+        && headers.contains(QStringLiteral("lot id"))
+        && headers.contains(QStringLiteral("ordered quantity"))) {
+        return InventoryImportSource::BrickOwlOrderCsv;
+    }
+
+    // Existing Rebrickable owned-parts/category CSV contract.
+    if (headers.contains(QStringLiteral("part"))
+        && headers.contains(QStringLiteral("color"))
+        && headers.contains(QStringLiteral("quantity"))) {
+        return InventoryImportSource::RebrickableCsv;
+    }
+
+    return InventoryImportSource::Unknown;
+}
+
+InventoryImportSource ImportInventoryDialog::selectedImportSource() const
+{
+    if (!m_formatCombo)
+        return InventoryImportSource::Unknown;
+
+    const auto selected =
+        static_cast<InventoryImportSource>(m_formatCombo->currentData().toInt());
+
+    if (selected != InventoryImportSource::Unknown)
+        return selected;
+
+    return detectImportSource(m_fileEdit ? m_fileEdit->text().trimmed() : QString());
+}
+
+void ImportInventoryDialog::refreshImportFormatState()
+{
+    if (!m_formatCombo || !m_formatStatusLabel || !m_operationCombo || !m_buttonBox)
+        return;
+
+    const auto explicitSource =
+        static_cast<InventoryImportSource>(m_formatCombo->currentData().toInt());
+    const InventoryImportSource effectiveSource = selectedImportSource();
+
+    if (m_fileEdit->text().trimmed().isEmpty()) {
+        m_formatStatusLabel->setText(
+            explicitSource == InventoryImportSource::Unknown
+                ? QStringLiteral("Select an inventory CSV file.")
+                : QStringLiteral("Selected format: %1")
+                      .arg(inventoryImportSourceName(explicitSource)));
+    } else if (effectiveSource == InventoryImportSource::Unknown) {
+        m_formatStatusLabel->setText(
+            QStringLiteral("Format not recognized. Select the format explicitly."));
+    } else if (explicitSource == InventoryImportSource::Unknown) {
+        m_formatStatusLabel->setText(
+            QStringLiteral("Detected: %1")
+                .arg(inventoryImportSourceName(effectiveSource)));
+    } else {
+        m_formatStatusLabel->setText(
+            QStringLiteral("Selected format: %1")
+                .arg(inventoryImportSourceName(effectiveSource)));
+    }
+
+    const bool brickOwl = effectiveSource == InventoryImportSource::BrickOwlOrderCsv;
+
+    // Receiving a BrickOwl order is intentionally Append-only. The parser
+    // and resolver arrive in M23.5.4; expose/detect the provider now without
+    // allowing an unsupported import to reach the Rebrickable parser.
+    for (int index = 0; index < m_operationCombo->count(); ++index) {
+        const auto operation =
+            static_cast<InventoryCsvOperation>(
+                m_operationCombo->itemData(index).toInt());
+
+        const bool enabled =
+            !brickOwl || operation == InventoryCsvOperation::Append;
+
+        if (auto* model = qobject_cast<QStandardItemModel*>(m_operationCombo->model())) {
+            if (QStandardItem* item = model->item(index))
+                item->setEnabled(enabled);
+        }
+    }
+
+    if (brickOwl) {
+        const int appendIndex =
+            m_operationCombo->findData(static_cast<int>(InventoryCsvOperation::Append));
+        if (appendIndex >= 0)
+            m_operationCombo->setCurrentIndex(appendIndex);
+
+        m_formatStatusLabel->setText(
+            m_formatStatusLabel->text()
+            + QStringLiteral(" — BrickOwl parser/resolution is enabled in M23.5.4."));
+    }
+
+    if (QPushButton* okButton = m_buttonBox->button(QDialogButtonBox::Ok)) {
+        okButton->setEnabled(
+            effectiveSource == InventoryImportSource::RebrickableCsv);
     }
 }
 
@@ -346,6 +507,25 @@ void ImportInventoryDialog::importFile()
     if (filePath.isEmpty()) {
         QMessageBox::warning(this, "BrickSuite", "Select a CSV file to import.");
 
+        return;
+    }
+
+    const InventoryImportSource source = selectedImportSource();
+
+    if (source == InventoryImportSource::Unknown) {
+        QMessageBox::warning(
+            this,
+            QStringLiteral("BrickSuite"),
+            QStringLiteral("Unable to identify the inventory file format."));
+        return;
+    }
+
+    if (source == InventoryImportSource::BrickOwlOrderCsv) {
+        QMessageBox::information(
+            this,
+            QStringLiteral("BrickSuite"),
+            QStringLiteral("BrickOwl Order CSV was recognized. "
+                           "BrickOwl parsing and resolution is added in M23.5.4."));
         return;
     }
 
