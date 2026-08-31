@@ -8,31 +8,32 @@
  * BrickSuite is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as
  * published by the Free Software Foundation, version 3 of the License.
- *
- * BrickSuite is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditBuildRequirementDialog.h"
 
+#include "../../models/Build.h"
 #include "../../models/BuildRequirement.h"
 #include "../../models/Color.h"
 #include "../../models/Part.h"
 
+#include "../../repositories/BuildAllocationRepository.h"
+#include "../../repositories/BuildRepository.h"
 #include "../../repositories/BuildRequirementRepository.h"
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/PartRepository.h"
 
+#include "../../ui/helpers/ColorComboHelper.h"
+
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
 #include <optional>
@@ -42,38 +43,63 @@ EditBuildRequirementDialog::EditBuildRequirementDialog(int requirementId, QWidge
     , m_requirementId(requirementId)
 {
     setWindowTitle("Edit Build Requirement");
-
     setModal(true);
-
-    resize(420, 220);
+    resize(520, 360);
 
     auto* mainLayout = new QVBoxLayout(this);
 
-    auto* formLayout = new QFormLayout();
+    auto* originalGroup = new QGroupBox("Original Requirement", this);
+    auto* originalLayout = new QFormLayout(originalGroup);
 
-    m_partLabel = new QLabel(this);
+    m_originalPartLabel = new QLabel(originalGroup);
+    m_originalPartLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
-    m_colorLabel = new QLabel(this);
+    m_originalColorLabel = new QLabel(originalGroup);
+    m_originalColorLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
-    m_quantitySpin = new QSpinBox(this);
+    originalLayout->addRow("Part:", m_originalPartLabel);
+    originalLayout->addRow("Color:", m_originalColorLabel);
 
+    mainLayout->addWidget(originalGroup);
+
+    auto* useGroup = new QGroupBox("Use for this Build", this);
+    auto* useLayout = new QFormLayout(useGroup);
+
+    m_usePartEdit = new QLineEdit(useGroup);
+    m_usePartEdit->setPlaceholderText("Part number");
+
+    m_useColorCombo = new QComboBox(useGroup);
+
+    m_quantitySpin = new QSpinBox(useGroup);
     m_quantitySpin->setRange(1, 99999);
 
-    m_spareCheck = new QCheckBox("Spare part", this);
+    m_spareCheck = new QCheckBox("Spare part", useGroup);
 
-    formLayout->addRow("Part:", m_partLabel);
+    m_resetButton = new QPushButton("Reset to Original", useGroup);
 
-    formLayout->addRow("Color:", m_colorLabel);
+    useLayout->addRow("Part:", m_usePartEdit);
+    useLayout->addRow("Color:", m_useColorCombo);
+    useLayout->addRow("Qty Required:", m_quantitySpin);
+    useLayout->addRow(QString(), m_spareCheck);
+    useLayout->addRow(QString(), m_resetButton);
 
-    formLayout->addRow("Qty Required:", m_quantitySpin);
+    mainLayout->addWidget(useGroup);
 
-    formLayout->addRow(QString(), m_spareCheck);
+    auto* noteLabel = new QLabel(
+        "Changing Part or Color records a substitution for this Build. "
+        "The original requirement is preserved.",
+        this);
+    noteLabel->setWordWrap(true);
+    mainLayout->addWidget(noteLabel);
 
-    mainLayout->addLayout(formLayout);
-
-    auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
-
+    auto* buttonBox =
+        new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
     mainLayout->addWidget(buttonBox);
+
+    connect(m_resetButton,
+            &QPushButton::clicked,
+            this,
+            &EditBuildRequirementDialog::resetToOriginal);
 
     connect(buttonBox,
             &QDialogButtonBox::accepted,
@@ -82,68 +108,217 @@ EditBuildRequirementDialog::EditBuildRequirementDialog(int requirementId, QWidge
 
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
+    loadColors();
     loadRequirement();
+}
+
+void EditBuildRequirementDialog::loadColors()
+{
+    m_useColorCombo->clear();
+
+    ColorRepository repository;
+    const QList<Color> colors = repository.getAll();
+
+    for (const Color& color : colors) {
+        ColorComboHelper::addColorItem(m_useColorCombo,
+                                       color.name(),
+                                       color.id(),
+                                       color.rgb());
+    }
 }
 
 void EditBuildRequirementDialog::loadRequirement()
 {
     BuildRequirementRepository requirementRepository;
 
-    const std::optional<BuildRequirement> requirement = requirementRepository.getById(
-        m_requirementId);
+    const std::optional<BuildRequirement> requirement =
+        requirementRepository.getById(m_requirementId);
 
     if (!requirement) {
         QMessageBox::critical(this, "BrickSuite", "Unable to load the build requirement.");
-
         reject();
-
         return;
     }
 
-    PartRepository partRepository;
+    BuildRepository buildRepository;
+    const std::optional<Build> build = buildRepository.getById(requirement->buildId());
 
+    if (!build) {
+        QMessageBox::critical(this, "BrickSuite", "Unable to load the Build.");
+        reject();
+        return;
+    }
+
+    if (build->inventoryMode() != "Stock") {
+        QMessageBox::information(
+            this,
+            "Edit Build Requirement",
+            "Requirement substitutions are available only for Build from Stock.");
+        reject();
+        return;
+    }
+
+    m_originalPartId = requirement->partId();
+    m_originalColorId = requirement->colorId();
+
+    PartRepository partRepository;
     ColorRepository colorRepository;
 
-    const std::optional<Part> part = partRepository.getById(requirement->partId());
+    const std::optional<Part> originalPart =
+        partRepository.getById(m_originalPartId);
+    const std::optional<Color> originalColor =
+        colorRepository.getById(m_originalColorId);
 
-    const std::optional<Color> color = colorRepository.getById(requirement->colorId());
-
-    if (part) {
-        m_partLabel->setText(QString("%1 — %2").arg(part->partNumber(), part->name()));
+    if (originalPart) {
+        m_originalPartLabel->setText(
+            QString("%1 — %2").arg(originalPart->partNumber(), originalPart->name()));
     } else {
-        m_partLabel->setText("(Part unavailable)");
+        m_originalPartLabel->setText("(Part unavailable)");
     }
 
-    if (color) {
-        m_colorLabel->setText(color->name());
-    } else {
-        m_colorLabel->setText("(Color unavailable)");
+    m_originalColorLabel->setText(
+        originalColor ? originalColor->name() : QString("(Color unavailable)"));
+
+    const int effectivePartId = requirement->effectivePartId();
+    const int effectiveColorId = requirement->effectiveColorId();
+
+    const std::optional<Part> effectivePart =
+        partRepository.getById(effectivePartId);
+
+    if (effectivePart) {
+        m_usePartEdit->setText(effectivePart->partNumber());
+    } else if (originalPart) {
+        m_usePartEdit->setText(originalPart->partNumber());
     }
+
+    const int colorIndex = m_useColorCombo->findData(effectiveColorId);
+    if (colorIndex >= 0)
+        m_useColorCombo->setCurrentIndex(colorIndex);
 
     m_quantitySpin->setValue(requirement->quantityRequired());
-
     m_spareCheck->setChecked(requirement->isSpare());
+}
+
+void EditBuildRequirementDialog::resetToOriginal()
+{
+    PartRepository partRepository;
+
+    const std::optional<Part> originalPart =
+        partRepository.getById(m_originalPartId);
+
+    if (originalPart)
+        m_usePartEdit->setText(originalPart->partNumber());
+
+    const int colorIndex = m_useColorCombo->findData(m_originalColorId);
+
+    if (colorIndex >= 0)
+        m_useColorCombo->setCurrentIndex(colorIndex);
 }
 
 void EditBuildRequirementDialog::saveRequirement()
 {
     BuildRequirementRepository repository;
 
-    std::optional<BuildRequirement> requirement = repository.getById(m_requirementId);
+    std::optional<BuildRequirement> requirement =
+        repository.getById(m_requirementId);
 
     if (!requirement) {
         QMessageBox::critical(this, "BrickSuite", "Unable to load the build requirement.");
-
         return;
     }
 
-    requirement->setQuantityRequired(m_quantitySpin->value());
+    BuildRepository buildRepository;
+    const std::optional<Build> build =
+        buildRepository.getById(requirement->buildId());
 
+    if (!build || build->inventoryMode() != "Stock") {
+        QMessageBox::information(
+            this,
+            "Edit Build Requirement",
+            "Requirement substitutions are available only for Build from Stock.");
+        return;
+    }
+
+    const QString partNumber = m_usePartEdit->text().trimmed();
+
+    if (partNumber.isEmpty()) {
+        QMessageBox::warning(this,
+                             "Edit Build Requirement",
+                             "Enter a Part Number to use for this Build.");
+        m_usePartEdit->setFocus();
+        return;
+    }
+
+    PartRepository partRepository;
+    const std::optional<Part> selectedPart =
+        partRepository.getByPartNumber(partNumber);
+
+    if (!selectedPart) {
+        QMessageBox::warning(
+            this,
+            "Edit Build Requirement",
+            QString("Part %1 was not found in the BrickSuite Parts Catalog.")
+                .arg(partNumber));
+        m_usePartEdit->setFocus();
+        m_usePartEdit->selectAll();
+        return;
+    }
+
+    const int selectedColorId = m_useColorCombo->currentData().toInt();
+
+    if (selectedColorId <= 0) {
+        QMessageBox::warning(this,
+                             "Edit Build Requirement",
+                             "Select a valid Color to use for this Build.");
+        return;
+    }
+
+    const int newSubstitutePartId =
+        selectedPart->id() == requirement->partId() ? 0 : selectedPart->id();
+
+    const int newSubstituteColorId =
+        selectedColorId == requirement->colorId() ? 0 : selectedColorId;
+
+    const bool partOrColorChanged =
+        newSubstitutePartId != requirement->substitutePartId()
+        || newSubstituteColorId != requirement->substituteColorId();
+
+    if (partOrColorChanged) {
+        BuildAllocationRepository allocationRepository;
+
+        //
+        // Phase 1 linkage is authoritative for new requirement-aware
+        // allocations. The part/color fallback also protects legacy
+        // schema-v21 allocations, whose build_requirement_id is NULL.
+        //
+        const int linkedAllocated =
+            allocationRepository.totalAllocatedForRequirement(requirement->id());
+
+        const int legacyOrBuildAllocated =
+            allocationRepository.totalAllocatedForPartColorForBuild(
+                requirement->buildId(),
+                requirement->effectivePartId(),
+                requirement->effectiveColorId());
+
+        if (linkedAllocated > 0 || legacyOrBuildAllocated > 0) {
+            QMessageBox::information(
+                this,
+                "Edit Build Requirement",
+                "This requirement already has inventory allocated to it.\n\n"
+                "Part or Color cannot be changed until the allocation-aware "
+                "substitution phase is implemented. Quantity and Spare may "
+                "still be edited without changing the substitution.");
+            return;
+        }
+    }
+
+    requirement->setSubstitutePartId(newSubstitutePartId);
+    requirement->setSubstituteColorId(newSubstituteColorId);
+    requirement->setQuantityRequired(m_quantitySpin->value());
     requirement->setIsSpare(m_spareCheck->isChecked());
 
     if (!repository.update(*requirement)) {
         QMessageBox::critical(this, "BrickSuite", "Unable to update the build requirement.");
-
         return;
     }
 
