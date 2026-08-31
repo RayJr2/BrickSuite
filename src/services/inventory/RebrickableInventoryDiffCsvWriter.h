@@ -5,7 +5,7 @@
  */
 #pragma once
 
-#include "../../import/RebrickableInventoryImportPreview.h"
+#include "../../import/InventoryImportTypes.h"
 
 #include <QString>
 
@@ -27,11 +27,11 @@ public:
         int pieces = 0;
     };
 
-    Result write(const RebrickableInventoryImportPreview& preview,
+    Result write(const InventoryImportPreview& preview,
                  DeltaType deltaType) const;
 
     static QString suggestedFileName(
-        const RebrickableInventoryImportPreview& preview,
+        const InventoryImportPreview& preview,
         DeltaType deltaType);
 
 private:

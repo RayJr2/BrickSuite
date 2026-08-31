@@ -40,7 +40,7 @@
 #include <QVBoxLayout>
 
 InventoryImportPreviewDialog::InventoryImportPreviewDialog(
-    const RebrickableInventoryImportPreview& preview, QWidget* parent)
+    const InventoryImportPreview& preview, QWidget* parent)
     : QDialog(parent)
     , m_preview(preview)
 {
@@ -225,7 +225,7 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
         bool hasAppendRows = false;
         bool hasSubtractRows = false;
 
-        for (const RebrickableInventoryImportPreviewRow& row : m_preview.rows) {
+        for (const InventoryImportPreviewRow& row : m_preview.rows) {
             if (row.status == QStringLiteral("Error"))
                 continue;
 
@@ -254,7 +254,7 @@ void InventoryImportPreviewDialog::populateSummary()
         int comparedRows = 0;
         int errorRows = 0;
 
-        for (const RebrickableInventoryImportPreviewRow& row : m_preview.rows) {
+        for (const InventoryImportPreviewRow& row : m_preview.rows) {
             if (row.status == QStringLiteral("Error")) {
                 ++errorRows;
                 continue;
@@ -301,7 +301,7 @@ void InventoryImportPreviewDialog::populateSummary()
             .arg(m_preview.rowsProcessed)
             .arg(m_preview.validRows)
             .arg(m_preview.failedRows)
-            .arg(m_preview.totalCsvQuantity));
+            .arg(m_preview.totalSourceQuantity));
 }
 
 void InventoryImportPreviewDialog::populateTable()
@@ -310,7 +310,7 @@ void InventoryImportPreviewDialog::populateTable()
 
     int row = 0;
 
-    for (const RebrickableInventoryImportPreviewRow& previewRow : m_preview.rows) {
+    for (const InventoryImportPreviewRow& previewRow : m_preview.rows) {
         m_table->insertRow(row);
 
         m_table->setItem(row, 0, new QTableWidgetItem(previewRow.partNumber));
@@ -319,7 +319,7 @@ void InventoryImportPreviewDialog::populateTable()
 
         m_table->setItem(row, 2, new QTableWidgetItem(previewRow.colorName));
 
-        m_table->setItem(row, 3, new QTableWidgetItem(QString::number(previewRow.csvQuantity)));
+        m_table->setItem(row, 3, new QTableWidgetItem(QString::number(previewRow.sourceQuantity)));
 
         m_table->setItem(row, 4, new QTableWidgetItem(QString::number(previewRow.currentQuantity)));
 
@@ -351,7 +351,7 @@ void InventoryImportPreviewDialog::applyCompareFilter()
     for (int rowIndex = 0;
          rowIndex < m_preview.rows.size();
          ++rowIndex) {
-        const RebrickableInventoryImportPreviewRow& row =
+        const InventoryImportPreviewRow& row =
             m_preview.rows.at(rowIndex);
 
         bool show = true;

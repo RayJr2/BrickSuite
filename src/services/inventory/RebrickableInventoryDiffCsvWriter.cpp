@@ -11,7 +11,7 @@
 
 RebrickableInventoryDiffCsvWriter::Result
 RebrickableInventoryDiffCsvWriter::write(
-    const RebrickableInventoryImportPreview& preview,
+    const InventoryImportPreview& preview,
     DeltaType deltaType) const
 {
     Result result;
@@ -33,7 +33,7 @@ RebrickableInventoryDiffCsvWriter::write(
 
     stream << "Part,Color,Quantity\n";
 
-    for (const RebrickableInventoryImportPreviewRow& row : preview.rows) {
+    for (const InventoryImportPreviewRow& row : preview.rows) {
         if (row.status == QStringLiteral("Error"))
             continue;
 
@@ -83,7 +83,7 @@ RebrickableInventoryDiffCsvWriter::write(
 }
 
 QString RebrickableInventoryDiffCsvWriter::suggestedFileName(
-    const RebrickableInventoryImportPreview& preview,
+    const InventoryImportPreview& preview,
     DeltaType deltaType)
 {
     QFileInfo sourceInfo(preview.sourceFilePath);

@@ -24,6 +24,7 @@
 #include "../../app/WorkspaceContext.h"
 #include "../../database/DatabaseManager.h"
 #include "../../import/InventoryCsvOperation.h"
+#include "../../import/InventoryImportTypes.h"
 #include "../../import/RebrickableInventoryImporter.h"
 #include "../../models/StorageLocation.h"
 #include "../../repositories/StorageLocationRepository.h"
@@ -360,7 +361,7 @@ void ImportInventoryDialog::importFile()
 
     RebrickableInventoryImporter importer(database);
 
-    RebrickableInventoryImporter::ImportOptions options;
+    InventoryImportOptions options;
 
     options.workspaceId = m_workspaceContext.currentWorkspaceId();
 
@@ -374,10 +375,10 @@ void ImportInventoryDialog::importFile()
         static_cast<InventoryCsvOperation>(
             m_operationCombo->currentData().toInt());
 
-    RebrickableInventoryImporter::ImportResult result;
+    InventoryImportResult result;
 
     // Preview
-    RebrickableInventoryImportPreview preview;
+    InventoryImportPreview preview;
 
     if (!importer.previewOwnedParts(filePath, options, preview)) {
         qCritical() << "Inventory import preview failed."
@@ -435,8 +436,8 @@ void ImportInventoryDialog::importFile()
         int rowsRemoved = 0;
         int piecesRemoved = 0;
 
-        for (const RebrickableInventoryImportPreviewRow& row : preview.rows) {
-            if (!row.presentInCsv
+        for (const InventoryImportPreviewRow& row : preview.rows) {
+            if (!row.presentInSource
                 && row.presentInBrickSuite
                 && row.currentQuantity > 0) {
                 ++rowsRemoved;

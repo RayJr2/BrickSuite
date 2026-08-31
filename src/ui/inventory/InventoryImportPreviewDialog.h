@@ -22,7 +22,7 @@
 
 #include <QDialog>
 
-#include "../../import/RebrickableInventoryImportPreview.h"
+#include "../../import/InventoryImportTypes.h"
 
 class QComboBox;
 class QLabel;
@@ -35,7 +35,7 @@ class InventoryImportPreviewDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit InventoryImportPreviewDialog(const RebrickableInventoryImportPreview& preview,
+    explicit InventoryImportPreviewDialog(const InventoryImportPreview& preview,
                                           QWidget* parent = nullptr);
 
 private:
@@ -47,7 +47,7 @@ private:
     void exportSubtractCsv();
     void exportDiffCsv(bool append);
 
-    RebrickableInventoryImportPreview m_preview;
+    InventoryImportPreview m_preview;
 
     QLabel* m_scopeLabel = nullptr;
     QLabel* m_summaryLabel = nullptr;

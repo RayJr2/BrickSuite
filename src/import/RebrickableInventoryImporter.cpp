@@ -69,8 +69,8 @@ QStringList RebrickableInventoryImporter::parseCsvLine(const QString& line) cons
 }
 
 bool RebrickableInventoryImporter::importOwnedParts(const QString& filePath,
-                                                    const ImportOptions& options,
-                                                    ImportResult& result)
+                                                    const InventoryImportOptions& options,
+                                                    InventoryImportResult& result)
 {
     result = {};
 
@@ -265,11 +265,12 @@ bool RebrickableInventoryImporter::importOwnedParts(const QString& filePath,
 }
 
 bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
-                                                     const ImportOptions& options,
-                                                     RebrickableInventoryImportPreview& preview)
+                                                     const InventoryImportOptions& options,
+                                                     InventoryImportPreview& preview)
 {
     preview = {};
 
+    preview.source = InventoryImportSource::RebrickableCsv;
     preview.sourceFilePath = filePath;
 
     preview.sourceFileName = QFileInfo(filePath).fileName();
@@ -320,8 +321,8 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
 
         ++preview.rowsProcessed;
 
-        RebrickableInventoryImportPreviewRow previewRow;
-        previewRow.presentInCsv = true;
+        InventoryImportPreviewRow previewRow;
+        previewRow.presentInSource = true;
 
         const QStringList fields = parseCsvLine(line);
 
@@ -337,17 +338,20 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
             continue;
         }
 
-        previewRow.partNumber = fields.at(partIndex).trimmed();
+        previewRow.sourcePartNumber = fields.at(partIndex).trimmed();
+        previewRow.partNumber = previewRow.sourcePartNumber;
 
         bool colorValid = false;
         bool quantityValid = false;
 
-        previewRow.rebrickableColorId = fields.at(colorIndex).trimmed().toInt(&colorValid);
+        previewRow.sourceColorIdentifier = fields.at(colorIndex).trimmed();
+        previewRow.rebrickableColorId =
+            previewRow.sourceColorIdentifier.toInt(&colorValid);
 
-        previewRow.csvQuantity = fields.at(quantityIndex).trimmed().toInt(&quantityValid);
+        previewRow.sourceQuantity = fields.at(quantityIndex).trimmed().toInt(&quantityValid);
 
         if (previewRow.partNumber.isEmpty() || !colorValid || !quantityValid
-            || previewRow.csvQuantity <= 0) {
+            || previewRow.sourceQuantity <= 0) {
             ++preview.failedRows;
 
             previewRow.status = "Error";
@@ -482,8 +486,8 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
         switch (options.operation) {
         case InventoryCsvOperation::Append:
             previewRow.resultingQuantity =
-                previewRow.currentQuantity + previewRow.csvQuantity;
-            previewRow.difference = previewRow.csvQuantity;
+                previewRow.currentQuantity + previewRow.sourceQuantity;
+            previewRow.difference = previewRow.sourceQuantity;
             previewRow.status =
                 previewRow.currentQuantity == 0
                     ? QStringLiteral("New Inventory")
@@ -491,7 +495,7 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
             break;
 
         case InventoryCsvOperation::Replace:
-            previewRow.resultingQuantity = previewRow.csvQuantity;
+            previewRow.resultingQuantity = previewRow.sourceQuantity;
             previewRow.difference =
                 previewRow.resultingQuantity - previewRow.currentQuantity;
 
@@ -507,21 +511,21 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
             break;
 
         case InventoryCsvOperation::Subtract:
-            if (previewRow.currentQuantity < previewRow.csvQuantity) {
+            if (previewRow.currentQuantity < previewRow.sourceQuantity) {
                 previewRow.resultingQuantity = previewRow.currentQuantity;
                 previewRow.difference = 0;
                 previewRow.status = QStringLiteral("Needs Review");
                 previewRow.errorMessage =
                     QStringLiteral("Cannot subtract %1; BrickSuite has only %2 in the selected storage.")
-                        .arg(previewRow.csvQuantity)
+                        .arg(previewRow.sourceQuantity)
                         .arg(previewRow.currentQuantity);
                 ++preview.failedRows;
             } else {
                 previewRow.resultingQuantity =
-                    previewRow.currentQuantity - previewRow.csvQuantity;
-                previewRow.difference = -previewRow.csvQuantity;
+                    previewRow.currentQuantity - previewRow.sourceQuantity;
+                previewRow.difference = -previewRow.sourceQuantity;
                 previewRow.status =
-                    previewRow.csvQuantity == 0
+                    previewRow.sourceQuantity == 0
                         ? QStringLiteral("No Change")
                         : QStringLiteral("Subtract");
             }
@@ -530,7 +534,7 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
         case InventoryCsvOperation::CompareOnly:
             previewRow.resultingQuantity = previewRow.currentQuantity;
             previewRow.difference =
-                previewRow.currentQuantity - previewRow.csvQuantity;
+                previewRow.currentQuantity - previewRow.sourceQuantity;
 
             if (previewRow.difference == 0) {
                 previewRow.status = QStringLiteral("Match");
@@ -546,7 +550,7 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
             ++preview.validRows;
         }
 
-        preview.totalCsvQuantity += previewRow.csvQuantity;
+        preview.totalSourceQuantity += previewRow.sourceQuantity;
 
         preview.rows.append(previewRow);
     }
@@ -564,7 +568,7 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
         || options.operation == InventoryCsvOperation::Replace) {
         QSet<QString> representedKeys;
 
-        for (const RebrickableInventoryImportPreviewRow& row : preview.rows) {
+        for (const InventoryImportPreviewRow& row : preview.rows) {
             if (row.partId <= 0 || row.colorId <= 0)
                 continue;
 
@@ -618,7 +622,7 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
             if (representedKeys.contains(key))
                 continue;
 
-            RebrickableInventoryImportPreviewRow row;
+            InventoryImportPreviewRow row;
 
             row.partId = partId;
             row.colorId = colorId;
@@ -627,18 +631,22 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
 
             row.partNumber =
                 inventoryQuery.value("rebrickable_part_id").toString();
+            row.sourcePartNumber = row.partNumber;
             row.partName =
                 inventoryQuery.value("part_name").toString();
 
             row.rebrickableColorId =
                 inventoryQuery.value("rebrickable_color_id").toInt();
+            row.sourceColorIdentifier =
+                QString::number(row.rebrickableColorId);
             row.colorName =
                 inventoryQuery.value("color_name").toString();
+            row.sourceColorName = row.colorName;
 
-            row.presentInCsv = false;
+            row.presentInSource = false;
             row.presentInBrickSuite = true;
 
-            row.csvQuantity = 0;
+            row.sourceQuantity = 0;
             row.currentQuantity =
                 inventoryQuery.value("quantity").toInt();
 
@@ -665,15 +673,15 @@ bool RebrickableInventoryImporter::previewOwnedParts(const QString& filePath,
             << "StorageLocationId:" << options.storageLocationId
             << "RowsProcessed:" << preview.rowsProcessed
             << "FailedRows:" << preview.failedRows
-            << "TotalCsvQuantity:" << preview.totalCsvQuantity;
+            << "TotalSourceQuantity:" << preview.totalSourceQuantity;
 
     return true;
 }
 
 bool RebrickableInventoryImporter::importPreview(
-    const RebrickableInventoryImportPreview& preview,
-    const ImportOptions& options,
-    ImportResult& result)
+    const InventoryImportPreview& preview,
+    const InventoryImportOptions& options,
+    InventoryImportResult& result)
 {
     result = {};
 
@@ -705,7 +713,7 @@ bool RebrickableInventoryImporter::importPreview(
 
     InventoryRecordRepository inventoryRepository;
 
-    for (const RebrickableInventoryImportPreviewRow& previewRow : preview.rows) {
+    for (const InventoryImportPreviewRow& previewRow : preview.rows) {
         ++result.rowsProcessed;
 
         if (previewRow.status == QStringLiteral("Error")
@@ -730,11 +738,11 @@ bool RebrickableInventoryImporter::importPreview(
             record.setStorageLocationId(options.storageLocationId);
             record.setCondition(options.condition);
             record.setOwnershipType(options.ownershipType);
-            record.setQuantity(previewRow.csvQuantity);
+            record.setQuantity(previewRow.sourceQuantity);
 
             const QString notes =
                 QStringLiteral("Rebrickable CSV Append. Quantity appended: %1.")
-                    .arg(previewRow.csvQuantity);
+                    .arg(previewRow.sourceQuantity);
 
             rowApplied =
                 inventoryRepository.addOrIncreaseQuantity(
@@ -745,7 +753,7 @@ bool RebrickableInventoryImporter::importPreview(
                     notes,
                     false);
 
-            quantityChanged = previewRow.csvQuantity;
+            quantityChanged = previewRow.sourceQuantity;
         } else if (options.operation == InventoryCsvOperation::Replace) {
             if (previewRow.currentQuantity == 0) {
                 InventoryRecord record;
@@ -790,7 +798,7 @@ bool RebrickableInventoryImporter::importPreview(
             quantityChanged = qAbs(previewRow.difference);
         } else if (options.operation == InventoryCsvOperation::Subtract) {
             if (previewRow.inventoryRecordId <= 0
-                || previewRow.currentQuantity < previewRow.csvQuantity) {
+                || previewRow.currentQuantity < previewRow.sourceQuantity) {
                 rowApplied = false;
             } else {
                 const QString notes =
@@ -809,7 +817,7 @@ bool RebrickableInventoryImporter::importPreview(
                         false);
             }
 
-            quantityChanged = previewRow.csvQuantity;
+            quantityChanged = previewRow.sourceQuantity;
         }
 
         if (!rowApplied) {

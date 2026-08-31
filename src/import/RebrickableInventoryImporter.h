@@ -20,8 +20,7 @@
 
 #pragma once
 
-#include "RebrickableInventoryImportPreview.h"
-#include "InventoryCsvOperation.h"
+#include "InventoryImportTypes.h"
 
 #include <QString>
 #include <QStringList>
@@ -31,39 +30,20 @@ class QSqlDatabase;
 class RebrickableInventoryImporter
 {
 public:
-    struct ImportOptions
-    {
-        int workspaceId = 0;
-        int storageLocationId = 0;
-
-        QString condition = "Used";
-        QString ownershipType = "Owned";
-
-        InventoryCsvOperation operation = InventoryCsvOperation::Append;
-    };
-
-    struct ImportResult
-    {
-        int rowsProcessed = 0;
-        int rowsImported = 0;
-        int rowsFailed = 0;
-
-        int totalQuantityImported = 0;
-    };
 
     explicit RebrickableInventoryImporter(QSqlDatabase& database);
 
     bool importOwnedParts(const QString& filePath,
-                          const ImportOptions& options,
-                          ImportResult& result);
+                          const InventoryImportOptions& options,
+                          InventoryImportResult& result);
 
     bool previewOwnedParts(const QString& filePath,
-                           const ImportOptions& options,
-                           RebrickableInventoryImportPreview& preview);
+                           const InventoryImportOptions& options,
+                           InventoryImportPreview& preview);
 
-    bool importPreview(const RebrickableInventoryImportPreview& preview,
-                       const ImportOptions& options,
-                       ImportResult& result);
+    bool importPreview(const InventoryImportPreview& preview,
+                       const InventoryImportOptions& options,
+                       InventoryImportResult& result);
 
 private:
     QStringList parseCsvLine(const QString& line) const;
