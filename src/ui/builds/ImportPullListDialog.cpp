@@ -20,14 +20,10 @@
 
 #include "ImportPullListDialog.h"
 
-#include "../../database/DatabaseManager.h"
-
 #include "../../models/Build.h"
 #include "../../models/BuildAllocation.h"
 #include "../../models/BuildRequirement.h"
 #include "../../models/Color.h"
-#include "../../models/InventoryMovement.h"
-#include "../../models/InventoryRecord.h"
 #include "../../models/Part.h"
 #include "../../models/StorageLocation.h"
 
@@ -35,10 +31,10 @@
 #include "../../repositories/BuildRepository.h"
 #include "../../repositories/BuildRequirementRepository.h"
 #include "../../repositories/ColorRepository.h"
-#include "../../repositories/InventoryMovementRepository.h"
-#include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
+
+#include "../../services/builds/BuildPullingService.h"
 
 #include <QAbstractItemView>
 #include <QDebug>
@@ -48,8 +44,6 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
-#include <QSqlDatabase>
-#include <QSqlError>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QTextStream>
@@ -249,7 +243,15 @@ bool ImportPullListDialog::loadCsv()
 
         const QString pulledText = fields.at(8).trimmed();
 
-        if (!pulledText.isEmpty()) {
+        //
+        // A blank Quantity Pulled means zero pieces were pulled from this
+        // allocation. This keeps the exported Pull List convenient to use:
+        // the user only needs to enter quantities for rows actually pulled.
+        //
+        if (pulledText.isEmpty()) {
+            row.quantityPulled = 0;
+            row.pulledEntered = true;
+        } else {
             bool pulledOk = false;
 
             row.quantityPulled = pulledText.toInt(&pulledOk);
@@ -563,260 +565,50 @@ void ImportPullListDialog::reconcile()
     if (response != QMessageBox::Yes)
         return;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
-
-    if (!database.transaction()) {
-        qCritical() << "Unable to start Pull List reconciliation transaction."
-                    << "BuildId:" << m_buildId
-                    << "DatabaseError:" << database.lastError().text();
-
-        QMessageBox::critical(this,
-                              "Reconcile Pull List",
-                              "Unable to start the reconciliation "
-                              "transaction.");
-        return;
-    }
-
-    BuildAllocationRepository allocationRepository;
-    InventoryRecordRepository inventoryRepository;
-    InventoryMovementRepository movementRepository;
-    BuildRepository buildRepository;
-    BuildRequirementRepository requirementRepository;
-
-    const std::optional<Build> build = buildRepository.getById(m_buildId);
-
-    int reconciledRows = 0;
-    int reconciledPieces = 0;
-
-    if (!build) {
-        database.rollback();
-
-        QMessageBox::critical(this, "Reconcile Pull List", "Unable to load the selected Build.");
-        return;
-    }
+    QList<BuildPullingService::PullRequest> requests;
+    requests.reserve(m_rows.size());
 
     for (const PreviewRow& row : m_rows) {
-        if (row.quantityPulled == 0)
-            continue;
-
-        const std::optional<InventoryRecord> inventoryRecord =
-            inventoryRepository.getById(row.inventoryRecordId);
-
-        const std::optional<BuildAllocation> allocation =
-            allocationRepository.getById(row.allocationId);
-
-        if (!inventoryRecord || !allocation) {
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Reconcile Pull List",
-                                  QString("Inventory or allocation data "
-                                          "changed for part %1.\n\n"
-                                          "No changes were saved.")
-                                      .arg(row.partNumber));
-            return;
-        }
-
-        if (allocation->buildId() != m_buildId
-            || allocation->inventoryRecordId() != inventoryRecord->id()
-            || allocation->partId() != inventoryRecord->partId()
-            || allocation->colorId() != inventoryRecord->colorId()
-            || allocation->quantityAllocated() != row.actualAllocated
-            || row.quantityPulled > allocation->quantityAllocated()
-            || row.quantityPulled > inventoryRecord->quantity()) {
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Reconcile Pull List",
-                                  QString("Quantity or identity validation failed "
-                                          "for part %1.\n\n"
-                                          "No changes were saved.")
-                                      .arg(row.partNumber));
-            return;
-        }
-
-        //
-        // Requirement identity is now authoritative for fulfillment.
-        // The allocation's Part / Color may be a substitute and therefore
-        // cannot be used to look up the original requirement by Part / Color.
-        //
-        const std::optional<BuildRequirement> requirement =
-            requirementRepository.getById(allocation->buildRequirementId());
-
-        if (!requirement
-            || requirement->buildId() != m_buildId
-            || requirement->isSpare()
-            || requirement->effectivePartId() != allocation->partId()
-            || requirement->effectiveColorId() != allocation->colorId()) {
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Reconcile Pull List",
-                                  QString("Unable to locate the matching Build Requirement "
-                                          "for part %1.\n\n"
-                                          "No changes were saved.")
-                                      .arg(row.partNumber));
-            return;
-        }
-
-        const int newPulledQuantity = requirement->quantityPulled() + row.quantityPulled;
-
-        if (newPulledQuantity > requirement->quantityRequired()) {
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Reconcile Pull List",
-                                  QString("Reconciling part %1 would exceed "
-                                          "the required quantity.\n\n"
-                                          "Required: %2\n"
-                                          "Already Pulled: %3\n"
-                                          "This Pull: %4\n\n"
-                                          "No changes were saved.")
-                                      .arg(row.partNumber)
-                                      .arg(requirement->quantityRequired())
-                                      .arg(requirement->quantityPulled())
-                                      .arg(row.quantityPulled));
-            return;
-        }
-
-        const int newInventoryQuantity = inventoryRecord->quantity() - row.quantityPulled;
-
-        if (!inventoryRepository.updateQuantity(inventoryRecord->id(), newInventoryQuantity)) {
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Reconcile Pull List",
-                                  QString("Unable to update inventory "
-                                          "for part %1.\n\n"
-                                          "No changes were saved.")
-                                      .arg(row.partNumber));
-            return;
-        }
-
-        if (!allocationRepository.recordPulledManufacturer(m_buildId,
-                                                           inventoryRecord->partId(),
-                                                           inventoryRecord->colorId(),
-                                                           inventoryRecord->manufacturerId(),
-                                                           row.quantityPulled)) {
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Reconcile Pull List",
-                                  QString("Unable to record manufacturer provenance "
-                                          "for part %1.\n\n"
-                                          "No changes were saved.")
-                                      .arg(row.partNumber));
-            return;
-        }
-
-        const int remainingAllocation = allocation->quantityAllocated() - row.quantityPulled;
-
-        if (remainingAllocation == 0) {
-            if (!allocationRepository.remove(allocation->id())) {
-                database.rollback();
-
-                QMessageBox::critical(this,
-                                      "Reconcile Pull List",
-                                      "Unable to remove the completed "
-                                      "Build allocation.");
-                return;
-            }
-        } else {
-            BuildAllocation updatedAllocation = *allocation;
-
-            updatedAllocation.setQuantityAllocated(remainingAllocation);
-
-            if (!allocationRepository.update(updatedAllocation)) {
-                database.rollback();
-
-                QMessageBox::critical(this,
-                                      "Reconcile Pull List",
-                                      "Unable to reduce the remaining "
-                                      "Build allocation.");
-                return;
-            }
-        }
-
-        BuildRequirement updatedRequirement = *requirement;
-
-        updatedRequirement.setQuantityPulled(newPulledQuantity);
-
-        if (!requirementRepository.update(updatedRequirement)) {
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Reconcile Pull List",
-                                  QString("Unable to update the pulled quantity "
-                                          "for part %1.\n\n"
-                                          "No changes were saved.")
-                                      .arg(row.partNumber));
-            return;
-        }
-
-        InventoryMovement movement;
-
-        movement.setWorkspaceId(inventoryRecord->workspaceId());
-        movement.setInventoryRecordId(inventoryRecord->id());
-        movement.setPartId(inventoryRecord->partId());
-        movement.setColorId(inventoryRecord->colorId());
-        movement.setMovementType("BuildPull");
-        movement.setQuantityChange(-row.quantityPulled);
-        movement.setFromStorageLocationId(inventoryRecord->storageLocationId());
-        movement.setCondition(inventoryRecord->condition());
-        movement.setOwnershipType(inventoryRecord->ownershipType());
-        movement.setReferenceType("Build");
-        movement.setReferenceId(QString::number(m_buildId));
-
-        movement.setNotes(QString("Pulled for %1%2.")
-                              .arg(build->name())
-                              .arg(build->setNumber().trimmed().isEmpty()
-                                       ? QString()
-                                       : QString(" (%1)").arg(build->setNumber())));
-
-        if (!movementRepository.create(movement)) {
-            qCritical() << "Pull List reconciliation failed creating movement history."
-                        << "BuildId:" << m_buildId
-                        << "PartId:" << row.partId
-                        << "ColorId:" << row.colorId
-                        << "QuantityPulled:" << row.quantityPulled;
-
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Reconcile Pull List",
-                                  "Unable to create inventory "
-                                  "movement history.\n\n"
-                                  "No changes were saved.");
-            return;
-        }
-
-        ++reconciledRows;
-        reconciledPieces += row.quantityPulled;
+        BuildPullingService::PullRequest request;
+        request.allocationId = row.allocationId;
+        request.quantity = row.quantityPulled;
+        requests.append(request);
     }
 
-    if (!database.commit()) {
-        qCritical() << "Unable to commit Pull List reconciliation."
-                    << "BuildId:" << m_buildId
-                    << "DatabaseError:" << database.lastError().text();
+    //
+    // CSV reconciliation and the interactive pulling UI now share the same
+    // application-service transaction. Requirement ownership follows the
+    // allocation's exact build_requirement_id; the dialog no longer performs
+    // its own Part/Color-based fulfillment updates.
+    //
+    BuildPullingService service;
+    const BuildPullingService::PullResult result = service.recordPulls(requests);
 
-        database.rollback();
+    if (!result.success) {
+        qCritical() << "Pull List reconciliation failed through BuildPullingService."
+                    << "BuildId:" << m_buildId
+                    << "Message:" << result.message;
 
         QMessageBox::critical(this,
                               "Reconcile Pull List",
-                              "Unable to commit the Pull List "
-                              "reconciliation.");
+                              QString("Unable to reconcile the Pull List.\n\n"
+                                      "%1\n\n"
+                                      "No changes were saved.")
+                                  .arg(result.message));
         return;
     }
 
-    qInfo() << "Pull List reconciled."
+    qInfo() << "Pull List reconciled through BuildPullingService."
             << "BuildId:" << m_buildId
-            << "Rows:" << reconciledRows
-            << "PiecesPulled:" << reconciledPieces
+            << "Rows:" << result.rowsPulled
+            << "PiecesPulled:" << result.piecesPulled
             << "ExactRows:" << m_exactCount
             << "PartialRows:" << m_partialCount
             << "ZeroRows:" << m_zeroCount;
 
-    QMessageBox::information(this, "Reconcile Pull List", "Pull List reconciled successfully.");
+    QMessageBox::information(this,
+                             "Reconcile Pull List",
+                             "Pull List reconciled successfully.");
 
     accept();
 }

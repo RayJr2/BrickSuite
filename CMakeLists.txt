@@ -256,6 +256,8 @@ qt_add_executable(BrickSuite
     src/ui/inventory/FoundInventoryDialog.cpp
     src/ui/inventory/LostInventoryDialog.h
     src/ui/inventory/LostInventoryDialog.cpp
+    src/services/builds/BuildPullingService.h
+    src/services/builds/BuildPullingService.cpp
     README.md
     src/core/AppVersion.h
     src/core/AppConstants.h
