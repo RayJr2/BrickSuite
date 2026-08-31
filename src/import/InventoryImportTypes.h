@@ -67,6 +67,10 @@ struct InventoryImportPreviewRow
     QString sourceCondition;
     QString sourceOrderId;
     QString sourceLotId;
+    QString sourceBoid;
+
+    int sourceOrderedQuantity = 0;
+    int sourceRefundedQuantity = 0;
 
     // Canonical BrickSuite catalog identity used by preview/commit.
     QString partNumber;

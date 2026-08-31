@@ -26,6 +26,7 @@
 #include "../../import/InventoryCsvOperation.h"
 #include "../../import/InventoryImportTypes.h"
 #include "../../import/RebrickableInventoryImporter.h"
+#include "../../import/BrickOwlInventoryImporter.h"
 #include "../../models/StorageLocation.h"
 #include "../../repositories/StorageLocationRepository.h"
 
@@ -378,12 +379,13 @@ void ImportInventoryDialog::refreshImportFormatState()
 
         m_formatStatusLabel->setText(
             m_formatStatusLabel->text()
-            + QStringLiteral(" — BrickOwl parser/resolution is enabled in M23.5.4."));
+            + QStringLiteral(" — Append-only receiving preview."));
     }
 
     if (QPushButton* okButton = m_buttonBox->button(QDialogButtonBox::Ok)) {
         okButton->setEnabled(
-            effectiveSource == InventoryImportSource::RebrickableCsv);
+            effectiveSource == InventoryImportSource::RebrickableCsv
+            || effectiveSource == InventoryImportSource::BrickOwlOrderCsv);
     }
 }
 
@@ -520,15 +522,6 @@ void ImportInventoryDialog::importFile()
         return;
     }
 
-    if (source == InventoryImportSource::BrickOwlOrderCsv) {
-        QMessageBox::information(
-            this,
-            QStringLiteral("BrickSuite"),
-            QStringLiteral("BrickOwl Order CSV was recognized. "
-                           "BrickOwl parsing and resolution is added in M23.5.4."));
-        return;
-    }
-
     const int storageLocationId = m_storageCombo->currentData().toInt();
 
     if (storageLocationId <= 0) {
@@ -538,8 +531,6 @@ void ImportInventoryDialog::importFile()
     }
 
     QSqlDatabase database = DatabaseManager::instance().database();
-
-    RebrickableInventoryImporter importer(database);
 
     InventoryImportOptions options;
 
@@ -559,16 +550,28 @@ void ImportInventoryDialog::importFile()
 
     // Preview
     InventoryImportPreview preview;
+    bool previewSucceeded = false;
 
-    if (!importer.previewOwnedParts(filePath, options, preview)) {
+    if (source == InventoryImportSource::BrickOwlOrderCsv) {
+        BrickOwlInventoryImporter importer(database);
+        previewSucceeded = importer.previewOrder(filePath, options, preview);
+    } else {
+        RebrickableInventoryImporter importer(database);
+        previewSucceeded = importer.previewOwnedParts(filePath, options, preview);
+    }
+
+    if (!previewSucceeded) {
         qCritical() << "Inventory import preview failed."
                     << "File:" << filePath
+                    << "Source:" << inventoryImportSourceName(source)
                     << "WorkspaceId:" << options.workspaceId
                     << "StorageLocationId:" << options.storageLocationId;
 
-        QMessageBox::critical(this,
-                              "BrickSuite",
-                              "Unable to preview the selected Rebrickable inventory file.");
+        QMessageBox::critical(
+            this,
+            QStringLiteral("BrickSuite"),
+            QStringLiteral("Unable to preview the selected %1 file.")
+                .arg(inventoryImportSourceName(source)));
 
         return;
     }
@@ -602,6 +605,16 @@ void ImportInventoryDialog::importFile()
 
     if (previewDialog.exec() != QDialog::Accepted)
         return;
+
+    if (source == InventoryImportSource::BrickOwlOrderCsv) {
+        QMessageBox::information(
+            this,
+            QStringLiteral("BrickSuite"),
+            QStringLiteral(
+                "BrickOwl parsing and part/color resolution preview completed. "
+                "No BrickSuite inventory was changed."));
+        return;
+    }
 
     if (options.operation == InventoryCsvOperation::CompareOnly) {
         QMessageBox::information(
@@ -652,6 +665,8 @@ void ImportInventoryDialog::importFile()
         if (confirm.clickedButton() != replaceButton)
             return;
     }
+
+    RebrickableInventoryImporter importer(database);
 
     if (!importer.importPreview(preview, options, result)) {
         qCritical() << "Inventory CSV operation failed."

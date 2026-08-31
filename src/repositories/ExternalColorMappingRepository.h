@@ -20,6 +20,10 @@ public:
 
     QList<ExternalColorMapping> getByProvider(const QString& provider) const;
 
+    QList<ExternalColorMapping> findByProviderAndExternalId(
+        const QString& provider,
+        const QString& externalId) const;
+
     int countByProviderAndStatus(const QString& provider,
                                  ExternalMappingStatus status) const;
 

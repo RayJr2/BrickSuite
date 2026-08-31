@@ -141,7 +141,11 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
     m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
 
     if (QPushButton* importButton = m_buttonBox->button(QDialogButtonBox::Ok)) {
-        if (m_preview.operation == InventoryCsvOperation::CompareOnly) {
+        const bool previewOnlyBrickOwl =
+            m_preview.source == InventoryImportSource::BrickOwlOrderCsv;
+
+        if (m_preview.operation == InventoryCsvOperation::CompareOnly
+            || previewOnlyBrickOwl) {
             importButton->setText(QStringLiteral("Done"));
         } else {
             importButton->setText(
@@ -150,8 +154,9 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
         }
 
         importButton->setEnabled(
-            m_preview.failedRows == 0
-            && m_preview.validRows > 0);
+            previewOnlyBrickOwl
+            || (m_preview.failedRows == 0
+                && m_preview.validRows > 0));
     }
 
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -290,12 +295,13 @@ void InventoryImportPreviewDialog::populateSummary()
     }
 
     m_summaryLabel->setText(
-        QString("Operation: %1\n"
-                "File: %2\n"
-                "Rows processed: %3    "
-                "Valid: %4    "
-                "Needs Review / Errors: %5    "
-                "CSV pieces: %6")
+        QString("Source: %1    Operation: %2\n"
+                "File: %3\n"
+                "Rows processed: %4    "
+                "Resolved: %5    "
+                "Needs Review / Errors: %6    "
+                "Source pieces: %7")
+            .arg(inventoryImportSourceName(m_preview.source))
             .arg(inventoryCsvOperationName(m_preview.operation))
             .arg(m_preview.sourceFileName)
             .arg(m_preview.rowsProcessed)

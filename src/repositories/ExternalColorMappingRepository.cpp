@@ -101,6 +101,53 @@ ExternalColorMappingRepository::getByProvider(const QString& provider) const
     return mappings;
 }
 
+
+QList<ExternalColorMapping>
+ExternalColorMappingRepository::findByProviderAndExternalId(
+    const QString& provider,
+    const QString& externalId) const
+{
+    QList<ExternalColorMapping> mappings;
+
+    const QString providerValue = provider.trimmed();
+    const QString externalIdValue = externalId.trimmed();
+
+    if (providerValue.isEmpty() || externalIdValue.isEmpty())
+        return mappings;
+
+    QSqlQuery query(DatabaseManager::instance().database());
+
+    query.prepare(R"(
+        SELECT
+            id,
+            color_id,
+            provider,
+            external_id,
+            mapping_status,
+            source,
+            notes
+        FROM external_color_mapping
+        WHERE provider = :provider COLLATE NOCASE
+          AND external_id = :external_id COLLATE NOCASE
+          AND mapping_status = 'Mapped'
+        ORDER BY color_id
+    )");
+
+    query.bindValue(":provider", providerValue);
+    query.bindValue(":external_id", externalIdValue);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to reverse-resolve external color mapping:"
+                    << query.lastError().text();
+        return mappings;
+    }
+
+    while (query.next())
+        mappings.append(mappingFromQuery(query));
+
+    return mappings;
+}
+
 int ExternalColorMappingRepository::countByProviderAndStatus(
     const QString& provider,
     ExternalMappingStatus status) const
