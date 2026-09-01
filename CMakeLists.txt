@@ -18,6 +18,24 @@ find_package(Qt6 REQUIRED COMPONENTS
     Network
 )
 
+if(MINGW)
+    # Qt's standalone MinGW packages keep standard target libraries under
+    # <toolchain>/<target-triplet>. Add that compiler-owned prefix so CMake's
+    # supported FindZLIB module can discover the bundled headers and library.
+    get_filename_component(BRICKSUITE_MINGW_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(BRICKSUITE_MINGW_ROOT "${BRICKSUITE_MINGW_BIN_DIR}" DIRECTORY)
+    execute_process(
+        COMMAND "${CMAKE_CXX_COMPILER}" -dumpmachine
+        OUTPUT_VARIABLE BRICKSUITE_MINGW_TARGET
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    list(PREPEND CMAKE_PREFIX_PATH
+        "${BRICKSUITE_MINGW_ROOT}/${BRICKSUITE_MINGW_TARGET}"
+    )
+endif()
+
+find_package(ZLIB REQUIRED)
+
 qt_standard_project_setup()
 
 qt_add_executable(BrickSuite
@@ -208,6 +226,8 @@ qt_add_executable(BrickSuite
     src/repositories/SetCatalogRepository.cpp
     src/import/RebrickableSetCatalogImporter.h
     src/import/RebrickableSetCatalogImporter.cpp
+    src/import/RebrickableCsvInputResolver.h
+    src/import/RebrickableCsvInputResolver.cpp
     src/ui/catalog/SetsCatalogWidget.h
     src/ui/catalog/SetsCatalogWidget.cpp
     src/ui/builds/EditBuildDialog.h
@@ -273,6 +293,7 @@ target_link_libraries(BrickSuite PRIVATE
     Qt6::Widgets
     Qt6::Sql
     Qt6::Network
+    ZLIB::ZLIB
 )
 
 if(WIN32)

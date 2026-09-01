@@ -92,7 +92,7 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
 
     auto* titleLabel = new QLabel("Parts Catalog", this);
 
-    m_importPartsButton = new QPushButton("Import Rebrickable parts.csv", this);
+    m_importPartsButton = new QPushButton("Import Rebrickable Parts (CSV/ZIP)", this);
 
     m_importPartRelationshipsButton =
         new QPushButton("Import part_relationships.csv", this);
@@ -845,9 +845,10 @@ void PartsCatalogWidget::updatePagingControls()
 void PartsCatalogWidget::importPartsCsv()
 {
     const QString fileName = QFileDialog::getOpenFileName(this,
-                                                          "Import Rebrickable parts.csv",
+                                                          "Import Rebrickable Parts Catalog",
                                                           QString(),
-                                                          "CSV Files (*.csv)");
+                                                          "Rebrickable Catalog Files (*.csv *.CSV *.zip *.ZIP);;"
+                                                          "CSV Files (*.csv *.CSV);;ZIP Files (*.zip *.ZIP)");
 
     if (fileName.isEmpty())
         return;
@@ -856,7 +857,7 @@ void PartsCatalogWidget::importPartsCsv()
         = QMessageBox::question(this,
                                 "Import Parts Catalog",
                                 "Import/update the BrickSuite Parts Catalog "
-                                "from this Rebrickable parts.csv file?\n\n"
+                                "from this Rebrickable CSV or ZIP file?\n\n"
                                 "New Parts will be added and changed provider "
                                 "data will be updated.\n\n"
                                 "Parts already in BrickSuite will not be "
@@ -966,4 +967,3 @@ void PartsCatalogWidget::importPartRelationshipsCsv()
             .arg(result.skippedMissingChild)
             .arg(result.deactivated));
 }
-

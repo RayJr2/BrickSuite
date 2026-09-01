@@ -52,7 +52,7 @@ SetsCatalogWidget::SetsCatalogWidget(QWidget* parent)
 
     auto* titleLabel = new QLabel("Sets Catalog", this);
 
-    m_importButton = new QPushButton("Import Rebrickable sets.csv", this);
+    m_importButton = new QPushButton("Import Rebrickable Sets (CSV/ZIP)", this);
 
     titleLayout->addWidget(titleLabel);
 
@@ -80,7 +80,7 @@ SetsCatalogWidget::SetsCatalogWidget(QWidget* parent)
 
     filterLayout->addWidget(m_searchButton);
 
-    m_resultLabel = new QLabel("Import sets.csv or enter search criteria.", this);
+    m_resultLabel = new QLabel("Import sets.csv/ZIP or enter search criteria.", this);
 
     m_resultsTable = new QTableWidget(this);
 
@@ -382,9 +382,10 @@ void SetsCatalogWidget::updatePagingControls()
 void SetsCatalogWidget::importSetsCsv()
 {
     const QString fileName = QFileDialog::getOpenFileName(this,
-                                                          "Import Rebrickable sets.csv",
+                                                          "Import Rebrickable Sets Catalog",
                                                           QString(),
-                                                          "CSV Files (*.csv)");
+                                                          "Rebrickable Catalog Files (*.csv *.CSV *.zip *.ZIP);;"
+                                                          "CSV Files (*.csv *.CSV);;ZIP Files (*.zip *.ZIP)");
 
     if (fileName.isEmpty())
         return;
@@ -393,7 +394,7 @@ void SetsCatalogWidget::importSetsCsv()
         = QMessageBox::question(this,
                                 "Import Sets Catalog",
                                 "Import/update the BrickSuite Sets Catalog "
-                                "from this Rebrickable sets.csv file?\n\n"
+                                "from this Rebrickable CSV or ZIP file?\n\n"
                                 "Existing sets will be updated when provider "
                                 "data changes. Existing BrickSuite records "
                                 "will not be deleted.",

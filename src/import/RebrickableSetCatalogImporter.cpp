@@ -20,6 +20,8 @@
 
 #include "RebrickableSetCatalogImporter.h"
 
+#include "RebrickableCsvInputResolver.h"
+
 #include "../database/DatabaseManager.h"
 
 #include <QDateTime>
@@ -30,6 +32,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QTextStream>
+#include <QTemporaryDir>
 
 namespace {
 QStringList parseCsvLine(const QString& line, bool& ok)
@@ -89,7 +92,20 @@ RebrickableSetCatalogImporter::Result RebrickableSetCatalogImporter::importFile(
 {
     Result result;
 
-    QFile file(fileName);
+    QTemporaryDir temporaryDirectory;
+    QString csvFileName;
+
+    if (!RebrickableCsvInputResolver::resolve(fileName,
+                                              "sets.csv",
+                                              temporaryDirectory,
+                                              csvFileName,
+                                              result.message)) {
+        qWarning() << "Set Catalog import rejected input:"
+                   << fileName << result.message;
+        return result;
+    }
+
+    QFile file(csvFileName);
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         result.message = "Unable to open sets.csv.";

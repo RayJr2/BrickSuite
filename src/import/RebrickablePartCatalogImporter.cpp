@@ -20,6 +20,8 @@
 
 #include "RebrickablePartCatalogImporter.h"
 
+#include "RebrickableCsvInputResolver.h"
+
 #include "../database/DatabaseManager.h"
 
 #include <QDateTime>
@@ -30,6 +32,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QTextStream>
+#include <QTemporaryDir>
 
 namespace {
 
@@ -92,7 +95,20 @@ RebrickablePartCatalogImporter::Result RebrickablePartCatalogImporter::importFil
 {
     Result result;
 
-    QFile file(fileName);
+    QTemporaryDir temporaryDirectory;
+    QString csvFileName;
+
+    if (!RebrickableCsvInputResolver::resolve(fileName,
+                                              "parts.csv",
+                                              temporaryDirectory,
+                                              csvFileName,
+                                              result.message)) {
+        qWarning() << "Parts Catalog import rejected input:"
+                   << fileName << result.message;
+        return result;
+    }
+
+    QFile file(csvFileName);
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         result.message = "Unable to open parts.csv.";
