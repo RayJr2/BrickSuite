@@ -799,6 +799,31 @@ void AddInventoryDialog::resolveEnteredPart()
     const PartResolutionResult result = resolver.resolve(enteredPartNumber);
 
     if (!result.hasResolvedPart) {
+        //
+        // Cached Rebrickable external IDs are part of BrickSuite's normal
+        // identity resolution path. Resolve those before applying the optional
+        // BrickLink-only fallback so enabling Try BrickLink ID never suppresses
+        // a valid LEGO, Brickset, BrickOwl, or other cached provider mapping.
+        //
+        RebrickablePartAliasLearner learner;
+        const auto localLearned =
+            learner.learnFromLocalExternalId(enteredPartNumber);
+
+        if (localLearned.learned) {
+            const PartResolutionResult localResolved =
+                resolver.resolve(enteredPartNumber);
+
+            if (localResolved.hasResolvedPart) {
+                applyResolvedPart(
+                    localResolved.part.id(),
+                    QString("%1 — %2")
+                        .arg(localResolved.part.partNumber(),
+                             localResolved.part.name()),
+                    QStringLiteral("Alias Match — cached external ID / Rebrickable"));
+                return;
+            }
+        }
+
         const bool tryBrickLinkId =
             m_tryBrickLinkIdCheck && m_tryBrickLinkIdCheck->isChecked();
 
@@ -826,25 +851,6 @@ void AddInventoryDialog::resolveEnteredPart()
 
             updateAddButtonState();
             return;
-        }
-
-        RebrickablePartAliasLearner learner;
-        const auto localLearned =
-            learner.learnFromLocalExternalId(enteredPartNumber);
-
-        if (localLearned.learned) {
-            const PartResolutionResult localResolved =
-                resolver.resolve(enteredPartNumber);
-
-            if (localResolved.hasResolvedPart) {
-                applyResolvedPart(
-                    localResolved.part.id(),
-                    QString("%1 — %2")
-                        .arg(localResolved.part.partNumber(),
-                             localResolved.part.name()),
-                    QStringLiteral("Alias Match — cached external ID / Rebrickable"));
-                return;
-            }
         }
 
         const QString apiKey =
