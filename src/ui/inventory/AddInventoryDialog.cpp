@@ -58,6 +58,7 @@
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QMenu>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -125,6 +126,30 @@ void AddInventoryDialog::initializeUi()
         m_partSearchEdit = new QLineEdit(this);
 
         m_partSearchEdit->setPlaceholderText("Search by Part Number or Name");
+
+        // Keep the normal QLineEdit editing menu, but add an explicit Clear
+        // action that resets the complete Part selection/resolution state.
+        m_partSearchEdit->setContextMenuPolicy(Qt::CustomContextMenu);
+
+        connect(m_partSearchEdit,
+                &QLineEdit::customContextMenuRequested,
+                this,
+                [this](const QPoint& position) {
+                    QMenu* menu = m_partSearchEdit->createStandardContextMenu();
+
+                    menu->addSeparator();
+
+                    QAction* clearAction = menu->addAction(QStringLiteral("Clear"));
+                    clearAction->setEnabled(
+                        m_partId > 0 || !m_partSearchEdit->text().trimmed().isEmpty());
+
+                    connect(clearAction, &QAction::triggered, this, [this]() {
+                        clearPartSelection();
+                    });
+
+                    menu->exec(m_partSearchEdit->mapToGlobal(position));
+                    delete menu;
+                });
 
         m_partSearchModel = new QStandardItemModel(this);
 
