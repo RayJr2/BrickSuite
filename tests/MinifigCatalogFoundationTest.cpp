@@ -146,7 +146,7 @@ bool validateVersion23Migration(const QString& path)
                       && query.exec("INSERT INTO schema_version VALUES (23)")
                       && DatabaseSchema::initialize(database)
                       && query.exec("SELECT version FROM schema_version")
-                      && query.next() && query.value(0).toInt() == 25
+                      && query.next() && query.value(0).toInt() == 26
                       && query.exec("SELECT COUNT(*) FROM minifig_catalog")
                       && query.next() && query.value(0).toInt() == 0;
             database.close();
@@ -168,7 +168,7 @@ int main(int argc, char* argv[])
     if (!require(temporaryDirectory.isValid(), "Unable to create test directory."))
         return 1;
     if (!require(validateVersion23Migration(temporaryDirectory.filePath("schema23.db")),
-                 "Schema 23 through 25 migration validation failed."))
+                 "Schema 23 through 26 migration validation failed."))
         return 1;
 
     const QString applicationData = QStandardPaths::writableLocation(

@@ -227,14 +227,19 @@ qt_add_executable(BrickSuite
     src/models/MinifigCatalogSearchCriteria.h
     src/models/MinifigCatalogSearchResult.h
     src/models/MinifigExternalIdentifier.h
+    src/models/MinifigCatalogPart.h
     src/repositories/SetCatalogRepository.h
     src/repositories/SetCatalogRepository.cpp
     src/repositories/MinifigCatalogRepository.h
     src/repositories/MinifigCatalogRepository.cpp
+    src/repositories/MinifigCatalogPartRepository.h
+    src/repositories/MinifigCatalogPartRepository.cpp
     src/import/RebrickableSetCatalogImporter.h
     src/import/RebrickableSetCatalogImporter.cpp
     src/import/RebrickableMinifigCatalogImporter.h
     src/import/RebrickableMinifigCatalogImporter.cpp
+    src/import/RebrickableMinifigPartsImporter.h
+    src/import/RebrickableMinifigPartsImporter.cpp
     src/import/RebrickableMinifigThemeImporter.h
     src/import/RebrickableMinifigThemeImporter.cpp
     src/models/ThemeCatalogItem.h
@@ -364,6 +369,29 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME MinifigImageService COMMAND MinifigImageServiceTest)
+
+    qt_add_executable(MinifigPartsImportTest EXCLUDE_FROM_ALL
+        tests/MinifigPartsImportTest.cpp
+        src/database/DatabaseManager.h
+        src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h
+        src/database/DatabaseSchema.cpp
+        src/models/MinifigCatalogPart.h
+        src/repositories/MinifigCatalogPartRepository.h
+        src/repositories/MinifigCatalogPartRepository.cpp
+        src/import/RebrickableCsvInputResolver.h
+        src/import/RebrickableCsvInputResolver.cpp
+        src/import/RebrickableMinifigPartsImporter.h
+        src/import/RebrickableMinifigPartsImporter.cpp
+    )
+
+    target_link_libraries(MinifigPartsImportTest PRIVATE
+        Qt6::Core
+        Qt6::Sql
+        ZLIB::ZLIB
+    )
+
+    add_test(NAME MinifigPartsImport COMMAND MinifigPartsImportTest)
 endif()
 
 if(WIN32)

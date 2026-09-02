@@ -2,24 +2,37 @@
 
 #include "../../models/MinifigCatalogItem.h"
 #include "../../models/MinifigExternalIdentifier.h"
+#include "../../models/MinifigCatalogPart.h"
+#include "../../import/RebrickableMinifigPartsImporter.h"
 #include "../../repositories/MinifigCatalogRepository.h"
+#include "../../repositories/MinifigCatalogPartRepository.h"
 #include "../../services/images/MinifigImageService.h"
+#include "../../services/images/PartImageService.h"
 
+#include <QAbstractItemView>
 #include <QDialogButtonBox>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHeaderView>
+#include <QIcon>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPixmap>
+#include <QPushButton>
+#include <QTableWidget>
+#include <QTableWidgetItem>
 #include <QVBoxLayout>
 
 MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent)
     : QDialog(parent)
     , m_minifigCatalogId(minifigCatalogId)
     , m_imageService(new MinifigImageService(this))
+    , m_partImageService(new PartImageService(this))
 {
     setWindowTitle("Minifig Details");
-    resize(700, 430);
+    resize(900, 720);
 
     auto* mainLayout = new QVBoxLayout(this);
     auto* definitionGroup = new QGroupBox("Catalog Definition", this);
@@ -51,17 +64,46 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent
     contentLayout->addLayout(formLayout, 1);
     mainLayout->addWidget(definitionGroup);
 
+    auto* compositionGroup = new QGroupBox("Imported Parts List", this);
+    auto* compositionLayout = new QVBoxLayout(compositionGroup);
+    auto* compositionHeader = new QHBoxLayout();
+    m_compositionSummaryLabel = new QLabel(compositionGroup);
+    m_compositionSummaryLabel->setWordWrap(true);
+    m_importPartsButton = new QPushButton("Import Parts List...", compositionGroup);
+    compositionHeader->addWidget(m_compositionSummaryLabel, 1);
+    compositionHeader->addWidget(m_importPartsButton);
+    compositionLayout->addLayout(compositionHeader);
+
+    m_compositionTable = new QTableWidget(compositionGroup);
+    m_compositionTable->setColumnCount(6);
+    m_compositionTable->setHorizontalHeaderLabels(
+        QStringList() << "Image" << "Part #" << "Part Name" << "Color" << "Qty" << "Spare");
+    m_compositionTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_compositionTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_compositionTable->setIconSize(QSize(48, 48));
+    m_compositionTable->verticalHeader()->setVisible(false);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+    compositionLayout->addWidget(m_compositionTable);
+    mainLayout->addWidget(compositionGroup, 1);
+
     auto* scopeLabel = new QLabel(
-        "This catalog entry provides identification metadata. Constituent parts and "
-        "inventory comparison are not available in this phase.",
-        this);
+        "Imported parts describe the catalog composition only. Inventory availability and "
+        "Minifig assembly are not included yet.", this);
     scopeLabel->setWordWrap(true);
     mainLayout->addWidget(scopeLabel);
-    mainLayout->addStretch();
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     mainLayout->addWidget(buttons);
+    connect(m_importPartsButton,
+            &QPushButton::clicked,
+            this,
+            &MinifigDetailsDialog::importPartsList);
 
     connect(m_imageService,
             &MinifigImageService::imageReady,
@@ -80,6 +122,8 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent
 
     if (!loadMinifig())
         return;
+
+    loadComposition();
 
     const QString cachedPath = m_imageService->cachedImagePath(m_minifigNumber);
     if (!cachedPath.isEmpty()) {
@@ -113,6 +157,7 @@ bool MinifigDetailsDialog::loadMinifig()
     }
 
     m_imageUrl = minifig->imageUrl();
+    m_minifigName = minifig->name();
     m_numberLabel->setText(m_minifigNumber.isEmpty() ? "-" : m_minifigNumber);
     m_nameLabel->setText(minifig->name());
     m_partsLabel->setText(QString::number(minifig->numberOfParts()));
@@ -122,6 +167,104 @@ bool MinifigDetailsDialog::loadMinifig()
         m_sourceLabel->setText("-");
     setWindowTitle(QString("Minifig Details — %1").arg(m_numberLabel->text()));
     return true;
+}
+
+void MinifigDetailsDialog::loadComposition()
+{
+    MinifigCatalogPartRepository repository;
+    const QList<MinifigCatalogPart> composition = repository.listForMinifig(m_minifigCatalogId);
+    m_compositionTable->setRowCount(0);
+
+    if (composition.isEmpty()) {
+        m_compositionSummaryLabel->setText(
+            "Parts list has not been imported for this Minifig.");
+        return;
+    }
+
+    qint64 requiredQuantity = 0;
+    qint64 spareQuantity = 0;
+    for (const MinifigCatalogPart& part : composition) {
+        if (part.isSpare)
+            spareQuantity += part.quantityRequired;
+        else
+            requiredQuantity += part.quantityRequired;
+
+        const int row = m_compositionTable->rowCount();
+        m_compositionTable->insertRow(row);
+        m_compositionTable->setRowHeight(row, 54);
+        auto* imageItem = new QTableWidgetItem("No Image");
+        QString cachedPath = m_partImageService->cachedPartColorImagePath(
+            part.partNumber, part.rebrickableColorId);
+        if (cachedPath.isEmpty())
+            cachedPath = m_partImageService->cachedImagePath(part.partNumber);
+        const QPixmap pixmap(cachedPath);
+        if (!pixmap.isNull()) {
+            imageItem->setText(QString());
+            imageItem->setIcon(QIcon(pixmap));
+        }
+        imageItem->setData(Qt::UserRole, part.id);
+        m_compositionTable->setItem(row, 0, imageItem);
+        m_compositionTable->setItem(row, 1, new QTableWidgetItem(part.partNumber));
+        m_compositionTable->setItem(row, 2, new QTableWidgetItem(part.partName));
+        m_compositionTable->setItem(row, 3, new QTableWidgetItem(part.colorName));
+        auto* quantityItem = new QTableWidgetItem(QString::number(part.quantityRequired));
+        quantityItem->setTextAlignment(Qt::AlignCenter);
+        m_compositionTable->setItem(row, 4, quantityItem);
+        auto* spareItem = new QTableWidgetItem(part.isSpare ? "Yes" : "No");
+        spareItem->setTextAlignment(Qt::AlignCenter);
+        m_compositionTable->setItem(row, 5, spareItem);
+    }
+
+    m_compositionSummaryLabel->setText(
+        QString("%1 distinct rows; %2 required pieces; %3 spare pieces retained.")
+            .arg(composition.size())
+            .arg(requiredQuantity)
+            .arg(spareQuantity));
+}
+
+void MinifigDetailsDialog::importPartsList()
+{
+    MinifigCatalogPartRepository repository;
+    const bool replacing = !repository.listForMinifig(m_minifigCatalogId).isEmpty();
+    if (replacing) {
+        const auto response = QMessageBox::question(
+            this,
+            "Replace Minifig Parts List",
+            QString("Import a new parts list for %1 (%2)?\n\n"
+                    "This replaces the existing imported parts list; it does not merge with it.")
+                .arg(m_minifigName, m_minifigNumber),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+        if (response != QMessageBox::Yes)
+            return;
+    }
+
+    const QString fileName = QFileDialog::getOpenFileName(
+        this,
+        QString("Import Parts List for %1 (%2)").arg(m_minifigName, m_minifigNumber),
+        QString(),
+        "Rebrickable Parts Lists (*.csv *.CSV *.zip *.ZIP);;"
+        "CSV Files (*.csv *.CSV);;ZIP Files (*.zip *.ZIP)");
+    if (fileName.isEmpty())
+        return;
+
+    RebrickableMinifigPartsImporter importer;
+    const RebrickableMinifigPartsImporter::Result result = importer.importFile(
+        m_minifigCatalogId, fileName);
+    if (!result.success) {
+        QMessageBox::critical(this, "Import Minifig Parts List", result.message);
+        return;
+    }
+
+    loadComposition();
+    QMessageBox::information(
+        this,
+        "Import Minifig Parts List",
+        QString("Parts list imported for %1 (%2).\n\n"
+                "CSV rows read: %3\nDistinct composition rows: %4")
+            .arg(m_minifigName, m_minifigNumber)
+            .arg(result.rowsRead)
+            .arg(result.compositionRows));
 }
 
 void MinifigDetailsDialog::displayImage(const QString& imagePath)

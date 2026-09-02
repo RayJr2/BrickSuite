@@ -39,13 +39,28 @@ describes the Sets in which a Minifig appears; it does not import the Minifig's 
 
 <h2>Minifig Details and Images</h2>
 
-<p>Use <b>Actions... → Details</b> to view the selected Minifig's catalog metadata and provider
-source. Images are downloaded asynchronously from the imported Rebrickable image URL and cached
-in BrickSuite's dedicated Minifig image cache.</p>
+<p>Use <b>Actions... → Details</b> to view the selected Minifig's catalog metadata, provider
+source, and imported composition. Images are downloaded asynchronously from the imported
+Rebrickable image URL and cached in BrickSuite's dedicated Minifig image cache.</p>
 
-<div class="note"><b>Current scope:</b> This catalog supports browsing and identification only.
-Constituent-part import, inventory Have/Need comparison, and building a Minifig from loose pieces
-are separate later workflow capabilities.</div>
+<h2>Import a Minifig Parts List</h2>
+
+<p>Open the intended Minifig's Details dialog and choose <b>Import Parts List...</b>. Select the
+Rebrickable Parts CSV or its downloaded ZIP. The selected BrickSuite Minifig is always the
+destination.</p>
+
+<p>If the filename contains a recognizable identifier such as <code>fig-005210</code>, BrickSuite
+checks it against the selected Minifig before saving anything. A renamed file without a
+recognizable <code>fig-NNNNNN</code> identifier is accepted because you explicitly selected the
+destination Minifig.</p>
+
+<p>Re-importing replaces the previous imported composition rather than merging or accumulating
+quantities. Spare rows are retained separately and shown as spares; their quantities are not
+included in the required-piece total.</p>
+
+<div class="note"><b>Current scope:</b> Imported composition is catalog information. Inventory
+Have/Need comparison, buildability, and assembling a Minifig from loose pieces are separate later
+workflow capabilities.</div>
 
 <h2>Related Help</h2>
 <p><a href="parts_catalog.html">Parts Catalog</a> |

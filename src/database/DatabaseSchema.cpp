@@ -469,6 +469,19 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 25;
     }
 
+    // Version 25 -> Version 26.
+    if (version == 25) {
+        if (!migrateVersion25ToVersion26(database)) {
+            database.rollback();
+            return false;
+        }
+        if (!setSchemaVersion(database, 26)) {
+            database.rollback();
+            return false;
+        }
+        version = 26;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -1863,6 +1876,42 @@ bool DatabaseSchema::createThemeCatalogTables(QSqlDatabase& database)
     return true;
 }
 
+bool DatabaseSchema::createMinifigCatalogPartTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+    const QStringList statements = {
+        R"(CREATE TABLE IF NOT EXISTS minifig_catalog_part (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            minifig_catalog_id INTEGER NOT NULL,
+            part_id INTEGER NOT NULL,
+            color_id INTEGER NOT NULL,
+            quantity_required INTEGER NOT NULL CHECK(quantity_required > 0),
+            is_spare INTEGER NOT NULL DEFAULT 0 CHECK(is_spare IN (0, 1)),
+            provider TEXT NOT NULL COLLATE NOCASE,
+            source TEXT NOT NULL,
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            FOREIGN KEY(minifig_catalog_id) REFERENCES minifig_catalog(id),
+            FOREIGN KEY(part_id) REFERENCES part(id),
+            FOREIGN KEY(color_id) REFERENCES color(id),
+            UNIQUE(minifig_catalog_id, part_id, color_id, is_spare)
+        ))",
+        "CREATE INDEX IF NOT EXISTS idx_minifig_catalog_part_minifig "
+        "ON minifig_catalog_part(minifig_catalog_id, is_spare, part_id, color_id)",
+        "CREATE INDEX IF NOT EXISTS idx_minifig_catalog_part_identity "
+        "ON minifig_catalog_part(part_id, color_id, minifig_catalog_id)"
+    };
+
+    for (const QString& statement : statements) {
+        if (!query.exec(statement)) {
+            qCritical() << "Unable to create Minifig composition schema:"
+                        << query.lastError().text();
+            return false;
+        }
+    }
+    return true;
+}
+
 bool DatabaseSchema::migrateVersion11ToVersion12(QSqlDatabase& database)
 {
     if (!createExternalColorMappingTable(database))
@@ -3220,5 +3269,13 @@ bool DatabaseSchema::migrateVersion24ToVersion25(QSqlDatabase& database)
     if (!createThemeCatalogTables(database))
         return false;
     qInfo() << "Theme Catalog foundation initialized.";
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion25ToVersion26(QSqlDatabase& database)
+{
+    if (!createMinifigCatalogPartTable(database))
+        return false;
+    qInfo() << "Minifig Catalog composition foundation initialized.";
     return true;
 }
