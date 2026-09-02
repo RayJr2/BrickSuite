@@ -49,6 +49,23 @@ void appendCriteria(QString& sql,
             )
         )");
     }
+
+    if (criteria.themeCatalogId > 0) {
+        sql += QStringLiteral(R"(
+            AND EXISTS (
+                WITH RECURSIVE selected_theme(id) AS (
+                    SELECT id FROM theme_catalog WHERE id = :theme_catalog_id AND is_active = 1
+                    UNION ALL
+                    SELECT tc.id FROM theme_catalog tc
+                    JOIN selected_theme st ON tc.parent_theme_catalog_id = st.id
+                    WHERE tc.is_active = 1
+                )
+                SELECT 1 FROM minifig_theme mt
+                JOIN selected_theme st ON st.id = mt.theme_catalog_id
+                WHERE mt.minifig_catalog_id = mc.id AND mt.provider = :theme_provider
+            )
+        )");
+    }
 }
 
 void bindCriteria(QSqlQuery& query,
@@ -64,6 +81,11 @@ void bindCriteria(QSqlQuery& query,
 
     if (!provider.isEmpty())
         query.bindValue(":provider", provider);
+
+    if (criteria.themeCatalogId > 0) {
+        query.bindValue(":theme_catalog_id", criteria.themeCatalogId);
+        query.bindValue(":theme_provider", QStringLiteral("Rebrickable"));
+    }
 }
 } // namespace
 

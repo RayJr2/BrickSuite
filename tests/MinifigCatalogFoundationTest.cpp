@@ -1,8 +1,10 @@
 #include "../src/database/DatabaseManager.h"
 #include "../src/database/DatabaseSchema.h"
 #include "../src/import/RebrickableMinifigCatalogImporter.h"
+#include "../src/import/RebrickableMinifigThemeImporter.h"
 #include "../src/models/MinifigCatalogSearchCriteria.h"
 #include "../src/repositories/MinifigCatalogRepository.h"
+#include "../src/repositories/ThemeCatalogRepository.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -144,7 +146,7 @@ bool validateVersion23Migration(const QString& path)
                       && query.exec("INSERT INTO schema_version VALUES (23)")
                       && DatabaseSchema::initialize(database)
                       && query.exec("SELECT version FROM schema_version")
-                      && query.next() && query.value(0).toInt() == 24
+                      && query.next() && query.value(0).toInt() == 25
                       && query.exec("SELECT COUNT(*) FROM minifig_catalog")
                       && query.next() && query.value(0).toInt() == 0;
             database.close();
@@ -166,7 +168,7 @@ int main(int argc, char* argv[])
     if (!require(temporaryDirectory.isValid(), "Unable to create test directory."))
         return 1;
     if (!require(validateVersion23Migration(temporaryDirectory.filePath("schema23.db")),
-                 "Schema 23 to 24 migration validation failed."))
+                 "Schema 23 through 25 migration validation failed."))
         return 1;
 
     const QString applicationData = QStandardPaths::writableLocation(
@@ -279,6 +281,167 @@ int main(int argc, char* argv[])
                      && restoredSecond.has_value(),
                  QString("Reactivation/stable-ID import failed: %1").arg(restoreResult.message)))
         return 1;
+
+    const QString themeDirectory = temporaryDirectory.filePath("theme-data");
+    QDir().mkpath(themeDirectory);
+    if (!require(
+            writeBytes(QDir(themeDirectory).filePath("themes.csv"),
+                       "id,name,parent_id\n1,City,\n2,Arctic,1\n3,Arctic,\n")
+            && writeBytes(QDir(themeDirectory).filePath("sets.csv"),
+                          "set_num,name,year,theme_id,num_parts,img_url\n"
+                          "s1,Set One,2020,2,1,\ns2,Set Two,2021,3,1,\n")
+            && writeBytes(QDir(themeDirectory).filePath("inventories.csv"),
+                          "id,version,set_num\n10,1,s1\n11,2,s1\n12,1,s2\n")
+            && writeBytes(QDir(themeDirectory).filePath("inventory_minifigs.csv"),
+                          "inventory_id,fig_num,quantity\n10,fig-000001,1\n"
+                          "11,fig-000001,1\n12,fig-000002,1\n12,fig-unresolved,1\n"),
+            "Unable to create synthetic Theme relationship files."))
+        return 1;
+
+    RebrickableMinifigThemeImporter themeImporter;
+    if (!require(manager.database().transaction(),
+                 "Unable to begin prerequisite-query failure validation."))
+        return 1;
+    QSqlQuery prerequisiteFailure(manager.database());
+    if (!require(prerequisiteFailure.exec(
+                     "ALTER TABLE minifig_external_identifier RENAME TO hidden_minifig_identifier"),
+                 "Unable to force prerequisite-query failure.")) {
+        manager.database().rollback();
+        return 1;
+    }
+    const auto prerequisiteFailureResult = themeImporter.importDirectory(themeDirectory);
+    manager.database().rollback();
+    if (!require(!prerequisiteFailureResult.success
+                     && prerequisiteFailureResult.message.startsWith(
+                         "Unable to verify the Rebrickable Minifigs Catalog:")
+                     && !prerequisiteFailureResult.message.contains(
+                         "Import the Rebrickable Minifigs Catalog before"),
+                 "Prerequisite query failure was misreported as an empty catalog."))
+        return 1;
+
+    const auto themeResult = themeImporter.importDirectory(themeDirectory);
+    if (!require(themeResult.success && themeResult.themesRead == 3
+                     && themeResult.associations == 2
+                     && themeResult.unresolvedMinifigs == 1
+                     && themeResult.duplicateRelationshipsCollapsed == 1,
+                 QString("Theme import failed: %1").arg(themeResult.message)))
+        return 1;
+
+    ThemeCatalogRepository themeRepository;
+    QSet<QString> arcticPaths;
+    for (const ThemeCatalogItem& theme : themeRepository.activeFilterHierarchy()) {
+        if (theme.name == "Arctic")
+            arcticPaths.insert(theme.qualifiedName);
+    }
+    if (!require(arcticPaths.contains(QString::fromUtf8("City → Arctic"))
+                     && arcticPaths.contains("Arctic") && arcticPaths.size() == 2,
+                 "Duplicate Theme names do not have distinct qualified paths."))
+        return 1;
+
+    QSqlQuery themeQuery(manager.database());
+    if (!require(themeQuery.exec("SELECT tc.id FROM theme_catalog tc JOIN "
+                                 "theme_external_identifier tei ON tei.theme_catalog_id=tc.id "
+                                 "WHERE tei.provider='Rebrickable' AND tei.external_id='1'")
+                     && themeQuery.next(),
+                 "Unable to find imported parent Theme."))
+        return 1;
+    MinifigCatalogSearchCriteria themeCriteria;
+    themeCriteria.provider = "Rebrickable";
+    themeCriteria.themeCatalogId = themeQuery.value(0).toInt();
+    if (!require(repository.count(themeCriteria) == 1
+                     && repository.search(themeCriteria).constFirst().rebrickableExternalId
+                            == "fig-000001",
+                 "Parent Theme filter did not include descendant associations."))
+        return 1;
+
+    const int stableRootThemeId = themeCriteria.themeCatalogId;
+    auto themeState = [&]() {
+        QStringList state;
+        QSqlQuery stateQuery(manager.database());
+        if (!stateQuery.exec(
+                "SELECT tei.external_id,tc.name,COALESCE(tc.parent_theme_catalog_id,0),"
+                "tc.is_active,tei.is_active FROM theme_external_identifier tei "
+                "JOIN theme_catalog tc ON tc.id=tei.theme_catalog_id "
+                "WHERE tei.provider='Rebrickable' ORDER BY tei.external_id"))
+            return QStringList();
+        while (stateQuery.next())
+            state.append(QString("T|%1|%2|%3|%4|%5")
+                             .arg(stateQuery.value(0).toString(), stateQuery.value(1).toString())
+                             .arg(stateQuery.value(2).toInt()).arg(stateQuery.value(3).toInt())
+                             .arg(stateQuery.value(4).toInt()));
+        if (!stateQuery.exec("SELECT mt.minifig_catalog_id,mt.theme_catalog_id,mt.provider "
+                             "FROM minifig_theme mt ORDER BY 1,2,3"))
+            return QStringList();
+        while (stateQuery.next())
+            state.append(QString("A|%1|%2|%3").arg(stateQuery.value(0).toString(),
+                                                    stateQuery.value(1).toString(),
+                                                    stateQuery.value(2).toString()));
+        return state;
+    };
+    const QStringList stateBeforeForcedFailure = themeState();
+    if (!require(!stateBeforeForcedFailure.isEmpty()
+                     && writeBytes(QDir(themeDirectory).filePath("themes.csv"),
+                                   "id,name,parent_id\n1,Mutated City,\n2,Arctic,\n")
+                     && writeBytes(QDir(themeDirectory).filePath("sets.csv"),
+                                   "set_num,name,year,theme_id,num_parts,img_url\n"
+                                   "s1,Set One,2020,1,1,\n")
+                     && writeBytes(QDir(themeDirectory).filePath("inventories.csv"),
+                                   "id,version,set_num\n10,1,s1\n")
+                     && writeBytes(QDir(themeDirectory).filePath("inventory_minifigs.csv"),
+                                   "inventory_id,fig_num,quantity\n10,fig-000002,1\n"),
+                 "Unable to create the mutation snapshot for rollback validation."))
+        return 1;
+    QSqlQuery trigger(manager.database());
+    if (!require(trigger.exec("CREATE TRIGGER reject_theme_link BEFORE INSERT ON minifig_theme "
+                              "WHEN NEW.provider='Rebrickable' BEGIN SELECT RAISE(ABORT,'test'); END"),
+                 "Unable to install Theme rollback trigger."))
+        return 1;
+    const auto failedThemeImport = themeImporter.importDirectory(themeDirectory);
+    if (!require(!failedThemeImport.success
+                     && failedThemeImport.message.contains("test", Qt::CaseInsensitive)
+                     && themeState() == stateBeforeForcedFailure
+                     && repository.count(themeCriteria) == 1
+                     && trigger.exec("DROP TRIGGER reject_theme_link"),
+                 "Theme metadata, lifecycle, hierarchy, or associations did not roll back atomically."))
+        return 1;
+
+    if (!require(writeBytes(QDir(themeDirectory).filePath("themes.csv"),
+                            "id,name,parent_id\n1,Renamed City,\n2,Arctic,1\n")
+                     && writeBytes(QDir(themeDirectory).filePath("sets.csv"),
+                                   "set_num,name,year,theme_id,num_parts,img_url\n"
+                                   "s1,Set One,2020,2,1,\n")
+                     && writeBytes(QDir(themeDirectory).filePath("inventories.csv"),
+                                   "id,version,set_num\n10,1,s1\n11,2,s1\n")
+                     && writeBytes(QDir(themeDirectory).filePath("inventory_minifigs.csv"),
+                                   "inventory_id,fig_num,quantity\n10,fig-000001,1\n"
+                                   "11,fig-000001,1\n"),
+                 "Unable to write reduced Theme snapshot."))
+        return 1;
+    const auto reducedThemes = themeImporter.importDirectory(themeDirectory);
+    themeQuery.exec("SELECT tc.id,tc.name FROM theme_catalog tc JOIN theme_external_identifier tei "
+                    "ON tei.theme_catalog_id=tc.id WHERE tei.provider='Rebrickable' "
+                    "AND tei.external_id='1'");
+    if (!require(reducedThemes.success && reducedThemes.themesDeactivated == 1
+                     && themeQuery.next() && themeQuery.value(0).toInt() == stableRootThemeId
+                     && themeQuery.value(1).toString() == "Renamed City",
+                 "Theme update/deactivation did not preserve stable identity."))
+        return 1;
+
+    const QString realSampleDirectory = qEnvironmentVariable("BRICKSUITE_THEME_SAMPLE_DIR");
+    if (!realSampleDirectory.isEmpty()) {
+        const auto representativeMinifigs = importer.importFile(
+            QDir(realSampleDirectory).filePath("minifigs.csv.zip"));
+        const auto representative = themeImporter.importDirectory(realSampleDirectory);
+        if (!require(representativeMinifigs.success
+                         && representativeMinifigs.rowsRead == 17203
+                         && representative.success && representative.themesRead == 496
+                         && representative.relationshipRowsRead == 25809
+                         && representative.associations == 18142
+                         && representative.unresolvedMinifigs == 20
+                         && representative.duplicateRelationshipsCollapsed == 7647,
+                     QString("Representative Theme import failed: %1").arg(representative.message)))
+            return 1;
+    }
 
     qInfo() << "Minifig Catalog foundation validation passed.";
     return 0;

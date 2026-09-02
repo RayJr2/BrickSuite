@@ -235,6 +235,11 @@ qt_add_executable(BrickSuite
     src/import/RebrickableSetCatalogImporter.cpp
     src/import/RebrickableMinifigCatalogImporter.h
     src/import/RebrickableMinifigCatalogImporter.cpp
+    src/import/RebrickableMinifigThemeImporter.h
+    src/import/RebrickableMinifigThemeImporter.cpp
+    src/models/ThemeCatalogItem.h
+    src/repositories/ThemeCatalogRepository.h
+    src/repositories/ThemeCatalogRepository.cpp
     src/import/RebrickableCsvInputResolver.h
     src/import/RebrickableCsvInputResolver.cpp
     src/ui/catalog/SetsCatalogWidget.h
@@ -331,6 +336,11 @@ if(BUILD_TESTING)
         src/import/RebrickableCsvInputResolver.cpp
         src/import/RebrickableMinifigCatalogImporter.h
         src/import/RebrickableMinifigCatalogImporter.cpp
+        src/import/RebrickableMinifigThemeImporter.h
+        src/import/RebrickableMinifigThemeImporter.cpp
+        src/models/ThemeCatalogItem.h
+        src/repositories/ThemeCatalogRepository.h
+        src/repositories/ThemeCatalogRepository.cpp
     )
 
     target_link_libraries(MinifigCatalogFoundationTest PRIVATE

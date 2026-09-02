@@ -456,6 +456,19 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 24;
     }
 
+    // Version 24 -> Version 25.
+    if (version == 24) {
+        if (!migrateVersion24ToVersion25(database)) {
+            database.rollback();
+            return false;
+        }
+        if (!setSchemaVersion(database, 25)) {
+            database.rollback();
+            return false;
+        }
+        version = 25;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -1798,6 +1811,55 @@ bool DatabaseSchema::createMinifigCatalogTables(QSqlDatabase& database)
         return false;
     }
 
+    return true;
+}
+
+bool DatabaseSchema::createThemeCatalogTables(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+    const QStringList statements = {
+        R"(CREATE TABLE IF NOT EXISTS theme_catalog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            parent_theme_catalog_id INTEGER,
+            is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            FOREIGN KEY(parent_theme_catalog_id) REFERENCES theme_catalog(id)
+        ))",
+        R"(CREATE TABLE IF NOT EXISTS theme_external_identifier (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            theme_catalog_id INTEGER NOT NULL,
+            provider TEXT NOT NULL COLLATE NOCASE,
+            external_id TEXT NOT NULL COLLATE NOCASE,
+            source TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            FOREIGN KEY(theme_catalog_id) REFERENCES theme_catalog(id),
+            UNIQUE(provider, external_id),
+            UNIQUE(theme_catalog_id, provider)
+        ))",
+        R"(CREATE TABLE IF NOT EXISTS minifig_theme (
+            minifig_catalog_id INTEGER NOT NULL,
+            theme_catalog_id INTEGER NOT NULL,
+            provider TEXT NOT NULL COLLATE NOCASE,
+            PRIMARY KEY(minifig_catalog_id, theme_catalog_id, provider),
+            FOREIGN KEY(minifig_catalog_id) REFERENCES minifig_catalog(id),
+            FOREIGN KEY(theme_catalog_id) REFERENCES theme_catalog(id)
+        ))",
+        "CREATE INDEX IF NOT EXISTS idx_theme_parent_active ON theme_catalog(parent_theme_catalog_id, is_active)",
+        "CREATE INDEX IF NOT EXISTS idx_theme_active_name ON theme_catalog(is_active, name)",
+        "CREATE INDEX IF NOT EXISTS idx_theme_identity_provider ON theme_external_identifier(provider, external_id, is_active)",
+        "CREATE INDEX IF NOT EXISTS idx_minifig_theme_theme ON minifig_theme(theme_catalog_id, provider, minifig_catalog_id)",
+        "CREATE INDEX IF NOT EXISTS idx_minifig_theme_minifig ON minifig_theme(minifig_catalog_id, provider, theme_catalog_id)"
+    };
+    for (const QString& statement : statements) {
+        if (!query.exec(statement)) {
+            qCritical() << "Unable to create Theme Catalog schema:" << query.lastError().text();
+            return false;
+        }
+    }
     return true;
 }
 
@@ -3150,5 +3212,13 @@ bool DatabaseSchema::migrateVersion23ToVersion24(QSqlDatabase& database)
         return false;
 
     qInfo() << "Minifig Catalog foundation initialized.";
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion24ToVersion25(QSqlDatabase& database)
+{
+    if (!createThemeCatalogTables(database))
+        return false;
+    qInfo() << "Theme Catalog foundation initialized.";
     return true;
 }

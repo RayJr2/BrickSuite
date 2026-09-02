@@ -3,14 +3,20 @@
 #include "MinifigDetailsDialog.h"
 
 #include "../../import/RebrickableMinifigCatalogImporter.h"
+#include "../../import/RebrickableMinifigThemeImporter.h"
 #include "../../models/MinifigCatalogSearchCriteria.h"
 #include "../../models/MinifigCatalogSearchResult.h"
 #include "../../repositories/MinifigCatalogRepository.h"
+#include "../../repositories/ThemeCatalogRepository.h"
 #include "../../services/images/MinifigImageService.h"
 #include "../../settings/UserSettings.h"
+#include "../help/HelpManager.h"
+#include "../help/HelpTopic.h"
 
 #include <QAbstractItemView>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -34,6 +40,8 @@ MinifigsCatalogWidget::MinifigsCatalogWidget(QWidget* parent)
     titleLayout->addStretch();
     m_importButton = new QPushButton("Import Rebrickable Minifigs (CSV/ZIP)", this);
     titleLayout->addWidget(m_importButton);
+    m_importThemesButton = new QPushButton("Import Rebrickable Minifig Themes", this);
+    titleLayout->addWidget(m_importThemesButton);
 
     auto* filterLayout = new QHBoxLayout();
     m_searchEdit = new QLineEdit(this);
@@ -41,6 +49,12 @@ MinifigsCatalogWidget::MinifigsCatalogWidget(QWidget* parent)
     m_searchButton = new QPushButton("Search", this);
     filterLayout->addWidget(new QLabel("Search:", this));
     filterLayout->addWidget(m_searchEdit, 1);
+    m_themeCombo = new QComboBox(this);
+    m_themeCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_themeCombo->setMinimumContentsLength(24);
+    m_themeCombo->setMaximumWidth(360);
+    filterLayout->addWidget(new QLabel("Theme:", this));
+    filterLayout->addWidget(m_themeCombo);
     filterLayout->addWidget(m_searchButton);
 
     m_resultLabel = new QLabel("Import minifigs.csv/ZIP or enter search criteria.", this);
@@ -86,6 +100,11 @@ MinifigsCatalogWidget::MinifigsCatalogWidget(QWidget* parent)
     connect(m_previousButton, &QPushButton::clicked, this, &MinifigsCatalogWidget::previousPage);
     connect(m_nextButton, &QPushButton::clicked, this, &MinifigsCatalogWidget::nextPage);
     connect(m_importButton, &QPushButton::clicked, this, &MinifigsCatalogWidget::importMinifigs);
+    connect(m_importThemesButton, &QPushButton::clicked, this, &MinifigsCatalogWidget::importThemes);
+    connect(m_themeCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+        m_currentPage = 0;
+        searchMinifigs();
+    });
     connect(m_imageService,
             &MinifigImageService::imageReady,
             this,
@@ -104,7 +123,22 @@ MinifigsCatalogWidget::MinifigsCatalogWidget(QWidget* parent)
                 }
             });
 
+    loadThemes();
     refresh();
+}
+
+void MinifigsCatalogWidget::loadThemes()
+{
+    const int selectedId = m_themeCombo->currentData().toInt();
+    m_themeCombo->blockSignals(true);
+    m_themeCombo->clear();
+    m_themeCombo->addItem("All Themes", 0);
+    ThemeCatalogRepository repository;
+    for (const ThemeCatalogItem& theme : repository.activeFilterHierarchy())
+        m_themeCombo->addItem(theme.qualifiedName, theme.id);
+    const int index = m_themeCombo->findData(selectedId);
+    m_themeCombo->setCurrentIndex(index >= 0 ? index : 0);
+    m_themeCombo->blockSignals(false);
 }
 
 void MinifigsCatalogWidget::refresh()
@@ -125,14 +159,17 @@ void MinifigsCatalogWidget::refresh()
 void MinifigsCatalogWidget::searchMinifigs()
 {
     const QString effectiveSearchText = m_searchEdit->text().trimmed();
-    if (effectiveSearchText != m_loadedSearchText) {
+    const int effectiveThemeId = m_themeCombo->currentData().toInt();
+    if (effectiveSearchText != m_loadedSearchText || effectiveThemeId != m_loadedThemeCatalogId) {
         m_currentPage = 0;
         m_loadedSearchText = effectiveSearchText;
+        m_loadedThemeCatalogId = effectiveThemeId;
     }
 
     MinifigCatalogSearchCriteria criteria;
     criteria.searchText = effectiveSearchText;
     criteria.provider = QStringLiteral("Rebrickable");
+    criteria.themeCatalogId = effectiveThemeId;
     criteria.limit = UserSettings::instance().resultsPerPage();
     criteria.offset = m_currentPage * criteria.limit;
 
@@ -221,7 +258,8 @@ void MinifigsCatalogWidget::displayImage(const QString& minifigNumber,
 
 void MinifigsCatalogWidget::previousPage()
 {
-    if (m_searchEdit->text().trimmed() != m_loadedSearchText) {
+    if (m_searchEdit->text().trimmed() != m_loadedSearchText
+        || m_themeCombo->currentData().toInt() != m_loadedThemeCatalogId) {
         searchMinifigs();
         return;
     }
@@ -233,7 +271,8 @@ void MinifigsCatalogWidget::previousPage()
 
 void MinifigsCatalogWidget::nextPage()
 {
-    if (m_searchEdit->text().trimmed() != m_loadedSearchText) {
+    if (m_searchEdit->text().trimmed() != m_loadedSearchText
+        || m_themeCombo->currentData().toInt() != m_loadedThemeCatalogId) {
         searchMinifigs();
         return;
     }
@@ -295,5 +334,62 @@ void MinifigsCatalogWidget::importMinifigs()
                                  .arg(result.updated)
                                  .arg(result.unchanged)
                                  .arg(result.deactivated));
+    refresh();
+}
+
+void MinifigsCatalogWidget::importThemes()
+{
+    QDialog instructions(this);
+    instructions.setWindowTitle("Import Rebrickable Minifig Themes");
+    auto* instructionsLayout = new QVBoxLayout(&instructions);
+    auto* instructionsLabel = new QLabel(
+        "<p>Select the folder containing these four Rebrickable downloads:</p>"
+        "<ul>"
+        "<li><code>themes.csv</code> or <code>themes.csv.zip</code></li>"
+        "<li><code>sets.csv</code> or <code>sets.csv.zip</code></li>"
+        "<li><code>inventories.csv</code> or <code>inventories.csv.zip</code></li>"
+        "<li><code>inventory_minifigs.csv</code> or "
+        "<code>inventory_minifigs.csv.zip</code></li>"
+        "</ul>"
+        "<p>The folder-selection window may appear empty because it displays folders "
+        "rather than the files inside them. Navigate to the folder containing the four "
+        "files, then click <b>Select Folder</b>.</p>",
+        &instructions);
+    instructionsLabel->setWordWrap(true);
+    instructionsLabel->setTextFormat(Qt::RichText);
+    instructionsLayout->addWidget(instructionsLabel);
+    auto* instructionButtons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Help,
+        &instructions);
+    instructionButtons->button(QDialogButtonBox::Ok)->setText("Continue");
+    connect(instructionButtons, &QDialogButtonBox::accepted, &instructions, &QDialog::accept);
+    connect(instructionButtons, &QDialogButtonBox::rejected, &instructions, &QDialog::reject);
+    connect(instructionButtons, &QDialogButtonBox::helpRequested, &instructions, [&instructions]() {
+        HelpManager::showTopic(HelpTopic::MinifigsCatalog, &instructions);
+    });
+    instructionsLayout->addWidget(instructionButtons);
+    instructions.resize(560, instructions.sizeHint().height());
+    if (instructions.exec() != QDialog::Accepted)
+        return;
+
+    const QString directory = QFileDialog::getExistingDirectory(
+        this, "Select Rebrickable Minifig Theme Data Directory");
+    if (directory.isEmpty())
+        return;
+    RebrickableMinifigThemeImporter importer;
+    const auto result = importer.importDirectory(directory);
+    if (!result.success) {
+        QMessageBox::critical(this, "Import Minifig Themes", result.message);
+        return;
+    }
+    QMessageBox::information(this, "Import Minifig Themes",
+        QString("Minifig Theme import completed.\n\nThemes read: %1\nNew: %2\nUpdated: %3\n"
+                "Reactivated: %4\nDeactivated: %5\nRelationship rows: %6\n"
+                "Unique associations: %7\nUnresolved Minifigs: %8\nDuplicates collapsed: %9")
+            .arg(result.themesRead).arg(result.themesInserted).arg(result.themesUpdated)
+            .arg(result.themesReactivated).arg(result.themesDeactivated)
+            .arg(result.relationshipRowsRead).arg(result.associations)
+            .arg(result.unresolvedMinifigs).arg(result.duplicateRelationshipsCollapsed));
+    loadThemes();
     refresh();
 }
