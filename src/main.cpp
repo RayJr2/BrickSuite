@@ -21,9 +21,13 @@
 #include <QApplication>
 #include <QDebug>
 #include <QDir>
+#include <QFont>
 #include <QIcon>
 #include <QLockFile>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPixmap>
+#include <QSplashScreen>
 #include <QStandardPaths>
 
 #include "app/Application.h"
@@ -31,6 +35,57 @@
 #include "core/AppVersion.h"
 #include "services/Logger.h"
 #include "settings/ThemeManager.h"
+
+namespace {
+
+QPixmap createSplashPixmap(const QApplication& application)
+{
+    constexpr int splashWidth = 520;
+    constexpr int splashHeight = 300;
+
+    const QPalette palette = application.palette();
+    const QColor backgroundColor = palette.color(QPalette::Window);
+    const QColor textColor = palette.color(QPalette::WindowText);
+    const QColor accentColor(0, 96, 96);
+
+    QPixmap pixmap(splashWidth, splashHeight);
+    pixmap.fill(backgroundColor);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+
+    painter.setPen(QPen(accentColor, 4));
+    painter.drawRect(pixmap.rect().adjusted(2, 2, -3, -3));
+
+    const QPixmap logo = QIcon(QStringLiteral(":/icons/bricksuite.ico")).pixmap(128, 128);
+    painter.drawPixmap((splashWidth - logo.width()) / 2, 30, logo);
+
+    QFont titleFont = application.font();
+    titleFont.setPointSize(26);
+    titleFont.setBold(true);
+    painter.setFont(titleFont);
+    painter.setPen(textColor);
+    painter.drawText(QRect(20, 165, splashWidth - 40, 45),
+                     Qt::AlignCenter,
+                     AppConstants::name());
+
+    QFont detailFont = application.font();
+    detailFont.setPointSize(11);
+    painter.setFont(detailFont);
+    painter.drawText(QRect(20, 215, splashWidth - 40, 24),
+                     Qt::AlignCenter,
+                     QString("Version %1").arg(AppVersion::version()));
+
+    painter.setPen(palette.color(QPalette::Disabled, QPalette::WindowText));
+    painter.drawText(QRect(20, 250, splashWidth - 40, 24),
+                     Qt::AlignCenter,
+                     QStringLiteral("Starting BrickSuite..."));
+
+    return pixmap;
+}
+
+} // namespace
 
 int main(int argc, char *argv[])
 {
@@ -70,13 +125,24 @@ int main(int argc, char *argv[])
 
     ThemeManager::applySavedTheme(qtApplication);
 
+    QSplashScreen splash(createSplashPixmap(qtApplication));
+    splash.show();
+
+    // Ensure the splash is painted before synchronous database and window
+    // initialization begins. This processes pending events without delaying
+    // startup or introducing a timer.
+    qtApplication.processEvents();
+
     Application application;
 
     if (!application.initialize()) {
+        splash.close();
         qCritical() << "BrickSuite application initialization failed.";
         Logger::shutdown();
         return EXIT_FAILURE;
     }
+
+    splash.finish(application.mainWindow());
 
     const int result = qtApplication.exec();
 

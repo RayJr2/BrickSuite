@@ -65,3 +65,8 @@ bool Application::initialize()
 
     return true;
 }
+
+QWidget* Application::mainWindow() const
+{
+    return m_mainWindow.get();
+}

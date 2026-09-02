@@ -25,6 +25,7 @@
 #include <memory>
 
 class MainWindow;
+class QWidget;
 class WorkspaceContext;
 
 class Application
@@ -34,6 +35,7 @@ public:
     ~Application();
 
     bool initialize();
+    QWidget* mainWindow() const;
 
 private:
     std::unique_ptr<WorkspaceContext> m_workspaceContext;
