@@ -243,8 +243,14 @@ qt_add_executable(BrickSuite
     src/ui/builds/EditBuildDialog.cpp
     src/services/images/SetImageService.h
     src/services/images/SetImageService.cpp
+    src/services/images/MinifigImageService.h
+    src/services/images/MinifigImageService.cpp
     src/ui/catalog/SetDetailsDialog.h
     src/ui/catalog/SetDetailsDialog.cpp
+    src/ui/catalog/MinifigsCatalogWidget.h
+    src/ui/catalog/MinifigsCatalogWidget.cpp
+    src/ui/catalog/MinifigDetailsDialog.h
+    src/ui/catalog/MinifigDetailsDialog.cpp
     src/ui/catalog/BricksetInstructionsDialog.h
     src/ui/catalog/BricksetInstructionsDialog.cpp
     src/import/RebrickablePartCatalogImporter.h
@@ -334,6 +340,20 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME MinifigCatalogFoundation COMMAND MinifigCatalogFoundationTest)
+
+    qt_add_executable(MinifigImageServiceTest EXCLUDE_FROM_ALL
+        tests/MinifigImageServiceTest.cpp
+        src/services/images/MinifigImageService.h
+        src/services/images/MinifigImageService.cpp
+    )
+
+    target_link_libraries(MinifigImageServiceTest PRIVATE
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Network
+    )
+
+    add_test(NAME MinifigImageService COMMAND MinifigImageServiceTest)
 endif()
 
 if(WIN32)

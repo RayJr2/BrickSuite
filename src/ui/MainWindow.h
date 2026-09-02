@@ -36,6 +36,7 @@ class PartsCatalogWidget;
 class MyInventoryWidget;
 class BuildsWidget;
 class SetsCatalogWidget;
+class MinifigsCatalogWidget;
 class BackgroundPartColorImageCacheService;
 class LogViewerDialog;
 class PartReferenceDialog;
@@ -76,6 +77,7 @@ private:
     MyInventoryWidget* m_myInventoryWidget = nullptr;
     BuildsWidget* m_buildsWidget = nullptr;
     SetsCatalogWidget* m_setsCatalogWidget = nullptr;
+    MinifigsCatalogWidget* m_minifigsCatalogWidget = nullptr;
 
     BackgroundPartColorImageCacheService* m_backgroundPartColorImageCacheService = nullptr;
     LogViewerDialog* m_logViewerDialog = nullptr;

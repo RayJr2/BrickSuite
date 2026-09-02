@@ -28,6 +28,7 @@ enum class HelpTopic
     Storage,
     PartsCatalog,
     SetsCatalog,
+    MinifigsCatalog,
     Inventory,
     RebrickableImport,
     Builds,

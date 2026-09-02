@@ -57,6 +57,7 @@
 #include "builds/BuildsWidget.h"
 #include "catalog/PartsCatalogWidget.h"
 #include "catalog/SetsCatalogWidget.h"
+#include "catalog/MinifigsCatalogWidget.h"
 #include "inventory/AddInventoryDialog.h"
 #include "inventory/MyInventoryWidget.h"
 #include "parts/PartResolverTestDialog.h"
@@ -134,6 +135,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     // Sets Catalog tab
     m_setsCatalogWidget = new SetsCatalogWidget(m_tabWidget);
+
+    // Minifigs Catalog tab
+    m_minifigsCatalogWidget = new MinifigsCatalogWidget(m_tabWidget);
 
     connect(m_setsCatalogWidget,
             &SetsCatalogWidget::createBuildRequested,
@@ -265,6 +269,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     m_tabWidget->addTab(m_partsCatalogWidget, "Parts Catalog");
 
     m_tabWidget->addTab(m_setsCatalogWidget, "Sets Catalog");
+
+    m_tabWidget->addTab(m_minifigsCatalogWidget, "Minifigs Catalog");
 
     m_tabWidget->addTab(m_myInventoryWidget, "My Inventory");
 
@@ -559,6 +565,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
             topic = HelpTopic::PartsCatalog;
         } else if (currentWidget == m_setsCatalogWidget) {
             topic = HelpTopic::SetsCatalog;
+        } else if (currentWidget == m_minifigsCatalogWidget) {
+            topic = HelpTopic::MinifigsCatalog;
         } else if (currentWidget == m_myInventoryWidget) {
             topic = HelpTopic::Inventory;
         } else if (currentWidget == m_buildsWidget) {
