@@ -222,10 +222,19 @@ qt_add_executable(BrickSuite
     src/models/SetCatalogItem.h
     src/models/SetCatalogItem.cpp
     src/models/SetCatalogSearchCriteria.h
+    src/models/MinifigCatalogItem.h
+    src/models/MinifigCatalogItem.cpp
+    src/models/MinifigCatalogSearchCriteria.h
+    src/models/MinifigCatalogSearchResult.h
+    src/models/MinifigExternalIdentifier.h
     src/repositories/SetCatalogRepository.h
     src/repositories/SetCatalogRepository.cpp
+    src/repositories/MinifigCatalogRepository.h
+    src/repositories/MinifigCatalogRepository.cpp
     src/import/RebrickableSetCatalogImporter.h
     src/import/RebrickableSetCatalogImporter.cpp
+    src/import/RebrickableMinifigCatalogImporter.h
+    src/import/RebrickableMinifigCatalogImporter.cpp
     src/import/RebrickableCsvInputResolver.h
     src/import/RebrickableCsvInputResolver.cpp
     src/ui/catalog/SetsCatalogWidget.h
@@ -295,6 +304,37 @@ target_link_libraries(BrickSuite PRIVATE
     Qt6::Network
     ZLIB::ZLIB
 )
+
+include(CTest)
+
+if(BUILD_TESTING)
+    qt_add_executable(MinifigCatalogFoundationTest EXCLUDE_FROM_ALL
+        tests/MinifigCatalogFoundationTest.cpp
+        src/database/DatabaseManager.h
+        src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h
+        src/database/DatabaseSchema.cpp
+        src/models/MinifigCatalogItem.h
+        src/models/MinifigCatalogItem.cpp
+        src/models/MinifigCatalogSearchCriteria.h
+        src/models/MinifigCatalogSearchResult.h
+        src/models/MinifigExternalIdentifier.h
+        src/repositories/MinifigCatalogRepository.h
+        src/repositories/MinifigCatalogRepository.cpp
+        src/import/RebrickableCsvInputResolver.h
+        src/import/RebrickableCsvInputResolver.cpp
+        src/import/RebrickableMinifigCatalogImporter.h
+        src/import/RebrickableMinifigCatalogImporter.cpp
+    )
+
+    target_link_libraries(MinifigCatalogFoundationTest PRIVATE
+        Qt6::Core
+        Qt6::Sql
+        ZLIB::ZLIB
+    )
+
+    add_test(NAME MinifigCatalogFoundation COMMAND MinifigCatalogFoundationTest)
+endif()
 
 if(WIN32)
     set_target_properties(BrickSuite PROPERTIES

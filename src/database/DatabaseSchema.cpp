@@ -441,6 +441,21 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 23;
     }
 
+    // Version 23 -> Version 24.
+    if (version == 23) {
+        if (!migrateVersion23ToVersion24(database)) {
+            database.rollback();
+            return false;
+        }
+
+        if (!setSchemaVersion(database, 24)) {
+            database.rollback();
+            return false;
+        }
+
+        version = 24;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -1716,6 +1731,70 @@ bool DatabaseSchema::createSetCatalogTable(QSqlDatabase& database)
     )")) {
         qCritical() << "Unable to create set theme index:" << query.lastError().text();
 
+        return false;
+    }
+
+    return true;
+}
+
+bool DatabaseSchema::createMinifigCatalogTables(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS minifig_catalog
+        (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            name         TEXT NOT NULL,
+            num_parts    INTEGER NOT NULL DEFAULT 0 CHECK(num_parts >= 0),
+            image_url    TEXT,
+            is_active    INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+            created_utc  TEXT NOT NULL,
+            modified_utc TEXT NOT NULL
+        )
+    )")) {
+        qCritical() << "Unable to create minifig_catalog table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE TABLE IF NOT EXISTS minifig_external_identifier
+        (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            minifig_catalog_id INTEGER NOT NULL,
+            provider            TEXT NOT NULL COLLATE NOCASE,
+            external_id         TEXT NOT NULL COLLATE NOCASE,
+            source              TEXT NOT NULL,
+            is_active           INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+            created_utc         TEXT NOT NULL,
+            modified_utc        TEXT NOT NULL,
+
+            FOREIGN KEY(minifig_catalog_id) REFERENCES minifig_catalog(id),
+            UNIQUE(provider, external_id),
+            UNIQUE(minifig_catalog_id, provider)
+        )
+    )")) {
+        qCritical() << "Unable to create minifig_external_identifier table:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_minifig_catalog_active_name
+        ON minifig_catalog(is_active, name)
+    )")) {
+        qCritical() << "Unable to create Minifig Catalog search index:"
+                    << query.lastError().text();
+        return false;
+    }
+
+    if (!query.exec(R"(
+        CREATE INDEX IF NOT EXISTS idx_minifig_identifier_catalog_active
+        ON minifig_external_identifier(minifig_catalog_id, is_active)
+    )")) {
+        qCritical() << "Unable to create Minifig identifier catalog index:"
+                    << query.lastError().text();
         return false;
     }
 
@@ -3065,3 +3144,11 @@ bool DatabaseSchema::migrateVersion22ToVersion23(QSqlDatabase& database)
     return true;
 }
 
+bool DatabaseSchema::migrateVersion23ToVersion24(QSqlDatabase& database)
+{
+    if (!createMinifigCatalogTables(database))
+        return false;
+
+    qInfo() << "Minifig Catalog foundation initialized.";
+    return true;
+}
