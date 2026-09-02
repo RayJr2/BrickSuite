@@ -87,3 +87,6 @@ rebrickable_parts_*.csv
 *.key
 .env
 .env.*
+
+# Local provider sample data used for development/testing
+/docs/dev/sample-data/
