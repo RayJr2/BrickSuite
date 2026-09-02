@@ -29,6 +29,7 @@
 #include <QList>
 #include <QObject>
 #include <QQueue>
+#include <QSharedPointer>
 #include <QString>
 #include <QStringList>
 #include <functional>
@@ -37,6 +38,7 @@ class ApiNetworkService;
 class QNetworkReply;
 class QNetworkRequest;
 class QTimer;
+class QUrl;
 
 class RebrickableService : public QObject
 {
@@ -254,6 +256,30 @@ public:
         QList<SetPart> parts;
     };
 
+    struct MinifigPart
+    {
+        QString partNumber;
+        int rebrickableColorId = 0;
+        int quantity = 0;
+        bool isSpare = false;
+    };
+
+    struct MinifigPartsPage
+    {
+        int totalCount = 0;
+        QString nextUrl;
+        QList<MinifigPart> parts;
+    };
+
+    struct MinifigPartsResult
+    {
+        bool success = false;
+        int httpStatusCode = 0;
+        QString figNumber;
+        QString message;
+        QList<MinifigPart> parts;
+    };
+
     explicit RebrickableService(QObject* parent = nullptr);
 
     void testConnection(const QString& apiKey);
@@ -273,6 +299,13 @@ public:
     void getSetDetails(const QString& setNumber, const QString& apiKey);
 
     void getSetParts(const QString& setNumber, const QString& apiKey);
+
+    void getMinifigParts(const QString& figNumber, const QString& apiKey);
+
+    static bool parseMinifigPartsPage(const QByteArray& data,
+                                      MinifigPartsPage& page,
+                                      QString& errorMessage);
+    static bool isTrustedMinifigPartsNextUrl(const QString& nextUrl);
 
     void getPartColorDetails(const QString& partNumber,
                              int rebrickableColorId,
@@ -298,9 +331,16 @@ signals:
 
     void setPartsFinished(const RebrickableService::SetPartsResult& result);
 
+    void minifigPartsFinished(const RebrickableService::MinifigPartsResult& result);
+
     void partColorDetailsFinished(const RebrickableService::PartColorDetailsResult& result);
 
 private:
+    struct MinifigPartsRequestState;
+    void requestMinifigPartsPage(const QString& figNumber,
+                                 const QString& apiKey,
+                                 const QUrl& url,
+                                 const QSharedPointer<MinifigPartsRequestState>& state);
     void handleConnectionTestReply(QNetworkReply* reply);
 
     void searchPartByExternalId(
@@ -353,10 +393,11 @@ Q_DECLARE_METATYPE(RebrickableService::SetDetails)
 Q_DECLARE_METATYPE(RebrickableService::SetDetailsResult)
 Q_DECLARE_METATYPE(RebrickableService::SetPart)
 Q_DECLARE_METATYPE(RebrickableService::SetPartsResult)
+Q_DECLARE_METATYPE(RebrickableService::MinifigPart)
+Q_DECLARE_METATYPE(RebrickableService::MinifigPartsResult)
 Q_DECLARE_METATYPE(RebrickableService::PartColorDetails)
 Q_DECLARE_METATYPE(RebrickableService::PartColorDetailsResult)
 Q_DECLARE_METATYPE(RebrickableService::PartImageUrl)
 Q_DECLARE_METATYPE(RebrickableService::PartImageUrlsResult)
 Q_DECLARE_METATYPE(RebrickableService::CatalogColor)
 Q_DECLARE_METATYPE(RebrickableService::CatalogColorsResult)
-

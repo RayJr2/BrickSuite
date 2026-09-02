@@ -3,6 +3,7 @@
 #include "../src/import/RebrickableMinifigPartsImporter.h"
 #include "../src/models/MinifigCatalogPart.h"
 #include "../src/repositories/MinifigCatalogPartRepository.h"
+#include "../src/services/minifigs/MinifigCompositionReplacementService.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -183,7 +184,8 @@ int main(int argc, char* argv[])
                  && !parts.at(0).isSpare && parts.at(1).quantityRequired == 4
                  && parts.at(2).isSpare && parts.at(0).partNumber == "p1"
                  && parts.at(0).partName == "Part 1" && parts.at(0).colorName == "Red"
-                 && parts.at(0).rebrickableColorId == 1,
+                 && parts.at(0).rebrickableColorId == 1
+                 && parts.at(0).source == "Rebrickable Minifig parts CSV/ZIP",
                  "Persisted composition or joined display data is incorrect.")) return 1;
 
     const QByteArray zipCsv("Part,Color,Quantity,Is Spare\np2,2,7,yes\n");
@@ -243,6 +245,48 @@ int main(int argc, char* argv[])
                  && result.message.contains("forced late failure")
                  && snapshot(db, minifigId) == baseline,
                  "Late database failure did not roll back the exact prior composition.")) return 1;
+    if (!require(trigger.exec("DROP TRIGGER force_late_minifig_failure"),
+                 "Unable to remove failure trigger.")) return 1;
+
+    MinifigCompositionReplacementService replacementService;
+    QList<MinifigCompositionReplacementService::InputRow> apiRows = {
+        {"P1", 1, 2, false, "API row 1"},
+        {"p1", 1, 3, false, "API row 2"},
+        {"p1", 1, 1, true, "API row 3"}
+    };
+    const auto apiResult = replacementService.replace(
+        minifigId, apiRows, "Rebrickable", "Rebrickable API: Minifig parts");
+    parts = repository.listForMinifig(minifigId);
+    if (!require(apiResult.success && parts.size() == 2
+                 && parts.at(0).quantityRequired == 5 && !parts.at(0).isSpare
+                 && parts.at(1).isSpare
+                 && parts.at(0).source == "Rebrickable API: Minifig parts",
+                 "Shared API replacement, deduplication, spare identity, or provenance failed.")) return 1;
+
+    const QString apiBaseline = snapshot(db, minifigId);
+    const auto unresolvedApi = replacementService.replace(
+        minifigId, {{"missing", 1, 1, false, "API row 1"}},
+        "Rebrickable", "Rebrickable API: Minifig parts");
+    if (!require(!unresolvedApi.success && snapshot(db, minifigId) == apiBaseline,
+                 "Unresolved API Part changed the prior composition.")) return 1;
+    const auto unresolvedColorApi = replacementService.replace(
+        minifigId, {{"p1", 999, 1, false, "API row 1"}},
+        "Rebrickable", "Rebrickable API: Minifig parts");
+    const auto emptyApi = replacementService.replace(
+        minifigId, {}, "Rebrickable", "Rebrickable API: Minifig parts");
+    if (!require(!unresolvedColorApi.success && !emptyApi.success
+                 && snapshot(db, minifigId) == apiBaseline,
+                 "Unresolved Color or empty API composition changed prior data.")) return 1;
+
+    if (!require(seed.exec("INSERT INTO part(part_number,name,rebrickable_part_id,is_active,created_utc,modified_utc,material) "
+                           "VALUES('p3','Part 3','P1',1,'" + now + "','" + now + "','Plastic')"),
+                 "Unable to seed case-insensitive ambiguous Part identity.")) return 1;
+    const auto ambiguousApi = replacementService.replace(
+        minifigId, {{"p1", 1, 1, false, "API row 1"}},
+        "Rebrickable", "Rebrickable API: Minifig parts");
+    if (!require(!ambiguousApi.success && ambiguousApi.message.contains("ambiguous")
+                 && snapshot(db, minifigId) == apiBaseline,
+                 "Ambiguous API Part did not preserve the prior composition.")) return 1;
     qInfo() << "M23.7.3 Minifig parts import validation passed.";
     return 0;
 }

@@ -5,6 +5,7 @@
 class QLabel;
 class MinifigImageService;
 class PartImageService;
+class RebrickableMinifigPartsService;
 class QPushButton;
 class QTableWidget;
 
@@ -22,6 +23,8 @@ private:
     bool loadMinifig();
     void loadComposition();
     void importPartsList();
+    void getPartsFromRebrickable();
+    void setCompositionActionsEnabled(bool enabled);
     void createBuildFromStock();
     void displayImage(const QString& imagePath);
 
@@ -39,9 +42,11 @@ private:
     QLabel* m_compositionSummaryLabel = nullptr;
     QTableWidget* m_compositionTable = nullptr;
     QPushButton* m_importPartsButton = nullptr;
+    QPushButton* m_getPartsButton = nullptr;
     QPushButton* m_createBuildButton = nullptr;
     int m_requiredPieces = 0;
     int m_sparePieces = 0;
     MinifigImageService* m_imageService = nullptr;
     PartImageService* m_partImageService = nullptr;
+    RebrickableMinifigPartsService* m_rebrickablePartsService = nullptr;
 };

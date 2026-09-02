@@ -8,6 +8,8 @@
 #include "../../repositories/MinifigCatalogPartRepository.h"
 #include "../../services/images/MinifigImageService.h"
 #include "../../services/images/PartImageService.h"
+#include "../../services/minifigs/RebrickableMinifigPartsService.h"
+#include "../../settings/UserSettings.h"
 
 #include <QAbstractItemView>
 #include <QDialogButtonBox>
@@ -31,6 +33,7 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent
     , m_minifigCatalogId(minifigCatalogId)
     , m_imageService(new MinifigImageService(this))
     , m_partImageService(new PartImageService(this))
+    , m_rebrickablePartsService(new RebrickableMinifigPartsService(this))
 {
     setWindowTitle("Minifig Details");
     resize(900, 720);
@@ -70,8 +73,11 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent
     auto* compositionHeader = new QHBoxLayout();
     m_compositionSummaryLabel = new QLabel(compositionGroup);
     m_compositionSummaryLabel->setWordWrap(true);
+    m_getPartsButton = new QPushButton("Get Parts from Rebrickable...", compositionGroup);
+    m_getPartsButton->setEnabled(false);
     m_importPartsButton = new QPushButton("Import Parts List...", compositionGroup);
     compositionHeader->addWidget(m_compositionSummaryLabel, 1);
+    compositionHeader->addWidget(m_getPartsButton);
     compositionHeader->addWidget(m_importPartsButton);
     compositionLayout->addLayout(compositionHeader);
 
@@ -111,6 +117,26 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent
             &QPushButton::clicked,
             this,
             &MinifigDetailsDialog::importPartsList);
+    connect(m_getPartsButton, &QPushButton::clicked,
+            this, &MinifigDetailsDialog::getPartsFromRebrickable);
+    connect(m_rebrickablePartsService, &RebrickableMinifigPartsService::finished,
+            this, [this](const RebrickableMinifigPartsService::Result& result) {
+        setCompositionActionsEnabled(true);
+        if (!result.success) {
+            loadComposition();
+            QMessageBox::critical(this, "Get Minifig Parts from Rebrickable", result.message);
+            return;
+        }
+        loadComposition();
+        QMessageBox::information(
+            this, "Get Minifig Parts from Rebrickable",
+            QString("Parts retrieved for %1 (%2).\n\n"
+                    "Distinct composition rows: %3\nRequired pieces: %4\nSpare pieces: %5")
+                .arg(m_minifigName, m_minifigNumber)
+                .arg(result.compositionRows)
+                .arg(result.requiredPieces)
+                .arg(result.sparePieces));
+    });
 
     connect(m_imageService,
             &MinifigImageService::imageReady,
@@ -129,6 +155,8 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent
 
     if (!loadMinifig())
         return;
+
+    m_getPartsButton->setEnabled(!m_minifigNumber.isEmpty());
 
     loadComposition();
 
@@ -187,6 +215,8 @@ void MinifigDetailsDialog::loadComposition()
     if (composition.isEmpty()) {
         m_compositionSummaryLabel->setText(
             "Parts list has not been imported for this Minifig.");
+        m_createBuildButton->setEnabled(false);
+        m_createBuildButton->setToolTip("Import a Minifig parts list first.");
         return;
     }
 
@@ -235,6 +265,42 @@ void MinifigDetailsDialog::loadComposition()
     m_createBuildButton->setToolTip(m_requiredPieces > 0
                                         ? QString()
                                         : "Import a parts list containing required parts first.");
+}
+
+void MinifigDetailsDialog::setCompositionActionsEnabled(bool enabled)
+{
+    m_importPartsButton->setEnabled(enabled);
+    m_getPartsButton->setEnabled(enabled && !m_minifigNumber.isEmpty());
+}
+
+void MinifigDetailsDialog::getPartsFromRebrickable()
+{
+    if (m_minifigNumber.isEmpty() || m_rebrickablePartsService->isBusy())
+        return;
+    const QString apiKey = UserSettings::instance().rebrickableApiKey();
+    if (apiKey.isEmpty()) {
+        QMessageBox::information(this, "Rebrickable API Key Required",
+                                 "Configure and test your Rebrickable API key in Settings before "
+                                 "getting Minifig parts.");
+        return;
+    }
+
+    MinifigCatalogPartRepository repository;
+    if (!repository.listForMinifig(m_minifigCatalogId).isEmpty()) {
+        const auto answer = QMessageBox::question(
+            this, "Replace Minifig Parts List",
+            "This Minifig already has an imported parts list. Replace it with the parts "
+            "returned by Rebrickable?",
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes)
+            return;
+    }
+
+    setCompositionActionsEnabled(false);
+    m_compositionSummaryLabel->setText("Getting parts from Rebrickable...");
+    m_rebrickablePartsService->retrieveAndReplace(m_minifigCatalogId,
+                                                  m_minifigNumber,
+                                                  apiKey);
 }
 
 void MinifigDetailsDialog::createBuildFromStock()

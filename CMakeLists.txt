@@ -307,6 +307,10 @@ qt_add_executable(BrickSuite
     src/services/builds/BuildPullingService.cpp
     src/services/builds/MinifigBuildCreationService.h
     src/services/builds/MinifigBuildCreationService.cpp
+    src/services/minifigs/MinifigCompositionReplacementService.h
+    src/services/minifigs/MinifigCompositionReplacementService.cpp
+    src/services/minifigs/RebrickableMinifigPartsService.h
+    src/services/minifigs/RebrickableMinifigPartsService.cpp
     README.md
     src/core/AppVersion.h
     src/core/AppConstants.h
@@ -385,6 +389,8 @@ if(BUILD_TESTING)
         src/import/RebrickableCsvInputResolver.cpp
         src/import/RebrickableMinifigPartsImporter.h
         src/import/RebrickableMinifigPartsImporter.cpp
+        src/services/minifigs/MinifigCompositionReplacementService.h
+        src/services/minifigs/MinifigCompositionReplacementService.cpp
     )
 
     target_link_libraries(MinifigPartsImportTest PRIVATE
@@ -394,6 +400,21 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME MinifigPartsImport COMMAND MinifigPartsImportTest)
+
+    qt_add_executable(MinifigPartsApiTest EXCLUDE_FROM_ALL
+        tests/MinifigPartsApiTest.cpp
+        src/api/ApiNetworkService.h src/api/ApiNetworkService.cpp
+        src/api/rebrickable/RebrickableService.h src/api/rebrickable/RebrickableService.cpp
+        src/settings/UserSettings.h src/settings/UserSettings.cpp
+        src/services/CredentialStore.h src/services/CredentialStore.cpp
+    )
+    target_link_libraries(MinifigPartsApiTest PRIVATE
+        Qt6::Core Qt6::Network
+    )
+    if(WIN32)
+        target_link_libraries(MinifigPartsApiTest PRIVATE Advapi32)
+    endif()
+    add_test(NAME MinifigPartsApi COMMAND MinifigPartsApiTest)
 
     qt_add_executable(MinifigBuildCreationTest EXCLUDE_FROM_ALL
         tests/MinifigBuildCreationTest.cpp

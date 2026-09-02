@@ -43,9 +43,16 @@ describes the Sets in which a Minifig appears; it does not import the Minifig's 
 source, and imported composition. Images are downloaded asynchronously from the imported
 Rebrickable image URL and cached in BrickSuite's dedicated Minifig image cache.</p>
 
-<h2>Import a Minifig Parts List</h2>
+<h2>Get or Import a Minifig Parts List</h2>
 
-<p>Open the intended Minifig's Details dialog and choose <b>Import Parts List...</b>. Select the
+<p>Open the intended Minifig's Details dialog and choose <b>Get Parts from Rebrickable...</b>
+for the convenient API workflow. A configured Rebrickable API key is required; configure and
+test it under <b>Settings → APIs → Rebrickable</b>.</p>
+
+<p>API retrieval replaces the catalog Minifig's complete composition. If a composition already
+exists, BrickSuite asks for confirmation before replacing it.</p>
+
+<p><b>Import Parts List...</b> remains available as the offline/manual fallback. Select the
 Rebrickable Parts CSV or its downloaded ZIP. The selected BrickSuite Minifig is always the
 destination.</p>
 
@@ -54,12 +61,12 @@ checks it against the selected Minifig before saving anything. A renamed file wi
 recognizable <code>fig-NNNNNN</code> identifier is accepted because you explicitly selected the
 destination Minifig.</p>
 
-<p>Re-importing replaces the previous imported composition rather than merging or accumulating
-quantities. Spare rows are retained separately and shown as spares; their quantities are not
-included in the required-piece total.</p>
+<p>Both workflows populate the same catalog composition and replace rather than merge it. Spare
+rows are retained separately and shown as spares; their quantities are not included in the
+required-piece total.</p>
 
 <h2>Create a Build From Stock</h2>
-<p>Import the Minifig parts list first, then choose <b>Create Build From Stock...</b> in Minifig
+<p>Get or import the Minifig parts list first, then choose <b>Create Build From Stock...</b> in Minifig
 Details. BrickSuite creates a Minifig-type Build and copies only required, non-spare Part/Color
 rows into its requirements. Spare pieces remain catalog information and are excluded.</p>
 <p>The new Build is a snapshot: later parts-list imports do not change its requirements. You may
