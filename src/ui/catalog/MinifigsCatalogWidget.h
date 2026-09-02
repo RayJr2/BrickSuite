@@ -17,6 +17,9 @@ public:
     explicit MinifigsCatalogWidget(QWidget* parent = nullptr);
     void refresh();
 
+signals:
+    void createBuildRequested(int minifigCatalogId, const QString& buildName);
+
 private slots:
     void searchMinifigs();
     void previousPage();

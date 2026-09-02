@@ -203,7 +203,7 @@ BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
     m_buildsTable->setColumnCount(8);
 
     m_buildsTable->setHorizontalHeaderLabels(QStringList() << "Type"
-                                                           << "Set / MOC #"
+                                                           << "Reference"
                                                            << "Inventory Mode"
                                                            << "Manufacturer"
                                                            << "Name"
@@ -522,7 +522,7 @@ void BuildsWidget::loadBuilds()
         m_buildsTable->insertRow(row);
 
         auto* typeItem = new QTableWidgetItem(build.buildType());
-        auto* setNumberItem = new QTableWidgetItem(build.setNumber());
+        auto* setNumberItem = new QTableWidgetItem(build.sourceReference());
 
         const QString inventoryModeText =
             build.inventoryMode() == "CompleteSet" ? "Complete Set" : "Build from Stock";

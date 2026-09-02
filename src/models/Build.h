@@ -43,6 +43,12 @@ public:
     QString setNumber() const;
     void setSetNumber(const QString& setNumber);
 
+    int minifigCatalogId() const;
+    void setMinifigCatalogId(int minifigCatalogId);
+
+    QString sourceReference() const;
+    void setSourceReference(const QString& sourceReference);
+
     QString inventoryMode() const;
     void setInventoryMode(const QString& inventoryMode);
 
@@ -71,6 +77,8 @@ private:
     QString m_buildType = "Set";
     QString m_name;
     QString m_setNumber;
+    int m_minifigCatalogId = 0;
+    QString m_sourceReference;
     QString m_inventoryMode = "Stock";
     int m_manufacturerId = 0;
     QString m_status = "Planned";

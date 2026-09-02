@@ -305,6 +305,8 @@ qt_add_executable(BrickSuite
     src/ui/inventory/LostInventoryDialog.cpp
     src/services/builds/BuildPullingService.h
     src/services/builds/BuildPullingService.cpp
+    src/services/builds/MinifigBuildCreationService.h
+    src/services/builds/MinifigBuildCreationService.cpp
     README.md
     src/core/AppVersion.h
     src/core/AppConstants.h
@@ -392,6 +394,31 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME MinifigPartsImport COMMAND MinifigPartsImportTest)
+
+    qt_add_executable(MinifigBuildCreationTest EXCLUDE_FROM_ALL
+        tests/MinifigBuildCreationTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Workspace.h src/models/Workspace.cpp
+        src/models/Build.h src/models/Build.cpp
+        src/models/BuildRequirement.h src/models/BuildRequirement.cpp
+        src/models/MinifigCatalogItem.h src/models/MinifigCatalogItem.cpp
+        src/models/MinifigCatalogSearchCriteria.h
+        src/models/MinifigCatalogSearchResult.h
+        src/models/MinifigExternalIdentifier.h
+        src/models/MinifigCatalogPart.h
+        src/models/Manufacturer.h
+        src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
+        src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
+        src/repositories/BuildRequirementRepository.h src/repositories/BuildRequirementRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/MinifigCatalogRepository.h src/repositories/MinifigCatalogRepository.cpp
+        src/repositories/MinifigCatalogPartRepository.h src/repositories/MinifigCatalogPartRepository.cpp
+        src/services/builds/MinifigBuildCreationService.h
+        src/services/builds/MinifigBuildCreationService.cpp
+    )
+    target_link_libraries(MinifigBuildCreationTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME MinifigBuildCreation COMMAND MinifigBuildCreationTest)
 endif()
 
 if(WIN32)

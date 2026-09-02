@@ -60,9 +60,14 @@ bool BuildRepository::create(Build& build)
         return false;
     }
 
-    if (buildType != "Set" && buildType != "MOC") {
+    if (buildType != "Set" && buildType != "MOC" && buildType != "Minifig") {
         qWarning() << "Build create rejected due to invalid build type:"
                    << buildType;
+        return false;
+    }
+
+    if ((buildType == "Minifig") != (build.minifigCatalogId() > 0)) {
+        qWarning() << "Build create rejected due to inconsistent Minifig source identity.";
         return false;
     }
 
@@ -96,6 +101,7 @@ bool BuildRepository::create(Build& build)
             build_type,
             name,
             set_number,
+            minifig_catalog_id,
             inventory_mode,
             manufacturer_id,
             status,
@@ -110,6 +116,7 @@ bool BuildRepository::create(Build& build)
             :build_type,
             :name,
             :set_number,
+            :minifig_catalog_id,
             :inventory_mode,
             :manufacturer_id,
             :status,
@@ -131,6 +138,9 @@ bool BuildRepository::create(Build& build)
     } else {
         query.bindValue(":set_number", QVariant());
     }
+
+    query.bindValue(":minifig_catalog_id",
+                    build.minifigCatalogId() > 0 ? QVariant(build.minifigCatalogId()) : QVariant());
 
     query.bindValue(":inventory_mode", inventoryMode);
 
@@ -180,6 +190,13 @@ std::optional<Build> BuildRepository::getById(int id) const
             build_type,
             name,
             set_number,
+            minifig_catalog_id,
+            CASE WHEN build_type = 'Minifig' THEN
+                (SELECT mei.external_id FROM minifig_external_identifier mei
+                 WHERE mei.minifig_catalog_id = build.minifig_catalog_id
+                   AND mei.provider = 'Rebrickable' COLLATE NOCASE
+                 ORDER BY mei.is_active DESC, mei.id LIMIT 1)
+            ELSE set_number END AS source_reference,
             inventory_mode,
             manufacturer_id,
             status,
@@ -221,6 +238,13 @@ QList<Build> BuildRepository::getByWorkspace(int workspaceId, bool includeArchiv
             build_type,
             name,
             set_number,
+            minifig_catalog_id,
+            CASE WHEN build_type = 'Minifig' THEN
+                (SELECT mei.external_id FROM minifig_external_identifier mei
+                 WHERE mei.minifig_catalog_id = build.minifig_catalog_id
+                   AND mei.provider = 'Rebrickable' COLLATE NOCASE
+                 ORDER BY mei.is_active DESC, mei.id LIMIT 1)
+            ELSE set_number END AS source_reference,
             inventory_mode,
             manufacturer_id,
             status,
@@ -308,9 +332,15 @@ bool BuildRepository::update(Build& build)
 
     const QString buildType = build.buildType().trimmed();
 
-    if (buildType != "Set" && buildType != "MOC") {
+    if (buildType != "Set" && buildType != "MOC" && buildType != "Minifig") {
         qWarning() << "Build update rejected due to invalid build type:"
                    << buildType
+                   << "BuildId:" << build.id();
+        return false;
+    }
+
+    if ((buildType == "Minifig") != (build.minifigCatalogId() > 0)) {
+        qWarning() << "Build update rejected due to inconsistent Minifig source identity."
                    << "BuildId:" << build.id();
         return false;
     }
@@ -354,6 +384,7 @@ bool BuildRepository::update(Build& build)
             build_type = :build_type,
             name = :name,
             set_number = :set_number,
+            minifig_catalog_id = :minifig_catalog_id,
             inventory_mode = :inventory_mode,
             manufacturer_id = :manufacturer_id,
             status = :status,
@@ -374,6 +405,9 @@ bool BuildRepository::update(Build& build)
     } else {
         query.bindValue(":set_number", QVariant());
     }
+
+    query.bindValue(":minifig_catalog_id",
+                    build.minifigCatalogId() > 0 ? QVariant(build.minifigCatalogId()) : QVariant());
 
     query.bindValue(":inventory_mode", inventoryMode);
 
@@ -423,6 +457,8 @@ Build BuildRepository::buildFromQuery(const QSqlQuery& query) const
     build.setName(query.value("name").toString());
 
     build.setSetNumber(query.value("set_number").toString());
+    build.setMinifigCatalogId(query.value("minifig_catalog_id").toInt());
+    build.setSourceReference(query.value("source_reference").toString());
 
     build.setInventoryMode(query.value("inventory_mode").toString());
 

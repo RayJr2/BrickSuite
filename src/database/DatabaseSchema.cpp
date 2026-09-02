@@ -77,6 +77,15 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 16;
     }
 
+    // Version 26 -> 27 rebuilds build to extend its type CHECK constraint.
+    // SQLite requires foreign-key enforcement to be disabled before the
+    // migration transaction begins.
+    if (version == 26) {
+        if (!migrateVersion26ToVersion27(database))
+            return false;
+        version = 27;
+    }
+
     if (!database.transaction()) {
         qCritical() << "Unable to begin schema transaction:" << database.lastError().text();
 
@@ -480,6 +489,19 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
             return false;
         }
         version = 26;
+    }
+
+
+    if (version == 26) {
+        if (!database.commit()) {
+            database.rollback();
+            return false;
+        }
+        if (!migrateVersion26ToVersion27(database))
+            return false;
+        version = 27;
+        if (!database.transaction())
+            return false;
     }
 
     if (version != CurrentSchemaVersion) {
@@ -3277,5 +3299,74 @@ bool DatabaseSchema::migrateVersion25ToVersion26(QSqlDatabase& database)
     if (!createMinifigCatalogPartTable(database))
         return false;
     qInfo() << "Minifig Catalog composition foundation initialized.";
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion26ToVersion27(QSqlDatabase& database)
+{
+    QSqlQuery pragma(database);
+    if (!pragma.exec("PRAGMA foreign_keys") || !pragma.next())
+        return false;
+    const bool foreignKeysWereEnabled = pragma.value(0).toBool();
+    if (foreignKeysWereEnabled && !pragma.exec("PRAGMA foreign_keys = OFF"))
+        return false;
+    if (!database.transaction())
+        return false;
+
+    QSqlQuery query(database);
+    const QStringList statements = {
+        R"(CREATE TABLE build_v27 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id INTEGER NOT NULL,
+            build_type TEXT NOT NULL CHECK(build_type IN ('Set','MOC','Minifig')),
+            name TEXT NOT NULL,
+            set_number TEXT,
+            inventory_mode TEXT NOT NULL DEFAULT 'Stock' CHECK(inventory_mode IN ('Stock','CompleteSet')),
+            status TEXT NOT NULL DEFAULT 'Planned' CHECK(status IN ('Planned','Pulling','Complete','Disassembled','Cancelled')),
+            is_active INTEGER NOT NULL DEFAULT 1,
+            notes TEXT,
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            manufacturer_id INTEGER REFERENCES manufacturer(id),
+            minifig_catalog_id INTEGER REFERENCES minifig_catalog(id),
+            FOREIGN KEY(workspace_id) REFERENCES workspace(id)
+        ))",
+        R"(INSERT INTO build_v27
+            (id,workspace_id,build_type,name,set_number,inventory_mode,status,is_active,notes,
+             created_utc,modified_utc,manufacturer_id,minifig_catalog_id)
+            SELECT id,workspace_id,build_type,name,set_number,inventory_mode,status,is_active,notes,
+                   created_utc,modified_utc,manufacturer_id,NULL FROM build)",
+        "DROP TABLE build",
+        "ALTER TABLE build_v27 RENAME TO build",
+        "CREATE INDEX IF NOT EXISTS idx_build_workspace ON build(workspace_id)",
+        "CREATE INDEX IF NOT EXISTS idx_build_manufacturer ON build(manufacturer_id)",
+        "CREATE INDEX IF NOT EXISTS idx_build_minifig_catalog ON build(minifig_catalog_id)",
+        R"(CREATE TRIGGER IF NOT EXISTS trg_build_default_manufacturer
+            AFTER INSERT ON build FOR EACH ROW WHEN NEW.manufacturer_id IS NULL
+            BEGIN
+                UPDATE build SET manufacturer_id =
+                    (SELECT id FROM manufacturer WHERE code = 'LEGO' COLLATE NOCASE LIMIT 1)
+                WHERE id = NEW.id;
+            END)"
+    };
+    for (const QString& statement : statements) {
+        if (!query.exec(statement)) {
+            qCritical() << "Unable to migrate Build schema to Version 27:" << query.lastError().text();
+            database.rollback();
+            if (foreignKeysWereEnabled) pragma.exec("PRAGMA foreign_keys = ON");
+            return false;
+        }
+    }
+    if (!setSchemaVersion(database, 27) || !database.commit()) {
+        database.rollback();
+        if (foreignKeysWereEnabled) pragma.exec("PRAGMA foreign_keys = ON");
+        return false;
+    }
+    if (foreignKeysWereEnabled && !pragma.exec("PRAGMA foreign_keys = ON"))
+        return false;
+    if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
+        qCritical() << "Foreign-key validation failed after Version 27 Build migration.";
+        return false;
+    }
     return true;
 }

@@ -209,6 +209,8 @@ void MinifigsCatalogWidget::searchMinifigs()
                         return;
                     actionCombo->setCurrentIndex(0);
                     MinifigDetailsDialog dialog(minifigCatalogId, this);
+                    connect(&dialog, &MinifigDetailsDialog::createBuildRequested,
+                            this, &MinifigsCatalogWidget::createBuildRequested);
                     dialog.exec();
                 });
 

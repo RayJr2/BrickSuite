@@ -45,6 +45,7 @@
 #include "../api/brickset/BricksetService.h"
 #include "../services/images/BackgroundPartColorImageCacheService.h"
 #include "../services/images/PartImageService.h"
+#include "../services/builds/MinifigBuildCreationService.h"
 #include "../services/mappings/BrickLinkMappingService.h"
 
 #include "../settings/UserSettings.h"
@@ -236,6 +237,33 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     // Builds tab
     m_buildsWidget = new BuildsWidget(m_workspaceContext, m_tabWidget);
+
+    connect(m_minifigsCatalogWidget,
+            &MinifigsCatalogWidget::createBuildRequested,
+            this,
+            [this](int minifigCatalogId, const QString& buildName) {
+                if (!m_workspaceContext.hasCurrentWorkspace()) {
+                    QMessageBox::warning(this, "Create Minifig Build",
+                                         "Select a workspace before creating a Minifig Build.");
+                    return;
+                }
+                const auto result = MinifigBuildCreationService().create(
+                    m_workspaceContext.currentWorkspaceId(), minifigCatalogId, buildName);
+                if (!result.success) {
+                    QMessageBox::critical(this, "Create Minifig Build", result.message);
+                    return;
+                }
+                m_tabWidget->setCurrentWidget(m_buildsWidget);
+                m_buildsWidget->selectBuild(result.buildId);
+                statusBar()->showMessage(QString("Minifig Build created: %1").arg(buildName), 5000);
+                QMessageBox::information(
+                    this,
+                    "Create Minifig Build",
+                    QString("The Minifig Build \"%1\" was created with %2 required piece(s).\n\n"
+                            "Close Minifig Details to continue in the Builds tab.")
+                        .arg(buildName)
+                        .arg(result.requiredPieces));
+            });
 
     connect(m_partsCatalogWidget,
             &PartsCatalogWidget::addPartToInventoryRequested,

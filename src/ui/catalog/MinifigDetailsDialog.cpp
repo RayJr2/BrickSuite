@@ -18,6 +18,7 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
@@ -92,12 +93,18 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent
     mainLayout->addWidget(compositionGroup, 1);
 
     auto* scopeLabel = new QLabel(
-        "Imported parts describe the catalog composition only. Inventory availability and "
-        "Minifig assembly are not included yet.", this);
+        "Imported parts describe the catalog composition. Create a Build from Stock to snapshot "
+        "the required pieces and use BrickSuite's normal allocation and pulling workflow.", this);
     scopeLabel->setWordWrap(true);
     mainLayout->addWidget(scopeLabel);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    m_createBuildButton = buttons->addButton("Create Build From Stock...",
+                                             QDialogButtonBox::ActionRole);
+    m_createBuildButton->setEnabled(false);
+    m_createBuildButton->setToolTip("Import a Minifig parts list first.");
+    connect(m_createBuildButton, &QPushButton::clicked,
+            this, &MinifigDetailsDialog::createBuildFromStock);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     mainLayout->addWidget(buttons);
     connect(m_importPartsButton,
@@ -174,6 +181,8 @@ void MinifigDetailsDialog::loadComposition()
     MinifigCatalogPartRepository repository;
     const QList<MinifigCatalogPart> composition = repository.listForMinifig(m_minifigCatalogId);
     m_compositionTable->setRowCount(0);
+    m_requiredPieces = 0;
+    m_sparePieces = 0;
 
     if (composition.isEmpty()) {
         m_compositionSummaryLabel->setText(
@@ -220,6 +229,42 @@ void MinifigDetailsDialog::loadComposition()
             .arg(composition.size())
             .arg(requiredQuantity)
             .arg(spareQuantity));
+    m_requiredPieces = static_cast<int>(requiredQuantity);
+    m_sparePieces = static_cast<int>(spareQuantity);
+    m_createBuildButton->setEnabled(m_requiredPieces > 0);
+    m_createBuildButton->setToolTip(m_requiredPieces > 0
+                                        ? QString()
+                                        : "Import a parts list containing required parts first.");
+}
+
+void MinifigDetailsDialog::createBuildFromStock()
+{
+    if (m_requiredPieces <= 0) {
+        QMessageBox::information(this, "Create Minifig Build",
+                                 "Import a Minifig parts list containing required parts first.");
+        return;
+    }
+
+    QDialog dialog(this);
+    dialog.setWindowTitle("Create Build From Stock");
+    auto* layout = new QFormLayout(&dialog);
+    layout->addRow("Minifig #:", new QLabel(m_minifigNumber.isEmpty() ? "-" : m_minifigNumber, &dialog));
+    layout->addRow("Minifig:", new QLabel(m_minifigName, &dialog));
+    layout->addRow("Required pieces:", new QLabel(QString::number(m_requiredPieces), &dialog));
+    layout->addRow("Spare pieces excluded:", new QLabel(QString::number(m_sparePieces), &dialog));
+    auto* nameEdit = new QLineEdit(m_minifigName, &dialog);
+    layout->addRow("Build name:", nameEdit);
+    auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
+    QPushButton* createButton = buttonBox->addButton("Create", QDialogButtonBox::AcceptRole);
+    connect(nameEdit, &QLineEdit::textChanged, createButton,
+            [createButton](const QString& text) { createButton->setEnabled(!text.trimmed().isEmpty()); });
+    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addRow(buttonBox);
+    nameEdit->selectAll();
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    emit createBuildRequested(m_minifigCatalogId, nameEdit->text().trimmed());
 }
 
 void MinifigDetailsDialog::importPartsList()

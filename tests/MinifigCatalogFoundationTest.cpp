@@ -144,9 +144,10 @@ bool validateVersion23Migration(const QString& path)
             QSqlQuery query(database);
             success = query.exec("CREATE TABLE schema_version (version INTEGER NOT NULL)")
                       && query.exec("INSERT INTO schema_version VALUES (23)")
+                      && query.exec("CREATE TABLE build(id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id INTEGER NOT NULL, build_type TEXT NOT NULL, name TEXT NOT NULL, set_number TEXT, inventory_mode TEXT NOT NULL DEFAULT 'Stock', status TEXT NOT NULL DEFAULT 'Planned', is_active INTEGER NOT NULL DEFAULT 1, notes TEXT, created_utc TEXT NOT NULL, modified_utc TEXT NOT NULL, manufacturer_id INTEGER)")
                       && DatabaseSchema::initialize(database)
                       && query.exec("SELECT version FROM schema_version")
-                      && query.next() && query.value(0).toInt() == 26
+                      && query.next() && query.value(0).toInt() == 27
                       && query.exec("SELECT COUNT(*) FROM minifig_catalog")
                       && query.next() && query.value(0).toInt() == 0;
             database.close();

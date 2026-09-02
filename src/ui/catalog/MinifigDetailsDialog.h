@@ -15,10 +15,14 @@ class MinifigDetailsDialog : public QDialog
 public:
     explicit MinifigDetailsDialog(int minifigCatalogId, QWidget* parent = nullptr);
 
+signals:
+    void createBuildRequested(int minifigCatalogId, const QString& buildName);
+
 private:
     bool loadMinifig();
     void loadComposition();
     void importPartsList();
+    void createBuildFromStock();
     void displayImage(const QString& imagePath);
 
     int m_minifigCatalogId = 0;
@@ -35,6 +39,9 @@ private:
     QLabel* m_compositionSummaryLabel = nullptr;
     QTableWidget* m_compositionTable = nullptr;
     QPushButton* m_importPartsButton = nullptr;
+    QPushButton* m_createBuildButton = nullptr;
+    int m_requiredPieces = 0;
+    int m_sparePieces = 0;
     MinifigImageService* m_imageService = nullptr;
     PartImageService* m_partImageService = nullptr;
 };

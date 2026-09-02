@@ -70,6 +70,26 @@ void Build::setSetNumber(const QString& setNumber)
     m_setNumber = setNumber.trimmed();
 }
 
+int Build::minifigCatalogId() const
+{
+    return m_minifigCatalogId;
+}
+
+void Build::setMinifigCatalogId(int minifigCatalogId)
+{
+    m_minifigCatalogId = minifigCatalogId;
+}
+
+QString Build::sourceReference() const
+{
+    return m_sourceReference;
+}
+
+void Build::setSourceReference(const QString& sourceReference)
+{
+    m_sourceReference = sourceReference.trimmed();
+}
+
 QString Build::inventoryMode() const
 {
     return m_inventoryMode;

@@ -58,9 +58,15 @@ destination Minifig.</p>
 quantities. Spare rows are retained separately and shown as spares; their quantities are not
 included in the required-piece total.</p>
 
-<div class="note"><b>Current scope:</b> Imported composition is catalog information. Inventory
-Have/Need comparison, buildability, and assembling a Minifig from loose pieces are separate later
-workflow capabilities.</div>
+<h2>Create a Build From Stock</h2>
+<p>Import the Minifig parts list first, then choose <b>Create Build From Stock...</b> in Minifig
+Details. BrickSuite creates a Minifig-type Build and copies only required, non-spare Part/Color
+rows into its requirements. Spare pieces remain catalog information and are excluded.</p>
+<p>The new Build is a snapshot: later parts-list imports do not change its requirements. You may
+create multiple Builds from the same catalog Minifig. Use the normal Builds workflow to allocate
+inventory, review missing parts, pull pieces, complete the Build, or disassemble it.</p>
+<div class="note">Completing a Minifig Build does not create Collection or display state. Those
+remain separate future capabilities.</div>
 
 <h2>Related Help</h2>
 <p><a href="parts_catalog.html">Parts Catalog</a> |

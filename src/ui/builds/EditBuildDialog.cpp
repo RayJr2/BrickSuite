@@ -83,7 +83,7 @@ EditBuildDialog::EditBuildDialog(int buildId, QWidget* parent)
 
     formLayout->addRow("Type:", m_typeLabel);
 
-    formLayout->addRow("Set Number:", m_setNumberLabel);
+    formLayout->addRow("Reference:", m_setNumberLabel);
 
     formLayout->addRow("Inventory Mode:", m_inventoryModeLabel);
 
@@ -129,7 +129,9 @@ bool EditBuildDialog::loadBuild()
 
     m_typeLabel->setText(build->buildType());
 
-    m_setNumberLabel->setText(build->setNumber().isEmpty() ? "(None)" : build->setNumber());
+    m_setNumberLabel->setText(build->sourceReference().isEmpty()
+                                  ? "(None)"
+                                  : build->sourceReference());
 
     if (build->inventoryMode() == "CompleteSet") {
         m_inventoryModeLabel->setText("Complete Set");
