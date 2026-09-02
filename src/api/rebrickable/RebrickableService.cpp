@@ -1829,6 +1829,183 @@ void RebrickableService::getSetParts(const QString& setNumber, const QString& ap
         });
 }
 
+struct RebrickableService::SetCatalogPartsRequestState
+{
+    QList<SetPart> parts;
+    int expectedTotal = -1;
+    QSet<QString> requestedUrls;
+};
+
+bool RebrickableService::parseSetPartsPage(const QByteArray& data,
+                                           SetPartsPage& page,
+                                           QString& errorMessage)
+{
+    page = {};
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(data, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        errorMessage = QStringLiteral("Rebrickable returned malformed Set parts JSON.");
+        return false;
+    }
+    const QJsonObject root = document.object();
+    const QJsonValue countValue = root.value(QStringLiteral("count"));
+    const QJsonValue nextValue = root.value(QStringLiteral("next"));
+    const QJsonValue resultsValue = root.value(QStringLiteral("results"));
+    if (!countValue.isDouble() || countValue.toDouble() < 0
+        || countValue.toDouble() > std::numeric_limits<int>::max()
+        || countValue.toDouble() != std::floor(countValue.toDouble())
+        || (!nextValue.isNull() && !nextValue.isString()) || !resultsValue.isArray()) {
+        errorMessage = QStringLiteral("Rebrickable returned an unexpected Set parts response.");
+        return false;
+    }
+    page.totalCount = countValue.toInt();
+    page.nextUrl = nextValue.isString() ? nextValue.toString() : QString();
+    const QJsonArray rows = resultsValue.toArray();
+    for (int index = 0; index < rows.size(); ++index) {
+        const QJsonValue value = rows.at(index);
+        if (!value.isObject()) {
+            errorMessage = QString("Rebrickable Set parts row %1 is malformed.").arg(index + 1);
+            return false;
+        }
+        const QJsonObject row = value.toObject();
+        const QJsonValue partValue = row.value(QStringLiteral("part"));
+        const QJsonValue colorValue = row.value(QStringLiteral("color"));
+        const QJsonValue quantityValue = row.value(QStringLiteral("quantity"));
+        const QJsonValue spareValue = row.value(QStringLiteral("is_spare"));
+        if (!partValue.isObject() || !colorValue.isObject() || !quantityValue.isDouble()
+            || !spareValue.isBool()) {
+            errorMessage = QString("Rebrickable Set parts row %1 has missing or invalid fields.").arg(index + 1);
+            return false;
+        }
+        const QJsonValue partNumber = partValue.toObject().value(QStringLiteral("part_num"));
+        const QJsonValue colorId = colorValue.toObject().value(QStringLiteral("id"));
+        const double quantity = quantityValue.toDouble();
+        const double color = colorId.toDouble();
+        if (!partNumber.isString() || partNumber.toString().trimmed().isEmpty()
+            || !colorId.isDouble() || color < 0 || color > std::numeric_limits<int>::max()
+            || color != std::floor(color) || quantity <= 0
+            || quantity > std::numeric_limits<int>::max()
+            || quantity != std::floor(quantity)) {
+            errorMessage = QString("Rebrickable Set parts row %1 has invalid identity or quantity fields.").arg(index + 1);
+            return false;
+        }
+        SetPart part;
+        part.partNumber = partNumber.toString().trimmed();
+        part.rebrickableColorId = static_cast<int>(color);
+        part.quantity = static_cast<int>(quantity);
+        part.isSpare = spareValue.toBool();
+        page.parts.append(part);
+    }
+    return true;
+}
+
+bool RebrickableService::isTrustedSetPartsNextUrl(const QString& nextUrl,
+                                                  const QString& setNumber)
+{
+    if (nextUrl.isEmpty()) return true;
+    const QUrl url(nextUrl);
+    const QUrlQuery query(url);
+    return url.isValid()
+           && url.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) == 0
+           && url.host().compare(QStringLiteral("rebrickable.com"), Qt::CaseInsensitive) == 0
+           && (url.port() == -1 || url.port() == 443) && url.userInfo().isEmpty()
+           && url.fragment().isEmpty()
+           && url.path() == QString("/api/v3/lego/sets/%1/parts/").arg(setNumber)
+           && query.queryItemValue(QStringLiteral("inc_minifig_parts")) == QStringLiteral("1");
+}
+
+void RebrickableService::getSetCatalogParts(const QString& setNumber, const QString& apiKey)
+{
+    const QString set = setNumber.trimmed();
+    const QString key = apiKey.trimmed();
+    if (set.isEmpty() || key.isEmpty()) {
+        SetPartsResult result; result.setNumber = set;
+        result.message = QStringLiteral("Set number or Rebrickable API key is missing.");
+        emit setCatalogPartsFinished(result); return;
+    }
+    if (isSessionBlocked()) {
+        SetPartsResult result; result.setNumber = set; result.httpStatusCode = 403;
+        result.message = sessionBlockReason(); emit setCatalogPartsFinished(result); return;
+    }
+    const QUrl url = setCatalogPartsInitialUrl(set);
+    requestSetCatalogPartsPage(set, key, url, QSharedPointer<SetCatalogPartsRequestState>::create());
+}
+
+QUrl RebrickableService::setCatalogPartsInitialUrl(const QString& setNumber)
+{
+    QUrl url(QString("https://rebrickable.com/api/v3/lego/sets/%1/parts/")
+                 .arg(QString::fromUtf8(QUrl::toPercentEncoding(setNumber.trimmed()))));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("page"), QStringLiteral("1"));
+    query.addQueryItem(QStringLiteral("page_size"), QStringLiteral("500"));
+    query.addQueryItem(QStringLiteral("inc_minifig_parts"), QStringLiteral("1"));
+    url.setQuery(query);
+    return url;
+}
+
+void RebrickableService::requestSetCatalogPartsPage(
+    const QString& setNumber, const QString& apiKey, const QUrl& url,
+    const QSharedPointer<SetCatalogPartsRequestState>& state)
+{
+    const QString canonicalUrl = url.toString(QUrl::FullyEncoded);
+    if (state->requestedUrls.contains(canonicalUrl) || state->requestedUrls.size() >= 100) {
+        SetPartsResult result; result.setNumber = setNumber;
+        result.message = QStringLiteral("Rebrickable returned invalid Set parts pagination.");
+        emit setCatalogPartsFinished(result); return;
+    }
+    state->requestedUrls.insert(canonicalUrl);
+    QNetworkRequest request(url);
+    request.setRawHeader("Authorization", QString("key %1").arg(apiKey).toUtf8());
+    request.setHeader(QNetworkRequest::UserAgentHeader, "BrickSuite/1.0");
+    enqueueGet(request, QStringLiteral("GetSetCatalogParts"),
+        [this, setNumber, apiKey, state](QNetworkReply* reply) {
+            SetPartsResult result; result.setNumber = setNumber;
+            const QVariant status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+            if (status.isValid()) result.httpStatusCode = status.toInt();
+            const QByteArray data = reply->readAll(); QString breakerReason;
+            if (result.httpStatusCode == 403 && detectCloudflareIpBan(data, breakerReason)) {
+                tripSessionCircuitBreaker(breakerReason); result.message = sessionBlockReason();
+            } else if (result.httpStatusCode == 429) {
+                handle429(); result.message = sessionBlockReason();
+            } else if (reply->error() == QNetworkReply::NoError && result.httpStatusCode == 200) {
+                SetPartsPage page;
+                if (!parseSetPartsPage(data, page, result.message)) {
+                } else if (state->expectedTotal >= 0 && state->expectedTotal != page.totalCount) {
+                    result.message = QStringLiteral("Rebrickable changed the Set parts count during pagination.");
+                } else if (!isTrustedSetPartsNextUrl(page.nextUrl, setNumber)) {
+                    result.message = QStringLiteral("Rebrickable returned an unsafe Set parts pagination URL.");
+                } else if (page.parts.size() > page.totalCount
+                           || state->parts.size() > page.totalCount - page.parts.size()) {
+                    result.message = QStringLiteral("Rebrickable returned too many Set part rows.");
+                } else {
+                    state->expectedTotal = page.totalCount; state->parts.append(page.parts);
+                    if (!page.nextUrl.isEmpty()) {
+                        reply->deleteLater();
+                        requestSetCatalogPartsPage(setNumber, apiKey, QUrl(page.nextUrl), state);
+                        return;
+                    }
+                    if (state->parts.isEmpty() || state->parts.size() != state->expectedTotal) {
+                        result.message = state->parts.isEmpty()
+                            ? QStringLiteral("Rebrickable returned no parts for this Set.")
+                            : QStringLiteral("Rebrickable returned an incomplete Set parts result.");
+                    } else {
+                        result.success = true; result.totalCount = state->expectedTotal;
+                        result.parts = state->parts;
+                        result.message = QString("%1 Set part rows retrieved.").arg(result.parts.size());
+                    }
+                }
+            } else if (result.httpStatusCode == 401) result.message = QStringLiteral("Rebrickable rejected the API key.");
+            else if (result.httpStatusCode == 404) result.message = QString("Set %1 was not found on Rebrickable.").arg(setNumber);
+            else if (reply->error() != QNetworkReply::NoError) result.message = QString("Unable to retrieve Set parts: %1").arg(reply->errorString());
+            else result.message = QString("Rebrickable returned HTTP status %1.").arg(result.httpStatusCode);
+            reply->deleteLater(); emit setCatalogPartsFinished(result);
+        },
+        [this, setNumber]() {
+            SetPartsResult result; result.setNumber = setNumber; result.httpStatusCode = 403;
+            result.message = sessionBlockReason(); emit setCatalogPartsFinished(result);
+        });
+}
+
 struct RebrickableService::MinifigPartsRequestState
 {
     QList<MinifigPart> parts;

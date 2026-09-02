@@ -110,7 +110,7 @@ bool validateMigration(const QString& path)
                  && query.exec("CREATE TABLE build(id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id INTEGER NOT NULL, build_type TEXT NOT NULL, name TEXT NOT NULL, set_number TEXT, inventory_mode TEXT NOT NULL DEFAULT 'Stock', status TEXT NOT NULL DEFAULT 'Planned', is_active INTEGER NOT NULL DEFAULT 1, notes TEXT, created_utc TEXT NOT NULL, modified_utc TEXT NOT NULL, manufacturer_id INTEGER)")
                  && DatabaseSchema::initialize(db)
                  && query.exec("SELECT version FROM schema_version") && query.next()
-                 && query.value(0).toInt() == 27
+                 && query.value(0).toInt() == 28
                  && query.exec("SELECT COUNT(*) FROM pragma_table_info('minifig_catalog_part')")
                  && query.next() && query.value(0).toInt() == 10;
             db.close();
@@ -148,7 +148,7 @@ int main(int argc, char* argv[])
     QStandardPaths::setTestModeEnabled(true);
     QTemporaryDir files;
     if (!require(files.isValid(), "Unable to create test directory.")) return 1;
-    if (!require(validateMigration(files.filePath("v25.db")), "Schema 25 to 27 migration failed.")) return 1;
+    if (!require(validateMigration(files.filePath("v25.db")), "Schema 25 to 28 migration failed.")) return 1;
 
     const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir(appData).removeRecursively();

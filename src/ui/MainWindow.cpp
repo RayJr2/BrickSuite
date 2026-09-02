@@ -46,6 +46,7 @@
 #include "../services/images/BackgroundPartColorImageCacheService.h"
 #include "../services/images/PartImageService.h"
 #include "../services/builds/MinifigBuildCreationService.h"
+#include "../services/builds/SetBuildCreationService.h"
 #include "../services/mappings/BrickLinkMappingService.h"
 
 #include "../settings/UserSettings.h"
@@ -237,6 +238,31 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     // Builds tab
     m_buildsWidget = new BuildsWidget(m_workspaceContext, m_tabWidget);
+
+    connect(m_setsCatalogWidget,
+            &SetsCatalogWidget::createStockBuildRequested,
+            this,
+            [this](int setCatalogId, const QString& buildName) {
+                if (!m_workspaceContext.hasCurrentWorkspace()) {
+                    QMessageBox::warning(this, "Create Set Build",
+                                         "Select a workspace before creating a Set Build.");
+                    return;
+                }
+                const auto result = SetBuildCreationService().create(
+                    m_workspaceContext.currentWorkspaceId(), setCatalogId, buildName);
+                if (!result.success) {
+                    QMessageBox::critical(this, "Create Set Build", result.message);
+                    return;
+                }
+                m_tabWidget->setCurrentWidget(m_buildsWidget);
+                m_buildsWidget->selectBuild(result.buildId);
+                statusBar()->showMessage(QString("Set Build created: %1").arg(buildName), 5000);
+                QMessageBox::information(
+                    this, "Create Set Build",
+                    QString("The Set Build \"%1\" was created with %2 required piece(s).\n\n"
+                            "%3 spare piece(s) were excluded. Close Set Details to continue in the Builds tab.")
+                        .arg(buildName).arg(result.requiredPieces).arg(result.excludedSparePieces));
+            });
 
     connect(m_minifigsCatalogWidget,
             &MinifigsCatalogWidget::createBuildRequested,

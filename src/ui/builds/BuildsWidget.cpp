@@ -2207,7 +2207,8 @@ void BuildsWidget::updateRequirementUiState()
         if (build && build->isActive()) {
             canLoadSet =
                 build->buildType() == "Set"
-                && !build->setNumber().trimmed().isEmpty();
+                && !build->setNumber().trimmed().isEmpty()
+                && !(build->inventoryMode() == "Stock" && build->setCatalogId() > 0);
 
             canImportMoc =
                 build->buildType() == "MOC"

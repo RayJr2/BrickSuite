@@ -45,6 +45,7 @@ private slots:
 
 signals:
     void createBuildRequested(int setCatalogId, const QString& inventoryMode);
+    void createStockBuildRequested(int setCatalogId, const QString& buildName);
 
 private:
     void loadYears();

@@ -70,6 +70,16 @@ void Build::setSetNumber(const QString& setNumber)
     m_setNumber = setNumber.trimmed();
 }
 
+int Build::setCatalogId() const
+{
+    return m_setCatalogId;
+}
+
+void Build::setSetCatalogId(int setCatalogId)
+{
+    m_setCatalogId = setCatalogId;
+}
+
 int Build::minifigCatalogId() const
 {
     return m_minifigCatalogId;

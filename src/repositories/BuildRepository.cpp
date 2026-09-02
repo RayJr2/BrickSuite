@@ -71,6 +71,11 @@ bool BuildRepository::create(Build& build)
         return false;
     }
 
+    if (buildType != "Set" && build.setCatalogId() > 0) {
+        qWarning() << "Build create rejected due to inconsistent Set source identity.";
+        return false;
+    }
+
     const QString status = build.status().trimmed();
 
     if (status != "Planned" && status != "Pulling" && status != "Complete"
@@ -101,6 +106,7 @@ bool BuildRepository::create(Build& build)
             build_type,
             name,
             set_number,
+            set_catalog_id,
             minifig_catalog_id,
             inventory_mode,
             manufacturer_id,
@@ -116,6 +122,7 @@ bool BuildRepository::create(Build& build)
             :build_type,
             :name,
             :set_number,
+            :set_catalog_id,
             :minifig_catalog_id,
             :inventory_mode,
             :manufacturer_id,
@@ -138,6 +145,9 @@ bool BuildRepository::create(Build& build)
     } else {
         query.bindValue(":set_number", QVariant());
     }
+
+    query.bindValue(":set_catalog_id",
+                    build.setCatalogId() > 0 ? QVariant(build.setCatalogId()) : QVariant());
 
     query.bindValue(":minifig_catalog_id",
                     build.minifigCatalogId() > 0 ? QVariant(build.minifigCatalogId()) : QVariant());
@@ -190,6 +200,7 @@ std::optional<Build> BuildRepository::getById(int id) const
             build_type,
             name,
             set_number,
+            set_catalog_id,
             minifig_catalog_id,
             CASE WHEN build_type = 'Minifig' THEN
                 (SELECT mei.external_id FROM minifig_external_identifier mei
@@ -238,6 +249,7 @@ QList<Build> BuildRepository::getByWorkspace(int workspaceId, bool includeArchiv
             build_type,
             name,
             set_number,
+            set_catalog_id,
             minifig_catalog_id,
             CASE WHEN build_type = 'Minifig' THEN
                 (SELECT mei.external_id FROM minifig_external_identifier mei
@@ -345,6 +357,12 @@ bool BuildRepository::update(Build& build)
         return false;
     }
 
+    if (buildType != "Set" && build.setCatalogId() > 0) {
+        qWarning() << "Build update rejected due to inconsistent Set source identity."
+                   << "BuildId:" << build.id();
+        return false;
+    }
+
     const QString inventoryMode = build.inventoryMode().trimmed();
 
     if (inventoryMode != "Stock" && inventoryMode != "CompleteSet") {
@@ -384,6 +402,7 @@ bool BuildRepository::update(Build& build)
             build_type = :build_type,
             name = :name,
             set_number = :set_number,
+            set_catalog_id = :set_catalog_id,
             minifig_catalog_id = :minifig_catalog_id,
             inventory_mode = :inventory_mode,
             manufacturer_id = :manufacturer_id,
@@ -405,6 +424,9 @@ bool BuildRepository::update(Build& build)
     } else {
         query.bindValue(":set_number", QVariant());
     }
+
+    query.bindValue(":set_catalog_id",
+                    build.setCatalogId() > 0 ? QVariant(build.setCatalogId()) : QVariant());
 
     query.bindValue(":minifig_catalog_id",
                     build.minifigCatalogId() > 0 ? QVariant(build.minifigCatalogId()) : QVariant());
@@ -457,6 +479,7 @@ Build BuildRepository::buildFromQuery(const QSqlQuery& query) const
     build.setName(query.value("name").toString());
 
     build.setSetNumber(query.value("set_number").toString());
+    build.setSetCatalogId(query.value("set_catalog_id").toInt());
     build.setMinifigCatalogId(query.value("minifig_catalog_id").toInt());
     build.setSourceReference(query.value("source_reference").toString());
 

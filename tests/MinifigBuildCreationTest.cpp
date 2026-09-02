@@ -35,14 +35,18 @@ bool validateV26Migration(const QString& path)
                  && q.exec("INSERT INTO workspace VALUES(1)")
                  && q.exec("CREATE TABLE manufacturer(id INTEGER PRIMARY KEY,code TEXT)")
                  && q.exec("CREATE TABLE minifig_catalog(id INTEGER PRIMARY KEY)")
+                 && q.exec("CREATE TABLE set_catalog(id INTEGER PRIMARY KEY)")
+                 && q.exec("CREATE TABLE part(id INTEGER PRIMARY KEY)")
+                 && q.exec("CREATE TABLE color(id INTEGER PRIMARY KEY)")
                  && q.exec("CREATE TABLE build(id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id INTEGER NOT NULL,build_type TEXT NOT NULL CHECK(build_type IN ('Set','MOC')),name TEXT NOT NULL,set_number TEXT,inventory_mode TEXT NOT NULL DEFAULT 'Stock' CHECK(inventory_mode IN ('Stock','CompleteSet')),status TEXT NOT NULL DEFAULT 'Planned' CHECK(status IN ('Planned','Pulling','Complete','Disassembled','Cancelled')),is_active INTEGER NOT NULL DEFAULT 1,notes TEXT,created_utc TEXT NOT NULL,modified_utc TEXT NOT NULL,manufacturer_id INTEGER REFERENCES manufacturer(id),FOREIGN KEY(workspace_id) REFERENCES workspace(id))")
                  && q.exec("INSERT INTO build(id,workspace_id,build_type,name,set_number,inventory_mode,status,is_active,notes,created_utc,modified_utc,manufacturer_id) VALUES(41,1,'Set','Existing Set','1-1','Stock','Planned',1,'note','2026-01-01T00:00:00.000Z','2026-01-02T00:00:00.000Z',NULL),(42,1,'MOC','Existing MOC','MOC-1','Stock','Cancelled',0,NULL,'2026-01-03T00:00:00.000Z','2026-01-04T00:00:00.000Z',NULL)")
                  && DatabaseSchema::initialize(db)
-                 && scalar(db,"SELECT version FROM schema_version")==27
+                 && scalar(db,"SELECT version FROM schema_version")==28
                  && scalar(db,"SELECT COUNT(*) FROM build WHERE id IN (41,42)")==2
                  && scalar(db,"SELECT COUNT(*) FROM build WHERE id=41 AND build_type='Set' AND name='Existing Set' AND set_number='1-1' AND status='Planned' AND is_active=1 AND notes='note' AND created_utc='2026-01-01T00:00:00.000Z' AND modified_utc='2026-01-02T00:00:00.000Z'")==1
                  && scalar(db,"SELECT COUNT(*) FROM build WHERE id=42 AND build_type='MOC' AND name='Existing MOC' AND set_number='MOC-1' AND status='Cancelled' AND is_active=0 AND notes IS NULL")==1
-                 && scalar(db,"SELECT COUNT(*) FROM pragma_table_info('build') WHERE name='minifig_catalog_id'")==1;
+                 && scalar(db,"SELECT COUNT(*) FROM pragma_table_info('build') WHERE name='minifig_catalog_id'")==1
+                 && scalar(db,"SELECT COUNT(*) FROM pragma_table_info('build') WHERE name='set_catalog_id'")==1;
         }
         db.close();
     }
@@ -58,7 +62,7 @@ int main(int argc, char* argv[])
     QStandardPaths::setTestModeEnabled(true);
     QTemporaryDir migrationFiles;
     if (!require(migrationFiles.isValid() && validateV26Migration(migrationFiles.filePath("v26.db")),
-                 "Schema 26 to 27 migration did not preserve existing Builds.")) return 1;
+                 "Schema 26 to 28 migration did not preserve existing Builds.")) return 1;
     const QString data = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir(data).removeRecursively(); Cleanup cleanup(data);
     if (!require(DatabaseManager::instance().initialize(), "Database initialization failed.")) return 1;

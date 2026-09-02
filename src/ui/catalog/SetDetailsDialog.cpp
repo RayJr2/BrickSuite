@@ -21,21 +21,33 @@
 #include "SetDetailsDialog.h"
 
 #include "../../models/SetCatalogItem.h"
+#include "../../models/SetCatalogPart.h"
+#include "../../import/RebrickableSetPartsImporter.h"
+#include "../../repositories/SetCatalogPartRepository.h"
 #include "../../repositories/SetCatalogRepository.h"
+#include "../../services/images/PartImageService.h"
 #include "../../services/images/SetImageService.h"
+#include "../../services/sets/RebrickableSetPartsService.h"
 #include "../../services/sets/SetDetailsProviderService.h"
 #include "../../settings/UserSettings.h"
 #include "BricksetInstructionsDialog.h"
 
 #include <QDebug>
+#include <QAbstractItemView>
 #include <QDialogButtonBox>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHeaderView>
+#include <QIcon>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
+#include <QTableWidget>
+#include <QTableWidgetItem>
 #include <QVBoxLayout>
 
 SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
@@ -44,7 +56,7 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
 {
     setWindowTitle("Set Details");
 
-    resize(760, 640);
+    resize(960, 850);
 
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -147,7 +159,45 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
 
     mainLayout->addWidget(providerGroup);
 
+    auto* compositionGroup = new QGroupBox("Catalog Parts List", this);
+    auto* compositionLayout = new QVBoxLayout(compositionGroup);
+    auto* compositionHeader = new QHBoxLayout();
+    auto* compositionLabels = new QVBoxLayout();
+    m_compositionSummaryLabel = new QLabel(compositionGroup);
+    m_compositionSummaryLabel->setWordWrap(true);
+    m_compositionStatusLabel = new QLabel(compositionGroup);
+    m_compositionStatusLabel->setWordWrap(true);
+    compositionLabels->addWidget(m_compositionSummaryLabel);
+    compositionLabels->addWidget(m_compositionStatusLabel);
+    m_getPartsButton = new QPushButton("Get Parts from Rebrickable...", compositionGroup);
+    m_importPartsButton = new QPushButton("Import Parts List...", compositionGroup);
+    compositionHeader->addLayout(compositionLabels, 1);
+    compositionHeader->addWidget(m_getPartsButton);
+    compositionHeader->addWidget(m_importPartsButton);
+    compositionLayout->addLayout(compositionHeader);
+
+    m_compositionTable = new QTableWidget(compositionGroup);
+    m_compositionTable->setColumnCount(6);
+    m_compositionTable->setHorizontalHeaderLabels(
+        {"Image", "Part #", "Part Name", "Color", "Qty", "Spare"});
+    m_compositionTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_compositionTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_compositionTable->setIconSize(QSize(48, 48));
+    m_compositionTable->verticalHeader()->setVisible(false);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    m_compositionTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+    compositionLayout->addWidget(m_compositionTable);
+    mainLayout->addWidget(compositionGroup, 1);
+
     auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, this);
+
+    m_createBuildButton = buttonBox->addButton("Create Build From Stock...",
+                                               QDialogButtonBox::ActionRole);
+    m_createBuildButton->setEnabled(false);
 
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
@@ -156,6 +206,31 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
     m_imageService = new SetImageService(this);
     m_providerService = new SetDetailsProviderService(this);
     m_bricksetService = new BricksetService(this);
+    m_partImageService = new PartImageService(this);
+    m_rebrickablePartsService = new RebrickableSetPartsService(this);
+
+    connect(m_getPartsButton, &QPushButton::clicked,
+            this, &SetDetailsDialog::getPartsFromRebrickable);
+    connect(m_importPartsButton, &QPushButton::clicked,
+            this, &SetDetailsDialog::importPartsList);
+    connect(m_createBuildButton, &QPushButton::clicked,
+            this, &SetDetailsDialog::createBuildFromStock);
+    connect(m_rebrickablePartsService, &RebrickableSetPartsService::finished,
+            this, [this](const RebrickableSetPartsService::Result& result) {
+        setCompositionActionsEnabled(true);
+        m_compositionStatusLabel->clear();
+        if (!result.success) {
+            QMessageBox::critical(this, "Get Set Parts from Rebrickable", result.message);
+            return;
+        }
+        loadComposition();
+        QMessageBox::information(
+            this, "Get Set Parts from Rebrickable",
+            QString("Parts retrieved for %1 (%2).\n\n"
+                    "Distinct composition rows: %3\nRequired pieces: %4\nSpare pieces: %5")
+                .arg(m_setName, m_setNumber).arg(result.compositionRows)
+                .arg(result.requiredPieces).arg(result.sparePieces));
+    });
 
     connect(m_viewInstructionsButton,
             &QPushButton::clicked,
@@ -318,6 +393,8 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
     if (!loadSet())
         return;
 
+    loadComposition();
+
     loadCachedImage();
 
     requestImage();
@@ -342,6 +419,8 @@ bool SetDetailsDialog::loadSet()
 
     m_setNumber = set->setNumber();
 
+    m_setName = set->name();
+
     m_imageUrl = set->imageUrl();
 
     m_setNumberLabel->setText(set->setNumber());
@@ -357,6 +436,137 @@ bool SetDetailsDialog::loadSet()
     setWindowTitle(QString("Set Details — %1").arg(set->setNumber()));
 
     return true;
+}
+
+void SetDetailsDialog::loadComposition()
+{
+    const QList<SetCatalogPart> composition =
+        SetCatalogPartRepository().listForSet(m_setCatalogId);
+    m_compositionTable->setRowCount(0);
+    m_requiredPieces = 0;
+    m_sparePieces = 0;
+    for (const SetCatalogPart& part : composition) {
+        if (part.isSpare)
+            m_sparePieces += part.quantityRequired;
+        else
+            m_requiredPieces += part.quantityRequired;
+        const int row = m_compositionTable->rowCount();
+        m_compositionTable->insertRow(row);
+        m_compositionTable->setRowHeight(row, 54);
+        auto* imageItem = new QTableWidgetItem("No Image");
+        QString imagePath = m_partImageService->cachedPartColorImagePath(
+            part.partNumber, part.rebrickableColorId);
+        if (imagePath.isEmpty())
+            imagePath = m_partImageService->cachedImagePath(part.partNumber);
+        const QPixmap pixmap(imagePath);
+        if (!pixmap.isNull()) {
+            imageItem->setText(QString());
+            imageItem->setIcon(QIcon(pixmap));
+        }
+        imageItem->setData(Qt::UserRole, part.id);
+        m_compositionTable->setItem(row, 0, imageItem);
+        m_compositionTable->setItem(row, 1, new QTableWidgetItem(part.partNumber));
+        m_compositionTable->setItem(row, 2, new QTableWidgetItem(part.partName));
+        m_compositionTable->setItem(row, 3, new QTableWidgetItem(part.colorName));
+        auto* quantity = new QTableWidgetItem(QString::number(part.quantityRequired));
+        quantity->setTextAlignment(Qt::AlignCenter);
+        m_compositionTable->setItem(row, 4, quantity);
+        auto* spare = new QTableWidgetItem(part.isSpare ? "Yes" : "No");
+        spare->setTextAlignment(Qt::AlignCenter);
+        m_compositionTable->setItem(row, 5, spare);
+    }
+    if (composition.isEmpty()) {
+        m_compositionSummaryLabel->setText("No catalog parts list has been acquired for this Set.");
+    } else {
+        m_compositionSummaryLabel->setText(
+            QString("%1 distinct rows; %2 required pieces; %3 spare pieces retained.")
+                .arg(composition.size()).arg(m_requiredPieces).arg(m_sparePieces));
+    }
+    m_createBuildButton->setEnabled(m_requiredPieces > 0);
+    m_createBuildButton->setToolTip(m_requiredPieces > 0
+        ? QString() : QStringLiteral("Get or import a parts list containing required pieces first."));
+}
+
+void SetDetailsDialog::setCompositionActionsEnabled(bool enabled)
+{
+    m_getPartsButton->setEnabled(enabled && !m_setNumber.isEmpty());
+    m_importPartsButton->setEnabled(enabled);
+}
+
+void SetDetailsDialog::getPartsFromRebrickable()
+{
+    if (m_setNumber.isEmpty() || m_rebrickablePartsService->isBusy())
+        return;
+    const QString apiKey = UserSettings::instance().rebrickableApiKey().trimmed();
+    if (apiKey.isEmpty()) {
+        QMessageBox::information(this, "Rebrickable API Key Required",
+                                 "Configure and test your Rebrickable API key in Settings before getting Set parts.");
+        return;
+    }
+    if (!SetCatalogPartRepository().listForSet(m_setCatalogId).isEmpty()) {
+        const auto answer = QMessageBox::question(
+            this, "Replace Set Parts List",
+            "This Set already has a catalog parts list. Replace it with the complete parts list returned by Rebrickable?",
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes)
+            return;
+    }
+    setCompositionActionsEnabled(false);
+    m_compositionStatusLabel->setText("Getting the complete parts list from Rebrickable...");
+    m_rebrickablePartsService->retrieveAndReplace(m_setCatalogId, m_setNumber, apiKey);
+}
+
+void SetDetailsDialog::importPartsList()
+{
+    if (!SetCatalogPartRepository().listForSet(m_setCatalogId).isEmpty()) {
+        const auto answer = QMessageBox::question(
+            this, "Replace Set Parts List",
+            QString("Import a new parts list for %1 (%2)?\n\n"
+                    "This replaces the existing catalog parts list; it does not merge with it.")
+                .arg(m_setName, m_setNumber),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes)
+            return;
+    }
+    const QString fileName = QFileDialog::getOpenFileName(
+        this, QString("Import Parts List for %1 (%2)").arg(m_setName, m_setNumber),
+        QString(), "Rebrickable Parts Lists (*.csv *.CSV *.zip *.ZIP);;CSV Files (*.csv *.CSV);;ZIP Files (*.zip *.ZIP)");
+    if (fileName.isEmpty())
+        return;
+    const auto result = RebrickableSetPartsImporter().importFile(m_setCatalogId, fileName);
+    if (!result.success) {
+        QMessageBox::critical(this, "Import Set Parts List", result.message);
+        return;
+    }
+    loadComposition();
+    QMessageBox::information(this, "Import Set Parts List",
+                             QString("Parts list imported for %1 (%2).\n\nCSV rows read: %3\nDistinct composition rows: %4")
+                                 .arg(m_setName, m_setNumber).arg(result.rowsRead).arg(result.compositionRows));
+}
+
+void SetDetailsDialog::createBuildFromStock()
+{
+    if (m_requiredPieces <= 0)
+        return;
+    QDialog dialog(this);
+    dialog.setWindowTitle("Create Build From Stock");
+    auto* layout = new QFormLayout(&dialog);
+    layout->addRow("Set #:", new QLabel(m_setNumber, &dialog));
+    layout->addRow("Set:", new QLabel(m_setName, &dialog));
+    layout->addRow("Required pieces:", new QLabel(QString::number(m_requiredPieces), &dialog));
+    layout->addRow("Spare pieces excluded:", new QLabel(QString::number(m_sparePieces), &dialog));
+    auto* nameEdit = new QLineEdit(m_setName, &dialog);
+    layout->addRow("Build name:", nameEdit);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
+    QPushButton* create = buttons->addButton("Create", QDialogButtonBox::AcceptRole);
+    connect(nameEdit, &QLineEdit::textChanged, create,
+            [create](const QString& text) { create->setEnabled(!text.trimmed().isEmpty()); });
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addRow(buttons);
+    nameEdit->selectAll();
+    if (dialog.exec() == QDialog::Accepted)
+        emit createBuildRequested(m_setCatalogId, nameEdit->text().trimmed());
 }
 
 void SetDetailsDialog::loadCachedImage()
@@ -450,4 +660,3 @@ void SetDetailsDialog::setBricksetRowsVisible(bool visible)
         m_viewInstructionsButton->setVisible(false);
     m_providerLayout->setRowVisible(m_providerLinkLabel, visible);
 }
-

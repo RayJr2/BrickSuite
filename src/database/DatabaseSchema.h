@@ -25,7 +25,7 @@
 class DatabaseSchema
 {
 public:
-    static constexpr int CurrentSchemaVersion = 27;
+    static constexpr int CurrentSchemaVersion = 28;
 
     static bool initialize(QSqlDatabase& database);
 
@@ -100,6 +100,7 @@ private:
     static bool migrateVersion24ToVersion25(QSqlDatabase& database);
     static bool migrateVersion25ToVersion26(QSqlDatabase& database);
     static bool migrateVersion26ToVersion27(QSqlDatabase& database);
+    static bool migrateVersion27ToVersion28(QSqlDatabase& database);
 
     static bool createExternalColorMappingTable(QSqlDatabase& database);
     static bool createExternalPartMappingTable(QSqlDatabase& database);
@@ -115,4 +116,5 @@ private:
     static bool createMinifigCatalogTables(QSqlDatabase& database);
     static bool createThemeCatalogTables(QSqlDatabase& database);
     static bool createMinifigCatalogPartTable(QSqlDatabase& database);
+    static bool createSetCatalogPartTable(QSqlDatabase& database);
 };

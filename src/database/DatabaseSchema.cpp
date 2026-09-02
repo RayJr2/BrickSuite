@@ -504,6 +504,18 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
             return false;
     }
 
+    if (version == 27) {
+        if (!migrateVersion27ToVersion28(database)) {
+            database.rollback();
+            return false;
+        }
+        if (!setSchemaVersion(database, 28)) {
+            database.rollback();
+            return false;
+        }
+        version = 28;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -3366,6 +3378,61 @@ bool DatabaseSchema::migrateVersion26ToVersion27(QSqlDatabase& database)
         return false;
     if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
         qCritical() << "Foreign-key validation failed after Version 27 Build migration.";
+        return false;
+    }
+    return true;
+}
+
+bool DatabaseSchema::createSetCatalogPartTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+    const QStringList statements = {
+        R"(CREATE TABLE IF NOT EXISTS set_catalog_part (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_catalog_id INTEGER NOT NULL,
+            part_id INTEGER NOT NULL,
+            color_id INTEGER NOT NULL,
+            quantity_required INTEGER NOT NULL CHECK(quantity_required > 0),
+            is_spare INTEGER NOT NULL DEFAULT 0 CHECK(is_spare IN (0, 1)),
+            provider TEXT NOT NULL COLLATE NOCASE,
+            source TEXT NOT NULL,
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            FOREIGN KEY(set_catalog_id) REFERENCES set_catalog(id),
+            FOREIGN KEY(part_id) REFERENCES part(id),
+            FOREIGN KEY(color_id) REFERENCES color(id),
+            UNIQUE(set_catalog_id, part_id, color_id, is_spare)
+        ))",
+        "CREATE INDEX IF NOT EXISTS idx_set_catalog_part_set "
+        "ON set_catalog_part(set_catalog_id, is_spare, part_id, color_id)",
+        "CREATE INDEX IF NOT EXISTS idx_set_catalog_part_identity "
+        "ON set_catalog_part(part_id, color_id, set_catalog_id)"
+    };
+    for (const QString& statement : statements) {
+        if (!query.exec(statement)) {
+            qCritical() << "Unable to create Set Catalog composition schema:"
+                        << query.lastError().text();
+            return false;
+        }
+    }
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion27ToVersion28(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+    if (!createSetCatalogPartTable(database)
+        || !query.exec("ALTER TABLE build ADD COLUMN set_catalog_id INTEGER "
+                       "REFERENCES set_catalog(id)")
+        || !query.exec("CREATE INDEX IF NOT EXISTS idx_build_set_catalog_id "
+                       "ON build(set_catalog_id)")) {
+        qCritical() << "Unable to migrate schema to Version 28:"
+                    << query.lastError().text();
+        return false;
+    }
+    QSqlQuery pragma(database);
+    if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
+        qCritical() << "Foreign-key validation failed after Version 28 migration.";
         return false;
     }
     return true;

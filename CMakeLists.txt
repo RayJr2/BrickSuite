@@ -307,10 +307,21 @@ qt_add_executable(BrickSuite
     src/services/builds/BuildPullingService.cpp
     src/services/builds/MinifigBuildCreationService.h
     src/services/builds/MinifigBuildCreationService.cpp
+    src/services/builds/SetBuildCreationService.h
+    src/services/builds/SetBuildCreationService.cpp
     src/services/minifigs/MinifigCompositionReplacementService.h
     src/services/minifigs/MinifigCompositionReplacementService.cpp
     src/services/minifigs/RebrickableMinifigPartsService.h
     src/services/minifigs/RebrickableMinifigPartsService.cpp
+    src/models/SetCatalogPart.h
+    src/repositories/SetCatalogPartRepository.h
+    src/repositories/SetCatalogPartRepository.cpp
+    src/services/sets/SetCompositionReplacementService.h
+    src/services/sets/SetCompositionReplacementService.cpp
+    src/services/sets/RebrickableSetPartsService.h
+    src/services/sets/RebrickableSetPartsService.cpp
+    src/import/RebrickableSetPartsImporter.h
+    src/import/RebrickableSetPartsImporter.cpp
     README.md
     src/core/AppVersion.h
     src/core/AppConstants.h
@@ -440,6 +451,60 @@ if(BUILD_TESTING)
     )
     target_link_libraries(MinifigBuildCreationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME MinifigBuildCreation COMMAND MinifigBuildCreationTest)
+
+    qt_add_executable(SetCompositionFoundationTest EXCLUDE_FROM_ALL
+        tests/SetCompositionFoundationTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/SetCatalogPart.h
+        src/models/Build.h src/models/Build.cpp
+        src/models/Manufacturer.h
+        src/repositories/SetCatalogPartRepository.h src/repositories/SetCatalogPartRepository.cpp
+        src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/import/RebrickableCsvInputResolver.h src/import/RebrickableCsvInputResolver.cpp
+        src/import/RebrickableSetPartsImporter.h src/import/RebrickableSetPartsImporter.cpp
+        src/services/sets/SetCompositionReplacementService.h
+        src/services/sets/SetCompositionReplacementService.cpp
+    )
+    target_link_libraries(SetCompositionFoundationTest PRIVATE Qt6::Core Qt6::Sql ZLIB::ZLIB)
+    add_test(NAME SetCompositionFoundation COMMAND SetCompositionFoundationTest)
+
+    qt_add_executable(SetPartsApiTest EXCLUDE_FROM_ALL
+        tests/SetPartsApiTest.cpp
+        src/api/ApiNetworkService.h src/api/ApiNetworkService.cpp
+        src/api/rebrickable/RebrickableService.h src/api/rebrickable/RebrickableService.cpp
+        src/settings/UserSettings.h src/settings/UserSettings.cpp
+        src/services/CredentialStore.h src/services/CredentialStore.cpp
+    )
+    target_link_libraries(SetPartsApiTest PRIVATE Qt6::Core Qt6::Network)
+    if(WIN32)
+        target_link_libraries(SetPartsApiTest PRIVATE Advapi32)
+    endif()
+    add_test(NAME SetPartsApi COMMAND SetPartsApiTest)
+
+    qt_add_executable(SetBuildCreationTest EXCLUDE_FROM_ALL
+        tests/SetBuildCreationTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Workspace.h src/models/Workspace.cpp
+        src/models/Build.h src/models/Build.cpp
+        src/models/BuildRequirement.h src/models/BuildRequirement.cpp
+        src/models/SetCatalogItem.h src/models/SetCatalogItem.cpp
+        src/models/SetCatalogSearchCriteria.h
+        src/models/SetCatalogPart.h
+        src/models/Manufacturer.h
+        src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
+        src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
+        src/repositories/BuildRequirementRepository.h src/repositories/BuildRequirementRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/SetCatalogRepository.h src/repositories/SetCatalogRepository.cpp
+        src/repositories/SetCatalogPartRepository.h src/repositories/SetCatalogPartRepository.cpp
+        src/services/builds/SetBuildCreationService.h src/services/builds/SetBuildCreationService.cpp
+        src/services/sets/SetCompositionReplacementService.h src/services/sets/SetCompositionReplacementService.cpp
+    )
+    target_link_libraries(SetBuildCreationTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME SetBuildCreation COMMAND SetBuildCreationTest)
 endif()
 
 if(WIN32)

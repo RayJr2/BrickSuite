@@ -47,6 +47,21 @@ available, provider enrichment.</p>
 <p>The upper portion of Set Details shows the local BrickSuite/Rebrickable reference information,
 including the Set number, name, year, Theme ID, parts count, and cached Set image when available.</p>
 
+<h3>Catalog Parts List</h3>
+
+<p>The <b>Catalog Parts List</b> stores reusable exact Part, Color, quantity, and spare information
+for the selected Set. Choose <b>Get Parts from Rebrickable...</b> to retrieve the complete list
+through the Rebrickable API. This API workflow includes the constituent pieces of Minifigs in the
+Set so the catalog composition represents the physical pieces needed to assemble it.</p>
+
+<p>If API access is unavailable, choose <b>Import Parts List...</b> and select a Rebrickable parts
+list in CSV or ZIP form. ZIP files may contain the CSV in a nested folder. Both acquisition methods
+replace the same catalog composition and require confirmation when a parts list already exists.</p>
+
+<div class="note"><b>Exact catalog identities:</b> Every imported row must resolve to an existing
+BrickSuite Part and Rebrickable Color. If the input is malformed or an identity cannot be resolved,
+the existing catalog parts list remains unchanged.</div>
+
 <h3>Provider Enrichment</h3>
 
 <p>The <b>Provider Enrichment</b> section identifies the active provider used for additional
@@ -104,9 +119,18 @@ website using the system's default browser. For Brickset enrichment, the link is
 
 <h2>Create a Build from a Set</h2>
 
-<p>Use the Set row's <b>Actions...</b> control to create a Build from the selected Set when you
-want BrickSuite to track that Set as a buildable project. BrickSuite can then compare the Build's
-requirements with your available inventory.</p>
+<p>After acquiring a catalog parts list, choose <b>Create Build From Stock...</b> in Set Details.
+Confirm the required-piece count, review the excluded spare-piece count, and enter the Build name.
+BrickSuite creates an ordinary Set Build and snapshots the required catalog pieces into its Build
+requirements. The new Build opens in the existing allocation, missing-parts, pulling, completion,
+and disassembly workflow.</p>
+
+<p>The snapshot is independent of the catalog definition: refreshing the catalog parts list later
+does not alter an existing Build. You may create multiple Builds from the same catalog Set.</p>
+
+<div class="note"><b>Complete Sets are separate:</b> <b>Add as Complete Set</b> remains available
+from the Sets Catalog for tracking an intact physical Set. It does not use the catalog
+Build-from-Stock snapshot workflow.</div>
 
 <img class="screenshot" src="images/sets_catalog_create_build.png"
      alt="Create a BrickSuite Build from a Set">

@@ -29,6 +29,9 @@ class BricksetService;
 class QFormLayout;
 class SetImageService;
 class SetDetailsProviderService;
+class PartImageService;
+class RebrickableSetPartsService;
+class QTableWidget;
 
 class SetDetailsDialog : public QDialog
 {
@@ -37,6 +40,9 @@ class SetDetailsDialog : public QDialog
 public:
     explicit SetDetailsDialog(int setCatalogId, QWidget* parent = nullptr);
 
+signals:
+    void createBuildRequested(int setCatalogId, const QString& buildName);
+
 private:
     bool loadSet();
     void loadCachedImage();
@@ -44,10 +50,16 @@ private:
     void requestProviderEnrichment();
     void requestBricksetInstructions();
     void setBricksetRowsVisible(bool visible);
+    void loadComposition();
+    void getPartsFromRebrickable();
+    void importPartsList();
+    void createBuildFromStock();
+    void setCompositionActionsEnabled(bool enabled);
 
     int m_setCatalogId = 0;
 
     QString m_setNumber;
+    QString m_setName;
     QString m_imageUrl;
 
     QLabel* m_imageLabel = nullptr;
@@ -74,7 +86,18 @@ private:
     QLabel* m_providerLinkLabel = nullptr;
     QFormLayout* m_providerLayout = nullptr;
 
+    QLabel* m_compositionSummaryLabel = nullptr;
+    QLabel* m_compositionStatusLabel = nullptr;
+    QTableWidget* m_compositionTable = nullptr;
+    QPushButton* m_getPartsButton = nullptr;
+    QPushButton* m_importPartsButton = nullptr;
+    QPushButton* m_createBuildButton = nullptr;
+    int m_requiredPieces = 0;
+    int m_sparePieces = 0;
+
     SetImageService* m_imageService = nullptr;
     SetDetailsProviderService* m_providerService = nullptr;
     BricksetService* m_bricksetService = nullptr;
+    PartImageService* m_partImageService = nullptr;
+    RebrickableSetPartsService* m_rebrickablePartsService = nullptr;
 };

@@ -147,7 +147,7 @@ bool validateVersion23Migration(const QString& path)
                       && query.exec("CREATE TABLE build(id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id INTEGER NOT NULL, build_type TEXT NOT NULL, name TEXT NOT NULL, set_number TEXT, inventory_mode TEXT NOT NULL DEFAULT 'Stock', status TEXT NOT NULL DEFAULT 'Planned', is_active INTEGER NOT NULL DEFAULT 1, notes TEXT, created_utc TEXT NOT NULL, modified_utc TEXT NOT NULL, manufacturer_id INTEGER)")
                       && DatabaseSchema::initialize(database)
                       && query.exec("SELECT version FROM schema_version")
-                      && query.next() && query.value(0).toInt() == 27
+                      && query.next() && query.value(0).toInt() == 28
                       && query.exec("SELECT COUNT(*) FROM minifig_catalog")
                       && query.next() && query.value(0).toInt() == 0;
             database.close();

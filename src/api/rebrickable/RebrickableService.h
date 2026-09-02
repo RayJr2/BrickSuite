@@ -264,6 +264,13 @@ public:
         bool isSpare = false;
     };
 
+    struct SetPartsPage
+    {
+        int totalCount = 0;
+        QString nextUrl;
+        QList<SetPart> parts;
+    };
+
     struct MinifigPartsPage
     {
         int totalCount = 0;
@@ -300,6 +307,15 @@ public:
 
     void getSetParts(const QString& setNumber, const QString& apiKey);
 
+    void getSetCatalogParts(const QString& setNumber, const QString& apiKey);
+
+    static bool parseSetPartsPage(const QByteArray& data,
+                                  SetPartsPage& page,
+                                  QString& errorMessage);
+    static bool isTrustedSetPartsNextUrl(const QString& nextUrl,
+                                         const QString& setNumber);
+    static QUrl setCatalogPartsInitialUrl(const QString& setNumber);
+
     void getMinifigParts(const QString& figNumber, const QString& apiKey);
 
     static bool parseMinifigPartsPage(const QByteArray& data,
@@ -331,12 +347,19 @@ signals:
 
     void setPartsFinished(const RebrickableService::SetPartsResult& result);
 
+    void setCatalogPartsFinished(const RebrickableService::SetPartsResult& result);
+
     void minifigPartsFinished(const RebrickableService::MinifigPartsResult& result);
 
     void partColorDetailsFinished(const RebrickableService::PartColorDetailsResult& result);
 
 private:
     struct MinifigPartsRequestState;
+    struct SetCatalogPartsRequestState;
+    void requestSetCatalogPartsPage(const QString& setNumber,
+                                    const QString& apiKey,
+                                    const QUrl& url,
+                                    const QSharedPointer<SetCatalogPartsRequestState>& state);
     void requestMinifigPartsPage(const QString& figNumber,
                                  const QString& apiKey,
                                  const QUrl& url,

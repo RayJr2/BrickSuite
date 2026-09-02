@@ -299,6 +299,9 @@ void SetsCatalogWidget::searchSets()
                     if (action == "details") {
                         SetDetailsDialog dialog(setCatalogId, this);
 
+                        connect(&dialog, &SetDetailsDialog::createBuildRequested,
+                                this, &SetsCatalogWidget::createStockBuildRequested);
+
                         dialog.exec();
 
                         return;
