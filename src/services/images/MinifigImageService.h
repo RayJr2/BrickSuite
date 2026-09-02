@@ -18,6 +18,8 @@ public:
     void requestMinifigImage(const QString& minifigNumber, const QString& imageUrl);
     void clearQueuedRequests();
     QString cachedImagePath(const QString& minifigNumber) const;
+    bool isImageKnownUnavailable(const QString& minifigNumber,
+                                 const QString& imageUrl) const;
 
 signals:
     void imageReady(const QString& minifigNumber, const QString& imagePath);

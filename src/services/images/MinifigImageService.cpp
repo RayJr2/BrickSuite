@@ -1,4 +1,5 @@
 #include "MinifigImageService.h"
+#include "ImageUnavailableCache.h"
 
 #include <QDebug>
 #include <QCryptographicHash>
@@ -90,6 +91,14 @@ QString MinifigImageService::cachedImagePath(const QString& minifigNumber) const
     return QString();
 }
 
+bool MinifigImageService::isImageKnownUnavailable(const QString& minifigNumber,
+                                                  const QString& imageUrl) const
+{
+    return ImageUnavailableCache::isKnownUnavailable(
+        cacheDirectory(), QStringLiteral("Rebrickable Minifig:%1").arg(minifigNumber.trimmed()),
+        imageUrl.trimmed());
+}
+
 void MinifigImageService::requestMinifigImage(const QString& minifigNumber,
                                               const QString& imageUrl)
 {
@@ -108,6 +117,11 @@ void MinifigImageService::requestMinifigImage(const QString& minifigNumber,
     const QUrl url(imageUrl.trimmed());
     if (!url.isValid() || (url.scheme() != "http" && url.scheme() != "https")) {
         emit imageFailed(number, "Minifig image URL is invalid.");
+        return;
+    }
+
+    if (isImageKnownUnavailable(number, imageUrl)) {
+        emit imageFailed(number, "The Minifig image is known to be unavailable.");
         return;
     }
 
@@ -145,6 +159,26 @@ void MinifigImageService::downloadImage(const Request& request)
         const QString key = requestKey(request.minifigNumber);
         m_pendingKeys.remove(key);
         --m_activeDownloads;
+
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (httpStatus == 404) {
+            const auto result = ImageUnavailableCache::markUnavailable(
+                cacheDirectory(),
+                QStringLiteral("Rebrickable Minifig:%1").arg(request.minifigNumber),
+                request.imageUrl);
+            reply->deleteLater();
+            if (result == ImageUnavailableCache::MarkResult::Created) {
+                qWarning() << "Minifig image returned HTTP 404 and is now known unavailable."
+                           << "Minifig:" << request.minifigNumber;
+            } else if (result == ImageUnavailableCache::MarkResult::Failed) {
+                qWarning() << "Minifig image returned HTTP 404, but its unavailable marker could not be saved."
+                           << "Minifig:" << request.minifigNumber;
+            }
+            emit imageFailed(request.minifigNumber,
+                             "The Minifig image is known to be unavailable.");
+            startQueuedRequests();
+            return;
+        }
 
         if (reply->error() != QNetworkReply::NoError) {
             const QString error = reply->errorString();

@@ -19,6 +19,7 @@
  */
 
 #include "SetImageService.h"
+#include "ImageUnavailableCache.h"
 
 #include <QDebug>
 #include <QDir>
@@ -112,6 +113,14 @@ QString SetImageService::cachedImagePath(const QString& setNumber) const
     return path;
 }
 
+bool SetImageService::isImageKnownUnavailable(const QString& setNumber,
+                                              const QString& imageUrl) const
+{
+    return ImageUnavailableCache::isKnownUnavailable(
+        cacheDirectory(), QStringLiteral("Rebrickable Set:%1").arg(setNumber.trimmed()),
+        imageUrl.trimmed());
+}
+
 void SetImageService::requestSetImage(const QString& setNumber, const QString& imageUrl)
 {
     const QString trimmedSetNumber = setNumber.trimmed();
@@ -133,6 +142,11 @@ void SetImageService::requestSetImage(const QString& setNumber, const QString& i
     if (imageUrl.trimmed().isEmpty()) {
         emit imageFailed(trimmedSetNumber, "Set image URL is empty.");
 
+        return;
+    }
+
+    if (isImageKnownUnavailable(trimmedSetNumber, imageUrl)) {
+        emit imageFailed(trimmedSetNumber, "The Set image is known to be unavailable.");
         return;
     }
 
@@ -169,6 +183,22 @@ void SetImageService::downloadImage(const QString& setNumber, const QString& ima
         const QString safe = safeSetNumber(setNumber);
 
         m_pendingSetNumbers.remove(safe);
+
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (httpStatus == 404) {
+            const auto result = ImageUnavailableCache::markUnavailable(
+                cacheDirectory(), QStringLiteral("Rebrickable Set:%1").arg(setNumber), imageUrl);
+            reply->deleteLater();
+            if (result == ImageUnavailableCache::MarkResult::Created) {
+                qWarning() << "Set image returned HTTP 404 and is now known unavailable."
+                           << "SetNumber:" << setNumber;
+            } else if (result == ImageUnavailableCache::MarkResult::Failed) {
+                qWarning() << "Set image returned HTTP 404, but its unavailable marker could not be saved."
+                           << "SetNumber:" << setNumber;
+            }
+            emit imageFailed(setNumber, "The Set image is known to be unavailable.");
+            return;
+        }
 
         if (reply->error() != QNetworkReply::NoError) {
             const QString error = reply->errorString();

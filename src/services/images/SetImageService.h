@@ -37,6 +37,8 @@ public:
     void requestSetImage(const QString& setNumber, const QString& imageUrl);
 
     QString cachedImagePath(const QString& setNumber) const;
+    bool isImageKnownUnavailable(const QString& setNumber,
+                                 const QString& imageUrl) const;
 
 signals:
     void imageReady(const QString& setNumber, const QString& imagePath);

@@ -253,6 +253,8 @@ qt_add_executable(BrickSuite
     src/ui/builds/EditBuildDialog.cpp
     src/services/images/SetImageService.h
     src/services/images/SetImageService.cpp
+    src/services/images/ImageUnavailableCache.h
+    src/services/images/ImageUnavailableCache.cpp
     src/services/images/MinifigImageService.h
     src/services/images/MinifigImageService.cpp
     src/ui/catalog/SetDetailsDialog.h
@@ -375,6 +377,8 @@ if(BUILD_TESTING)
 
     qt_add_executable(MinifigImageServiceTest EXCLUDE_FROM_ALL
         tests/MinifigImageServiceTest.cpp
+        src/services/images/ImageUnavailableCache.h
+        src/services/images/ImageUnavailableCache.cpp
         src/services/images/MinifigImageService.h
         src/services/images/MinifigImageService.cpp
     )
@@ -386,6 +390,24 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME MinifigImageService COMMAND MinifigImageServiceTest)
+
+    qt_add_executable(CatalogImageNegativeCacheTest EXCLUDE_FROM_ALL
+        tests/CatalogImageNegativeCacheTest.cpp
+        src/services/images/ImageUnavailableCache.h
+        src/services/images/ImageUnavailableCache.cpp
+        src/services/images/MinifigImageService.h
+        src/services/images/MinifigImageService.cpp
+        src/services/images/SetImageService.h
+        src/services/images/SetImageService.cpp
+    )
+
+    target_link_libraries(CatalogImageNegativeCacheTest PRIVATE
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Network
+    )
+
+    add_test(NAME CatalogImageNegativeCache COMMAND CatalogImageNegativeCacheTest)
 
     qt_add_executable(MinifigPartsImportTest EXCLUDE_FROM_ALL
         tests/MinifigPartsImportTest.cpp
