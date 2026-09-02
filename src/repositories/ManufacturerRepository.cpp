@@ -29,6 +29,7 @@ Manufacturer ManufacturerRepository::fromQuery(const QSqlQuery& query)
         QDateTime::fromString(query.value("created_utc").toString(), Qt::ISODateWithMs));
     manufacturer.setModifiedUtc(
         QDateTime::fromString(query.value("modified_utc").toString(), Qt::ISODateWithMs));
+    manufacturer.setOrigin(query.value("origin").toString());
     return manufacturer;
 }
 
@@ -39,7 +40,7 @@ QList<Manufacturer> ManufacturerRepository::getAll(bool activeOnly) const
 
     QString sql = R"(
         SELECT id, code, name, website_url, supports_lego_element_ids,
-               is_active, notes, created_utc, modified_utc
+               is_active, notes, created_utc, modified_utc, origin
         FROM manufacturer
     )";
 
@@ -65,7 +66,7 @@ std::optional<Manufacturer> ManufacturerRepository::getById(int id) const
     QSqlQuery query(DatabaseManager::instance().database());
     query.prepare(R"(
         SELECT id, code, name, website_url, supports_lego_element_ids,
-               is_active, notes, created_utc, modified_utc
+               is_active, notes, created_utc, modified_utc, origin
         FROM manufacturer
         WHERE id = :id
     )");
@@ -82,7 +83,7 @@ std::optional<Manufacturer> ManufacturerRepository::getByCode(const QString& cod
     QSqlQuery query(DatabaseManager::instance().database());
     query.prepare(R"(
         SELECT id, code, name, website_url, supports_lego_element_ids,
-               is_active, notes, created_utc, modified_utc
+               is_active, notes, created_utc, modified_utc, origin
         FROM manufacturer
         WHERE code = :code COLLATE NOCASE
     )");
@@ -99,7 +100,7 @@ std::optional<Manufacturer> ManufacturerRepository::getByName(const QString& nam
     QSqlQuery query(DatabaseManager::instance().database());
     query.prepare(R"(
         SELECT id, code, name, website_url, supports_lego_element_ids,
-               is_active, notes, created_utc, modified_utc
+               is_active, notes, created_utc, modified_utc, origin
         FROM manufacturer
         WHERE name = :name COLLATE NOCASE
     )");
@@ -185,6 +186,34 @@ bool ManufacturerRepository::nameExists(
     return query.next();
 }
 
+ManufacturerIdentityConflict ManufacturerRepository::identityConflict(
+    const QString& code, const QString& name, int excludeManufacturerId,
+    QString* errorMessage) const
+{
+    QSqlQuery query(DatabaseManager::instance().database());
+    QString sql = "SELECT code, name FROM manufacturer WHERE "
+                  "(code=:code COLLATE NOCASE OR name=:name COLLATE NOCASE)";
+    if (excludeManufacturerId > 0)
+        sql += " AND id<>:id";
+    query.prepare(sql);
+    query.bindValue(":code", code.trimmed().toUpper());
+    query.bindValue(":name", name.trimmed());
+    if (excludeManufacturerId > 0)
+        query.bindValue(":id", excludeManufacturerId);
+    if (!query.exec()) {
+        if (errorMessage)
+            *errorMessage = query.lastError().text();
+        return ManufacturerIdentityConflict::DatabaseError;
+    }
+    while (query.next()) {
+        if (query.value("code").toString().compare(code.trimmed(), Qt::CaseInsensitive) == 0)
+            return ManufacturerIdentityConflict::Code;
+        if (query.value("name").toString().compare(name.trimmed(), Qt::CaseInsensitive) == 0)
+            return ManufacturerIdentityConflict::Name;
+    }
+    return ManufacturerIdentityConflict::None;
+}
+
 ManufacturerUsage ManufacturerRepository::usage(int manufacturerId) const
 {
     ManufacturerUsage result;
@@ -194,37 +223,44 @@ ManufacturerUsage ManufacturerRepository::usage(int manufacturerId) const
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
-    auto countReferences =
-        [&database, manufacturerId](const QString& sql) -> int
+    auto readCounts =
+        [&database, manufacturerId, &result](const QString& sql, int& count, int& quantity) -> bool
         {
             QSqlQuery query(database);
             query.prepare(sql);
             query.bindValue(":manufacturer_id", manufacturerId);
 
-            if (!query.exec() || !query.next())
-                return 0;
-
-            return query.value(0).toInt();
+            if (!query.exec() || !query.next()) {
+                result.success = false;
+                result.errorMessage = query.lastError().text();
+                return false;
+            }
+            count = query.value(0).toInt();
+            quantity = query.value(1).toInt();
+            return true;
         };
 
-    result.inventoryRecordCount = countReferences(R"(
-        SELECT COUNT(*)
+    if (!readCounts(R"(
+        SELECT COUNT(*), COALESCE(SUM(quantity), 0)
         FROM inventory_record
         WHERE manufacturer_id = :manufacturer_id
-    )");
+    )", result.inventoryRecordCount, result.inventoryPieceQuantity))
+        return result;
 
-    result.buildCount = countReferences(R"(
-        SELECT COUNT(*)
+    int ignoredQuantity = 0;
+    if (!readCounts(R"(
+        SELECT COUNT(*), 0
         FROM build
         WHERE manufacturer_id = :manufacturer_id
-    )");
+    )", result.buildCount, ignoredQuantity))
+        return result;
 
-    result.provenanceCount = countReferences(R"(
-        SELECT COUNT(*)
+    readCounts(R"(
+        SELECT COUNT(*), COALESCE(SUM(quantity_pulled), 0)
         FROM build_part_provenance
         WHERE manufacturer_id = :manufacturer_id
           AND quantity_pulled > 0
-    )");
+    )", result.provenanceCount, result.provenancePieceQuantity);
 
     return result;
 }
@@ -252,12 +288,12 @@ bool ManufacturerRepository::create(Manufacturer& manufacturer) const
         INSERT INTO manufacturer
         (
             code, name, website_url, supports_lego_element_ids,
-            is_active, notes, created_utc, modified_utc
+            is_active, notes, created_utc, modified_utc, origin
         )
         VALUES
         (
             :code, :name, :website_url, :supports_lego_element_ids,
-            :is_active, :notes, :created_utc, :modified_utc
+            :is_active, :notes, :created_utc, :modified_utc, :origin
         )
     )");
 
@@ -276,6 +312,7 @@ bool ManufacturerRepository::create(Manufacturer& manufacturer) const
                         : QVariant(manufacturer.notes().trimmed()));
     query.bindValue(":created_utc", now);
     query.bindValue(":modified_utc", now);
+    query.bindValue(":origin", manufacturer.origin());
 
     if (!query.exec()) {
         qCritical() << "Unable to create manufacturer:"

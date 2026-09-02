@@ -13,11 +13,17 @@
 
 class QSqlQuery;
 
+enum class ManufacturerIdentityConflict { None, Code, Name, DatabaseError };
+
 struct ManufacturerUsage
 {
+    bool success = true;
+    QString errorMessage;
     int inventoryRecordCount = 0;
+    int inventoryPieceQuantity = 0;
     int buildCount = 0;
     int provenanceCount = 0;
+    int provenancePieceQuantity = 0;
 
     bool inUse() const
     {
@@ -37,6 +43,10 @@ public:
 
     bool codeExists(const QString& code, int excludeManufacturerId = 0) const;
     bool nameExists(const QString& name, int excludeManufacturerId = 0) const;
+    ManufacturerIdentityConflict identityConflict(const QString& code,
+                                                  const QString& name,
+                                                  int excludeManufacturerId,
+                                                  QString* errorMessage = nullptr) const;
 
     ManufacturerUsage usage(int manufacturerId) const;
 

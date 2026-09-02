@@ -37,6 +37,7 @@ enum class HelpTopic
     MissingParts,
     LostFound,
     BackupRestore,
+    ReferenceData,
     Settings,
     Logging,
     Troubleshooting

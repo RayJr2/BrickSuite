@@ -48,6 +48,7 @@ public:
 
     void refresh();
     void selectBuild(int buildId);
+    void reloadManufacturers();
 
 protected:
     void showEvent(QShowEvent* event) override;

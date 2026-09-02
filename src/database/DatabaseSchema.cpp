@@ -516,6 +516,18 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 28;
     }
 
+    if (version == 28) {
+        if (!migrateVersion28ToVersion29(database)) {
+            database.rollback();
+            return false;
+        }
+        if (!setSchemaVersion(database, 29)) {
+            database.rollback();
+            return false;
+        }
+        version = 29;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -2360,7 +2372,9 @@ bool DatabaseSchema::createManufacturerTable(QSqlDatabase& database)
                                        CHECK(is_active IN (0, 1)),
             notes                      TEXT,
             created_utc                TEXT NOT NULL,
-            modified_utc               TEXT NOT NULL
+            modified_utc               TEXT NOT NULL,
+            origin                     TEXT NOT NULL DEFAULT 'User'
+                                       CHECK(origin IN ('BrickSuite', 'User', 'Provider'))
         )
     )")) {
         qCritical() << "Unable to create manufacturer table:"
@@ -2397,7 +2411,8 @@ bool DatabaseSchema::seedManufacturers(QSqlDatabase& database)
             is_active,
             notes,
             created_utc,
-            modified_utc
+            modified_utc,
+            origin
         )
         VALUES
         (
@@ -2408,7 +2423,8 @@ bool DatabaseSchema::seedManufacturers(QSqlDatabase& database)
             1,
             :notes,
             :created_utc,
-            :modified_utc
+            :modified_utc,
+            'BrickSuite'
         )
         ON CONFLICT(code)
         DO UPDATE SET
@@ -2416,7 +2432,9 @@ bool DatabaseSchema::seedManufacturers(QSqlDatabase& database)
             supports_lego_element_ids = excluded.supports_lego_element_ids,
             is_active = 1,
             notes = excluded.notes,
-            modified_utc = excluded.modified_utc
+            modified_utc = excluded.modified_utc,
+            origin = 'BrickSuite'
+        WHERE manufacturer.origin = 'BrickSuite'
     )")) {
         qCritical() << "Unable to prepare manufacturer seed:"
                     << query.lastError().text();
@@ -2436,6 +2454,27 @@ bool DatabaseSchema::seedManufacturers(QSqlDatabase& database)
         {"NEXUS", "Nexus", false, "Compatible brick manufacturer."},
         {"MANNIDOO", "Mannidoo", false, "Compatible brick manufacturer."}
     };
+
+    for (const Seed& seed : seeds) {
+        QSqlQuery conflict(database);
+        conflict.prepare("SELECT code, name, origin FROM manufacturer "
+                         "WHERE code=:code COLLATE NOCASE OR name=:name COLLATE NOCASE");
+        conflict.bindValue(":code", QString::fromLatin1(seed.code));
+        conflict.bindValue(":name", QString::fromLatin1(seed.name));
+        if (!conflict.exec()) {
+            qCritical() << "Unable to validate Manufacturer seed ownership:"
+                        << conflict.lastError().text();
+            return false;
+        }
+        while (conflict.next()) {
+            if (conflict.value("origin").toString() != "BrickSuite") {
+                qCritical() << "BrickSuite Manufacturer seed conflicts with a non-BrickSuite row."
+                            << "SeedCode:" << seed.code
+                            << "ExistingCode:" << conflict.value("code").toString();
+                return false;
+            }
+        }
+    }
 
     for (const Seed& seed : seeds) {
         query.bindValue(":code", QString::fromLatin1(seed.code));
@@ -3433,6 +3472,39 @@ bool DatabaseSchema::migrateVersion27ToVersion28(QSqlDatabase& database)
     QSqlQuery pragma(database);
     if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
         qCritical() << "Foreign-key validation failed after Version 28 migration.";
+        return false;
+    }
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion28ToVersion29(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+    bool hasOrigin = false;
+    if (!query.exec("PRAGMA table_info(manufacturer)"))
+        return false;
+    while (query.next()) {
+        if (query.value("name").toString() == "origin") {
+            hasOrigin = true;
+            break;
+        }
+    }
+    if (!hasOrigin) {
+        if (!query.exec("ALTER TABLE manufacturer ADD COLUMN origin TEXT NOT NULL "
+                        "DEFAULT 'User' CHECK(origin IN ('BrickSuite','User','Provider'))")) {
+            qCritical() << "Unable to add Manufacturer origin:" << query.lastError().text();
+            return false;
+        }
+    }
+    if (!query.exec("UPDATE manufacturer SET origin='BrickSuite' "
+                    "WHERE code COLLATE NOCASE IN ('LEGO','NEXUS','MANNIDOO')")) {
+        qCritical() << "Unable to classify BrickSuite Manufacturers:"
+                    << query.lastError().text();
+        return false;
+    }
+    QSqlQuery pragma(database);
+    if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
+        qCritical() << "Foreign-key validation failed after Version 29 migration.";
         return false;
     }
     return true;

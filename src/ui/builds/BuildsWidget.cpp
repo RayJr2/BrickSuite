@@ -499,6 +499,15 @@ void BuildsWidget::refresh()
     updateRequirementUiState();
 }
 
+void BuildsWidget::reloadManufacturers()
+{
+    const int selectedId = m_manufacturerCombo->currentData().toInt();
+    loadManufacturers();
+    const int index = m_manufacturerCombo->findData(selectedId);
+    if (index >= 0)
+        m_manufacturerCombo->setCurrentIndex(index);
+}
+
 
 void BuildsWidget::loadBuilds()
 {

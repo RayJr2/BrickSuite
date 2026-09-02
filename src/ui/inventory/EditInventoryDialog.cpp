@@ -194,8 +194,15 @@ bool EditInventoryDialog::loadInventoryRecord()
     const int manufacturerIndex =
         m_manufacturerCombo->findData(record->manufacturerId());
 
-    if (manufacturerIndex >= 0)
+    if (manufacturerIndex >= 0) {
         m_manufacturerCombo->setCurrentIndex(manufacturerIndex);
+    } else {
+        const auto inactive = ManufacturerRepository().getById(record->manufacturerId());
+        if (inactive) {
+            m_manufacturerCombo->addItem(inactive->name() + " (Inactive)", inactive->id());
+            m_manufacturerCombo->setCurrentIndex(m_manufacturerCombo->count() - 1);
+        }
+    }
 
     // Preserve the current storage location.
     // Physical relocation is handled through

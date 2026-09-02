@@ -38,6 +38,9 @@ public:
     QDateTime modifiedUtc() const { return m_modifiedUtc; }
     void setModifiedUtc(const QDateTime& value) { m_modifiedUtc = value; }
 
+    QString origin() const { return m_origin; }
+    void setOrigin(const QString& value) { m_origin = value; }
+
 private:
     int m_id = 0;
     QString m_code;
@@ -48,4 +51,5 @@ private:
     QString m_notes;
     QDateTime m_createdUtc;
     QDateTime m_modifiedUtc;
+    QString m_origin = QStringLiteral("User");
 };

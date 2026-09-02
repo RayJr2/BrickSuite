@@ -47,6 +47,7 @@ public:
 
     void refresh();
     void settingsChanged();
+    void reloadManufacturers();
 
     void updatePartColorImage(const QString& partNumber,
                               int rebrickableColorId,

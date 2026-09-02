@@ -975,6 +975,13 @@ void MyInventoryWidget::settingsChanged()
     searchInventory();
 }
 
+void MyInventoryWidget::reloadManufacturers()
+{
+    loadManufacturers();
+    m_currentPage = 0;
+    searchInventory();
+}
+
 void MyInventoryWidget::importCsv()
 {
     if (!m_workspaceContext.hasCurrentWorkspace()) {

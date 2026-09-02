@@ -66,6 +66,7 @@
 #include "parts/PartReferenceDialog.h"
 #include "settings/SettingsDialog.h"
 #include "storage/StorageWidget.h"
+#include "reference/ReferenceDataDialog.h"
 
 #include <QAction>
 #include <QCloseEvent>
@@ -571,6 +572,18 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     // Tools menu
     auto* toolsMenu = menuBar()->addMenu("Tools");
+
+    auto* referenceDataAction = toolsMenu->addAction("Lists && Reference Data...");
+    connect(referenceDataAction, &QAction::triggered, this, [this]() {
+        ReferenceDataDialog dialog(this);
+        connect(&dialog, &ReferenceDataDialog::manufacturersChanged, this, [this]() {
+            if (m_myInventoryWidget) m_myInventoryWidget->reloadManufacturers();
+            if (m_buildsWidget) m_buildsWidget->reloadManufacturers();
+        });
+        dialog.exec();
+    });
+
+    toolsMenu->addSeparator();
 
     auto* partReferenceAction = toolsMenu->addAction("Part Reference...");
 

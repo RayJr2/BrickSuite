@@ -47,6 +47,7 @@ const QList<HelpTopicInfo>& helpTopics()
         {HelpTopic::MissingParts, "Missing Parts", ":/help/missing_parts.html"},
         {HelpTopic::LostFound, "Lost / Found", ":/help/lost_found.html"},
         {HelpTopic::BackupRestore, "Backup / Restore", ":/help/backup_restore.html"},
+        {HelpTopic::ReferenceData, "Lists & Reference Data", ":/help/reference_data.html"},
         {HelpTopic::Settings, "Settings", ":/help/settings.html"},
         {HelpTopic::Logging, "Application Log", ":/help/logging.html"},
         {HelpTopic::Troubleshooting, "Troubleshooting", ":/help/troubleshooting.html"},

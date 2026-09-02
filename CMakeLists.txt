@@ -92,6 +92,12 @@ qt_add_executable(BrickSuite
     src/repositories/InventoryRecordRepository.cpp
     src/repositories/ManufacturerRepository.h
     src/repositories/ManufacturerRepository.cpp
+    src/services/reference/ManufacturerManagementService.h
+    src/services/reference/ManufacturerManagementService.cpp
+    src/ui/reference/ManufacturerEditDialog.h
+    src/ui/reference/ManufacturerEditDialog.cpp
+    src/ui/reference/ReferenceDataDialog.h
+    src/ui/reference/ReferenceDataDialog.cpp
     src/models/Color.h
     src/models/Color.cpp
     src/repositories/ColorRepository.h
@@ -343,6 +349,18 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(ManufacturerManagementTest EXCLUDE_FROM_ALL
+        tests/ManufacturerManagementTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Manufacturer.h
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/services/reference/ManufacturerManagementService.h
+        src/services/reference/ManufacturerManagementService.cpp
+    )
+    target_link_libraries(ManufacturerManagementTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME ManufacturerManagement COMMAND ManufacturerManagementTest)
+
     qt_add_executable(MinifigCatalogFoundationTest EXCLUDE_FROM_ALL
         tests/MinifigCatalogFoundationTest.cpp
         src/database/DatabaseManager.h
