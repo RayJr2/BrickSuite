@@ -87,4 +87,5 @@ private:
     DatabaseStatusDialog* m_databaseStatusDialog = nullptr;
     QAction* m_backupDatabaseAction = nullptr;
     QAction* m_restoreDatabaseAction = nullptr;
+    QAction* m_applicationLogAction = nullptr;
 };

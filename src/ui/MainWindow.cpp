@@ -70,6 +70,7 @@
 #include "database/DatabaseStatusDialog.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QCloseEvent>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -597,6 +598,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
                     m_backupDatabaseAction, &QAction::trigger);
             connect(m_databaseStatusDialog, &DatabaseStatusDialog::restoreRequested,
                     m_restoreDatabaseAction, &QAction::trigger);
+            connect(m_databaseStatusDialog, &DatabaseStatusDialog::applicationLogRequested,
+                    this, [this]() {
+                        if (m_applicationLogAction)
+                            m_applicationLogAction->trigger();
+                    });
             connect(m_databaseStatusDialog, &QObject::destroyed, this, [this]() {
                 m_databaseStatusDialog = nullptr;
             });
@@ -645,6 +651,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     helpContentsAction->setShortcutContext(Qt::ApplicationShortcut);
 
     connect(helpContentsAction, &QAction::triggered, this, [this]() {
+        if (const auto contextTopic = HelpManager::contextTopic(QApplication::activeWindow())) {
+            HelpManager::showTopic(*contextTopic, QApplication::activeWindow());
+            return;
+        }
+
         HelpTopic topic = HelpTopic::GettingStarted;
 
         QWidget* currentWidget = m_tabWidget ? m_tabWidget->currentWidget() : nullptr;
@@ -668,9 +679,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     helpMenu->addSeparator();
 
-    auto* applicationLogAction = helpMenu->addAction("Application Log...");
+    m_applicationLogAction = helpMenu->addAction("Application Log...");
 
-    connect(applicationLogAction, &QAction::triggered, this, [this]() {
+    connect(m_applicationLogAction, &QAction::triggered, this, [this]() {
         //
         // Keep one non-modal viewer alive so it can sit on another monitor
         // while BrickSuite continues to be used and tested.

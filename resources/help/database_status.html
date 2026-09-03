@@ -10,12 +10,38 @@ schema version, size, catalog and inventory counts, and selected SQLite details.
 <p><b>Run Integrity Check</b> asks SQLite to examine the complete database structure.
 <b>Run Foreign Key Check</b> looks for records whose required related records are missing.
 These read-only checks can take time on a large database; BrickSuite remains responsive while they run.</p>
-<p>A <b>Healthy</b> result means the selected check found no problem. A reported problem is not
-automatically repaired. Review <a href="logging.html">Application Log</a>, preserve the database,
-and consider restoring a previously verified known-good <a href="backup_restore.html">backup</a>.</p>
-<p class="note">Creating a new backup does not repair corruption and may preserve an existing problem.
-BrickSuite never automatically repairs database corruption from this dialog.</p>
+<p>A <b>Healthy</b> result means the selected check found no problem.</p>
+<h2>Integrity Problems</h2>
+<p>An Integrity Check problem may indicate damage to the SQLite database structure. Avoid
+unnecessary database changes, review the <a href="logging.html">Application Log</a>, and preserve
+the current database file before experimenting. Restore a previously verified known-good
+<a href="backup_restore.html">backup</a> if one is available.</p>
+<h2>Foreign-Key Violations</h2>
+<p>A Foreign Key Check violation means a record refers to a required related record that is
+missing. This is a logical data-consistency problem; it does not necessarily mean that the
+SQLite file is physically damaged. Review the Application Log, avoid relevant data changes,
+preserve the current database, and consider restoring a known-good backup.</p>
+<h2>Safe Recovery Sequence</h2>
+<ol><li>Review the Application Log.</li><li>Preserve the current database for troubleshooting.</li>
+<li>Restore a previously verified known-good backup if appropriate.</li></ol>
+<p>BrickSuite verifies the selected backup before replacement and creates and verifies a
+pre-restore safety backup. See <a href="backup_restore.html">Backup / Restore</a>.</p>
+<p class="note"><b>A backup of an unhealthy database is preservation, not repair.</b> It may also
+preserve the detected problem. BrickSuite never automatically repairs detected corruption or
+deletes inconsistent records.</p>
+<h2>Operational Failures</h2>
+<p>A busy or locked result normally means other database activity must finish before retrying.
+For a missing database, check whether the displayed application-data file was moved or removed.
+For an open failure, check the path and file permissions. Retry a query failure once; if it
+repeats, review the Application Log and Help. These outcomes are not themselves findings of
+database corruption.</p>
+<h2>Diagnostic Summary</h2>
+<p>After an integrity or foreign-key problem, choose <b>Copy Diagnostic Summary</b> to copy a
+bounded technical summary containing the application and schema versions, database and log
+paths, check result, and representative diagnostics. It does not copy credentials, provider
+configuration, inventory contents, catalog contents, or unrelated log text.</p>
 <h2>Actions</h2>
 <p><b>Open Database Folder</b> opens the containing directory without opening or editing the SQLite file.
-The Backup and Restore buttons use the same verified workflows as the File menu.</p>
+The Backup and Restore buttons use the same verified workflows as the File menu. Recovery actions
+can also open BrickSuite's existing Application Log viewer.</p>
 </body></html>

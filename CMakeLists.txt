@@ -361,6 +361,28 @@ if(BUILD_TESTING)
     target_link_libraries(DatabaseStatusServiceTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME DatabaseStatusService COMMAND DatabaseStatusServiceTest)
 
+    qt_add_executable(DatabaseRecoveryGuidanceTest EXCLUDE_FROM_ALL
+        tests/DatabaseRecoveryGuidanceTest.cpp
+        src/ui/database/DatabaseStatusDialog.h
+        src/ui/database/DatabaseStatusDialog.cpp
+        src/services/database/DatabaseStatusService.h
+        src/services/database/DatabaseStatusService.cpp
+        src/services/Logger.h src/services/Logger.cpp
+        src/services/CredentialStore.h src/services/CredentialStore.cpp
+        src/settings/UserSettings.h src/settings/UserSettings.cpp
+        src/ui/help/HelpTopic.h
+        src/ui/help/HelpManager.h src/ui/help/HelpManager.cpp
+        src/ui/help/HelpDialog.h src/ui/help/HelpDialog.cpp
+        resources/help/help.qrc
+    )
+    target_link_libraries(DatabaseRecoveryGuidanceTest PRIVATE
+        Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql)
+    target_compile_definitions(DatabaseRecoveryGuidanceTest PRIVATE
+        BRICKSUITE_VERSION="${PROJECT_VERSION}")
+    add_test(NAME DatabaseRecoveryGuidance COMMAND DatabaseRecoveryGuidanceTest)
+    set_tests_properties(DatabaseRecoveryGuidance PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     qt_add_executable(ManufacturerManagementTest EXCLUDE_FROM_ALL
         tests/ManufacturerManagementTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp

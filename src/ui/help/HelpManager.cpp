@@ -100,3 +100,26 @@ QString HelpManager::title(HelpTopic topic)
 {
     return topicInfo(topic).title;
 }
+
+void HelpManager::setContextTopic(QWidget* window, HelpTopic topic)
+{
+    if (window)
+        window->setProperty("brickSuiteHelpTopic", static_cast<int>(topic));
+}
+
+std::optional<HelpTopic> HelpManager::contextTopic(const QWidget* window)
+{
+    if (!window)
+        return std::nullopt;
+
+    const QVariant value = window->property("brickSuiteHelpTopic");
+    if (!value.isValid())
+        return std::nullopt;
+
+    const int requested = value.toInt();
+    for (const HelpTopicInfo& info : helpTopics()) {
+        if (static_cast<int>(info.topic) == requested)
+            return info.topic;
+    }
+    return std::nullopt;
+}

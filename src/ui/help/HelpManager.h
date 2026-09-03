@@ -25,6 +25,8 @@
 #include <QList>
 #include <QString>
 
+#include <optional>
+
 class QWidget;
 
 struct HelpTopicInfo
@@ -44,4 +46,7 @@ public:
 
     static QString resourcePath(HelpTopic topic);
     static QString title(HelpTopic topic);
+
+    static void setContextTopic(QWidget* window, HelpTopic topic);
+    static std::optional<HelpTopic> contextTopic(const QWidget* window);
 };
