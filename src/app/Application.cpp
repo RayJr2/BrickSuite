@@ -25,6 +25,7 @@
 
 #include "../database/DatabaseManager.h"
 #include "../services/ReferenceDataSeeder.h"
+#include "../services/database/AutomaticBackupService.h"
 #include "../ui/MainWindow.h"
 
 #include <QDebug>
@@ -61,7 +62,11 @@ bool Application::initialize()
     m_workspaceContext = std::make_unique<WorkspaceContext>();
 
     m_mainWindow = std::make_unique<MainWindow>(*m_workspaceContext);
+    m_automaticBackupService = std::make_unique<AutomaticBackupService>();
+    m_mainWindow->setAutomaticBackupService(m_automaticBackupService.get());
     m_mainWindow->show();
+
+    m_automaticBackupService->start();
 
     return true;
 }

@@ -22,6 +22,7 @@ BrickSuite Database
 Application Settings
   Startup preferences
   Appearance
+  Automatic database backup policy and status
   API provider configuration
 </pre>
 
@@ -51,6 +52,51 @@ dialog, BrickSuite restores the previous theme.</p>
 the application's presentation; it does not alter Storage, inventory, Builds, or other workshop
 data. Most screenshots in this Help system use Dark theme, so colors may differ when another
 theme is selected.</p>
+
+<h2>Database Backup</h2>
+
+<p>The <b>Database Backup</b> page configures BrickSuite-managed automatic backups. Automatic
+backups are disabled by default. Choose a <b>Backup root</b>, a supported hourly/daily frequency, and how many
+automatic backups to retain, then enable scheduling when you are ready.</p>
+
+<p>BrickSuite appends a folder for the current database schema automatically. For example, a
+backup root ending in <code>BrickSuite/database</code> currently stores automatic backups under
+<code>BrickSuite/database/v29</code>. When a later BrickSuite release uses schema 30, new backups
+will go to <code>v30</code>; BrickSuite does not move or delete the previous <code>v29</code>
+folder.</p>
+
+<p>Automatic filenames use a UTC timestamp, such as
+<code>BrickSuite_AutoBackup_v29_2026-09-03_142530.db</code>. Settings displays backup and due
+times in your local time.</p>
+
+<p><b>Backup Now</b> runs the same automatic pipeline immediately, even when scheduling is
+disabled or a failed scheduled attempt is still within its retry interval. BrickSuite creates a
+read-only health check of the live database first. The automatic pipeline proceeds only when the
+full integrity check is healthy and the foreign-key check has no violations. It then creates a
+SQLite snapshot, verifies database integrity and the current schema version, publishes the final
+automatic filename, and only then applies retention.</p>
+
+<p>If the live database fails either pre-backup health check, BrickSuite skips the automatic
+backup and preserves every existing backup. If a check cannot complete because the database is
+busy, locked, or unavailable, the attempt is deferred without treating the database as corrupt.
+Use <b>Tools → Database Status &amp; Integrity</b> for detailed diagnostics. The manual
+<b>File → Backup Database</b> command remains available as an explicit preservation workflow.</p>
+
+<p>Frequency choices are 1, 4, 8, or 16 hours; 1 or 2 days; and 7 days. The default is
+<b>Every 1 day</b>. After a failed scheduled attempt, retry eligibility is the shorter of the
+configured interval or six hours, with a one-hour minimum. Backup Now bypasses that retry gate.</p>
+
+<div class="note"><b>Retention is deliberately narrow.</b> It applies only to recognized
+BrickSuite automatic backups in the current schema-version folder. It never removes manual
+backups, pre-restore safety backups, unrecognized files, or backups from earlier schema versions.</div>
+
+<p>If an explicitly configured destination is unavailable or not writable, BrickSuite reports
+the failure and keeps that destination unchanged. Scheduled failures do not interrupt normal use,
+and another scheduled attempt is bounded to avoid repeated retry and log noise. Existing verified
+backups remain untouched when creation or verification fails.</p>
+
+<p><b>File → Backup Database</b> remains a separate manual workflow: you choose its filename and
+destination, and automatic retention never applies to it.</p>
 
 <h2>APIs</h2>
 

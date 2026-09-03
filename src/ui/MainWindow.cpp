@@ -68,6 +68,7 @@
 #include "storage/StorageWidget.h"
 #include "reference/ReferenceDataDialog.h"
 #include "database/DatabaseStatusDialog.h"
+#include "../services/database/AutomaticBackupService.h"
 
 #include <QAction>
 #include <QApplication>
@@ -558,7 +559,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     auto* settingsAction = editMenu->addAction("Settings...");
 
     connect(settingsAction, &QAction::triggered, this, [this]() {
-        SettingsDialog dialog(m_workspaceContext, this);
+        SettingsDialog dialog(m_workspaceContext, m_automaticBackupService, this);
 
         connect(&dialog, &SettingsDialog::settingsChanged, this, [this]() {
             if (m_partsCatalogWidget) {
@@ -1577,6 +1578,24 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
 
     //statusBar()->showMessage("BrickSuite Version 1.0");
     statusBar()->showMessage(AppVersion::displayVersion());
+}
+
+void MainWindow::setAutomaticBackupService(AutomaticBackupService* service)
+{
+    m_automaticBackupService = service;
+    if (!service) return;
+    connect(service, &AutomaticBackupService::backupFailed, this,
+            [this](DatabaseManager::BackupFailure, const QString&) {
+                statusBar()->showMessage(
+                    "Automatic database backup failed. Existing verified backups were not changed. "
+                    "See Settings or Application Log.", 15000);
+            });
+    connect(service, &AutomaticBackupService::retentionWarning, this,
+            [this](const QString&) {
+                statusBar()->showMessage(
+                    "Database backup completed and verified, but retention cleanup was incomplete. "
+                    "See Settings or Application Log.", 15000);
+            });
 }
 
 void MainWindow::initializeProviderStatuses()

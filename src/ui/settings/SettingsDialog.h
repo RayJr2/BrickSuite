@@ -37,13 +37,16 @@ class QWidget;
 
 class RebrickableApiClient;
 class BricksetService;
+class AutomaticBackupService;
 
 class SettingsDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit SettingsDialog(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
+    explicit SettingsDialog(WorkspaceContext& workspaceContext,
+                            AutomaticBackupService* automaticBackupService = nullptr,
+                            QWidget* parent = nullptr);
 
 signals:
     void settingsChanged();
@@ -56,11 +59,15 @@ private slots:
     void showBricksetApiKeyToggled(bool checked);
     void testRebrickableConnection();
     void testBricksetConnection();
+    void browseBackupRoot();
+    void updateBackupPresentation();
+    void backupNow();
 
 private:
     void buildGeneralTab();
     void buildAppearanceTab();
     void buildApisTab();
+    void buildDatabaseBackupTab();
     QWidget* buildRebrickableApiPage(QWidget* parent);
     QWidget* buildBricksetApiPage(QWidget* parent);
 
@@ -75,6 +82,7 @@ private:
     void loadWorkspaces();
 
     WorkspaceContext& m_workspaceContext;
+    AutomaticBackupService* m_automaticBackupService = nullptr;
 
     QTabWidget* m_tabWidget = nullptr;
 
@@ -109,6 +117,18 @@ private:
     QString m_originalBricksetApiKey;
 
     BricksetService* m_bricksetService = nullptr;
+
+    QCheckBox* m_automaticBackupEnabledCheck = nullptr;
+    QLineEdit* m_backupRootEdit = nullptr;
+    QLabel* m_currentBackupFolderLabel = nullptr;
+    QComboBox* m_backupFrequencyCombo = nullptr;
+    QSpinBox* m_backupRetentionSpin = nullptr;
+    QLabel* m_lastBackupLabel = nullptr;
+    QLabel* m_lastBackupFileLabel = nullptr;
+    QLabel* m_lastBackupFailureLabel = nullptr;
+    QLabel* m_nextBackupDueLabel = nullptr;
+    QPushButton* m_backupNowButton = nullptr;
+    bool m_explicitBackupRunning = false;
 
     QDialogButtonBox* m_buttonBox = nullptr;
 };

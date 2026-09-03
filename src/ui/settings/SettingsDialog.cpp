@@ -29,28 +29,39 @@
 #include "../../api/ApiProviderStatusRegistry.h"
 #include "../../settings/ThemeManager.h"
 #include "../../settings/UserSettings.h"
+#include "../../database/DatabaseSchema.h"
+#include "../../services/database/AutomaticBackupPolicy.h"
+#include "../../services/database/AutomaticBackupService.h"
 
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDateTime>
+#include <QDir>
 #include <QFormLayout>
+#include <QFileDialog>
 #include <QGroupBox>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QHBoxLayout>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 
-SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext, QWidget* parent)
+SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
+                               AutomaticBackupService* automaticBackupService,
+                               QWidget* parent)
     : QDialog(parent)
     , m_workspaceContext(workspaceContext)
+    , m_automaticBackupService(automaticBackupService)
 {
     setWindowTitle("BrickSuite Settings");
 
@@ -83,6 +94,7 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext, QWidget* pare
 
     buildGeneralTab();
     buildAppearanceTab();
+    buildDatabaseBackupTab();
     buildApisTab();
 
     m_rebrickableApiClient = new RebrickableApiClient(this);
@@ -91,6 +103,43 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext, QWidget* pare
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::saveSettings);
 
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &SettingsDialog::cancelSettings);
+
+    if (m_automaticBackupService) {
+        connect(m_automaticBackupService, &AutomaticBackupService::stateChanged,
+                this, &SettingsDialog::updateBackupPresentation);
+        connect(m_automaticBackupService, &AutomaticBackupService::backupStarted,
+                this, [this](const QString&) {
+                    m_backupNowButton->setEnabled(false);
+                    updateBackupPresentation();
+                });
+        connect(m_automaticBackupService, &AutomaticBackupService::backupSucceeded,
+                this, [this](const QString&) {
+                    updateBackupPresentation();
+                    if (m_explicitBackupRunning) {
+                        m_explicitBackupRunning = false;
+                        QMessageBox::information(this, "Automatic Database Backup",
+                                                 "Automatic database backup completed and verified.");
+                    }
+                });
+        connect(m_automaticBackupService, &AutomaticBackupService::backupFailed,
+                this, [this](DatabaseManager::BackupFailure, const QString& message) {
+                    updateBackupPresentation();
+                    if (m_explicitBackupRunning) {
+                        m_explicitBackupRunning = false;
+                        QMessageBox::warning(this, "Automatic Database Backup",
+                                             QString("The automatic database backup failed.\n\n%1")
+                                                 .arg(message));
+                    }
+                });
+        connect(m_automaticBackupService, &AutomaticBackupService::retentionWarning,
+                this, [this](const QString& message) {
+                    updateBackupPresentation();
+                    if (m_explicitBackupRunning) {
+                        m_explicitBackupRunning = false;
+                        QMessageBox::warning(this, "Automatic Backup Retention", message);
+                    }
+                });
+    }
 
     connect(m_rebrickableApiClient,
             &RebrickableApiClient::connectionTestFinished,
@@ -250,11 +299,33 @@ void SettingsDialog::loadSettings()
     } else {
         setBricksetConnectionStatus(ApiConnectionStatus::Unknown);
     }
+
+    m_automaticBackupEnabledCheck->setChecked(settings.automaticBackupEnabled());
+    const QString savedRoot = settings.automaticBackupRoot();
+    m_backupRootEdit->setText(savedRoot.isEmpty()
+                                  ? AutomaticBackupPolicy::initialRootSuggestion()
+                                  : savedRoot);
+    const int frequencyIndex = m_backupFrequencyCombo->findData(
+        settings.automaticBackupFrequencyHours());
+    m_backupFrequencyCombo->setCurrentIndex(frequencyIndex >= 0 ? frequencyIndex : 4);
+    m_backupRetentionSpin->setValue(settings.automaticBackupRetentionCount());
+    updateBackupPresentation();
 }
 
 void SettingsDialog::saveSettings()
 {
     UserSettings& settings = UserSettings::instance();
+
+    const QString backupRootText = m_backupRootEdit->text().trimmed();
+    const QString backupRoot = backupRootText.isEmpty()
+                                   ? QString() : QDir::cleanPath(backupRootText);
+    QString backupRootError;
+    if (!AutomaticBackupPolicy::validateRoot(backupRoot, &backupRootError)) {
+        QMessageBox::warning(this, "Automatic Database Backup", backupRootError);
+        m_tabWidget->setCurrentWidget(m_automaticBackupEnabledCheck->parentWidget()->parentWidget());
+        m_backupRootEdit->setFocus();
+        return;
+    }
 
     const int resultsPerPage = m_resultsPerPageCombo->currentData().toInt();
 
@@ -317,6 +388,13 @@ void SettingsDialog::saveSettings()
 
     const int rebrickableRequestIntervalMs = m_rebrickableRequestIntervalSpin->value();
     settings.setRebrickableMinimumRequestIntervalMs(rebrickableRequestIntervalMs);
+    settings.setAutomaticBackupEnabled(m_automaticBackupEnabledCheck->isChecked());
+    settings.setAutomaticBackupRoot(backupRoot);
+    settings.setAutomaticBackupFrequencyHours(m_backupFrequencyCombo->currentData().toInt());
+    settings.setAutomaticBackupRetentionCount(m_backupRetentionSpin->value());
+
+    if (m_automaticBackupService)
+        m_automaticBackupService->reloadPolicy();
 
     if (QApplication* application = qobject_cast<QApplication*>(QApplication::instance())) {
         ThemeManager::applyTheme(*application, theme);
@@ -325,6 +403,143 @@ void SettingsDialog::saveSettings()
     emit settingsChanged();
 
     accept();
+}
+
+void SettingsDialog::buildDatabaseBackupTab()
+{
+    auto* tab = new QWidget(m_tabWidget);
+    auto* layout = new QVBoxLayout(tab);
+    auto* group = new QGroupBox("Automatic Database Backup", tab);
+    auto* form = new QFormLayout(group);
+
+    m_automaticBackupEnabledCheck = new QCheckBox("Enable automatic database backups", group);
+    m_automaticBackupEnabledCheck->setObjectName("automaticBackupEnabledCheck");
+    form->addRow(m_automaticBackupEnabledCheck);
+
+    auto* rootRow = new QWidget(group);
+    auto* rootLayout = new QHBoxLayout(rootRow);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    m_backupRootEdit = new QLineEdit(rootRow);
+    m_backupRootEdit->setObjectName("automaticBackupRootEdit");
+    auto* browseButton = new QPushButton("Browse...", rootRow);
+    rootLayout->addWidget(m_backupRootEdit, 1);
+    rootLayout->addWidget(browseButton);
+    form->addRow("Backup root:", rootRow);
+
+    m_currentBackupFolderLabel = new QLabel(group);
+    m_currentBackupFolderLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_currentBackupFolderLabel->setWordWrap(true);
+    form->addRow("Current backup folder:", m_currentBackupFolderLabel);
+
+    m_backupFrequencyCombo = new QComboBox(group);
+    m_backupFrequencyCombo->setObjectName("automaticBackupFrequencyCombo");
+    for (const int hours : AutomaticBackupPolicy::supportedFrequencyHours()) {
+        m_backupFrequencyCombo->addItem(
+            AutomaticBackupPolicy::frequencyDisplayText(hours), hours);
+    }
+    form->addRow("Frequency:", m_backupFrequencyCombo);
+
+    m_backupRetentionSpin = new QSpinBox(group);
+    m_backupRetentionSpin->setRange(1, 365);
+    m_backupRetentionSpin->setObjectName("automaticBackupRetentionSpin");
+    m_backupRetentionSpin->setToolTip(
+        "Applies only to automatic backups in the current schema-version folder. "
+        "Manual backups and previous schema-version folders are never deleted.");
+    form->addRow("Retain last:", m_backupRetentionSpin);
+
+    m_lastBackupLabel = new QLabel(group);
+    m_lastBackupLabel->setObjectName("automaticBackupLastSuccessLabel");
+    m_lastBackupFileLabel = new QLabel(group);
+    m_lastBackupFileLabel->setObjectName("automaticBackupLastFileLabel");
+    m_lastBackupFileLabel->setWordWrap(true);
+    m_lastBackupFileLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_lastBackupFailureLabel = new QLabel(group);
+    m_lastBackupFailureLabel->setObjectName("automaticBackupLastFailureLabel");
+    m_lastBackupFailureLabel->setWordWrap(true);
+    m_nextBackupDueLabel = new QLabel(group);
+    m_nextBackupDueLabel->setObjectName("automaticBackupNextDueLabel");
+    form->addRow("Last successful backup:", m_lastBackupLabel);
+    form->addRow("Last successful file:", m_lastBackupFileLabel);
+    form->addRow("Last failure:", m_lastBackupFailureLabel);
+    form->addRow("Next backup due:", m_nextBackupDueLabel);
+
+    m_backupNowButton = new QPushButton("Backup Now", group);
+    m_backupNowButton->setObjectName("automaticBackupNowButton");
+    form->addRow(m_backupNowButton);
+    layout->addWidget(group);
+    layout->addStretch();
+    m_tabWidget->addTab(tab, "Database Backup");
+
+    connect(browseButton, &QPushButton::clicked, this, &SettingsDialog::browseBackupRoot);
+    connect(m_backupRootEdit, &QLineEdit::textChanged, this, &SettingsDialog::updateBackupPresentation);
+    connect(m_backupFrequencyCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, &SettingsDialog::updateBackupPresentation);
+    connect(m_automaticBackupEnabledCheck, &QCheckBox::toggled,
+            this, &SettingsDialog::updateBackupPresentation);
+    connect(m_backupNowButton, &QPushButton::clicked, this, &SettingsDialog::backupNow);
+}
+
+void SettingsDialog::browseBackupRoot()
+{
+    const QString selected = QFileDialog::getExistingDirectory(
+        this, "Select Automatic Backup Root", m_backupRootEdit->text().trimmed());
+    if (!selected.isEmpty())
+        m_backupRootEdit->setText(QDir::cleanPath(selected));
+}
+
+void SettingsDialog::updateBackupPresentation()
+{
+    if (!m_backupRootEdit) return;
+    const QString rootText = m_backupRootEdit->text().trimmed();
+    const QString root = rootText.isEmpty() ? QString() : QDir::cleanPath(rootText);
+    m_currentBackupFolderLabel->setText(root.isEmpty()
+        ? "Not configured"
+        : QDir::toNativeSeparators(AutomaticBackupPolicy::versionDirectory(
+              root, DatabaseSchema::CurrentSchemaVersion)));
+    UserSettings& settings = UserSettings::instance();
+    const QDateTime success = settings.automaticBackupLastSuccessfulUtc();
+    m_lastBackupLabel->setText(success.isValid()
+                                   ? QLocale().toString(success.toLocalTime(), QLocale::ShortFormat)
+                                   : "Never");
+    m_lastBackupFileLabel->setText(settings.automaticBackupLastSuccessfulPath().isEmpty()
+                                       ? "Never"
+                                       : QDir::toNativeSeparators(settings.automaticBackupLastSuccessfulPath()));
+    const QDateTime failure = settings.automaticBackupLastFailureUtc();
+    m_lastBackupFailureLabel->setText(failure.isValid()
+        ? QString("%1 — %2").arg(QLocale().toString(failure.toLocalTime(), QLocale::ShortFormat),
+                                  settings.automaticBackupLastFailureSummary())
+        : "None");
+    if (!m_automaticBackupEnabledCheck->isChecked()) {
+        m_nextBackupDueLabel->setText("Disabled");
+    } else if (!success.isValid()) {
+        m_nextBackupDueLabel->setText("Due now");
+    } else {
+        const QDateTime due = success.addSecs(
+            m_backupFrequencyCombo->currentData().toInt() * 60 * 60);
+        m_nextBackupDueLabel->setText(due <= QDateTime::currentDateTimeUtc()
+                                          ? "Due now"
+                                          : QLocale().toString(due.toLocalTime(), QLocale::ShortFormat));
+    }
+    QString error;
+    const bool usable = AutomaticBackupPolicy::validateRoot(root, &error);
+    m_backupNowButton->setEnabled(usable && m_automaticBackupService
+                                  && !m_automaticBackupService->isRunning());
+    m_backupRootEdit->setToolTip(usable ? QString() : error);
+}
+
+void SettingsDialog::backupNow()
+{
+    if (!m_automaticBackupService) return;
+    const QString rootText = m_backupRootEdit->text().trimmed();
+    const QString root = rootText.isEmpty() ? QString() : QDir::cleanPath(rootText);
+    QString error;
+    if (!AutomaticBackupPolicy::validateRoot(root, &error)) {
+        QMessageBox::warning(this, "Automatic Database Backup", error);
+        return;
+    }
+    m_explicitBackupRunning = true;
+    m_backupNowButton->setEnabled(false);
+    m_automaticBackupService->requestBackupNow(root, m_backupRetentionSpin->value());
 }
 
 void SettingsDialog::cancelSettings()
@@ -695,4 +910,3 @@ void SettingsDialog::setBricksetConnectionStatus(ApiConnectionStatus status)
     if (m_bricksetStatusLabel)
         m_bricksetStatusLabel->setText(apiConnectionStatusText(status));
 }
-

@@ -42,6 +42,7 @@ class BackgroundPartColorImageCacheService;
 class LogViewerDialog;
 class PartReferenceDialog;
 class DatabaseStatusDialog;
+class AutomaticBackupService;
 
 class MainWindow : public QMainWindow
 {
@@ -49,6 +50,7 @@ class MainWindow : public QMainWindow
 
 public:
     explicit MainWindow(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
+    void setAutomaticBackupService(AutomaticBackupService* service);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -88,4 +90,5 @@ private:
     QAction* m_backupDatabaseAction = nullptr;
     QAction* m_restoreDatabaseAction = nullptr;
     QAction* m_applicationLogAction = nullptr;
+    AutomaticBackupService* m_automaticBackupService = nullptr;
 };

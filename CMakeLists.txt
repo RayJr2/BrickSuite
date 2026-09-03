@@ -66,6 +66,12 @@ qt_add_executable(BrickSuite
     src/services/ReferenceDataSeeder.h
     src/services/database/DatabaseStatusService.h
     src/services/database/DatabaseStatusService.cpp
+    src/services/database/AutomaticBackupPolicy.h
+    src/services/database/AutomaticBackupPolicy.cpp
+    src/services/database/AutomaticBackupService.h
+    src/services/database/AutomaticBackupService.cpp
+    src/services/database/AutomaticBackupRetention.h
+    src/services/database/AutomaticBackupRetention.cpp
     src/services/Logger.h
     src/services/Updater.h
     src/services/Updater.cpp
@@ -353,6 +359,34 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(AutomaticBackupPolicyTest EXCLUDE_FROM_ALL
+        tests/AutomaticBackupPolicyTest.cpp
+        src/services/database/AutomaticBackupPolicy.h
+        src/services/database/AutomaticBackupPolicy.cpp
+        src/services/database/AutomaticBackupRetention.h
+        src/services/database/AutomaticBackupRetention.cpp
+    )
+    target_link_libraries(AutomaticBackupPolicyTest PRIVATE Qt6::Core)
+    add_test(NAME AutomaticBackupPolicy COMMAND AutomaticBackupPolicyTest)
+
+    qt_add_executable(AutomaticBackupServiceTest EXCLUDE_FROM_ALL
+        tests/AutomaticBackupServiceTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/settings/UserSettings.h src/settings/UserSettings.cpp
+        src/services/CredentialStore.h src/services/CredentialStore.cpp
+        src/services/database/AutomaticBackupPolicy.h
+        src/services/database/AutomaticBackupPolicy.cpp
+        src/services/database/AutomaticBackupService.h
+        src/services/database/AutomaticBackupService.cpp
+        src/services/database/DatabaseStatusService.h
+        src/services/database/DatabaseStatusService.cpp
+        src/services/database/AutomaticBackupRetention.h
+        src/services/database/AutomaticBackupRetention.cpp
+    )
+    target_link_libraries(AutomaticBackupServiceTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME AutomaticBackupService COMMAND AutomaticBackupServiceTest)
+
     qt_add_executable(DatabaseStatusServiceTest EXCLUDE_FROM_ALL
         tests/DatabaseStatusServiceTest.cpp
         src/services/database/DatabaseStatusService.h

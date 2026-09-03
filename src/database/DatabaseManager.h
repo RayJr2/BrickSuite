@@ -28,6 +28,24 @@
 class DatabaseManager
 {
 public:
+    enum class BackupFailure {
+        None,
+        Busy,
+        Source,
+        SourceHealth,
+        SourceHealthCheck,
+        Destination,
+        Snapshot,
+        Verification
+    };
+
+    struct VerifiedBackupResult {
+        bool success = false;
+        BackupFailure failure = BackupFailure::None;
+        QString errorMessage;
+        QString backupPath;
+    };
+
     static DatabaseManager& instance();
 
     bool initialize();
@@ -39,6 +57,8 @@ public:
     bool backupDatabase(const QString& backupPath, QString* errorMessage = nullptr);
     bool verifyDatabaseBackup(const QString& backupPath, QString* errorMessage = nullptr) const;
     bool restoreDatabase(const QString& backupPath, QString* errorMessage = nullptr);
+    static VerifiedBackupResult createVerifiedBackup(const QString& sourceDatabasePath,
+                                                      const QString& backupPath);
 
 private:
     DatabaseManager();
@@ -46,6 +66,11 @@ private:
 
     DatabaseManager(const DatabaseManager&) = delete;
     DatabaseManager& operator=(const DatabaseManager&) = delete;
+
+    static bool createSnapshot(QSqlDatabase database, const QString& backupPath,
+                               QString* errorMessage, BackupFailure* failure = nullptr);
+    static bool verifyBackup(const QString& backupPath, QString* errorMessage);
+    bool backupDatabaseUnlocked(const QString& backupPath, QString* errorMessage = nullptr);
 
     QSqlDatabase m_database;
 };

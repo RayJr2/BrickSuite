@@ -21,6 +21,7 @@
 #include "UserSettings.h"
 
 #include "../services/CredentialStore.h"
+#include "../services/database/AutomaticBackupPolicy.h"
 
 #include <QDebug>
 #include <QSettings>
@@ -78,6 +79,17 @@ constexpr auto kPartReferencePageIndexPrefix = "PageIndex";
 
 constexpr auto kGroupBuilds = "Builds";
 constexpr auto kShowArchivedBuildsKey = "ShowArchived";
+
+constexpr auto kGroupAutomaticDatabaseBackup = "AutomaticDatabaseBackup";
+constexpr auto kEnabledKey = "Enabled";
+constexpr auto kBackupRootKey = "BackupRoot";
+constexpr auto kFrequencyHoursKey = "FrequencyHours";
+constexpr auto kRetentionCountKey = "RetentionCount";
+constexpr auto kLastSuccessfulUtcKey = "LastSuccessfulUtc";
+constexpr auto kLastSuccessfulPathKey = "LastSuccessfulPath";
+constexpr auto kLastAttemptUtcKey = "LastAttemptUtc";
+constexpr auto kLastFailureUtcKey = "LastFailureUtc";
+constexpr auto kLastFailureSummaryKey = "LastFailureSummary";
 
 } // namespace
 
@@ -759,4 +771,74 @@ void UserSettings::setShowArchivedBuilds(bool showArchived)
     settings.setValue(kShowArchivedBuildsKey, showArchived);
 
     settings.endGroup();
+}
+
+namespace {
+QVariant automaticBackupValue(const char* key, const QVariant& defaultValue = {})
+{
+    QSettings settings;
+    settings.beginGroup(kGroupAutomaticDatabaseBackup);
+    return settings.value(key, defaultValue);
+}
+void setAutomaticBackupValue(const char* key, const QVariant& value)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupAutomaticDatabaseBackup);
+    settings.setValue(key, value);
+}
+QDateTime storedUtc(const char* key)
+{
+    const QDateTime value = automaticBackupValue(key).toDateTime();
+    return value.isValid() ? value.toUTC() : QDateTime();
+}
+}
+
+bool UserSettings::automaticBackupEnabled() const
+{ return automaticBackupValue(kEnabledKey, false).toBool(); }
+void UserSettings::setAutomaticBackupEnabled(bool enabled)
+{ setAutomaticBackupValue(kEnabledKey, enabled); }
+QString UserSettings::automaticBackupRoot() const
+{ return automaticBackupValue(kBackupRootKey).toString().trimmed(); }
+void UserSettings::setAutomaticBackupRoot(const QString& root)
+{ setAutomaticBackupValue(kBackupRootKey, root.trimmed()); }
+int UserSettings::automaticBackupFrequencyHours() const
+{
+    const int value = automaticBackupValue(kFrequencyHoursKey, 24).toInt();
+    return AutomaticBackupPolicy::normalizeFrequencyHours(value);
+}
+void UserSettings::setAutomaticBackupFrequencyHours(int hours)
+{
+    setAutomaticBackupValue(kFrequencyHoursKey,
+                            AutomaticBackupPolicy::normalizeFrequencyHours(hours));
+}
+int UserSettings::automaticBackupRetentionCount() const
+{ return qBound(1, automaticBackupValue(kRetentionCountKey, 14).toInt(), 365); }
+void UserSettings::setAutomaticBackupRetentionCount(int count)
+{ setAutomaticBackupValue(kRetentionCountKey, qBound(1, count, 365)); }
+QDateTime UserSettings::automaticBackupLastSuccessfulUtc() const
+{ return storedUtc(kLastSuccessfulUtcKey); }
+void UserSettings::setAutomaticBackupLastSuccessfulUtc(const QDateTime& value)
+{ setAutomaticBackupValue(kLastSuccessfulUtcKey, value.toUTC()); }
+QString UserSettings::automaticBackupLastSuccessfulPath() const
+{ return automaticBackupValue(kLastSuccessfulPathKey).toString(); }
+void UserSettings::setAutomaticBackupLastSuccessfulPath(const QString& path)
+{ setAutomaticBackupValue(kLastSuccessfulPathKey, path); }
+QDateTime UserSettings::automaticBackupLastAttemptUtc() const
+{ return storedUtc(kLastAttemptUtcKey); }
+void UserSettings::setAutomaticBackupLastAttemptUtc(const QDateTime& value)
+{ setAutomaticBackupValue(kLastAttemptUtcKey, value.toUTC()); }
+QDateTime UserSettings::automaticBackupLastFailureUtc() const
+{ return storedUtc(kLastFailureUtcKey); }
+void UserSettings::setAutomaticBackupLastFailureUtc(const QDateTime& value)
+{ setAutomaticBackupValue(kLastFailureUtcKey, value.toUTC()); }
+QString UserSettings::automaticBackupLastFailureSummary() const
+{ return automaticBackupValue(kLastFailureSummaryKey).toString(); }
+void UserSettings::setAutomaticBackupLastFailureSummary(const QString& summary)
+{ setAutomaticBackupValue(kLastFailureSummaryKey, summary.left(1000)); }
+void UserSettings::clearAutomaticBackupFailure()
+{
+    QSettings settings;
+    settings.beginGroup(kGroupAutomaticDatabaseBackup);
+    settings.remove(kLastFailureUtcKey);
+    settings.remove(kLastFailureSummaryKey);
 }

@@ -29,9 +29,27 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSqlError>
+#include <QRecursiveMutex>
 #include <QStandardPaths>
 #include <QUuid>
 #include <qsqlquery.h>
+
+namespace {
+QRecursiveMutex& maintenanceMutex()
+{
+    static QRecursiveMutex mutex;
+    return mutex;
+}
+
+class AdoptedMaintenanceLock
+{
+public:
+    explicit AdoptedMaintenanceLock(QRecursiveMutex& mutex) : m_mutex(mutex) {}
+    ~AdoptedMaintenanceLock() { m_mutex.unlock(); }
+private:
+    QRecursiveMutex& m_mutex;
+};
+}
 
 DatabaseManager& DatabaseManager::instance()
 {
@@ -109,16 +127,38 @@ QSqlDatabase DatabaseManager::database() const
 
 bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMessage)
 {
+    if (!maintenanceMutex().tryLock()) {
+        const QString message = "Another database maintenance operation is already running.";
+        if (errorMessage) *errorMessage = message;
+        qWarning() << "Database backup rejected:" << message;
+        return false;
+    }
+    AdoptedMaintenanceLock lock(maintenanceMutex());
+    return backupDatabaseUnlocked(backupPath, errorMessage);
+}
+
+bool DatabaseManager::backupDatabaseUnlocked(const QString& backupPath, QString* errorMessage)
+{
+    return createSnapshot(m_database, backupPath, errorMessage);
+}
+
+bool DatabaseManager::createSnapshot(QSqlDatabase database, const QString& backupPath,
+                                     QString* errorMessage, BackupFailure* failure)
+{
     auto setError = [errorMessage](const QString& message) {
         if (errorMessage)
             *errorMessage = message;
     };
 
-    if (!m_database.isOpen()) {
+    if (failure)
+        *failure = BackupFailure::None;
+
+    if (!database.isOpen()) {
         const QString message = "The BrickSuite database is not open.";
         setError(message);
         qWarning() << "Database backup rejected:" << message;
 
+        if (failure) *failure = BackupFailure::Source;
         return false;
     }
 
@@ -128,7 +168,7 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
 
     if (trimmedPath.isEmpty()) {
         setError("No backup file was selected.");
-
+        if (failure) *failure = BackupFailure::Destination;
         return false;
     }
 
@@ -145,6 +185,7 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
                          .arg(backupDirectory.absolutePath()));
             qCritical() << "Database backup failed:" << message;
 
+            if (failure) *failure = BackupFailure::Destination;
             return false;
         }
     }
@@ -165,6 +206,7 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
                              "backup file:\n%1")
                          .arg(temporaryPath));
 
+            if (failure) *failure = BackupFailure::Destination;
             return false;
         }
     }
@@ -176,7 +218,7 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
     //
     escapedTemporaryPath.replace("'", "''");
 
-    QSqlQuery query(m_database);
+    QSqlQuery query(database);
 
     const QString sql = QString("VACUUM INTO '%1'").arg(escapedTemporaryPath);
 
@@ -188,6 +230,11 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
             QString("Unable to create the database backup.\n\n%1").arg(message));
         qCritical() << "Database backup VACUUM INTO failed:" << message;
 
+        if (failure) {
+            const QString lower = message.toLower();
+            *failure = lower.contains("busy") || lower.contains("locked")
+                           ? BackupFailure::Busy : BackupFailure::Snapshot;
+        }
         return false;
     }
 
@@ -198,6 +245,7 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
                        "the temporary backup file was not created."
                     << "TemporaryPath:" << temporaryPath;
 
+        if (failure) *failure = BackupFailure::Snapshot;
         return false;
     }
 
@@ -213,6 +261,7 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
                              "existing destination file could not be replaced:\n%1")
                          .arg(trimmedPath));
 
+            if (failure) *failure = BackupFailure::Destination;
             return false;
         }
     }
@@ -224,6 +273,7 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
                          "but it could not be renamed to:\n%1")
                      .arg(trimmedPath));
 
+        if (failure) *failure = BackupFailure::Destination;
         return false;
     }
 
@@ -233,6 +283,11 @@ bool DatabaseManager::backupDatabase(const QString& backupPath, QString* errorMe
 }
 
 bool DatabaseManager::verifyDatabaseBackup(const QString& backupPath, QString* errorMessage) const
+{
+    return verifyBackup(backupPath, errorMessage);
+}
+
+bool DatabaseManager::verifyBackup(const QString& backupPath, QString* errorMessage)
 {
     auto setError = [errorMessage](const QString& message) {
         if (errorMessage)
@@ -336,6 +391,58 @@ bool DatabaseManager::verifyDatabaseBackup(const QString& backupPath, QString* e
     return true;
 }
 
+DatabaseManager::VerifiedBackupResult DatabaseManager::createVerifiedBackup(
+    const QString& sourceDatabasePath, const QString& backupPath)
+{
+    VerifiedBackupResult result;
+    result.backupPath = backupPath;
+
+    if (!maintenanceMutex().tryLock()) {
+        result.failure = BackupFailure::Busy;
+        result.errorMessage = "Another database maintenance operation is already running.";
+        return result;
+    }
+    AdoptedMaintenanceLock lock(maintenanceMutex());
+
+    const QString connectionName = QString("BrickSuiteAutomaticBackup_%1")
+                                       .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    const QString pendingPath = backupPath + ".pending."
+                                + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    {
+        QSqlDatabase source = QSqlDatabase::addDatabase("QSQLITE", connectionName);
+        source.setDatabaseName(sourceDatabasePath);
+        source.setConnectOptions("QSQLITE_OPEN_READONLY");
+        if (!source.open()) {
+            result.failure = BackupFailure::Source;
+            result.errorMessage = QString("Unable to open the BrickSuite database for backup.\n\n%1")
+                                      .arg(source.lastError().text());
+        } else if (createSnapshot(source, pendingPath, &result.errorMessage, &result.failure)) {
+            source.close();
+            QString verificationError;
+            if (verifyBackup(pendingPath, &verificationError)) {
+                if (QFile::rename(pendingPath, backupPath)) {
+                    result.success = true;
+                    result.failure = BackupFailure::None;
+                } else {
+                    result.failure = BackupFailure::Destination;
+                    result.errorMessage = QString("The verified backup could not be published as: %1")
+                                              .arg(backupPath);
+                    QFile::remove(pendingPath);
+                }
+            } else {
+                result.failure = BackupFailure::Verification;
+                result.errorMessage = verificationError;
+                if (!QFile::remove(pendingPath))
+                    QFile::rename(pendingPath, pendingPath + ".unverified");
+            }
+        }
+        source.close();
+    }
+    QSqlDatabase::removeDatabase(connectionName);
+    QFile::remove(pendingPath + ".tmp");
+    return result;
+}
+
 QString DatabaseManager::databasePath() const
 {
     const QString dataPath = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
@@ -349,6 +456,14 @@ bool DatabaseManager::restoreDatabase(const QString& backupPath, QString* errorM
         if (errorMessage)
             *errorMessage = message;
     };
+
+    if (!maintenanceMutex().tryLock()) {
+        const QString message = "Another database maintenance operation is already running.";
+        setError(message);
+        qWarning() << "Database restore rejected:" << message;
+        return false;
+    }
+    AdoptedMaintenanceLock lock(maintenanceMutex());
 
     const QString trimmedBackupPath = backupPath.trimmed();
 

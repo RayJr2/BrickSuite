@@ -21,6 +21,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QString>
 
 class UserSettings
@@ -111,6 +112,26 @@ public:
     int rebrickableMinimumRequestIntervalMs() const;
 
     void setRebrickableMinimumRequestIntervalMs(int intervalMs);
+
+    bool automaticBackupEnabled() const;
+    void setAutomaticBackupEnabled(bool enabled);
+    QString automaticBackupRoot() const;
+    void setAutomaticBackupRoot(const QString& root);
+    int automaticBackupFrequencyHours() const;
+    void setAutomaticBackupFrequencyHours(int hours);
+    int automaticBackupRetentionCount() const;
+    void setAutomaticBackupRetentionCount(int count);
+    QDateTime automaticBackupLastSuccessfulUtc() const;
+    void setAutomaticBackupLastSuccessfulUtc(const QDateTime& value);
+    QString automaticBackupLastSuccessfulPath() const;
+    void setAutomaticBackupLastSuccessfulPath(const QString& path);
+    QDateTime automaticBackupLastAttemptUtc() const;
+    void setAutomaticBackupLastAttemptUtc(const QDateTime& value);
+    QDateTime automaticBackupLastFailureUtc() const;
+    void setAutomaticBackupLastFailureUtc(const QDateTime& value);
+    QString automaticBackupLastFailureSummary() const;
+    void setAutomaticBackupLastFailureSummary(const QString& summary);
+    void clearAutomaticBackupFailure();
 
 private:
     UserSettings() = default;
