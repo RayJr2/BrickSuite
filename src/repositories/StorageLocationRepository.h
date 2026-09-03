@@ -34,6 +34,10 @@ public:
 
     QList<StorageLocation> getByWorkspace(int workspaceId) const;
 
+    QList<StorageLocation> getInventoryHierarchy(int workspaceId) const;
+
+    QList<StorageLocation> getCollectionHierarchy(int workspaceId) const;
+
     QList<StorageLocation> getByWorkspaceIncludingInactive(int workspaceId) const;
 
     QList<StorageLocation> getChildren(int workspaceId, int parentLocationId) const;
@@ -47,6 +51,11 @@ public:
     bool isValidOperationalDestination(int workspaceId, int locationId,
                                        int excludedLocationId = 0) const;
 
+    bool isValidInventoryDestination(int workspaceId, int locationId,
+                                     int excludedLocationId = 0) const;
+
+    bool isValidCollectionDestination(int workspaceId, int locationId) const;
+
     bool hasInventory(int locationId) const;
 
     bool isDescendant(int locationId, int possibleDescendantId) const;
@@ -56,5 +65,10 @@ public:
     bool reactivate(int locationId);
 
 private:
+    QList<StorageLocation> getCapabilityHierarchy(int workspaceId,
+                                                  const QString& capabilityColumn) const;
+    bool isValidCapabilityDestination(int workspaceId, int locationId,
+                                      const QString& capabilityColumn,
+                                      int excludedLocationId = 0) const;
     StorageLocation locationFromQuery(const QSqlQuery& query) const;
 };

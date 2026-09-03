@@ -27,11 +27,16 @@ bool migrationTest(const QString& path)
             QSqlQuery q(db); const QString table = "CREATE TABLE manufacturer(id INTEGER PRIMARY KEY AUTOINCREMENT,code TEXT NOT NULL COLLATE NOCASE UNIQUE,name TEXT NOT NULL COLLATE NOCASE UNIQUE,website_url TEXT,supports_lego_element_ids INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,notes TEXT,created_utc TEXT NOT NULL,modified_utc TEXT NOT NULL)";
             ok = q.exec("PRAGMA foreign_keys=ON") && q.exec("CREATE TABLE schema_version(version INTEGER NOT NULL)")
                  && q.exec("INSERT INTO schema_version VALUES(28)") && q.exec(table)
+                 && q.exec("CREATE TABLE workspace(id INTEGER PRIMARY KEY)")
+                 && q.exec("CREATE TABLE storage_location(id INTEGER PRIMARY KEY,workspace_id INTEGER NOT NULL)")
+                 && q.exec("CREATE TABLE set_catalog(id INTEGER PRIMARY KEY)")
+                 && q.exec("CREATE TABLE minifig_catalog(id INTEGER PRIMARY KEY)")
+                 && q.exec("CREATE TABLE build(id INTEGER PRIMARY KEY,workspace_id INTEGER NOT NULL)")
                  && q.exec("INSERT INTO manufacturer VALUES(5,'LEGO','LEGO','https://lego.example',1,1,'seed','old','old')")
                  && q.exec("INSERT INTO manufacturer VALUES(9,'OTHER','Other','https://other.example',0,0,'keep','old','old')")
                  && q.exec("CREATE TABLE inventory_record(id INTEGER PRIMARY KEY,manufacturer_id INTEGER REFERENCES manufacturer(id))")
                  && q.exec("INSERT INTO inventory_record VALUES(1,9)") && DatabaseSchema::initialize(db)
-                 && scalar(db,"SELECT version FROM schema_version")==29
+                 && scalar(db,"SELECT version FROM schema_version")==30
                  && scalar(db,"SELECT COUNT(*) FROM manufacturer WHERE id=5 AND origin='BrickSuite' AND is_active=1")==1
                  && scalar(db,"SELECT COUNT(*) FROM manufacturer WHERE id=9 AND origin='User' AND code='OTHER' AND name='Other' AND website_url='https://other.example' AND is_active=0 AND notes='keep' AND created_utc='old' AND modified_utc='old'")==1
                  && scalar(db,"SELECT manufacturer_id FROM inventory_record WHERE id=1")==9

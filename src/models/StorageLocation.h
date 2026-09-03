@@ -52,6 +52,12 @@ public:
     bool isActive() const;
     void setIsActive(bool isActive);
 
+    bool allowsInventory() const;
+    void setAllowsInventory(bool allowsInventory);
+
+    bool allowsCollection() const;
+    void setAllowsCollection(bool allowsCollection);
+
     QDateTime createdUtc() const;
     void setCreatedUtc(const QDateTime& createdUtc);
 
@@ -69,6 +75,8 @@ private:
 
     int m_sortOrder = 0;
     bool m_isActive = true;
+    bool m_allowsInventory = true;
+    bool m_allowsCollection = false;
 
     QDateTime m_createdUtc;
     QDateTime m_modifiedUtc;

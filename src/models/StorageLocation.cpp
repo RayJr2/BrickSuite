@@ -100,6 +100,26 @@ void StorageLocation::setIsActive(bool isActive)
     m_isActive = isActive;
 }
 
+bool StorageLocation::allowsInventory() const
+{
+    return m_allowsInventory;
+}
+
+void StorageLocation::setAllowsInventory(bool allowsInventory)
+{
+    m_allowsInventory = allowsInventory;
+}
+
+bool StorageLocation::allowsCollection() const
+{
+    return m_allowsCollection;
+}
+
+void StorageLocation::setAllowsCollection(bool allowsCollection)
+{
+    m_allowsCollection = allowsCollection;
+}
+
 QDateTime StorageLocation::createdUtc() const
 {
     return m_createdUtc;

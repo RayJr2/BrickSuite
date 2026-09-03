@@ -43,6 +43,7 @@ bool validateMigration(const QString& path)
         ok=q.exec("PRAGMA foreign_keys=ON")
           &&q.exec("CREATE TABLE schema_version(version INTEGER NOT NULL)")&&q.exec("INSERT INTO schema_version VALUES(27)")
           &&q.exec("CREATE TABLE workspace(id INTEGER PRIMARY KEY)")&&q.exec("INSERT INTO workspace VALUES(1)")
+          &&q.exec("CREATE TABLE storage_location(id INTEGER PRIMARY KEY,workspace_id INTEGER NOT NULL)")
           &&q.exec("CREATE TABLE manufacturer(id INTEGER PRIMARY KEY,code TEXT)")&&q.exec("INSERT INTO manufacturer VALUES(1,'LEGO')")
           &&q.exec("CREATE TABLE minifig_catalog(id INTEGER PRIMARY KEY)")&&q.exec("INSERT INTO minifig_catalog VALUES(1)")
           &&q.exec("CREATE TABLE set_catalog(id INTEGER PRIMARY KEY,set_number TEXT UNIQUE,name TEXT,year INTEGER,theme_id INTEGER,num_parts INTEGER,image_url TEXT,created_utc TEXT,modified_utc TEXT)")&&q.exec("INSERT INTO set_catalog VALUES(1,'1234-1','Set',2026,1,2,NULL,'"+now+"','"+now+"')")
@@ -52,7 +53,7 @@ bool validateMigration(const QString& path)
           &&q.exec("INSERT INTO build(workspace_id,build_type,name,set_number,inventory_mode,status,is_active,created_utc,modified_utc,manufacturer_id) VALUES(1,'MOC','M','moc-1','Stock','Planned',1,'"+now+"','"+now+"',1)")
           &&q.exec("INSERT INTO build(workspace_id,build_type,name,inventory_mode,status,is_active,created_utc,modified_utc,manufacturer_id,minifig_catalog_id) VALUES(1,'Minifig','F','Stock','Planned',1,'"+now+"','"+now+"',1,1)")
           &&DatabaseSchema::initialize(db)
-          &&q.exec("SELECT version FROM schema_version")&&q.next()&&q.value(0).toInt()==29
+          &&q.exec("SELECT version FROM schema_version")&&q.next()&&q.value(0).toInt()==30
           &&q.exec("SELECT COUNT(*),SUM(set_catalog_id IS NOT NULL),MAX(minifig_catalog_id) FROM build")&&q.next()&&q.value(0).toInt()==3&&q.value(1).toInt()==0&&q.value(2).toInt()==1
           &&q.exec("PRAGMA foreign_key_check")&&!q.next(); db.close(); }} QSqlDatabase::removeDatabase(connection); return ok;
 }

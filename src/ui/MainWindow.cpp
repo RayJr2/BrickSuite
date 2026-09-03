@@ -214,6 +214,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
                 build.setBuildType("Set");
 
+                build.setSetCatalogId(setCatalogId);
+
                 build.setSetNumber(set->setNumber());
 
                 build.setName(set->name());

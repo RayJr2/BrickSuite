@@ -528,6 +528,18 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 29;
     }
 
+    if (version == 29) {
+        if (!migrateVersion29ToVersion30(database)) {
+            database.rollback();
+            return false;
+        }
+        if (!setSchemaVersion(database, 30)) {
+            database.rollback();
+            return false;
+        }
+        version = 30;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -3505,6 +3517,82 @@ bool DatabaseSchema::migrateVersion28ToVersion29(QSqlDatabase& database)
     QSqlQuery pragma(database);
     if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
         qCritical() << "Foreign-key validation failed after Version 29 migration.";
+        return false;
+    }
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion29ToVersion30(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+    const QStringList statements = {
+        "ALTER TABLE storage_location ADD COLUMN allows_inventory INTEGER NOT NULL "
+        "DEFAULT 1 CHECK(allows_inventory IN (0, 1))",
+        "ALTER TABLE storage_location ADD COLUMN allows_collection INTEGER NOT NULL "
+        "DEFAULT 0 CHECK(allows_collection IN (0, 1))",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_storage_location_workspace_identity "
+        "ON storage_location(workspace_id, id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_build_workspace_identity "
+        "ON build(workspace_id, id)",
+        R"(CREATE TABLE collection_item (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id INTEGER NOT NULL,
+            item_type TEXT NOT NULL CHECK(item_type IN ('Set','Minifig','MOC')),
+            set_catalog_id INTEGER,
+            minifig_catalog_id INTEGER,
+            state TEXT NOT NULL CHECK(state IN
+                ('Assembled','Unassembled','PartiallyAssembled','Sealed')),
+            storage_location_id INTEGER,
+            source_build_id INTEGER,
+            nickname TEXT,
+            notes TEXT,
+            allow_parts_source INTEGER NOT NULL DEFAULT 0
+                CHECK(allow_parts_source IN (0, 1)),
+            is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            FOREIGN KEY(workspace_id) REFERENCES workspace(id),
+            FOREIGN KEY(set_catalog_id) REFERENCES set_catalog(id),
+            FOREIGN KEY(minifig_catalog_id) REFERENCES minifig_catalog(id),
+            FOREIGN KEY(workspace_id, storage_location_id)
+                REFERENCES storage_location(workspace_id, id),
+            FOREIGN KEY(workspace_id, source_build_id)
+                REFERENCES build(workspace_id, id),
+            CHECK(
+                (item_type = 'Set' AND set_catalog_id IS NOT NULL
+                    AND minifig_catalog_id IS NULL)
+                OR
+                (item_type = 'Minifig' AND set_catalog_id IS NULL
+                    AND minifig_catalog_id IS NOT NULL
+                    AND allow_parts_source = 0)
+                OR
+                (item_type = 'MOC' AND set_catalog_id IS NULL
+                    AND minifig_catalog_id IS NULL AND source_build_id IS NOT NULL)
+            )
+        ))",
+        "CREATE INDEX idx_collection_workspace_type_active "
+        "ON collection_item(workspace_id, item_type, is_active)",
+        "CREATE INDEX idx_collection_workspace_state_active "
+        "ON collection_item(workspace_id, state, is_active)",
+        "CREATE INDEX idx_collection_workspace_location_active "
+        "ON collection_item(workspace_id, storage_location_id, is_active)",
+        "CREATE INDEX idx_collection_set_catalog ON collection_item(set_catalog_id)",
+        "CREATE INDEX idx_collection_minifig_catalog ON collection_item(minifig_catalog_id)",
+        "CREATE UNIQUE INDEX idx_collection_source_build "
+        "ON collection_item(source_build_id) WHERE source_build_id IS NOT NULL"
+    };
+
+    for (const QString& statement : statements) {
+        if (!query.exec(statement)) {
+            qCritical() << "Unable to migrate schema to Version 30:"
+                        << query.lastError().text();
+            return false;
+        }
+    }
+
+    QSqlQuery pragma(database);
+    if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
+        qCritical() << "Foreign-key validation failed after Version 30 migration.";
         return false;
     }
     return true;

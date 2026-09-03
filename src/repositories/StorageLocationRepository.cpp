@@ -58,6 +58,8 @@ bool StorageLocationRepository::create(StorageLocation& location)
             description,
             sort_order,
             is_active,
+            allows_inventory,
+            allows_collection,
             created_utc,
             modified_utc
         )
@@ -70,6 +72,8 @@ bool StorageLocationRepository::create(StorageLocation& location)
             :description,
             :sort_order,
             :is_active,
+            :allows_inventory,
+            :allows_collection,
             :created_utc,
             :modified_utc
         )
@@ -92,6 +96,8 @@ bool StorageLocationRepository::create(StorageLocation& location)
     query.bindValue(":sort_order", location.sortOrder());
 
     query.bindValue(":is_active", location.isActive() ? 1 : 0);
+    query.bindValue(":allows_inventory", location.allowsInventory() ? 1 : 0);
+    query.bindValue(":allows_collection", location.allowsCollection() ? 1 : 0);
 
     query.bindValue(":created_utc", now.toString(Qt::ISODateWithMs));
 
@@ -120,34 +126,65 @@ bool StorageLocationRepository::create(StorageLocation& location)
 
 QList<StorageLocation> StorageLocationRepository::getByWorkspace(int workspaceId) const
 {
+    return getInventoryHierarchy(workspaceId);
+}
+
+QList<StorageLocation> StorageLocationRepository::getInventoryHierarchy(int workspaceId) const
+{
+    return getCapabilityHierarchy(workspaceId, QStringLiteral("allows_inventory"));
+}
+
+QList<StorageLocation> StorageLocationRepository::getCollectionHierarchy(int workspaceId) const
+{
+    return getCapabilityHierarchy(workspaceId, QStringLiteral("allows_collection"));
+}
+
+QList<StorageLocation> StorageLocationRepository::getCapabilityHierarchy(
+    int workspaceId, const QString& capabilityColumn) const
+{
     QList<StorageLocation> locations;
+
+    if (workspaceId <= 0
+        || (capabilityColumn != QStringLiteral("allows_inventory")
+            && capabilityColumn != QStringLiteral("allows_collection")))
+        return locations;
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
     QSqlQuery query(database);
 
-    query.prepare(R"(
+    query.prepare(QString(R"(
+        WITH RECURSIVE eligible(id) AS (
+            SELECT destination.id FROM storage_location destination
+            WHERE destination.workspace_id = :workspace_id
+              AND destination.is_active = 1 AND destination.%1 = 1
+              AND NOT EXISTS (
+                  SELECT 1 FROM storage_location child
+                  WHERE child.parent_location_id = destination.id
+                    AND child.is_active = 1
+              )
+            UNION
+            SELECT parent.id
+            FROM storage_location parent
+            JOIN storage_location child ON child.parent_location_id = parent.id
+            JOIN eligible e ON e.id = child.id
+            WHERE parent.workspace_id = :workspace_id AND parent.is_active = 1
+        )
         SELECT
-            id,
-            workspace_id,
-            parent_location_id,
-            location_type_id,
-            name,
-            description,
-            sort_order,
-            is_active,
-            created_utc,
-            modified_utc
-        FROM storage_location
-        WHERE workspace_id = :workspace_id
-          AND is_active = 1
-        ORDER BY sort_order, name
-    )");
+            location.id, location.workspace_id, location.parent_location_id,
+            location.location_type_id, location.name, location.description,
+            location.sort_order, location.is_active, location.allows_inventory,
+            location.allows_collection, location.created_utc, location.modified_utc
+        FROM storage_location location
+        JOIN eligible ON eligible.id = location.id
+        ORDER BY location.sort_order, location.name COLLATE NOCASE, location.id
+    )").arg(capabilityColumn));
 
     query.bindValue(":workspace_id", workspaceId);
 
     if (!query.exec()) {
-        qCritical() << "Unable to retrieve storage locations:" << query.lastError().text();
+        qCritical() << "Unable to retrieve capability-filtered storage hierarchy:"
+                    << query.lastError().text();
 
         return locations;
     }
@@ -176,6 +213,8 @@ QList<StorageLocation> StorageLocationRepository::getByWorkspaceIncludingInactiv
             description,
             sort_order,
             is_active,
+            allows_inventory,
+            allows_collection,
             created_utc,
             modified_utc
         FROM storage_location
@@ -218,6 +257,8 @@ QList<StorageLocation> StorageLocationRepository::getChildren(int workspaceId,
                 description,
                 sort_order,
                 is_active,
+                allows_inventory,
+                allows_collection,
                 created_utc,
                 modified_utc
             FROM storage_location
@@ -239,6 +280,8 @@ QList<StorageLocation> StorageLocationRepository::getChildren(int workspaceId,
                 description,
                 sort_order,
                 is_active,
+                allows_inventory,
+                allows_collection,
                 created_utc,
                 modified_utc
             FROM storage_location
@@ -279,6 +322,8 @@ std::optional<StorageLocation> StorageLocationRepository::getById(int id) const
             description,
             sort_order,
             is_active,
+            allows_inventory,
+            allows_collection,
             created_utc,
             modified_utc
         FROM storage_location
@@ -321,6 +366,8 @@ bool StorageLocationRepository::update(StorageLocation& location)
             description = :description,
             sort_order = :sort_order,
             is_active = :is_active,
+            allows_inventory = :allows_inventory,
+            allows_collection = :allows_collection,
             modified_utc = :modified_utc
         WHERE id = :id
           AND workspace_id = :workspace_id
@@ -341,6 +388,8 @@ bool StorageLocationRepository::update(StorageLocation& location)
     query.bindValue(":sort_order", location.sortOrder());
 
     query.bindValue(":is_active", location.isActive() ? 1 : 0);
+    query.bindValue(":allows_inventory", location.allowsInventory() ? 1 : 0);
+    query.bindValue(":allows_collection", location.allowsCollection() ? 1 : 0);
 
     query.bindValue(":modified_utc", now.toString(Qt::ISODateWithMs));
 
@@ -383,6 +432,8 @@ StorageLocation StorageLocationRepository::locationFromQuery(const QSqlQuery& qu
     location.setSortOrder(query.value("sort_order").toInt());
 
     location.setIsActive(query.value("is_active").toInt() != 0);
+    location.setAllowsInventory(query.value("allows_inventory").toInt() != 0);
+    location.setAllowsCollection(query.value("allows_collection").toInt() != 0);
 
     location.setCreatedUtc(
         QDateTime::fromString(query.value("created_utc").toString(), Qt::ISODateWithMs));
@@ -423,16 +474,43 @@ bool StorageLocationRepository::hasChildren(int locationId) const
 bool StorageLocationRepository::isValidOperationalDestination(
     int workspaceId, int locationId, int excludedLocationId) const
 {
+    return isValidInventoryDestination(workspaceId, locationId, excludedLocationId);
+}
+
+bool StorageLocationRepository::isValidInventoryDestination(
+    int workspaceId, int locationId, int excludedLocationId) const
+{
+    return isValidCapabilityDestination(workspaceId, locationId,
+                                        QStringLiteral("allows_inventory"),
+                                        excludedLocationId);
+}
+
+bool StorageLocationRepository::isValidCollectionDestination(
+    int workspaceId, int locationId) const
+{
+    return isValidCapabilityDestination(workspaceId, locationId,
+                                        QStringLiteral("allows_collection"));
+}
+
+bool StorageLocationRepository::isValidCapabilityDestination(
+    int workspaceId, int locationId, const QString& capabilityColumn,
+    int excludedLocationId) const
+{
     if (workspaceId <= 0 || locationId <= 0 || locationId == excludedLocationId)
         return false;
 
+    if (capabilityColumn != QStringLiteral("allows_inventory")
+        && capabilityColumn != QStringLiteral("allows_collection"))
+        return false;
+
     QSqlQuery query(DatabaseManager::instance().database());
-    query.prepare(R"(
+    query.prepare(QString(R"(
         SELECT 1
         FROM storage_location location
         WHERE location.id = :location_id
           AND location.workspace_id = :workspace_id
           AND location.is_active = 1
+          AND location.%1 = 1
           AND NOT EXISTS (
               SELECT 1
               FROM storage_location child
@@ -440,7 +518,7 @@ bool StorageLocationRepository::isValidOperationalDestination(
                 AND child.is_active = 1
           )
         LIMIT 1
-    )");
+    )").arg(capabilityColumn));
     query.bindValue(":location_id", locationId);
     query.bindValue(":workspace_id", workspaceId);
     if (!query.exec()) {

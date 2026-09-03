@@ -377,7 +377,7 @@ void StorageWidget::editLocation()
 
     const QList<StorageLocationType> types = typeRepository.getActive();
 
-    const QList<StorageLocation> allLocations = locationRepository.getByWorkspace(
+    const QList<StorageLocation> allLocations = locationRepository.getByWorkspaceIncludingInactive(
         m_workspaceContext.currentWorkspaceId());
 
     QDialog dialog(this);
@@ -403,6 +403,8 @@ void StorageWidget::editLocation()
     parentCombo->addItem("(Top Level)", 0);
 
     for (const StorageLocation& location : allLocations) {
+        if (!location.isActive())
+            continue;
         // A location cannot be its own parent.
         if (location.id() == locationId)
             continue;
@@ -573,4 +575,3 @@ void StorageWidget::reactivateLocation()
 
     loadStorageTree();
 }
-
