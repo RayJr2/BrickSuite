@@ -27,6 +27,7 @@ enum class HelpTopic
     QuickStart,
     Storage,
     PartsCatalog,
+    PartReference,
     SetsCatalog,
     MinifigsCatalog,
     Inventory,

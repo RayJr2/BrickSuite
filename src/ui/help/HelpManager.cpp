@@ -37,6 +37,7 @@ const QList<HelpTopicInfo>& helpTopics()
         {HelpTopic::QuickStart, "Quick Start", ":/help/quick_start.html"},
         {HelpTopic::Storage, "Storage", ":/help/storage.html"},
         {HelpTopic::PartsCatalog, "Parts Catalog", ":/help/parts_catalog.html"},
+        {HelpTopic::PartReference, "Part Reference", ":/help/part_reference.html"},
         {HelpTopic::SetsCatalog, "Sets Catalog", ":/help/sets_catalog.html"},
         {HelpTopic::MinifigsCatalog, "Minifigs Catalog", ":/help/minifigs_catalog.html"},
         {HelpTopic::Inventory, "My Inventory", ":/help/inventory.html"},

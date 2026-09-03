@@ -11,6 +11,7 @@
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/images/PartImageService.h"
 #include "../../settings/UserSettings.h"
+#include "../help/HelpManager.h"
 
 #include <QClipboard>
 #include <QCloseEvent>
@@ -59,6 +60,7 @@ PartReferenceDialog::PartReferenceDialog(QWidget* parent)
     setWindowFlag(Qt::Window, true);
     setWindowModality(Qt::NonModal);
     setModal(false);
+    HelpManager::setContextTopic(this, HelpTopic::PartReference);
     resize(1180, 800);
 
     m_partImageService = new PartImageService(this);

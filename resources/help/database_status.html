@@ -7,6 +7,8 @@ h1 { margin-bottom: .35em; } .note { border-left: 4px solid #888; padding-left: 
 <p>Choose <b>Tools → Database Status &amp; Integrity...</b> to view the current database file,
 schema version, size, catalog and inventory counts, and selected SQLite details.</p>
 <h2>Checks</h2>
+<p><img src="images/database_status_integrity.png" style="max-width:100%;height:auto" alt="Database Status showing database information and a healthy foreign-key check"></p>
+<p>The result area describes the most recently completed check; run both checks separately.</p>
 <p><b>Run Integrity Check</b> asks SQLite to examine the complete database structure.
 <b>Run Foreign Key Check</b> looks for records whose required related records are missing.
 These read-only checks can take time on a large database; BrickSuite remains responsive while they run.</p>

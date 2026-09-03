@@ -4,6 +4,51 @@ All notable changes to BrickSuite are documented in this file.
 
 BrickSuite follows semantic versioning for public releases.
 
+## [0.3.0] - Unreleased
+
+### Added
+
+- A persistent, non-modal Part Reference with visual catalog families, gallery and dimension views, search, selection, and Send to Add Inventory.
+- A first-class Minifigs Catalog with Theme filtering, images, constituent-part composition, Rebrickable API and CSV/ZIP retrieval, Build creation, and Collection integration.
+- My Collection for individual physical Sets, Minifigs, and MOCs, with independent State, Condition, Completeness, Location, nickname, notes, archive/reactivate, and catalog/Build provenance.
+- Storage capabilities that identify active leaf locations as usable for Inventory, Collection, or Both.
+- Lists & Reference Data management for adding, editing, activating, and deactivating Manufacturers while preserving protected and historical identities.
+- Database Status & Integrity checks, recovery guidance, diagnostic-summary copying, and contextual Application Log access.
+- Optional verified automatic database backups with hourly/daily schedules, schema-version directories, retention, Backup Now, and a mandatory live-database health gate.
+- Startup splash feedback during application initialization.
+
+### Improved
+
+- Add Part with a live non-modal workflow, Remember Part, category/resolution feedback, Try BrickLink ID, and session Storage destination memory.
+- My Inventory with Correct and Remove Entry actions, filtered-Storage precedence, and preserved movement/provenance history.
+- Builds with exact requirement-aware allocation, deliberate substitutions, interactive pulling, pull-list export/import/reconciliation, and tighter Missing Parts/procurement integration.
+- Set and Minifig Details with composition acquisition and replacement, Create Build From Stock, immutable Build requirement snapshots, and Add to Collection.
+- Complete Set, MOC, and Minifig Build completion/disassembly workflows while preserving exact allocations and Manufacturer provenance.
+
+### Changed
+
+- Rebrickable Parts and Sets catalog imports now accept CSV or ZIP downloads directly, including deterministically selected CSV files in nested archive folders.
+- Newly created catalog-backed Set and Minifig Builds retain authoritative catalog links without using display references as identity.
+- Collection lifecycle synchronization now follows linked Build disassembly, while legacy Set Builds require an explicit catalog-linking action.
+
+### Fixed
+
+- Corrected exact requirement/allocation linkage during allocation, pulling, reconciliation, release, and disassembly.
+- Prevented repeated Set and Minifig image requests and warning logs after definitive HTTP 404 responses while keeping transient failures retryable.
+- Corrected contextual Help routing for active non-modal dialogs.
+
+### Data & Integration
+
+- Added persistent Rebrickable and BrickLink external identifiers, cross-reference learning, background enrichment, and diagnostic behavior.
+- Added provider-aware BrickOwl receiving preview and transactional inventory commit alongside Rebrickable inventory workflows.
+- Added Rebrickable Set/Minifig composition APIs and CSV/ZIP composition import without rewriting existing Build snapshots.
+
+### Reliability / Database
+
+- Advanced the database through sequential, transactional migrations while preserving existing identities and history.
+- Automatic backups now proceed only after complete integrity and foreign-key checks, verify the resulting snapshot, and run retention only after success.
+- Scheduled failures use bounded retry intervals; explicit Backup Now remains available and manual File → Backup Database remains independent.
+
 ## [0.2.0] - 2026-08-25
 
 ### Added

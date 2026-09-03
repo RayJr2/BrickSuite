@@ -5,6 +5,7 @@
         <file>quick_start.html</file>
         <file>storage.html</file>
         <file>parts_catalog.html</file>
+        <file>part_reference.html</file>
         <file>sets_catalog.html</file>
         <file>minifigs_catalog.html</file>
         <file>inventory.html</file>
@@ -45,9 +46,16 @@
         <file>images/sets_catalog_search.png</file>
         <file>images/sets_catalog_details.png</file>
         <file>images/sets_catalog_instructions.png</file>
-        <file>images/sets_catalog_details_brickset.png</file>
         <file>images/sets_catalog_create_build.png</file>
         <file>images/inventory_overview.png</file>
+        <file>images/part_reference_gallery.png</file>
+        <file>images/part_reference_dimension_grid.png</file>
+        <file>images/minifigs_catalog_overview.png</file>
+        <file>images/my_collection_overview.png</file>
+        <file>images/builds_interactive_pulling.png</file>
+        <file>images/settings_database_backup.png</file>
+        <file>images/reference_data_manufacturers.png</file>
+        <file>images/database_status_integrity.png</file>
         <file>images/inventory_add.png</file>
         <file>images/inventory_edit.png</file>
         <file>images/inventory_move.png</file>

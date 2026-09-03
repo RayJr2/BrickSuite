@@ -238,6 +238,7 @@ void HelpDialog::buildContents()
 
     addTopicItem(inventoryGroup, HelpTopic::Storage, "Storage");
     addTopicItem(inventoryGroup, HelpTopic::PartsCatalog, "Parts Catalog");
+    addTopicItem(inventoryGroup, HelpTopic::PartReference, "Part Reference");
     addTopicItem(inventoryGroup, HelpTopic::SetsCatalog, "Sets Catalog");
     addTopicItem(inventoryGroup, HelpTopic::MinifigsCatalog, "Minifigs Catalog");
     addTopicItem(inventoryGroup, HelpTopic::Inventory, "My Inventory");

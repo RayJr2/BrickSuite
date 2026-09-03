@@ -54,19 +54,19 @@ data. Most screenshots in this Help system use Dark theme, so colors may differ 
 theme is selected.</p>
 
 <h2>Database Backup</h2>
+<img class="screenshot" src="images/settings_database_backup.png"
+     alt="Database Backup settings showing an hourly policy, retention, live status, and Backup Now">
 
 <p>The <b>Database Backup</b> page configures BrickSuite-managed automatic backups. Automatic
 backups are disabled by default. Choose a <b>Backup root</b>, a supported hourly/daily frequency, and how many
 automatic backups to retain, then enable scheduling when you are ready.</p>
 
-<p>BrickSuite appends a folder for the current database schema automatically. For example, a
-backup root ending in <code>BrickSuite/database</code> currently stores automatic backups under
-<code>BrickSuite/database/v30</code>. When this BrickSuite release uses schema 31, new backups
-go to <code>v31</code>; BrickSuite does not move or delete the previous <code>v30</code>
-folder.</p>
+<p>BrickSuite appends a folder for the current database schema automatically:
+<code>&lt;backup root&gt;/v&lt;schema version&gt;</code>. A schema change uses a new directory;
+BrickSuite does not move or delete earlier-schema directories.</p>
 
 <p>Automatic filenames use a UTC timestamp, such as
-<code>BrickSuite_AutoBackup_v29_2026-09-03_142530.db</code>. Settings displays backup and due
+<code>BrickSuite_AutoBackup_v&lt;schema version&gt;_YYYY-MM-DD_HHMMSS.db</code>. Settings displays backup and due
 times in your local time.</p>
 
 <p><b>Backup Now</b> runs the same automatic pipeline immediately, even when scheduling is
@@ -174,7 +174,7 @@ and owned-parts or MOC CSV files are handled by their respective import workflow
 
 <h2>Saving Settings</h2>
 
-<p>Choose <b>OK</b> to keep Settings changes and close the dialog. Choose <b>Cancel</b> to close
+<p>Choose <b>Apply</b> to commit changes without closing, or <b>OK</b> to keep Settings changes and close the dialog. Enabling an eligible, due automatic-backup policy queues its normal background pipeline only after the policy is committed. Choose <b>Cancel</b> to close
 without keeping changes that have not already been committed by the applicable setting behavior.
 Saved preferences are retained for future BrickSuite sessions.</p>
 
