@@ -27,6 +27,7 @@ class QLabel;
 class QSpinBox;
 class QTextEdit;
 class QDialogButtonBox;
+class SessionStorageSelectionService;
 
 class FoundInventoryDialog : public QDialog
 {
@@ -36,6 +37,7 @@ public:
     explicit FoundInventoryDialog(int workspaceId,
                                   int partId,
                                   int colorId,
+                                  SessionStorageSelectionService& sessionStorageSelectionService,
                                   QWidget* parent = nullptr);
 
 private slots:
@@ -53,6 +55,7 @@ private:
 
     int m_outstandingQuantity = 0;
     int m_lastStorageLocationId = 0;
+    SessionStorageSelectionService& m_sessionStorageSelectionService;
 
     QLabel* m_partLabel = nullptr;
     QLabel* m_colorLabel = nullptr;

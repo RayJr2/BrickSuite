@@ -196,6 +196,11 @@ whether the row is a spare, the quantity to return, and the destination Storage 
 <b>Default Destination</b> and use <b>Apply to All</b> when the returned pieces should go to the
 same location, or choose destinations and returned quantities individually.</p>
 
+<p>The Default Destination initially uses the last successful inventory destination remembered
+for this workspace during the current BrickSuite session when it is still valid. Per-row
+destinations remain unassigned until you choose them or explicitly use <b>Apply to All</b>. A
+successful single-destination disassembly updates the session default; mixed destinations do not.</p>
+
 <p>The summary at the bottom reports the regular pieces, spare pieces, and total loose pieces that
 will be returned. At this stage BrickSuite explicitly reports that <b>no inventory changes have
 been made yet</b>, allowing you to review the disassembly before committing it.</p>

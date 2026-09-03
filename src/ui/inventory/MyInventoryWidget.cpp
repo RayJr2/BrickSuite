@@ -48,6 +48,7 @@
 
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/images/PartImageService.h"
+#include "../../services/storage/SessionStorageSelectionService.h"
 
 #include "../helpers/ColorComboHelper.h"
 
@@ -73,9 +74,11 @@
 
 MyInventoryWidget::MyInventoryWidget(
     WorkspaceContext& workspaceContext,
+    SessionStorageSelectionService& sessionStorageSelectionService,
     QWidget* parent)
     : QWidget(parent)
     , m_workspaceContext(workspaceContext)
+    , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
     auto* mainLayout =
         new QVBoxLayout(this);
@@ -774,7 +777,8 @@ void MyInventoryWidget::searchInventory()
                             refresh();
                         }
                     } else if (action == "move") {
-                        MoveInventoryDialog dialog(inventoryRecordId, m_workspaceContext, this);
+                        MoveInventoryDialog dialog(inventoryRecordId, m_workspaceContext,
+                                                   m_sessionStorageSelectionService, this);
 
                         if (dialog.exec() == QDialog::Accepted) {
                             refresh();
@@ -988,7 +992,7 @@ void MyInventoryWidget::importCsv()
         return;
     }
 
-    ImportInventoryDialog dialog(m_workspaceContext, this);
+    ImportInventoryDialog dialog(m_workspaceContext, m_sessionStorageSelectionService, this);
 
     if (dialog.exec() == QDialog::Accepted) {
         refresh();
@@ -1067,7 +1071,8 @@ void MyInventoryWidget::addPart()
         return;
     }
 
-    auto* dialog = new AddInventoryDialog(m_workspaceContext, this);
+    auto* dialog = new AddInventoryDialog(m_workspaceContext,
+                                          m_sessionStorageSelectionService, this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setWindowModality(Qt::NonModal);
     dialog->setModal(false);
@@ -1138,7 +1143,7 @@ void MyInventoryWidget::showLostInventory()
         return;
     }
 
-    LostInventoryDialog dialog(m_workspaceContext, this);
+    LostInventoryDialog dialog(m_workspaceContext, m_sessionStorageSelectionService, this);
 
     dialog.exec();
 

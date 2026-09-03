@@ -77,6 +77,11 @@ Ownership, and Quantity. The <b>Show all colors</b> option makes the complete co
 when the normal known colors for the selected part do not include the color you need.
 <b>Keep Open</b> is useful when entering several parts in succession.</p>
 
+<p>During the current BrickSuite session, a successfully used Storage destination becomes the
+default for later inventory-placement dialogs in that workspace. A specific valid My Inventory
+Storage filter takes precedence when opening Add Part. This convenience resets when BrickSuite
+exits.</p>
+
 <p>You can also begin this workflow from <a href="parts_catalog.html">Parts Catalog</a> by choosing
 <b>Add to Inventory</b> for a catalog part.</p>
 
@@ -137,6 +142,9 @@ location and available quantity, then asks for the destination and the number of
 <p>You do not have to move the entire available quantity. Enter a smaller quantity to perform a
 partial move. BrickSuite keeps the remaining pieces in the source record and transfers the
 selected quantity to the destination as appropriate.</p>
+
+<p>After a successful move, its destination becomes the session default for later inventory
+placement in the same workspace. Cancelled or unsuccessful operations do not change it.</p>
 
 <h2>Inventory History</h2>
 

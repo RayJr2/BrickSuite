@@ -26,6 +26,7 @@
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/LostInventoryRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
+#include "../../services/storage/SessionStorageSelectionService.h"
 
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -38,11 +39,14 @@
 #include <QSpinBox>
 #include <QTextEdit>
 
-FoundInventoryDialog::FoundInventoryDialog(int workspaceId, int partId, int colorId, QWidget* parent)
+FoundInventoryDialog::FoundInventoryDialog(
+    int workspaceId, int partId, int colorId,
+    SessionStorageSelectionService& sessionStorageSelectionService, QWidget* parent)
     : QDialog(parent)
     , m_workspaceId(workspaceId)
     , m_partId(partId)
     , m_colorId(colorId)
+    , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
     setWindowTitle("Found / Return Inventory");
 
@@ -222,6 +226,11 @@ void FoundInventoryDialog::loadStorageLocations()
 
         m_storageCombo->addItem(pathParts.join(" / "), location.id());
     }
+
+    const int remembered = m_sessionStorageSelectionService.rememberedDestination(m_workspaceId);
+    const int rememberedIndex = m_storageCombo->findData(remembered);
+    if (rememberedIndex >= 0)
+        m_storageCombo->setCurrentIndex(rememberedIndex);
 }
 
 void FoundInventoryDialog::returnFoundInventory()
@@ -283,6 +292,8 @@ void FoundInventoryDialog::returnFoundInventory()
 
         return;
     }
+
+    m_sessionStorageSelectionService.rememberDestination(m_workspaceId, storageLocationId);
 
     QMessageBox::information(this,
                              "Found Inventory",

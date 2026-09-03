@@ -44,6 +44,9 @@ public:
 
     bool hasChildren(int locationId) const;
 
+    bool isValidOperationalDestination(int workspaceId, int locationId,
+                                       int excludedLocationId = 0) const;
+
     bool hasInventory(int locationId) const;
 
     bool isDescendant(int locationId, int possibleDescendantId) const;

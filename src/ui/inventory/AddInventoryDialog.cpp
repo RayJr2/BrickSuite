@@ -36,6 +36,7 @@
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
+#include "../../services/storage/SessionStorageSelectionService.h"
 
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/parts/PartResolver.h"
@@ -70,10 +71,12 @@
 
 AddInventoryDialog::AddInventoryDialog(int partId,
                                        WorkspaceContext& workspaceContext,
+                                       SessionStorageSelectionService& sessionStorageSelectionService,
                                        QWidget* parent)
     : QDialog(parent)
     , m_partId(partId)
     , m_workspaceContext(workspaceContext)
+    , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
     m_quickEntryMode = false;
 
@@ -88,9 +91,13 @@ AddInventoryDialog::AddInventoryDialog(int partId,
     updateAddButtonState();
 }
 
-AddInventoryDialog::AddInventoryDialog(WorkspaceContext& workspaceContext, QWidget* parent)
+AddInventoryDialog::AddInventoryDialog(
+    WorkspaceContext& workspaceContext,
+    SessionStorageSelectionService& sessionStorageSelectionService,
+    QWidget* parent)
     : QDialog(parent)
     , m_workspaceContext(workspaceContext)
+    , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
     m_quickEntryMode = true;
 
@@ -534,6 +541,12 @@ void AddInventoryDialog::loadStorageLocations()
         m_storageCombo->addItem(pathParts.join(" / "), location.id());
     }
 
+    const int remembered = m_sessionStorageSelectionService.rememberedDestination(
+        m_workspaceContext.currentWorkspaceId());
+    const int rememberedIndex = m_storageCombo->findData(remembered);
+    if (rememberedIndex >= 0)
+        m_storageCombo->setCurrentIndex(rememberedIndex);
+
     updateAddButtonState();
 }
 
@@ -594,6 +607,8 @@ void AddInventoryDialog::addInventory()
     }
 
     m_inventoryWasAdded = true;
+    m_sessionStorageSelectionService.rememberDestination(
+        m_workspaceContext.currentWorkspaceId(), storageLocationId);
 
     if (m_quickEntryMode && m_keepOpenCheck->isChecked()) {
         const int addedQuantity = m_quantitySpin->value();

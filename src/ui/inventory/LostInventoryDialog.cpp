@@ -29,6 +29,7 @@
 
 #include "../../repositories/LostInventoryRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
+#include "../../services/storage/SessionStorageSelectionService.h"
 
 #include <QComboBox>
 #include <QDateTime>
@@ -40,9 +41,13 @@
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
-LostInventoryDialog::LostInventoryDialog(WorkspaceContext& workspaceContext, QWidget* parent)
+LostInventoryDialog::LostInventoryDialog(
+    WorkspaceContext& workspaceContext,
+    SessionStorageSelectionService& sessionStorageSelectionService,
+    QWidget* parent)
     : QDialog(parent)
     , m_workspaceContext(workspaceContext)
+    , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
     setWindowTitle("Lost Inventory");
 
@@ -210,6 +215,7 @@ void LostInventoryDialog::loadLostInventory()
                     FoundInventoryDialog dialog(m_workspaceContext.currentWorkspaceId(),
                                                 partId,
                                                 colorId,
+                                                m_sessionStorageSelectionService,
                                                 this);
 
                     if (dialog.exec() == QDialog::Accepted) {

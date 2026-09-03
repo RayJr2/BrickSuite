@@ -70,6 +70,8 @@ qt_add_executable(BrickSuite
     src/services/database/AutomaticBackupPolicy.cpp
     src/services/database/AutomaticBackupService.h
     src/services/database/AutomaticBackupService.cpp
+    src/services/storage/SessionStorageSelectionService.h
+    src/services/storage/SessionStorageSelectionService.cpp
     src/services/database/AutomaticBackupRetention.h
     src/services/database/AutomaticBackupRetention.cpp
     src/services/Logger.h
@@ -359,6 +361,19 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(SessionStorageSelectionServiceTest EXCLUDE_FROM_ALL
+        tests/SessionStorageSelectionServiceTest.cpp
+        src/services/storage/SessionStorageSelectionService.h
+        src/services/storage/SessionStorageSelectionService.cpp
+        src/repositories/StorageLocationRepository.h
+        src/repositories/StorageLocationRepository.cpp
+        src/models/StorageLocation.h src/models/StorageLocation.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+    )
+    target_link_libraries(SessionStorageSelectionServiceTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME SessionStorageSelectionService COMMAND SessionStorageSelectionServiceTest)
+
     qt_add_executable(AutomaticBackupPolicyTest EXCLUDE_FROM_ALL
         tests/AutomaticBackupPolicyTest.cpp
         src/services/database/AutomaticBackupPolicy.h

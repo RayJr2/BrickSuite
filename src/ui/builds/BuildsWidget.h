@@ -23,6 +23,7 @@
 #include <QWidget>
 
 class WorkspaceContext;
+class SessionStorageSelectionService;
 
 class QComboBox;
 class QLabel;
@@ -44,6 +45,7 @@ class BuildsWidget : public QWidget
 public:
     explicit BuildsWidget(
         WorkspaceContext& workspaceContext,
+        SessionStorageSelectionService& sessionStorageSelectionService,
         QWidget* parent = nullptr);
 
     void refresh();
@@ -79,6 +81,7 @@ private:
     void storeSpare(int requirementId);
 
     WorkspaceContext& m_workspaceContext;
+    SessionStorageSelectionService& m_sessionStorageSelectionService;
 
     QComboBox* m_typeCombo = nullptr;
     QLineEdit* m_setNumberEdit = nullptr;

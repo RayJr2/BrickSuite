@@ -15,6 +15,7 @@
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
+#include "../../services/storage/SessionStorageSelectionService.h"
 
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -28,19 +29,14 @@
 #include <QSpinBox>
 #include <QStringList>
 
-namespace
-{
-// Session-only convenience. This deliberately is not persisted in UserSettings;
-// it resets automatically when BrickSuite exits.
-int s_lastMoveDestinationStorageLocationId = 0;
-}
-
 MoveInventoryDialog::MoveInventoryDialog(int inventoryRecordId,
                                          WorkspaceContext& workspaceContext,
+                                         SessionStorageSelectionService& sessionStorageSelectionService,
                                          QWidget* parent)
     : QDialog(parent)
     , m_inventoryRecordId(inventoryRecordId)
     , m_workspaceContext(workspaceContext)
+    , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
     setWindowTitle("Move Inventory");
     resize(550, 300);
@@ -153,9 +149,10 @@ void MoveInventoryDialog::loadStorageLocations()
 
     // Restore the last successful destination from this BrickSuite session,
     // provided it is valid for this move (the source itself is excluded).
-    if (s_lastMoveDestinationStorageLocationId > 0) {
-        const int rememberedIndex =
-            m_destinationCombo->findData(s_lastMoveDestinationStorageLocationId);
+    const int remembered = m_sessionStorageSelectionService.rememberedDestination(
+        m_workspaceContext.currentWorkspaceId(), m_sourceStorageLocationId);
+    if (remembered > 0) {
+        const int rememberedIndex = m_destinationCombo->findData(remembered);
         if (rememberedIndex >= 0)
             m_destinationCombo->setCurrentIndex(rememberedIndex);
     }
@@ -189,7 +186,8 @@ void MoveInventoryDialog::moveInventory()
     }
 
     // Remember only a successfully completed move.
-    s_lastMoveDestinationStorageLocationId = destinationId;
+    m_sessionStorageSelectionService.rememberDestination(
+        m_workspaceContext.currentWorkspaceId(), destinationId);
 
     qInfo() << "Inventory moved."
             << "InventoryRecordId:" << m_inventoryRecordId

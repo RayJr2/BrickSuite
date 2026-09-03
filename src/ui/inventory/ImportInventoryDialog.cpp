@@ -29,6 +29,7 @@
 #include "../../import/BrickOwlInventoryImporter.h"
 #include "../../models/StorageLocation.h"
 #include "../../repositories/StorageLocationRepository.h"
+#include "../../services/storage/SessionStorageSelectionService.h"
 
 #include <QComboBox>
 #include <QDebug>
@@ -52,9 +53,13 @@
 #include <QTextStream>
 #include <QVBoxLayout>
 
-ImportInventoryDialog::ImportInventoryDialog(WorkspaceContext& workspaceContext, QWidget* parent)
+ImportInventoryDialog::ImportInventoryDialog(
+    WorkspaceContext& workspaceContext,
+    SessionStorageSelectionService& sessionStorageSelectionService,
+    QWidget* parent)
     : QDialog(parent)
     , m_workspaceContext(workspaceContext)
+    , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
     setWindowTitle("Import Inventory");
     resize(620, 340);
@@ -256,6 +261,12 @@ void ImportInventoryDialog::loadStorageLocations()
 
         m_storageCombo->addItem(pathParts.join(" / "), location.id());
     }
+
+    const int remembered = m_sessionStorageSelectionService.rememberedDestination(
+        m_workspaceContext.currentWorkspaceId());
+    const int rememberedIndex = m_storageCombo->findData(remembered);
+    if (rememberedIndex >= 0)
+        m_storageCombo->setCurrentIndex(rememberedIndex);
 }
 
 InventoryImportSource ImportInventoryDialog::detectImportSource(
@@ -701,6 +712,9 @@ void ImportInventoryDialog::importFile()
                 .arg(skippedRows)
                 .arg(skippedPieces));
 
+        m_sessionStorageSelectionService.rememberDestination(
+            options.workspaceId, options.storageLocationId);
+
         accept();
         return;
     }
@@ -788,6 +802,9 @@ void ImportInventoryDialog::importFile()
             .arg(inventoryCsvOperationName(options.operation))
             .arg(result.rowsImported)
             .arg(result.totalQuantityImported));
+
+    m_sessionStorageSelectionService.rememberDestination(
+        options.workspaceId, options.storageLocationId);
 
     accept();
 }

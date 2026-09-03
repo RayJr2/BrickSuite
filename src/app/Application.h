@@ -28,6 +28,7 @@ class MainWindow;
 class QWidget;
 class WorkspaceContext;
 class AutomaticBackupService;
+class SessionStorageSelectionService;
 
 class Application
 {
@@ -42,4 +43,5 @@ private:
     std::unique_ptr<WorkspaceContext> m_workspaceContext;
     std::unique_ptr<MainWindow> m_mainWindow;
     std::unique_ptr<AutomaticBackupService> m_automaticBackupService;
+    std::unique_ptr<SessionStorageSelectionService> m_sessionStorageSelectionService;
 };

@@ -53,6 +53,7 @@
 #include "../../import/RebrickableMocCsvImporter.h"
 #include "../../services/builds/MissingPartsService.h"
 #include "../../services/procurement/ProcurementDraftService.h"
+#include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../ui/procurement/ProcurementPreviewDialog.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
@@ -126,9 +127,13 @@ MocFileMetadata parseRebrickableMocFileName(const QString& fileName)
 
 } // namespace
 
-BuildsWidget::BuildsWidget(WorkspaceContext& workspaceContext, QWidget* parent)
+BuildsWidget::BuildsWidget(
+    WorkspaceContext& workspaceContext,
+    SessionStorageSelectionService& sessionStorageSelectionService,
+    QWidget* parent)
     : QWidget(parent)
     , m_workspaceContext(workspaceContext)
+    , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -692,7 +697,8 @@ void BuildsWidget::loadBuilds()
                             return;
 
                         if (totalPulled > 0) {
-                            DisassembleSetDialog dialog(buildId, this);
+                            DisassembleSetDialog dialog(buildId,
+                                                        m_sessionStorageSelectionService, this);
 
                             if (dialog.exec() != QDialog::Accepted)
                                 return;
@@ -1119,7 +1125,8 @@ void BuildsWidget::loadBuilds()
                     }
 
                     if (action == "disassemble") {
-                        DisassembleSetDialog dialog(buildId, this);
+                        DisassembleSetDialog dialog(buildId,
+                                                    m_sessionStorageSelectionService, this);
 
                         if (dialog.exec() == QDialog::Accepted)
                             selectBuild(buildId);
@@ -2363,6 +2370,12 @@ void BuildsWidget::storeSpare(int requirementId)
         storageCombo->addItem(path, location.id());
     }
 
+    const int remembered = m_sessionStorageSelectionService.rememberedDestination(
+        build->workspaceId());
+    const int rememberedIndex = storageCombo->findData(remembered);
+    if (rememberedIndex >= 0)
+        storageCombo->setCurrentIndex(rememberedIndex);
+
     if (storageCombo->count() == 0) {
         QMessageBox::warning(this,
                              "Store Spare",
@@ -2512,6 +2525,9 @@ void BuildsWidget::storeSpare(int requirementId)
                               "No changes were saved.");
         return;
     }
+
+    m_sessionStorageSelectionService.rememberDestination(
+        currentBuild->workspaceId(), storageLocationId);
 
     qInfo() << "Complete Set spare stored."
             << "BuildId:" << currentBuild->id()

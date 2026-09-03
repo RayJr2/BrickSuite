@@ -23,6 +23,7 @@
 #include <QDialog>
 
 class WorkspaceContext;
+class SessionStorageSelectionService;
 class QLabel;
 class QTableWidget;
 
@@ -31,12 +32,15 @@ class LostInventoryDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit LostInventoryDialog(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
+    explicit LostInventoryDialog(WorkspaceContext& workspaceContext,
+                                 SessionStorageSelectionService& sessionStorageSelectionService,
+                                 QWidget* parent = nullptr);
 
 private:
     void loadLostInventory();
 
     WorkspaceContext& m_workspaceContext;
+    SessionStorageSelectionService& m_sessionStorageSelectionService;
 
     QTableWidget* m_table = nullptr;
     QLabel* m_statusLabel = nullptr;

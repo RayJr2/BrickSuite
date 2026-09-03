@@ -43,13 +43,16 @@ class LogViewerDialog;
 class PartReferenceDialog;
 class DatabaseStatusDialog;
 class AutomaticBackupService;
+class SessionStorageSelectionService;
 
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    explicit MainWindow(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
+    explicit MainWindow(WorkspaceContext& workspaceContext,
+                        SessionStorageSelectionService& sessionStorageSelectionService,
+                        QWidget* parent = nullptr);
     void setAutomaticBackupService(AutomaticBackupService* service);
 
 protected:
@@ -67,6 +70,7 @@ private:
     void ensureBrickLinkColorMappings();
 
     WorkspaceContext& m_workspaceContext;
+    SessionStorageSelectionService& m_sessionStorageSelectionService;
 
     QTabWidget* m_tabWidget = nullptr;
 

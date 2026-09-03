@@ -37,6 +37,7 @@
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
+#include "../../services/storage/SessionStorageSelectionService.h"
 
 #include <QDebug>
 #include <QAbstractItemView>
@@ -56,9 +57,12 @@
 #include <QVBoxLayout>
 #include <algorithm>
 
-DisassembleSetDialog::DisassembleSetDialog(int buildId, QWidget* parent)
+DisassembleSetDialog::DisassembleSetDialog(
+    int buildId, SessionStorageSelectionService& sessionStorageSelectionService,
+    QWidget* parent)
     : QDialog(parent)
     , m_buildId(buildId)
+    , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
     setWindowTitle("Disassemble Complete Set");
 
@@ -293,6 +297,11 @@ bool DisassembleSetDialog::loadStorageLocations()
               });
 
     populateLocationCombo(m_defaultDestinationCombo);
+
+    const int remembered = m_sessionStorageSelectionService.rememberedDestination(m_workspaceId);
+    const int rememberedIndex = m_defaultDestinationCombo->findData(remembered);
+    if (rememberedIndex >= 0)
+        m_defaultDestinationCombo->setCurrentIndex(rememberedIndex);
 
     return true;
 }
@@ -649,6 +658,7 @@ void DisassembleSetDialog::disassembleSet()
 {
     int totalReturned = 0;
     int rowsReturned = 0;
+    int commonDestinationId = 0;
 
     for (const RowData& row : m_rows) {
         const int quantity = row.quantitySpin->value();
@@ -668,6 +678,11 @@ void DisassembleSetDialog::disassembleSet()
         }
 
         totalReturned += quantity;
+
+        if (commonDestinationId == 0)
+            commonDestinationId = storageLocationId;
+        else if (commonDestinationId != storageLocationId)
+            commonDestinationId = -1;
 
         ++rowsReturned;
     }
@@ -961,6 +976,11 @@ void DisassembleSetDialog::disassembleSet()
                               "No changes were saved.");
 
         return;
+    }
+
+    if (commonDestinationId > 0) {
+        m_sessionStorageSelectionService.rememberDestination(
+            m_workspaceId, commonDestinationId);
     }
 
     qInfo() << "Build disassembled."

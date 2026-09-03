@@ -98,6 +98,10 @@ than treating the piece as a new purchase or unrelated inventory addition. Retur
 the Lost/Found workflow preserves the relationship between the earlier loss and the recovered
 physical piece.</p>
 
+<p>The most recent valid location from the Lost record is the first-choice Return To destination.
+If it is unavailable, BrickSuite can use the last successful destination remembered for that
+workspace during the current session. Only a successful return updates this session default.</p>
+
 <div class="note"><b>Found is not a new acquisition.</b> It represents inventory that BrickSuite
 previously recorded as lost and that has now been physically recovered.</div>
 

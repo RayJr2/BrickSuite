@@ -69,6 +69,7 @@
 #include "reference/ReferenceDataDialog.h"
 #include "database/DatabaseStatusDialog.h"
 #include "../services/database/AutomaticBackupService.h"
+#include "../services/storage/SessionStorageSelectionService.h"
 
 #include <QAction>
 #include <QApplication>
@@ -121,9 +122,12 @@ bool windowIsVisibleOnAnyScreen(const QRect& windowGeometry)
 
 } // namespace
 
-MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
+MainWindow::MainWindow(WorkspaceContext& workspaceContext,
+                       SessionStorageSelectionService& sessionStorageSelectionService,
+                       QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceContext(workspaceContext)
+    , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
     setWindowTitle("BrickSuite");
     resize(1200, 800);
@@ -238,10 +242,14 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
             });
 
     // My Inventory tab
-    m_myInventoryWidget = new MyInventoryWidget(m_workspaceContext, m_tabWidget);
+    m_myInventoryWidget = new MyInventoryWidget(m_workspaceContext,
+                                                 m_sessionStorageSelectionService,
+                                                 m_tabWidget);
 
     // Builds tab
-    m_buildsWidget = new BuildsWidget(m_workspaceContext, m_tabWidget);
+    m_buildsWidget = new BuildsWidget(m_workspaceContext,
+                                      m_sessionStorageSelectionService,
+                                      m_tabWidget);
 
     connect(m_setsCatalogWidget,
             &SetsCatalogWidget::createStockBuildRequested,
@@ -307,7 +315,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
                     return;
                 }
 
-                AddInventoryDialog dialog(partId, m_workspaceContext, this);
+                AddInventoryDialog dialog(partId, m_workspaceContext,
+                                          m_sessionStorageSelectionService, this);
 
                 if (dialog.exec() == QDialog::Accepted) {
                     m_myInventoryWidget->refresh();
@@ -487,6 +496,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
         // the underlying database.
         //
         m_workspaceContext.clearCurrentWorkspace();
+        m_sessionStorageSelectionService.clearAll();
 
         QString restoreError;
 

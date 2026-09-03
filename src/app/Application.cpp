@@ -26,6 +26,7 @@
 #include "../database/DatabaseManager.h"
 #include "../services/ReferenceDataSeeder.h"
 #include "../services/database/AutomaticBackupService.h"
+#include "../services/storage/SessionStorageSelectionService.h"
 #include "../ui/MainWindow.h"
 
 #include <QDebug>
@@ -60,8 +61,10 @@ bool Application::initialize()
     }
 
     m_workspaceContext = std::make_unique<WorkspaceContext>();
+    m_sessionStorageSelectionService = std::make_unique<SessionStorageSelectionService>();
 
-    m_mainWindow = std::make_unique<MainWindow>(*m_workspaceContext);
+    m_mainWindow = std::make_unique<MainWindow>(*m_workspaceContext,
+                                                *m_sessionStorageSelectionService);
     m_automaticBackupService = std::make_unique<AutomaticBackupService>();
     m_mainWindow->setAutomaticBackupService(m_automaticBackupService.get());
     m_mainWindow->show();

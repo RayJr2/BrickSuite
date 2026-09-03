@@ -8,6 +8,7 @@
 #include <QDialog>
 
 class WorkspaceContext;
+class SessionStorageSelectionService;
 class QLabel;
 class QComboBox;
 class QSpinBox;
@@ -20,6 +21,7 @@ class MoveInventoryDialog : public QDialog
 public:
     explicit MoveInventoryDialog(int inventoryRecordId,
                                  WorkspaceContext& workspaceContext,
+                                 SessionStorageSelectionService& sessionStorageSelectionService,
                                  QWidget* parent = nullptr);
 
 private slots:
@@ -34,6 +36,7 @@ private:
     int m_availableQuantity = 0;
 
     WorkspaceContext& m_workspaceContext;
+    SessionStorageSelectionService& m_sessionStorageSelectionService;
 
     QLabel* m_partLabel = nullptr;
     QLabel* m_currentStorageLabel = nullptr;

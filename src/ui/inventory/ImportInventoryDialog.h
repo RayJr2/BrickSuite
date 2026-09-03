@@ -25,6 +25,7 @@
 #include "../../import/InventoryImportTypes.h"
 
 class WorkspaceContext;
+class SessionStorageSelectionService;
 class QLineEdit;
 class QComboBox;
 class QPushButton;
@@ -36,7 +37,9 @@ class ImportInventoryDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit ImportInventoryDialog(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
+    explicit ImportInventoryDialog(WorkspaceContext& workspaceContext,
+                                   SessionStorageSelectionService& sessionStorageSelectionService,
+                                   QWidget* parent = nullptr);
 
 private slots:
     void browseForFile();
@@ -51,6 +54,7 @@ private:
     static QString normalizedStorageKey(const QString& text);
 
     WorkspaceContext& m_workspaceContext;
+    SessionStorageSelectionService& m_sessionStorageSelectionService;
 
     QLineEdit* m_fileEdit = nullptr;
     QPushButton* m_browseButton = nullptr;

@@ -28,13 +28,16 @@ class QLabel;
 class QPushButton;
 class QSpinBox;
 class QTableWidget;
+class SessionStorageSelectionService;
 
 class DisassembleSetDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit DisassembleSetDialog(int buildId, QWidget* parent = nullptr);
+    explicit DisassembleSetDialog(int buildId,
+                                  SessionStorageSelectionService& sessionStorageSelectionService,
+                                  QWidget* parent = nullptr);
 
 private:
     struct RowData
@@ -66,6 +69,7 @@ private:
     int m_buildId = 0;
     int m_workspaceId = 0;
     int m_buildManufacturerId = 0;
+    SessionStorageSelectionService& m_sessionStorageSelectionService;
 
     QString m_buildName;
     QString m_setNumber;

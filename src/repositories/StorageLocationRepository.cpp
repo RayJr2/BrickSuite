@@ -420,6 +420,37 @@ bool StorageLocationRepository::hasChildren(int locationId) const
     return query.value(0).toInt() > 0;
 }
 
+bool StorageLocationRepository::isValidOperationalDestination(
+    int workspaceId, int locationId, int excludedLocationId) const
+{
+    if (workspaceId <= 0 || locationId <= 0 || locationId == excludedLocationId)
+        return false;
+
+    QSqlQuery query(DatabaseManager::instance().database());
+    query.prepare(R"(
+        SELECT 1
+        FROM storage_location location
+        WHERE location.id = :location_id
+          AND location.workspace_id = :workspace_id
+          AND location.is_active = 1
+          AND NOT EXISTS (
+              SELECT 1
+              FROM storage_location child
+              WHERE child.parent_location_id = location.id
+                AND child.is_active = 1
+          )
+        LIMIT 1
+    )");
+    query.bindValue(":location_id", locationId);
+    query.bindValue(":workspace_id", workspaceId);
+    if (!query.exec()) {
+        qCritical() << "Unable to validate operational storage destination:"
+                    << query.lastError().text();
+        return false;
+    }
+    return query.next();
+}
+
 bool StorageLocationRepository::hasInventory(int locationId) const
 {
     if (locationId <= 0)
@@ -587,4 +618,3 @@ bool StorageLocationRepository::reactivate(int locationId)
 
     return changed;
 }
-

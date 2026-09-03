@@ -26,6 +26,7 @@
 #include <QWidget>
 
 class WorkspaceContext;
+class SessionStorageSelectionService;
 class QComboBox;
 class QLineEdit;
 class QPushButton;
@@ -43,6 +44,7 @@ class MyInventoryWidget : public QWidget
 public:
     explicit MyInventoryWidget(
         WorkspaceContext& workspaceContext,
+        SessionStorageSelectionService& sessionStorageSelectionService,
         QWidget* parent = nullptr);
 
     void refresh();
@@ -84,6 +86,7 @@ private:
     static constexpr int ResultsPerPage = 250;
 
     WorkspaceContext& m_workspaceContext;
+    SessionStorageSelectionService& m_sessionStorageSelectionService;
 
     int m_currentPage = 0;
     int m_lastResultCount = 0;

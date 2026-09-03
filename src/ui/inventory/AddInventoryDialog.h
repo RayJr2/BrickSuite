@@ -27,6 +27,7 @@
 #include "../../api/rebrickable/RebrickableService.h"
 
 class WorkspaceContext;
+class SessionStorageSelectionService;
 class QLabel;
 class QComboBox;
 class QSpinBox;
@@ -45,9 +46,12 @@ class AddInventoryDialog : public QDialog
 public:
     explicit AddInventoryDialog(int partId,
                                 WorkspaceContext& workspaceContext,
+                                SessionStorageSelectionService& sessionStorageSelectionService,
                                 QWidget* parent = nullptr);
 
-    explicit AddInventoryDialog(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
+    explicit AddInventoryDialog(WorkspaceContext& workspaceContext,
+                                SessionStorageSelectionService& sessionStorageSelectionService,
+                                QWidget* parent = nullptr);
 
     bool inventoryWasAdded() const;
 
@@ -92,6 +96,7 @@ private:
     int m_partId = 0;
 
     WorkspaceContext& m_workspaceContext;
+    SessionStorageSelectionService& m_sessionStorageSelectionService;
 
     QLabel* m_partLabel = nullptr;
     QLabel* m_partResolutionLabel = nullptr;
