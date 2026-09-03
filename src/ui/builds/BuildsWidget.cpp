@@ -28,6 +28,7 @@
 #include "DisassembleSetDialog.h"
 #include "../collection/CatalogCollectionDialog.h"
 #include "../../repositories/CollectionRepository.h"
+#include "../../services/collection/CollectionItemService.h"
 #include "EditBuildDialog.h"
 #include "EditBuildRequirementDialog.h"
 #include "ImportPullListDialog.h"
@@ -574,6 +575,10 @@ void BuildsWidget::loadBuilds()
                            && build.minifigCatalogId() == 0))) {
             actionCombo->addItem("Add to Collection...", "add_collection");
         }
+        if (build.buildType() == "Set" && build.setCatalogId() <= 0
+            && !build.setNumber().trimmed().isEmpty()) {
+            actionCombo->addItem("Link to Sets Catalog...", "link_set_catalog");
+        }
 
         if (build.isActive()) {
             actionCombo->addItem("Edit Build...", "edit");
@@ -656,6 +661,39 @@ void BuildsWidget::loadBuilds()
                         if (dialog.exec() == QDialog::Accepted && dialog.createdCollectionItemId() > 0) {
                             emit collectionItemRequested(dialog.createdCollectionItemId());
                             loadBuilds();
+                        }
+                        return;
+                    }
+
+                    if (action == "link_set_catalog") {
+                        CollectionItemService service;
+                        const auto preview = service.previewLegacySetBuildLink(buildId);
+                        if (!preview.result.success) {
+                            QMessageBox::information(this, "Link to Sets Catalog",
+                                                     preview.result.message);
+                            return;
+                        }
+                        const QString message = QString(
+                            "Link this historical Build to the exact Sets Catalog match?\n\n"
+                            "Build: %1 (%2)\n"
+                            "Sets Catalog: %3 (%4)\n\n"
+                            "Only the Build's authoritative catalog relationship will be saved. "
+                            "Its name, reference, requirements, inventory mode, status, and "
+                            "inventory history will not change.")
+                            .arg(preview.buildName, preview.buildReference,
+                                 preview.catalogName, preview.catalogReference);
+                        if (QMessageBox::question(this, "Link to Sets Catalog", message,
+                                                  QMessageBox::Yes | QMessageBox::No,
+                                                  QMessageBox::No) != QMessageBox::Yes)
+                            return;
+                        const auto result = service.linkLegacySetBuild(buildId,
+                                                                       preview.setCatalogId);
+                        if (!result.success)
+                            QMessageBox::critical(this, "Link to Sets Catalog", result.message);
+                        else {
+                            QMessageBox::information(this, "Link to Sets Catalog",
+                                                     result.message);
+                            selectBuild(buildId);
                         }
                         return;
                     }

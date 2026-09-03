@@ -107,6 +107,31 @@ std::optional<SetCatalogItem> SetCatalogRepository::getBySetNumber(const QString
     return setFromQuery(query);
 }
 
+QList<SetCatalogItem> SetCatalogRepository::getExactMatchesBySetNumber(
+    const QString& setNumber, bool* querySucceeded) const
+{
+    if (querySucceeded) *querySucceeded = false;
+    QList<SetCatalogItem> results;
+    const QString trimmed = setNumber.trimmed();
+    if (trimmed.isEmpty()) {
+        if (querySucceeded) *querySucceeded = true;
+        return results;
+    }
+    QSqlQuery query(DatabaseManager::instance().database());
+    query.prepare(R"(SELECT id,set_number,name,year,theme_id,num_parts,image_url,
+        created_utc,modified_utc FROM set_catalog
+        WHERE set_number = :set_number COLLATE BINARY ORDER BY id)");
+    query.bindValue(":set_number", trimmed);
+    if (!query.exec()) {
+        qCritical() << "Unable to retrieve exact Set catalog matches:"
+                    << query.lastError().text();
+        return results;
+    }
+    if (querySucceeded) *querySucceeded = true;
+    while (query.next()) results.append(setFromQuery(query));
+    return results;
+}
+
 QList<SetCatalogItem> SetCatalogRepository::search(const SetCatalogSearchCriteria& criteria) const
 {
     QList<SetCatalogItem> results;

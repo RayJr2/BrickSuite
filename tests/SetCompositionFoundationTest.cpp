@@ -53,7 +53,7 @@ bool validateMigration(const QString& path)
           &&q.exec("INSERT INTO build(workspace_id,build_type,name,set_number,inventory_mode,status,is_active,created_utc,modified_utc,manufacturer_id) VALUES(1,'MOC','M','moc-1','Stock','Planned',1,'"+now+"','"+now+"',1)")
           &&q.exec("INSERT INTO build(workspace_id,build_type,name,inventory_mode,status,is_active,created_utc,modified_utc,manufacturer_id,minifig_catalog_id) VALUES(1,'Minifig','F','Stock','Planned',1,'"+now+"','"+now+"',1,1)")
           &&DatabaseSchema::initialize(db)
-          &&q.exec("SELECT version FROM schema_version")&&q.next()&&q.value(0).toInt()==30
+          &&q.exec("SELECT version FROM schema_version")&&q.next()&&q.value(0).toInt()==31
           &&q.exec("SELECT COUNT(*),SUM(set_catalog_id IS NOT NULL),MAX(minifig_catalog_id) FROM build")&&q.next()&&q.value(0).toInt()==3&&q.value(1).toInt()==0&&q.value(2).toInt()==1
           &&q.exec("PRAGMA foreign_key_check")&&!q.next(); db.close(); }} QSqlDatabase::removeDatabase(connection); return ok;
 }

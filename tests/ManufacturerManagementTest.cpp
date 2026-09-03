@@ -36,7 +36,7 @@ bool migrationTest(const QString& path)
                  && q.exec("INSERT INTO manufacturer VALUES(9,'OTHER','Other','https://other.example',0,0,'keep','old','old')")
                  && q.exec("CREATE TABLE inventory_record(id INTEGER PRIMARY KEY,manufacturer_id INTEGER REFERENCES manufacturer(id))")
                  && q.exec("INSERT INTO inventory_record VALUES(1,9)") && DatabaseSchema::initialize(db)
-                 && scalar(db,"SELECT version FROM schema_version")==30
+                 && scalar(db,"SELECT version FROM schema_version")==31
                  && scalar(db,"SELECT COUNT(*) FROM manufacturer WHERE id=5 AND origin='BrickSuite' AND is_active=1")==1
                  && scalar(db,"SELECT COUNT(*) FROM manufacturer WHERE id=9 AND origin='User' AND code='OTHER' AND name='Other' AND website_url='https://other.example' AND is_active=0 AND notes='keep' AND created_utc='old' AND modified_utc='old'")==1
                  && scalar(db,"SELECT manufacturer_id FROM inventory_record WHERE id=1")==9

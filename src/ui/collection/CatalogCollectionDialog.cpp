@@ -57,6 +57,21 @@ CatalogCollectionDialog::CatalogCollectionDialog(
                              CollectionItemState::PartiallyAssembled, CollectionItemState::Sealed}) {
         m_stateCombo->addItem(collectionItemStateToString(state), static_cast<int>(state));
     }
+    m_conditionCombo = new QComboBox(this);
+    for (const auto condition : {CollectionItemCondition::New, CollectionItemCondition::Used})
+        m_conditionCombo->addItem(collectionItemConditionToString(condition),
+                                  static_cast<int>(condition));
+    m_conditionCombo->setCurrentIndex(
+        m_conditionCombo->findData(static_cast<int>(CollectionItemCondition::Used)));
+    m_completenessCombo = new QComboBox(this);
+    for (const auto completeness : {CollectionItemCompleteness::Unknown,
+                                    CollectionItemCompleteness::Complete,
+                                    CollectionItemCompleteness::Incomplete})
+        m_completenessCombo->addItem(collectionItemCompletenessToString(completeness),
+                                     static_cast<int>(completeness));
+    m_completenessCombo->setCurrentIndex(m_completenessCombo->findData(static_cast<int>(
+        sourceBuildId > 0 ? CollectionItemCompleteness::Complete
+                          : CollectionItemCompleteness::Unknown)));
 
     m_locationCombo = new QComboBox(this);
     m_locationCombo->addItem("Unassigned", 0);
@@ -72,6 +87,8 @@ CatalogCollectionDialog::CatalogCollectionDialog(
     m_nicknameEdit = new QLineEdit(this);
     m_notesEdit = new QTextEdit(this);
     form->addRow("State:", m_stateCombo);
+    form->addRow("Condition:", m_conditionCombo);
+    form->addRow("Completeness:", m_completenessCombo);
     form->addRow("Collection Location:", m_locationCombo);
     form->addRow("Nickname:", m_nicknameEdit);
     form->addRow("Notes:", m_notesEdit);
@@ -95,18 +112,25 @@ int CatalogCollectionDialog::createdCollectionItemId() const
 void CatalogCollectionDialog::createItem()
 {
     const auto state = static_cast<CollectionItemState>(m_stateCombo->currentData().toInt());
+    const auto condition = static_cast<CollectionItemCondition>(
+        m_conditionCombo->currentData().toInt());
+    const auto completeness = static_cast<CollectionItemCompleteness>(
+        m_completenessCombo->currentData().toInt());
     const int locationId = m_locationCombo->currentData().toInt();
     CollectionItemService service;
     CollectionItemService::Result result;
     if (m_sourceBuildId > 0) {
         result = service.createFromBuild(m_workspaceId, m_sourceBuildId, state, locationId,
-                                         m_nicknameEdit->text(), m_notesEdit->toPlainText());
+                                         m_nicknameEdit->text(), m_notesEdit->toPlainText(),
+                                         condition, completeness);
     } else if (m_type == CollectionItemType::Set) {
         result = service.createSet(m_workspaceId, m_catalogId, state, locationId, 0,
-                                   m_nicknameEdit->text(), m_notesEdit->toPlainText());
+                                   m_nicknameEdit->text(), m_notesEdit->toPlainText(),
+                                   condition, completeness);
     } else if (m_type == CollectionItemType::Minifig) {
         result = service.createMinifig(m_workspaceId, m_catalogId, state, locationId, 0,
-                                       m_nicknameEdit->text(), m_notesEdit->toPlainText());
+                                       m_nicknameEdit->text(), m_notesEdit->toPlainText(),
+                                       condition, completeness);
     } else {
         QMessageBox::critical(this, "Add to Collection", "This catalog type cannot be added.");
         return;

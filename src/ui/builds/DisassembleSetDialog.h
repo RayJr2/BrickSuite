@@ -76,8 +76,11 @@ private:
 
     QString m_inventoryMode;
     QString m_disassemblyLabel;
+    int m_linkedCollectionItemId = 0;
 
     QLabel* m_buildLabel = nullptr;
+    QLabel* m_collectionStateLabel = nullptr;
+    QComboBox* m_collectionStateCombo = nullptr;
     QLabel* m_summaryLabel = nullptr;
     QLabel* m_statusLabel = nullptr;
 

@@ -540,6 +540,18 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 30;
     }
 
+    if (version == 30) {
+        if (!migrateVersion30ToVersion31(database)) {
+            database.rollback();
+            return false;
+        }
+        if (!setSchemaVersion(database, 31)) {
+            database.rollback();
+            return false;
+        }
+        version = 31;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -3593,6 +3605,34 @@ bool DatabaseSchema::migrateVersion29ToVersion30(QSqlDatabase& database)
     QSqlQuery pragma(database);
     if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
         qCritical() << "Foreign-key validation failed after Version 30 migration.";
+        return false;
+    }
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion30ToVersion31(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+    const QStringList statements = {
+        "ALTER TABLE collection_item ADD COLUMN condition TEXT NOT NULL DEFAULT 'Used' "
+        "CHECK(condition IN ('New','Used'))",
+        "ALTER TABLE collection_item ADD COLUMN completeness TEXT NOT NULL DEFAULT 'Unknown' "
+        "CHECK(completeness IN ('Unknown','Complete','Incomplete'))",
+        "CREATE INDEX idx_collection_workspace_condition_active "
+        "ON collection_item(workspace_id, condition, is_active)",
+        "CREATE INDEX idx_collection_workspace_completeness_active "
+        "ON collection_item(workspace_id, completeness, is_active)"
+    };
+    for (const QString& statement : statements) {
+        if (!query.exec(statement)) {
+            qCritical() << "Unable to migrate schema to Version 31:"
+                        << query.lastError().text();
+            return false;
+        }
+    }
+    QSqlQuery pragma(database);
+    if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
+        qCritical() << "Foreign-key validation failed after Version 31 migration.";
         return false;
     }
     return true;

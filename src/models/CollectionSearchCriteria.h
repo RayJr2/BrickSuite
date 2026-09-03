@@ -10,6 +10,8 @@ struct CollectionSearchCriteria
     QString searchText;
     CollectionItemType type = CollectionItemType::Invalid;
     CollectionItemState state = CollectionItemState::Invalid;
+    CollectionItemCondition condition = CollectionItemCondition::Invalid;
+    CollectionItemCompleteness completeness = CollectionItemCompleteness::Invalid;
     int storageLocationId = 0;
     // 1 = active, 0 = archived, -1 = both.
     int activeState = 1;

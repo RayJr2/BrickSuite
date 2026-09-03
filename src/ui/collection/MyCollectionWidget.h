@@ -32,6 +32,8 @@ private:
     QLineEdit* m_searchEdit = nullptr;
     QComboBox* m_typeCombo = nullptr;
     QComboBox* m_stateCombo = nullptr;
+    QComboBox* m_conditionCombo = nullptr;
+    QComboBox* m_completenessCombo = nullptr;
     QComboBox* m_locationCombo = nullptr;
     QComboBox* m_activeCombo = nullptr;
     QTableWidget* m_table = nullptr;

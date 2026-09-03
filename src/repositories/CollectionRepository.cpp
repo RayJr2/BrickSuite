@@ -13,7 +13,8 @@ namespace {
 QString itemColumns()
 {
     return QStringLiteral("ci.id, ci.workspace_id, ci.item_type, ci.set_catalog_id, "
-                          "ci.minifig_catalog_id, ci.state, ci.storage_location_id, "
+                          "ci.minifig_catalog_id, ci.state, ci.condition, ci.completeness, "
+                          "ci.storage_location_id, "
                           "ci.source_build_id, ci.nickname, ci.notes, ci.allow_parts_source, "
                           "ci.is_active, ci.created_utc, ci.modified_utc");
 }
@@ -23,6 +24,10 @@ void appendCriteria(QString& sql, const CollectionSearchCriteria& criteria)
     if (criteria.activeState >= 0) sql += " AND ci.is_active = :active";
     if (criteria.type != CollectionItemType::Invalid) sql += " AND ci.item_type = :type";
     if (criteria.state != CollectionItemState::Invalid) sql += " AND ci.state = :state";
+    if (criteria.condition != CollectionItemCondition::Invalid)
+        sql += " AND ci.condition = :condition";
+    if (criteria.completeness != CollectionItemCompleteness::Invalid)
+        sql += " AND ci.completeness = :completeness";
     if (criteria.storageLocationId > 0) {
         sql += R"( AND ci.storage_location_id IN (
             WITH RECURSIVE locations(id) AS (
@@ -53,6 +58,10 @@ void bindCriteria(QSqlQuery& query, const CollectionSearchCriteria& criteria)
         query.bindValue(":type", collectionItemTypeToString(criteria.type));
     if (criteria.state != CollectionItemState::Invalid)
         query.bindValue(":state", collectionItemStateToString(criteria.state));
+    if (criteria.condition != CollectionItemCondition::Invalid)
+        query.bindValue(":condition", collectionItemConditionToString(criteria.condition));
+    if (criteria.completeness != CollectionItemCompleteness::Invalid)
+        query.bindValue(":completeness", collectionItemCompletenessToString(criteria.completeness));
     if (criteria.storageLocationId > 0)
         query.bindValue(":location_id", criteria.storageLocationId);
     if (!criteria.searchText.trimmed().isEmpty())
@@ -65,9 +74,9 @@ bool CollectionRepository::create(CollectionItem& item)
     const QDateTime now = QDateTime::currentDateTimeUtc();
     QSqlQuery query(DatabaseManager::instance().database());
     query.prepare(R"(INSERT INTO collection_item
-        (workspace_id,item_type,set_catalog_id,minifig_catalog_id,state,storage_location_id,
+        (workspace_id,item_type,set_catalog_id,minifig_catalog_id,state,condition,completeness,storage_location_id,
          source_build_id,nickname,notes,allow_parts_source,is_active,created_utc,modified_utc)
-        VALUES (:workspace_id,:item_type,:set_catalog_id,:minifig_catalog_id,:state,
+        VALUES (:workspace_id,:item_type,:set_catalog_id,:minifig_catalog_id,:state,:condition,:completeness,
          :storage_location_id,:source_build_id,:nickname,:notes,:allow_parts_source,
          :is_active,:created_utc,:modified_utc))");
     query.bindValue(":workspace_id", item.workspaceId);
@@ -75,6 +84,8 @@ bool CollectionRepository::create(CollectionItem& item)
     query.bindValue(":set_catalog_id", item.setCatalogId > 0 ? QVariant(item.setCatalogId) : QVariant());
     query.bindValue(":minifig_catalog_id", item.minifigCatalogId > 0 ? QVariant(item.minifigCatalogId) : QVariant());
     query.bindValue(":state", collectionItemStateToString(item.state));
+    query.bindValue(":condition", collectionItemConditionToString(item.condition));
+    query.bindValue(":completeness", collectionItemCompletenessToString(item.completeness));
     query.bindValue(":storage_location_id", item.storageLocationId > 0 ? QVariant(item.storageLocationId) : QVariant());
     query.bindValue(":source_build_id", item.sourceBuildId > 0 ? QVariant(item.sourceBuildId) : QVariant());
     query.bindValue(":nickname", item.nickname.trimmed());
@@ -108,16 +119,25 @@ std::optional<CollectionItem> CollectionRepository::getById(int id) const
 
 std::optional<CollectionItem> CollectionRepository::getBySourceBuild(int buildId) const
 {
-    if (buildId <= 0) return std::nullopt;
+    std::optional<CollectionItem> item;
+    return tryGetBySourceBuild(buildId, item) ? item : std::nullopt;
+}
+
+bool CollectionRepository::tryGetBySourceBuild(
+    int buildId, std::optional<CollectionItem>& item) const
+{
+    item.reset();
+    if (buildId <= 0) return true;
     QSqlQuery query(DatabaseManager::instance().database());
     query.prepare(QString("SELECT %1 FROM collection_item ci WHERE ci.source_build_id=:id")
                       .arg(itemColumns()));
     query.bindValue(":id", buildId);
     if (!query.exec()) {
         qCritical() << "Unable to retrieve Collection item by Build:" << query.lastError().text();
-        return std::nullopt;
+        return false;
     }
-    return query.next() ? std::optional<CollectionItem>(itemFromQuery(query)) : std::nullopt;
+    if (query.next()) item = itemFromQuery(query);
+    return true;
 }
 
 bool CollectionRepository::hasSourceBuild(int buildId) const
@@ -226,11 +246,14 @@ bool CollectionRepository::update(CollectionItem& item)
 {
     const QDateTime now = QDateTime::currentDateTimeUtc();
     QSqlQuery query(DatabaseManager::instance().database());
-    query.prepare(R"(UPDATE collection_item SET state=:state,
+    query.prepare(R"(UPDATE collection_item SET state=:state,condition=:condition,
+        completeness=:completeness,
         storage_location_id=:storage_location_id,nickname=:nickname,notes=:notes,
         allow_parts_source=:allow_parts_source,modified_utc=:modified_utc
         WHERE id=:id AND workspace_id=:workspace_id)");
     query.bindValue(":state", collectionItemStateToString(item.state));
+    query.bindValue(":condition", collectionItemConditionToString(item.condition));
+    query.bindValue(":completeness", collectionItemCompletenessToString(item.completeness));
     query.bindValue(":storage_location_id", item.storageLocationId > 0 ? QVariant(item.storageLocationId) : QVariant());
     query.bindValue(":nickname", item.nickname.trimmed());
     query.bindValue(":notes", item.notes);
@@ -244,6 +267,22 @@ bool CollectionRepository::update(CollectionItem& item)
     }
     item.modifiedUtc = now;
     return true;
+}
+
+bool CollectionRepository::updateStateForSourceBuild(int buildId, CollectionItemState state)
+{
+    QSqlQuery query(DatabaseManager::instance().database());
+    query.prepare("UPDATE collection_item SET state=:state,modified_utc=:modified "
+                  "WHERE source_build_id=:build_id");
+    query.bindValue(":state", collectionItemStateToString(state));
+    query.bindValue(":modified", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    query.bindValue(":build_id", buildId);
+    if (!query.exec()) {
+        qCritical() << "Unable to synchronize Collection state during disassembly:"
+                    << query.lastError().text();
+        return false;
+    }
+    return query.numRowsAffected() == 1;
 }
 
 bool CollectionRepository::setActive(int itemId, bool active)
@@ -269,6 +308,8 @@ CollectionItem CollectionRepository::itemFromQuery(const QSqlQuery& query)
     item.setCatalogId = query.value("set_catalog_id").toInt();
     item.minifigCatalogId = query.value("minifig_catalog_id").toInt();
     item.state = collectionItemStateFromString(query.value("state").toString());
+    item.condition = collectionItemConditionFromString(query.value("condition").toString());
+    item.completeness = collectionItemCompletenessFromString(query.value("completeness").toString());
     item.storageLocationId = query.value("storage_location_id").toInt();
     item.sourceBuildId = query.value("source_build_id").toInt();
     item.nickname = query.value("nickname").toString();

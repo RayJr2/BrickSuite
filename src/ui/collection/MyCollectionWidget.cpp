@@ -71,6 +71,17 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext, QWidg
     for (auto state : {CollectionItemState::Assembled, CollectionItemState::Unassembled,
                        CollectionItemState::PartiallyAssembled, CollectionItemState::Sealed})
         m_stateCombo->addItem(collectionItemStateToString(state), static_cast<int>(state));
+    m_conditionCombo = new QComboBox(this);
+    m_conditionCombo->addItem("All Conditions", static_cast<int>(CollectionItemCondition::Invalid));
+    for (auto condition : {CollectionItemCondition::New, CollectionItemCondition::Used})
+        m_conditionCombo->addItem(collectionItemConditionToString(condition), static_cast<int>(condition));
+    m_completenessCombo = new QComboBox(this);
+    m_completenessCombo->addItem("All Completeness", static_cast<int>(CollectionItemCompleteness::Invalid));
+    for (auto completeness : {CollectionItemCompleteness::Unknown,
+                              CollectionItemCompleteness::Complete,
+                              CollectionItemCompleteness::Incomplete})
+        m_completenessCombo->addItem(collectionItemCompletenessToString(completeness),
+                                     static_cast<int>(completeness));
     m_locationCombo = new QComboBox(this);
     m_locationCombo->setMinimumWidth(240);
     m_locationCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -81,19 +92,24 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext, QWidg
     auto* searchButton = new QPushButton("Search", this);
     m_typeCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     m_stateCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    m_conditionCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    m_completenessCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     m_activeCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     searchButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     filters->addWidget(new QLabel("Search:", this)); filters->addWidget(m_searchEdit, 2);
     filters->addWidget(new QLabel("Type:", this)); filters->addWidget(m_typeCombo);
     filters->addWidget(new QLabel("State:", this)); filters->addWidget(m_stateCombo);
+    filters->addWidget(new QLabel("Condition:", this)); filters->addWidget(m_conditionCombo);
+    filters->addWidget(new QLabel("Completeness:", this)); filters->addWidget(m_completenessCombo);
     filters->addWidget(new QLabel("Location:", this)); filters->addWidget(m_locationCombo, 1);
     filters->addWidget(m_activeCombo); filters->addWidget(searchButton);
 
     m_messageLabel = new QLabel(this);
     m_table = new QTableWidget(this);
-    m_table->setColumnCount(9);
+    m_table->setColumnCount(11);
     m_table->setHorizontalHeaderLabels({"Image", "Type", "Reference", "Name", "Nickname",
-                                        "State", "Location", "Source", "Actions"});
+                                        "State", "Condition", "Completeness", "Location",
+                                        "Source", "Actions"});
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->verticalHeader()->setDefaultSectionSize(56);
@@ -113,7 +129,8 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext, QWidg
     auto criteriaChange = [this]() { loadPage(true); };
     connect(searchButton, &QPushButton::clicked, this, criteriaChange);
     connect(m_searchEdit, &QLineEdit::returnPressed, this, criteriaChange);
-    for (QComboBox* combo : {m_typeCombo, m_stateCombo, m_locationCombo, m_activeCombo})
+    for (QComboBox* combo : {m_typeCombo, m_stateCombo, m_conditionCombo,
+                             m_completenessCombo, m_locationCombo, m_activeCombo})
         connect(combo, &QComboBox::currentIndexChanged, this, criteriaChange);
     connect(m_previousButton, &QPushButton::clicked, this, [this]() {
         if (effectiveCriteriaKey() != m_loadedCriteriaKey) m_page = 0;
@@ -146,9 +163,10 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext, QWidg
 
 QString MyCollectionWidget::effectiveCriteriaKey() const
 {
-    return QString("%1|%2|%3|%4|%5|%6").arg(m_workspaceContext.currentWorkspaceId())
+    return QString("%1|%2|%3|%4|%5|%6|%7|%8").arg(m_workspaceContext.currentWorkspaceId())
         .arg(m_searchEdit->text().trimmed()).arg(m_typeCombo->currentData().toInt())
-        .arg(m_stateCombo->currentData().toInt()).arg(m_locationCombo->currentData().toInt())
+        .arg(m_stateCombo->currentData().toInt()).arg(m_conditionCombo->currentData().toInt())
+        .arg(m_completenessCombo->currentData().toInt()).arg(m_locationCombo->currentData().toInt())
         .arg(m_activeCombo->currentData().toInt());
 }
 
@@ -168,12 +186,16 @@ void MyCollectionWidget::selectCollectionItem(int collectionItemId)
     }
     const QSignalBlocker typeBlocker(m_typeCombo);
     const QSignalBlocker stateBlocker(m_stateCombo);
+    const QSignalBlocker conditionBlocker(m_conditionCombo);
+    const QSignalBlocker completenessBlocker(m_completenessCombo);
     const QSignalBlocker locationBlocker(m_locationCombo);
     const QSignalBlocker activeBlocker(m_activeCombo);
     m_searchEdit->setText(selected->displayReference);
     m_typeCombo->setCurrentIndex(
         m_typeCombo->findData(static_cast<int>(selected->item.type)));
     m_stateCombo->setCurrentIndex(0);
+    m_conditionCombo->setCurrentIndex(0);
+    m_completenessCombo->setCurrentIndex(0);
     m_locationCombo->setCurrentIndex(0);
     m_activeCombo->setCurrentIndex(m_activeCombo->findData(selected->item.isActive ? 1 : 0));
     CollectionSearchCriteria criteria;
@@ -235,6 +257,8 @@ void MyCollectionWidget::loadPage(bool criteriaChanged)
     criteria.searchText = m_searchEdit->text().trimmed();
     criteria.type = static_cast<CollectionItemType>(m_typeCombo->currentData().toInt());
     criteria.state = static_cast<CollectionItemState>(m_stateCombo->currentData().toInt());
+    criteria.condition = static_cast<CollectionItemCondition>(m_conditionCombo->currentData().toInt());
+    criteria.completeness = static_cast<CollectionItemCompleteness>(m_completenessCombo->currentData().toInt());
     criteria.storageLocationId = m_locationCombo->currentData().toInt();
     criteria.activeState = m_activeCombo->currentData().toInt();
     criteria.limit = UserSettings::instance().resultsPerPage();
@@ -259,22 +283,24 @@ void MyCollectionWidget::loadPage(bool criteriaChanged)
         m_table->setItem(row, 3, new QTableWidgetItem(result.displayName));
         m_table->setItem(row, 4, new QTableWidgetItem(result.item.nickname));
         m_table->setItem(row, 5, new QTableWidgetItem(collectionItemStateToString(result.item.state)));
+        m_table->setItem(row, 6, new QTableWidgetItem(collectionItemConditionToString(result.item.condition)));
+        m_table->setItem(row, 7, new QTableWidgetItem(collectionItemCompletenessToString(result.item.completeness)));
         const int locationIndex = m_locationCombo->findData(result.item.storageLocationId);
         const QString location = result.item.storageLocationId <= 0 ? QStringLiteral("Unassigned")
             : (locationIndex >= 0 ? m_locationCombo->itemText(locationIndex) : result.locationName);
-        m_table->setItem(row, 6, new QTableWidgetItem(location));
+        m_table->setItem(row, 8, new QTableWidgetItem(location));
         const QString buildIdentity = result.sourceBuildReference.isEmpty()
             ? result.sourceBuildName
             : (result.sourceBuildName.isEmpty() ? result.sourceBuildReference
                 : QString("%1 (%2)").arg(result.sourceBuildName, result.sourceBuildReference));
         const QString source = result.item.sourceBuildId > 0
             ? QString("Build: %1").arg(buildIdentity) : QStringLiteral("Catalog / Existing Collection");
-        m_table->setItem(row, 7, new QTableWidgetItem(source));
+        m_table->setItem(row, 9, new QTableWidgetItem(source));
         auto* actions = new QComboBox(m_table);
         actions->addItem("Actions..."); actions->addItem("Details / Edit", "details");
         actions->addItem(result.item.isActive ? "Archive" : "Reactivate",
                          result.item.isActive ? "archive" : "reactivate");
-        m_table->setCellWidget(row, 8, actions);
+        m_table->setCellWidget(row, 10, actions);
         connect(actions, &QComboBox::currentIndexChanged, this,
                 [this, actions, id=result.item.id, active=result.item.isActive](int index) {
             if (index <= 0) return;

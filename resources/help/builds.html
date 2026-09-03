@@ -216,6 +216,11 @@ If you choose <b>Yes</b>, the selected quantities are added to My Loose Inventor
 Storage locations, inventory movement history is recorded, and the Build status changes to
 <b>Disassembled</b>.</p>
 
+<p>If the Build has a linked My Collection item, the dialog identifies it and asks you to confirm
+the resulting Collection State, defaulting to <b>Unassembled</b>. The inventory return, Build
+status, and Collection State change are saved atomically: if any part fails, none of them are
+saved. Collection Condition, Completeness, Location, nickname, and notes are not changed.</p>
+
 <div class="note"><b>This is a lifecycle and inventory operation.</b> Disassembly does not delete
 the Build. BrickSuite preserves the Build and its history while returning the physical pieces to
 loose inventory.</div>
@@ -254,6 +259,6 @@ Minifig Builds snapshot the required pieces imported in the Minifigs Catalog.</p
 
 <h2>Add a completed Build to My Collection</h2>
 <p>A completed, active Set, Minifig, or MOC Build can be deliberately added through <strong>Actions → Add to Collection</strong>. The Build remains the historical operational record, stays Complete, and no inventory or requirements are changed. Each Build can source only one Collection item; afterward the action becomes <strong>View Collection Item</strong>.</p>
-<p>Set and Minifig Builds require their authoritative catalog linkage. BrickSuite does not guess catalog identity from a displayed reference. A MOC uses its Build as its authoritative source. Collection state and future disassembly synchronization are handled separately.</p>
+<p>Set and Minifig Builds require their authoritative catalog linkage. BrickSuite does not guess catalog identity from a displayed reference. For a historical Set Build without that linkage, choose <strong>Link to Sets Catalog...</strong>. BrickSuite requires one exact reference match, shows the proposed Build and catalog identities, and saves the relationship only after confirmation. It refuses missing or ambiguous matches and does not rewrite the Build's name, reference, requirements, inventory mode, status, allocations, or provenance. A MOC uses its Build as its authoritative source.</p>
 </body>
 </html>

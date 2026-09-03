@@ -40,3 +40,39 @@ CollectionItemState collectionItemStateFromString(const QString& value)
     if (value == QStringLiteral("Sealed")) return CollectionItemState::Sealed;
     return CollectionItemState::Invalid;
 }
+
+QString collectionItemConditionToString(CollectionItemCondition condition)
+{
+    switch (condition) {
+    case CollectionItemCondition::New: return QStringLiteral("New");
+    case CollectionItemCondition::Used: return QStringLiteral("Used");
+    case CollectionItemCondition::Invalid: break;
+    }
+    return {};
+}
+
+CollectionItemCondition collectionItemConditionFromString(const QString& value)
+{
+    if (value == QStringLiteral("New")) return CollectionItemCondition::New;
+    if (value == QStringLiteral("Used")) return CollectionItemCondition::Used;
+    return CollectionItemCondition::Invalid;
+}
+
+QString collectionItemCompletenessToString(CollectionItemCompleteness completeness)
+{
+    switch (completeness) {
+    case CollectionItemCompleteness::Unknown: return QStringLiteral("Unknown");
+    case CollectionItemCompleteness::Complete: return QStringLiteral("Complete");
+    case CollectionItemCompleteness::Incomplete: return QStringLiteral("Incomplete");
+    case CollectionItemCompleteness::Invalid: break;
+    }
+    return {};
+}
+
+CollectionItemCompleteness collectionItemCompletenessFromString(const QString& value)
+{
+    if (value == QStringLiteral("Unknown")) return CollectionItemCompleteness::Unknown;
+    if (value == QStringLiteral("Complete")) return CollectionItemCompleteness::Complete;
+    if (value == QStringLiteral("Incomplete")) return CollectionItemCompleteness::Incomplete;
+    return CollectionItemCompleteness::Invalid;
+}

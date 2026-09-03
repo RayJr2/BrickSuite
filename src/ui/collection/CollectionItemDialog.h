@@ -21,6 +21,8 @@ private:
     int m_itemId = 0;
     int m_allowPartsSource = 0;
     QComboBox* m_stateCombo = nullptr;
+    QComboBox* m_conditionCombo = nullptr;
+    QComboBox* m_completenessCombo = nullptr;
     QComboBox* m_locationCombo = nullptr;
     QLineEdit* m_nicknameEdit = nullptr;
     QTextEdit* m_notesEdit = nullptr;

@@ -66,10 +66,50 @@ bool validateMigration29To30()
         bool seeded = true;
         for (const QString& statement : statements) seeded = seeded && q.exec(statement);
         ok = seeded && DatabaseSchema::initialize(database)
-             && scalar(database, "SELECT version FROM schema_version") == 30
+             && scalar(database, "SELECT version FROM schema_version") == 31
              && scalar(database, "SELECT allows_inventory FROM storage_location WHERE id=1") == 1
              && scalar(database, "SELECT allows_collection FROM storage_location WHERE id=1") == 0
              && scalar(database, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='collection_item'") == 1;
+        database.close();
+    }
+    QSqlDatabase::removeDatabase(connection);
+    return ok;
+}
+
+bool validateMigration30To31()
+{
+    QTemporaryDir directory;
+    if (!directory.isValid()) return false;
+    const QString connection = "collection-migration-30";
+    bool ok = false;
+    {
+        QSqlDatabase database = QSqlDatabase::addDatabase("QSQLITE", connection);
+        database.setDatabaseName(directory.filePath("v30.db"));
+        if (!database.open()) return false;
+        QSqlQuery q(database);
+        const QStringList statements = {
+            "PRAGMA foreign_keys=ON",
+            "CREATE TABLE schema_version(version INTEGER)",
+            "INSERT INTO schema_version VALUES(30)",
+            "CREATE TABLE workspace(id INTEGER PRIMARY KEY)",
+            "CREATE TABLE storage_location(id INTEGER PRIMARY KEY,workspace_id INTEGER)",
+            "CREATE TABLE set_catalog(id INTEGER PRIMARY KEY)",
+            "CREATE TABLE minifig_catalog(id INTEGER PRIMARY KEY)",
+            "CREATE TABLE build(id INTEGER PRIMARY KEY,workspace_id INTEGER)",
+            "CREATE TABLE collection_item(id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id INTEGER NOT NULL,item_type TEXT NOT NULL,set_catalog_id INTEGER,minifig_catalog_id INTEGER,state TEXT NOT NULL,storage_location_id INTEGER,source_build_id INTEGER,nickname TEXT,notes TEXT,allow_parts_source INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,created_utc TEXT NOT NULL,modified_utc TEXT NOT NULL)",
+            "INSERT INTO workspace VALUES(1)",
+            "INSERT INTO set_catalog VALUES(1)",
+            "INSERT INTO collection_item(workspace_id,item_type,set_catalog_id,state,created_utc,modified_utc) VALUES(1,'Set',1,'Sealed','2026-01-01','2026-01-01')"
+        };
+        bool seeded = true;
+        for (const QString& statement : statements) seeded = seeded && q.exec(statement);
+        ok = seeded && DatabaseSchema::initialize(database)
+             && scalar(database, "SELECT version FROM schema_version") == 31
+             && scalar(database, "SELECT COUNT(*) FROM collection_item WHERE condition='Used' AND completeness='Unknown'") == 1
+             && !q.exec("INSERT INTO collection_item(workspace_id,item_type,set_catalog_id,state,condition,completeness,created_utc,modified_utc) VALUES(1,'Set',1,'Assembled','Damaged','Unknown','x','x')")
+             && !q.exec("INSERT INTO collection_item(workspace_id,item_type,set_catalog_id,state,condition,completeness,created_utc,modified_utc) VALUES(1,'Set',1,'Assembled','Used','Partial','x','x')")
+             && DatabaseSchema::initialize(database)
+             && scalar(database, "SELECT version FROM schema_version") == 31;
         database.close();
     }
     QSqlDatabase::removeDatabase(connection);
@@ -87,12 +127,13 @@ int main(int argc, char* argv[])
     QDir(data).removeRecursively();
     Cleanup cleanup(data);
 
-    bool ok = require(validateMigration29To30(), "schema 29 to 30 migration and defaults");
+    bool ok = require(validateMigration29To30(), "schema 29 through 31 migration and defaults");
+    ok &= require(validateMigration30To31(), "schema 30 to 31 preserves items as Used/Unknown");
     if (!require(DatabaseManager::instance().initialize(), "fresh schema initialization")) return 1;
     QSqlDatabase db = DatabaseManager::instance().database();
     QSqlQuery q(db);
     const QString now = "2026-01-01T00:00:00.000Z";
-    ok &= require(scalar(db, "SELECT version FROM schema_version") == 30, "fresh schema is version 30");
+    ok &= require(scalar(db, "SELECT version FROM schema_version") == 31, "fresh schema is version 31");
     ok &= require(q.exec("INSERT INTO workspace(name,description,created_utc,modified_utc) VALUES('One','', '"+now+"','"+now+"'),('Two','', '"+now+"','"+now+"')"), "workspace seed");
     ok &= require(q.exec("INSERT INTO set_catalog(set_number,name,year,theme_id,num_parts,image_url,created_utc,modified_utc) VALUES('1000-1','Test Set',2026,1,3,'set.png','"+now+"','"+now+"')"), "Set seed");
     const int setId = q.lastInsertId().toInt();
@@ -160,6 +201,14 @@ int main(int argc, char* argv[])
     const int mocBuild = createBuild("MOC", "Castle MOC", 1, 0, 0, "Complete");
     const int incompleteMoc = createBuild("MOC", "Incomplete", 1, 0, 0, "Planned");
     const int otherMoc = createBuild("MOC", "Other MOC", 2, 0, 0, "Complete");
+    const int unmatchedSetBuild = createBuild("Set", "Unknown Set", 1, 0, 0,
+                                              "Complete", "CompleteSet");
+    if (const auto unmatched = BuildRepository().getById(unmatchedSetBuild)) {
+        Build changed = *unmatched; changed.setSetNumber("999999-1");
+        ok &= require(BuildRepository().update(changed), "prepare unmatched legacy Set");
+    }
+    const int plannedLegacySet = createBuild("Set", "Planned Legacy Set", 1, 0, 0,
+                                             "Planned", "CompleteSet");
 
     CollectionItemService service;
     const auto setOne = service.createSet(1, setId, CollectionItemState::Sealed, collectionLocation, 0, "Sealed copy", "one");
@@ -173,6 +222,13 @@ int main(int argc, char* argv[])
     ok &= require(setOne.success && setTwo.success && completeSet.success
                   && figOne.success && figTwo.success && moc.success,
                   "Set Stock/CompleteSet, Minifig, MOC, multiple-instance creation");
+    const auto catalogDefault = CollectionRepository().getById(setOne.collectionItemId);
+    const auto buildDefault = CollectionRepository().getById(setTwo.collectionItemId);
+    ok &= require(catalogDefault && catalogDefault->condition == CollectionItemCondition::Used
+                  && catalogDefault->completeness == CollectionItemCompleteness::Unknown
+                  && buildDefault && buildDefault->condition == CollectionItemCondition::Used
+                  && buildDefault->completeness == CollectionItemCompleteness::Complete,
+                  "catalog and Build Collection defaults remain conservative and independent");
     ok &= require(!service.createFromBuild(1, legacySetBuild,
                                            CollectionItemState::Assembled).success,
                   "legacy Set Build remains ineligible without catalog identity inference");
@@ -191,13 +247,19 @@ int main(int argc, char* argv[])
     ok &= require(scalar(db,"SELECT allow_parts_source FROM collection_item WHERE id="+QString::number(setOne.collectionItemId))==0,
                   "allow_parts_source defaults false");
     auto updated = service.updateDetails(setOne.collectionItemId, CollectionItemState::PartiallyAssembled,
-                                         bothLocation, "Changed", "independent", true);
+                                         bothLocation, "Changed", "independent", true,
+                                         CollectionItemCondition::New,
+                                         CollectionItemCompleteness::Incomplete);
     const auto updatedItem = CollectionRepository().getById(setOne.collectionItemId);
     ok &= require(updated.success && updatedItem && updatedItem->allowPartsSource
                   && updatedItem->state==CollectionItemState::PartiallyAssembled
+                  && updatedItem->condition==CollectionItemCondition::New
+                  && updatedItem->completeness==CollectionItemCompleteness::Incomplete
                   && updatedItem->storageLocationId==bothLocation, "independent state/location update and Set opt-in groundwork");
     ok &= require(!service.updateDetails(figOne.collectionItemId,CollectionItemState::Assembled,
-                                         collectionLocation,"","",true).success,
+                                         collectionLocation,"","",true,
+                                         CollectionItemCondition::Used,
+                                         CollectionItemCompleteness::Complete).success,
                   "Minifig parts-source opt-in rejected");
 
     CollectionSearchCriteria criteria; criteria.workspaceId=1; criteria.searchText="fig-1";
@@ -208,6 +270,85 @@ int main(int argc, char* argv[])
     const auto mocResults=CollectionRepository().search(criteria);
     ok &= require(mocResults.size()==1 && mocResults.first().displayReference=="MOC-42"
                   && mocResults.first().displayName=="Castle MOC", "MOC Build display identity");
+    criteria.searchText.clear(); criteria.type=CollectionItemType::Invalid;
+    criteria.condition=CollectionItemCondition::New;
+    criteria.completeness=CollectionItemCompleteness::Incomplete;
+    ok &= require(CollectionRepository().count(criteria)==1
+                  && CollectionRepository().search(criteria).size()==1,
+                  "condition/completeness count and paging predicates align");
+
+    const auto linkPreview = service.previewLegacySetBuildLink(legacySetBuild);
+    ok &= require(linkPreview.result.success && linkPreview.setCatalogId==setId,
+                  "legacy Set exact unique catalog match preview");
+    const auto linkedLegacy = service.linkLegacySetBuild(legacySetBuild, setId);
+    const auto linkedBuild = BuildRepository().getById(legacySetBuild);
+    ok &= require(linkedLegacy.success && linkedBuild && linkedBuild->setCatalogId()==setId
+                  && linkedBuild->status()=="Complete" && linkedBuild->inventoryMode()=="CompleteSet"
+                  && service.createFromBuild(1,legacySetBuild,CollectionItemState::Assembled).success,
+                  "explicit link changes only catalog identity and enables completed Build");
+    ok &= require(!service.linkLegacySetBuild(legacySetBuild,setId).success,
+                  "already-linked Set Build cannot be relinked");
+    ok &= require(!service.previewLegacySetBuildLink(unmatchedSetBuild).result.success
+                  && !service.previewLegacySetBuildLink(mocBuild).result.success,
+                  "legacy linking rejects no-match and non-Set Builds");
+    const auto plannedPreview = service.previewLegacySetBuildLink(plannedLegacySet);
+    ok &= require(plannedPreview.result.success
+                  && service.linkLegacySetBuild(plannedLegacySet,setId).success
+                  && !service.createFromBuild(1,plannedLegacySet,
+                                               CollectionItemState::Assembled).success,
+                  "non-Complete Build may be linked but remains Collection-ineligible");
+
+    const auto collectionBeforeDisassembly = CollectionRepository().getById(setTwo.collectionItemId);
+    ok &= require(db.transaction(), "start disassembly synchronization transaction");
+    ok &= require(service.updateStateForDisassembly(setBuild,CollectionItemState::Unassembled).success,
+                  "linked disassembly state update");
+    db.rollback();
+    const auto collectionAfterRollback = CollectionRepository().getById(setTwo.collectionItemId);
+    ok &= require(collectionBeforeDisassembly && collectionAfterRollback
+                  && collectionAfterRollback->state==collectionBeforeDisassembly->state
+                  && collectionAfterRollback->condition==collectionBeforeDisassembly->condition
+                  && collectionAfterRollback->completeness==collectionBeforeDisassembly->completeness
+                  && collectionAfterRollback->storageLocationId==collectionBeforeDisassembly->storageLocationId,
+                  "outer disassembly rollback preserves all Collection lifecycle fields");
+    for (const auto initialState : {CollectionItemState::Assembled,
+                                    CollectionItemState::PartiallyAssembled,
+                                    CollectionItemState::Unassembled,
+                                    CollectionItemState::Sealed}) {
+        ok &= require(service.updateDetails(setTwo.collectionItemId,initialState,bothLocation,
+                                             "Display","two",false,
+                                             CollectionItemCondition::Used,
+                                             CollectionItemCompleteness::Complete).success,
+                      "prepare linked Collection state");
+        ok &= require(service.updateStateForDisassembly(setBuild,
+                         CollectionItemState::Unassembled).success,
+                      "confirmed disassembly state update");
+        const auto stateResult = CollectionRepository().getById(setTwo.collectionItemId);
+        ok &= require(stateResult && stateResult->state==CollectionItemState::Unassembled
+                      && stateResult->condition==CollectionItemCondition::Used
+                      && stateResult->completeness==CollectionItemCompleteness::Complete
+                      && stateResult->storageLocationId==bothLocation,
+                      "disassembly changes only confirmed Collection state");
+    }
+    ok &= require(service.updateDetails(setTwo.collectionItemId,CollectionItemState::Assembled,
+                                         bothLocation,"Display","two",false,
+                                         CollectionItemCondition::Used,
+                                         CollectionItemCompleteness::Complete).success,
+                  "restore linked Collection state before forced failure");
+    ok &= require(q.exec("CREATE TRIGGER force_collection_state_failure BEFORE UPDATE OF state ON collection_item WHEN OLD.source_build_id="+QString::number(setBuild)+" BEGIN SELECT RAISE(ABORT,'forced Collection synchronization failure'); END"),
+                  "create Collection synchronization failure trigger");
+    ok &= require(db.transaction(), "start forced disassembly transaction");
+    auto buildForFailure = BuildRepository().getById(setBuild);
+    buildForFailure->setStatus("Disassembled");
+    const bool buildChanged = BuildRepository().update(*buildForFailure);
+    const auto forcedSync = service.updateStateForDisassembly(setBuild,
+                                                               CollectionItemState::Unassembled);
+    if (!forcedSync.success) db.rollback(); else db.commit();
+    q.exec("DROP TRIGGER force_collection_state_failure");
+    ok &= require(buildChanged && !forcedSync.success
+                  && BuildRepository().getById(setBuild)->status()=="Complete"
+                  && CollectionRepository().getById(setTwo.collectionItemId)->state
+                         ==CollectionItemState::Assembled,
+                  "Collection synchronization failure rolls back Build transaction");
 
     ok &= require(q.exec("UPDATE minifig_catalog SET is_active=0 WHERE id="+QString::number(minifigId))
                   && BuildRepository().setActive(mocBuild,false)
@@ -226,10 +367,10 @@ int main(int argc, char* argv[])
     ok &= require(!failed.success && scalar(db,"SELECT COUNT(*) FROM collection_item")==before,
                   "failed transaction leaves no partial Collection row");
     q.exec("DROP TRIGGER force_collection_failure");
-    ok &= require(scalar(db,"SELECT COUNT(*) FROM collection_item")==6, "no hard-delete operation occurred");
-    ok &= require(AutomaticBackupPolicy::versionDirectory(data,30).endsWith("v30")
-                  && AutomaticBackupPolicy::versionDirectory(data,29).endsWith("v29")
-                  && AutomaticBackupPolicy::versionDirectory(data,30)!=AutomaticBackupPolicy::versionDirectory(data,29),
+    ok &= require(scalar(db,"SELECT COUNT(*) FROM collection_item")==7, "no hard-delete operation occurred");
+    ok &= require(AutomaticBackupPolicy::versionDirectory(data,31).endsWith("v31")
+                  && AutomaticBackupPolicy::versionDirectory(data,30).endsWith("v30")
+                  && AutomaticBackupPolicy::versionDirectory(data,31)!=AutomaticBackupPolicy::versionDirectory(data,30),
                   "automatic backup version directories remain isolated");
 
     if (ok) qInfo() << "M23.9.1 Collection foundation validation passed.";

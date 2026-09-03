@@ -77,6 +77,19 @@ CollectionItemDialog::CollectionItemDialog(int collectionItemId, QWidget* parent
         m_stateCombo->addItem(collectionItemStateToString(state), static_cast<int>(state));
     }
     m_stateCombo->setCurrentIndex(m_stateCombo->findData(static_cast<int>(item.state)));
+    m_conditionCombo = new QComboBox(this);
+    for (const auto condition : {CollectionItemCondition::New, CollectionItemCondition::Used})
+        m_conditionCombo->addItem(collectionItemConditionToString(condition),
+                                  static_cast<int>(condition));
+    m_conditionCombo->setCurrentIndex(m_conditionCombo->findData(static_cast<int>(item.condition)));
+    m_completenessCombo = new QComboBox(this);
+    for (const auto completeness : {CollectionItemCompleteness::Unknown,
+                                    CollectionItemCompleteness::Complete,
+                                    CollectionItemCompleteness::Incomplete})
+        m_completenessCombo->addItem(collectionItemCompletenessToString(completeness),
+                                     static_cast<int>(completeness));
+    m_completenessCombo->setCurrentIndex(
+        m_completenessCombo->findData(static_cast<int>(item.completeness)));
 
     m_locationCombo = new QComboBox(this);
     m_locationCombo->addItem("Unassigned", 0);
@@ -98,6 +111,8 @@ CollectionItemDialog::CollectionItemDialog(int collectionItemId, QWidget* parent
     m_nicknameEdit = new QLineEdit(item.nickname, this);
     m_notesEdit = new QTextEdit(item.notes, this);
     form->addRow("State:", m_stateCombo);
+    form->addRow("Condition:", m_conditionCombo);
+    form->addRow("Completeness:", m_completenessCombo);
     form->addRow("Collection Location:", m_locationCombo);
     form->addRow("Nickname:", m_nicknameEdit);
     form->addRow("Notes:", m_notesEdit);
@@ -119,7 +134,9 @@ void CollectionItemDialog::save()
         m_itemId,
         static_cast<CollectionItemState>(m_stateCombo->currentData().toInt()),
         m_locationCombo->currentData().toInt(), m_nicknameEdit->text(),
-        m_notesEdit->toPlainText(), m_allowPartsSource != 0);
+        m_notesEdit->toPlainText(), m_allowPartsSource != 0,
+        static_cast<CollectionItemCondition>(m_conditionCombo->currentData().toInt()),
+        static_cast<CollectionItemCompleteness>(m_completenessCombo->currentData().toInt()));
     if (!result.success) {
         QMessageBox::critical(this, "Update Collection Item", result.message);
         return;

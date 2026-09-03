@@ -27,6 +27,8 @@ private:
     int m_createdItemId = 0;
     int m_sourceBuildId = 0;
     QComboBox* m_stateCombo = nullptr;
+    QComboBox* m_conditionCombo = nullptr;
+    QComboBox* m_completenessCombo = nullptr;
     QComboBox* m_locationCombo = nullptr;
     QLineEdit* m_nicknameEdit = nullptr;
     QTextEdit* m_notesEdit = nullptr;

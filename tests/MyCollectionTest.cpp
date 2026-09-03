@@ -25,10 +25,10 @@ int main(int argc, char** argv)
     QStandardPaths::setTestModeEnabled(true);
     const QString data = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir(data).removeRecursively(); Cleanup cleanup(data);
-    bool ok = check(DatabaseManager::instance().initialize(), "initialize schema 30");
+    bool ok = check(DatabaseManager::instance().initialize(), "initialize schema 31");
     QSqlDatabase db = DatabaseManager::instance().database(); QSqlQuery q(db);
     const QString now = "2026-01-01T00:00:00.000Z";
-    ok &= check(scalar(db,"SELECT version FROM schema_version")==30, "schema remains 30");
+    ok &= check(scalar(db,"SELECT version FROM schema_version")==31, "schema remains 31");
     ok &= check(q.exec("INSERT INTO workspace(name,description,created_utc,modified_utc) VALUES('One','', '"+now+"','"+now+"')"), "workspace");
     ok &= check(q.exec("INSERT INTO set_catalog(set_number,name,year,theme_id,num_parts,image_url,created_utc,modified_utc) VALUES('100-1','City Set',2026,1,10,'set-url','"+now+"','"+now+"')"), "set");
     const int setId=q.lastInsertId().toInt();
@@ -69,6 +69,10 @@ int main(int argc, char** argv)
     c.storageLocationId=-1; ok &= check(repository.count(c)==1,"Unassigned filter");
     c.storageLocationId=0; c.activeState=0; ok &= check(repository.count(c)==1,"archived-only filter");
     c.activeState=-1; ok &= check(repository.count(c)==4,"combined active/archive filter");
+    c.activeState=-1; c.storageLocationId=0; c.condition=CollectionItemCondition::Used;
+    c.completeness=CollectionItemCompleteness::Unknown;
+    ok &= check(repository.count(c)==4 && repository.search(c).size()==4,
+                "condition/completeness count and search predicates align");
     ok &= check(locations.isValidInventoryDestination(1,bin) && !locations.isValidCollectionDestination(1,bin)
                 && !locations.isValidInventoryDestination(1,shelf) && locations.isValidCollectionDestination(1,shelf)
                 && locations.isValidInventoryDestination(1,both) && locations.isValidCollectionDestination(1,both),

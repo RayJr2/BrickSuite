@@ -466,6 +466,24 @@ bool BuildRepository::update(Build& build)
     return true;
 }
 
+bool BuildRepository::linkSetCatalog(int buildId, int setCatalogId)
+{
+    if (buildId <= 0 || setCatalogId <= 0) return false;
+    QSqlQuery query(DatabaseManager::instance().database());
+    query.prepare(R"(UPDATE build SET set_catalog_id=:set_catalog_id,
+        modified_utc=:modified_utc WHERE id=:id AND build_type='Set'
+        AND set_catalog_id IS NULL)");
+    query.bindValue(":set_catalog_id", setCatalogId);
+    query.bindValue(":modified_utc", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    query.bindValue(":id", buildId);
+    if (!query.exec()) {
+        qCritical() << "Unable to link historical Set Build to catalog:"
+                    << query.lastError().text();
+        return false;
+    }
+    return query.numRowsAffected() == 1;
+}
+
 Build BuildRepository::buildFromQuery(const QSqlQuery& query) const
 {
     Build build;

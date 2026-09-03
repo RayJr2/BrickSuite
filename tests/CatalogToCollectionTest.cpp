@@ -29,7 +29,7 @@ int main(int argc, char** argv)
     bool ok=check(DatabaseManager::instance().initialize(),"initialize");
     QSqlDatabase db=DatabaseManager::instance().database(); QSqlQuery q(db);
     const QString now="2026-01-01T00:00:00.000Z";
-    ok &= check(scalar(db,"SELECT version FROM schema_version")==30,"schema remains 30");
+    ok &= check(scalar(db,"SELECT version FROM schema_version")==31,"schema remains 31");
     ok &= check(q.exec("INSERT INTO workspace(name,description,created_utc,modified_utc) VALUES('One','', '"+now+"','"+now+"'),('Two','', '"+now+"','"+now+"')"),"workspaces");
     ok &= check(q.exec("INSERT INTO set_catalog(set_number,name,year,theme_id,num_parts,image_url,created_utc,modified_utc) VALUES('100-1','Owned Set',2026,1,10,'','"+now+"','"+now+"')"),"set"); const int setId=q.lastInsertId().toInt();
     ok &= check(q.exec("INSERT INTO minifig_catalog(name,num_parts,image_url,is_active,created_utc,modified_utc) VALUES('Owned Fig',4,'',1,'"+now+"','"+now+"')"),"minifig"); const int figId=q.lastInsertId().toInt();
@@ -50,6 +50,8 @@ int main(int argc, char** argv)
     const auto setItem=CollectionRepository().getById(setOne.collectionItemId);
     const auto figItem=CollectionRepository().getById(figOne.collectionItemId);
     ok &= check(setItem && setItem->state==CollectionItemState::Assembled && setItem->storageLocationId==0
+                && setItem->condition==CollectionItemCondition::Used
+                && setItem->completeness==CollectionItemCompleteness::Unknown
                 && setItem->sourceBuildId==0 && !setItem->allowPartsSource
                 && setItem->nickname=="First" && setItem->notes=="set notes","Set identity, default-state input, Unassigned, metadata, and dormant fields");
     ok &= check(figItem && figItem->minifigCatalogId==figId && figItem->setCatalogId==0

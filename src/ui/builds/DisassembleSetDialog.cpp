@@ -34,10 +34,12 @@
 #include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/BuildRequirementRepository.h"
 #include "../../repositories/ColorRepository.h"
+#include "../../repositories/CollectionRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
+#include "../../services/collection/CollectionItemService.h"
 
 #include <QDebug>
 #include <QAbstractItemView>
@@ -79,6 +81,25 @@ DisassembleSetDialog::DisassembleSetDialog(
     m_buildLabel->setFont(buildFont);
 
     mainLayout->addWidget(m_buildLabel);
+
+    auto* collectionLayout = new QHBoxLayout;
+    m_collectionStateLabel = new QLabel(
+        "This Build is represented in My Collection. Resulting Collection State:", this);
+    m_collectionStateCombo = new QComboBox(this);
+    for (const auto state : {CollectionItemState::Assembled,
+                             CollectionItemState::Unassembled,
+                             CollectionItemState::PartiallyAssembled,
+                             CollectionItemState::Sealed})
+        m_collectionStateCombo->addItem(collectionItemStateToString(state),
+                                        static_cast<int>(state));
+    m_collectionStateCombo->setCurrentIndex(m_collectionStateCombo->findData(
+        static_cast<int>(CollectionItemState::Unassembled)));
+    m_collectionStateLabel->hide();
+    m_collectionStateCombo->hide();
+    collectionLayout->addWidget(m_collectionStateLabel);
+    collectionLayout->addWidget(m_collectionStateCombo);
+    collectionLayout->addStretch();
+    mainLayout->addLayout(collectionLayout);
 
     //
     // Default destination lets the user assign a
@@ -242,6 +263,18 @@ bool DisassembleSetDialog::loadBuild()
     }
 
     m_buildLabel->setText(buildText);
+
+    std::optional<CollectionItem> collection;
+    if (!CollectionRepository().tryGetBySourceBuild(m_buildId, collection)) {
+        QMessageBox::critical(this, "Disassemble Build",
+                              "Unable to check for a linked Collection item.");
+        return false;
+    }
+    if (collection) {
+        m_linkedCollectionItemId = collection->id;
+        m_collectionStateLabel->show();
+        m_collectionStateCombo->show();
+    }
 
     return true;
 }
@@ -706,14 +739,20 @@ void DisassembleSetDialog::disassembleSet()
                                         "storage locations.\n\n"
                                         "Inventory movement history will be "
                                         "recorded and the Build Status will "
-                                        "be changed to Disassembled.")
+                                        "be changed to Disassembled.%6")
                                     .arg(operationName)
                                     .arg(m_buildName)
                                     .arg(m_setNumber.trimmed().isEmpty()
                                              ? QString()
                                              : QString("\nReference: %1").arg(m_setNumber))
                                     .arg(rowsReturned)
-                                    .arg(totalReturned),
+                                    .arg(totalReturned)
+                                    .arg(m_linkedCollectionItemId > 0
+                                        ? QString("\n\nThe linked My Collection item will change to %1. "
+                                                  "Its Condition, Completeness, and Collection "
+                                                  "Location will not change.")
+                                              .arg(m_collectionStateCombo->currentText())
+                                        : QString()),
                                 QMessageBox::Yes | QMessageBox::No,
                                 QMessageBox::No);
 
@@ -962,6 +1001,21 @@ void DisassembleSetDialog::disassembleSet()
                               "No changes were saved.");
 
         return;
+    }
+
+    if (m_linkedCollectionItemId > 0) {
+        const auto state = static_cast<CollectionItemState>(
+            m_collectionStateCombo->currentData().toInt());
+        const auto collectionResult = CollectionItemService().updateStateForDisassembly(
+            m_buildId, state);
+        if (!collectionResult.success) {
+            qCritical() << "Build disassembly failed synchronizing Collection state."
+                        << "BuildId:" << m_buildId;
+            database.rollback();
+            QMessageBox::critical(this, "Disassemble Build",
+                "Unable to update the linked Collection item.\n\nNo changes were saved.");
+            return;
+        }
     }
 
     if (!database.commit()) {

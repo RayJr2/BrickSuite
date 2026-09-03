@@ -34,6 +34,8 @@ public:
     std::optional<SetCatalogItem> getById(int id) const;
 
     std::optional<SetCatalogItem> getBySetNumber(const QString& setNumber) const;
+    QList<SetCatalogItem> getExactMatchesBySetNumber(const QString& setNumber,
+                                                     bool* querySucceeded = nullptr) const;
 
     QList<SetCatalogItem> search(const SetCatalogSearchCriteria& criteria) const;
 

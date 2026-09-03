@@ -39,6 +39,7 @@ public:
     bool setActive(int buildId, bool active);
 
     bool update(Build& build);
+    bool linkSetCatalog(int buildId, int setCatalogId);
 
 private:
     Build buildFromQuery(const QSqlQuery& query) const;
