@@ -64,6 +64,8 @@ qt_add_executable(BrickSuite
     resources/resources.qrc
     src/services/ReferenceDataSeeder.cpp
     src/services/ReferenceDataSeeder.h
+    src/services/database/DatabaseStatusService.h
+    src/services/database/DatabaseStatusService.cpp
     src/services/Logger.h
     src/services/Updater.h
     src/services/Updater.cpp
@@ -98,6 +100,8 @@ qt_add_executable(BrickSuite
     src/ui/reference/ManufacturerEditDialog.cpp
     src/ui/reference/ReferenceDataDialog.h
     src/ui/reference/ReferenceDataDialog.cpp
+    src/ui/database/DatabaseStatusDialog.h
+    src/ui/database/DatabaseStatusDialog.cpp
     src/models/Color.h
     src/models/Color.cpp
     src/repositories/ColorRepository.h
@@ -349,6 +353,14 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(DatabaseStatusServiceTest EXCLUDE_FROM_ALL
+        tests/DatabaseStatusServiceTest.cpp
+        src/services/database/DatabaseStatusService.h
+        src/services/database/DatabaseStatusService.cpp
+    )
+    target_link_libraries(DatabaseStatusServiceTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME DatabaseStatusService COMMAND DatabaseStatusServiceTest)
+
     qt_add_executable(ManufacturerManagementTest EXCLUDE_FROM_ALL
         tests/ManufacturerManagementTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp

@@ -30,6 +30,7 @@ class QTextEdit;
 class QPushButton;
 class QTabWidget;
 class QWidget;
+class QAction;
 
 class StorageWidget;
 class PartsCatalogWidget;
@@ -40,6 +41,7 @@ class MinifigsCatalogWidget;
 class BackgroundPartColorImageCacheService;
 class LogViewerDialog;
 class PartReferenceDialog;
+class DatabaseStatusDialog;
 
 class MainWindow : public QMainWindow
 {
@@ -82,4 +84,7 @@ private:
     BackgroundPartColorImageCacheService* m_backgroundPartColorImageCacheService = nullptr;
     LogViewerDialog* m_logViewerDialog = nullptr;
     PartReferenceDialog* m_partReferenceDialog = nullptr;
+    DatabaseStatusDialog* m_databaseStatusDialog = nullptr;
+    QAction* m_backupDatabaseAction = nullptr;
+    QAction* m_restoreDatabaseAction = nullptr;
 };

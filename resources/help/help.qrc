@@ -15,6 +15,7 @@
         <file>missing_parts.html</file>
         <file>lost_found.html</file>
         <file>backup_restore.html</file>
+        <file>database_status.html</file>
         <file>reference_data.html</file>
         <file>settings.html</file>
         <file>logging.html</file>

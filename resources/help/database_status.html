@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Database Status &amp; Integrity</title><style>
+body { font-family: sans-serif; line-height: 1.45; margin: 22px; }
+h1 { margin-bottom: .35em; } .note { border-left: 4px solid #888; padding-left: 10px; }
+</style></head><body>
+<h1>Database Status &amp; Integrity</h1>
+<p>Choose <b>Tools → Database Status &amp; Integrity...</b> to view the current database file,
+schema version, size, catalog and inventory counts, and selected SQLite details.</p>
+<h2>Checks</h2>
+<p><b>Run Integrity Check</b> asks SQLite to examine the complete database structure.
+<b>Run Foreign Key Check</b> looks for records whose required related records are missing.
+These read-only checks can take time on a large database; BrickSuite remains responsive while they run.</p>
+<p>A <b>Healthy</b> result means the selected check found no problem. A reported problem is not
+automatically repaired. Review <a href="logging.html">Application Log</a>, preserve the database,
+and consider restoring a previously verified known-good <a href="backup_restore.html">backup</a>.</p>
+<p class="note">Creating a new backup does not repair corruption and may preserve an existing problem.
+BrickSuite never automatically repairs database corruption from this dialog.</p>
+<h2>Actions</h2>
+<p><b>Open Database Folder</b> opens the containing directory without opening or editing the SQLite file.
+The Backup and Restore buttons use the same verified workflows as the File menu.</p>
+</body></html>

@@ -67,6 +67,7 @@
 #include "settings/SettingsDialog.h"
 #include "storage/StorageWidget.h"
 #include "reference/ReferenceDataDialog.h"
+#include "database/DatabaseStatusDialog.h"
 
 #include <QAction>
 #include <QCloseEvent>
@@ -372,11 +373,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
     // File menu
     auto* fileMenu = menuBar()->addMenu("File");
 
-    auto* backupDatabaseAction = fileMenu->addAction("Backup Database...");
+    m_backupDatabaseAction = fileMenu->addAction("Backup Database...");
 
-    auto* restoreDatabaseAction = fileMenu->addAction("Restore Database...");
+    m_restoreDatabaseAction = fileMenu->addAction("Restore Database...");
 
-    connect(backupDatabaseAction, &QAction::triggered, this, [this]() {
+    connect(m_backupDatabaseAction, &QAction::triggered, this, [this]() {
         const QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
 
         const QString defaultFileName = QString("BrickSuite_Backup_%1.db").arg(timestamp);
@@ -437,7 +438,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
         statusBar()->showMessage("Database backup created.", 5000);
     });
 
-    connect(restoreDatabaseAction, &QAction::triggered, this, [this]() {
+    connect(m_restoreDatabaseAction, &QAction::triggered, this, [this]() {
         const QString backupPath = QFileDialog::getOpenFileName(this,
                                                                 "Restore BrickSuite Database",
                                                                 QString(),
@@ -545,6 +546,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
                                      .arg(backupPath));
 
         statusBar()->showMessage("Database restored successfully.", 5000);
+
+        if (m_databaseStatusDialog)
+            m_databaseStatusDialog->close();
     });
 
     // Edit menu
@@ -581,6 +585,25 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext, QWidget* parent)
             if (m_buildsWidget) m_buildsWidget->reloadManufacturers();
         });
         dialog.exec();
+    });
+
+    auto* databaseStatusAction = toolsMenu->addAction("Database Status && Integrity...");
+    connect(databaseStatusAction, &QAction::triggered, this, [this]() {
+        if (!m_databaseStatusDialog) {
+            m_databaseStatusDialog = new DatabaseStatusDialog(
+                DatabaseManager::instance().databasePath(), this);
+            m_databaseStatusDialog->setAttribute(Qt::WA_DeleteOnClose);
+            connect(m_databaseStatusDialog, &DatabaseStatusDialog::backupRequested,
+                    m_backupDatabaseAction, &QAction::trigger);
+            connect(m_databaseStatusDialog, &DatabaseStatusDialog::restoreRequested,
+                    m_restoreDatabaseAction, &QAction::trigger);
+            connect(m_databaseStatusDialog, &QObject::destroyed, this, [this]() {
+                m_databaseStatusDialog = nullptr;
+            });
+        }
+        m_databaseStatusDialog->show();
+        m_databaseStatusDialog->raise();
+        m_databaseStatusDialog->activateWindow();
     });
 
     toolsMenu->addSeparator();

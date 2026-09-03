@@ -256,6 +256,7 @@ void HelpDialog::buildContents()
     maintenanceGroup->setText(0, "Maintenance & Support");
 
     addTopicItem(maintenanceGroup, HelpTopic::BackupRestore, "Backup / Restore");
+    addTopicItem(maintenanceGroup, HelpTopic::DatabaseStatus, "Database Status & Integrity");
     addTopicItem(maintenanceGroup, HelpTopic::ReferenceData, "Lists & Reference Data");
     addTopicItem(maintenanceGroup, HelpTopic::Settings, "Settings");
     addTopicItem(maintenanceGroup, HelpTopic::Logging, "Application Log");
