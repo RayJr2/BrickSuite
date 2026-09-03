@@ -102,6 +102,8 @@ qt_add_executable(BrickSuite
     src/ui/collection/MyCollectionWidget.cpp
     src/ui/collection/CollectionItemDialog.h
     src/ui/collection/CollectionItemDialog.cpp
+    src/ui/collection/CatalogCollectionDialog.h
+    src/ui/collection/CatalogCollectionDialog.cpp
     src/models/Part.h
     src/models/Part.cpp
     src/models/PartReferenceEntry.h
@@ -373,6 +375,32 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(CatalogToCollectionTest EXCLUDE_FROM_ALL
+        tests/CatalogToCollectionTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Workspace.h src/models/Workspace.cpp
+        src/models/StorageLocation.h src/models/StorageLocation.cpp
+        src/models/CollectionItem.h src/models/CollectionItem.cpp
+        src/models/Build.h src/models/Build.cpp
+        src/models/SetCatalogItem.h src/models/SetCatalogItem.cpp
+        src/models/SetCatalogSearchCriteria.h
+        src/models/MinifigCatalogItem.h src/models/MinifigCatalogItem.cpp
+        src/models/MinifigCatalogSearchCriteria.h src/models/MinifigCatalogSearchResult.h
+        src/models/MinifigExternalIdentifier.h src/models/Manufacturer.h
+        src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
+        src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
+        src/repositories/CollectionRepository.h src/repositories/CollectionRepository.cpp
+        src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
+        src/repositories/SetCatalogRepository.h src/repositories/SetCatalogRepository.cpp
+        src/repositories/MinifigCatalogRepository.h src/repositories/MinifigCatalogRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/services/collection/CollectionItemService.h src/services/collection/CollectionItemService.cpp
+        src/services/database/AutomaticBackupPolicy.h src/services/database/AutomaticBackupPolicy.cpp
+    )
+    target_link_libraries(CatalogToCollectionTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME CatalogToCollection COMMAND CatalogToCollectionTest)
+
     qt_add_executable(MyCollectionTest EXCLUDE_FROM_ALL
         tests/MyCollectionTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp

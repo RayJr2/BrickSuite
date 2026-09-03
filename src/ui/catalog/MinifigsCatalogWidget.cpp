@@ -1,6 +1,7 @@
 #include "MinifigsCatalogWidget.h"
 
 #include "MinifigDetailsDialog.h"
+#include "../../app/WorkspaceContext.h"
 
 #include "../../import/RebrickableMinifigCatalogImporter.h"
 #include "../../import/RebrickableMinifigThemeImporter.h"
@@ -30,8 +31,9 @@
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
-MinifigsCatalogWidget::MinifigsCatalogWidget(QWidget* parent)
-    : QWidget(parent)
+MinifigsCatalogWidget::MinifigsCatalogWidget(WorkspaceContext& workspaceContext,
+                                             QWidget* parent)
+    : QWidget(parent), m_workspaceContext(workspaceContext)
     , m_imageService(new MinifigImageService(this))
 {
     auto* mainLayout = new QVBoxLayout(this);
@@ -208,9 +210,11 @@ void MinifigsCatalogWidget::searchMinifigs()
                     if (index <= 0)
                         return;
                     actionCombo->setCurrentIndex(0);
-                    MinifigDetailsDialog dialog(minifigCatalogId, this);
+                    MinifigDetailsDialog dialog(minifigCatalogId, m_workspaceContext, this);
                     connect(&dialog, &MinifigDetailsDialog::createBuildRequested,
                             this, &MinifigsCatalogWidget::createBuildRequested);
+                    connect(&dialog, &MinifigDetailsDialog::collectionItemCreated,
+                            this, &MinifigsCatalogWidget::collectionItemCreated);
                     dialog.exec();
                 });
 

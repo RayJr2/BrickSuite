@@ -8,17 +8,20 @@ class QPushButton;
 class QTableWidget;
 class QComboBox;
 class MinifigImageService;
+class WorkspaceContext;
 
 class MinifigsCatalogWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit MinifigsCatalogWidget(QWidget* parent = nullptr);
+    explicit MinifigsCatalogWidget(WorkspaceContext& workspaceContext,
+                                   QWidget* parent = nullptr);
     void refresh();
 
 signals:
     void createBuildRequested(int minifigCatalogId, const QString& buildName);
+    void collectionItemCreated(int collectionItemId);
 
 private slots:
     void searchMinifigs();
@@ -31,6 +34,7 @@ private slots:
 private:
     void updatePagingControls();
     void loadThemes();
+    WorkspaceContext& m_workspaceContext;
 
     int m_currentPage = 0;
     int m_totalResultCount = 0;

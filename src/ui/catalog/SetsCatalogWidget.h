@@ -27,13 +27,14 @@ class QLabel;
 class QLineEdit;
 class QPushButton;
 class QTableWidget;
+class WorkspaceContext;
 
 class SetsCatalogWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit SetsCatalogWidget(QWidget* parent = nullptr);
+    explicit SetsCatalogWidget(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
 
     void refresh();
 
@@ -46,10 +47,12 @@ private slots:
 signals:
     void createBuildRequested(int setCatalogId, const QString& inventoryMode);
     void createStockBuildRequested(int setCatalogId, const QString& buildName);
+    void collectionItemCreated(int collectionItemId);
 
 private:
     void loadYears();
     void updatePagingControls();
+    WorkspaceContext& m_workspaceContext;
 
     int m_currentPage = 0;
     int m_lastResultCount = 0;

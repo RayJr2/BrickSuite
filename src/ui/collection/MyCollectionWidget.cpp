@@ -25,6 +25,7 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QSet>
+#include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QStringList>
 #include <QTableWidget>
@@ -156,6 +157,53 @@ void MyCollectionWidget::refresh()
     loadLocations();
     m_page = 0;
     loadPage(true);
+}
+
+void MyCollectionWidget::selectCollectionItem(int collectionItemId)
+{
+    const auto selected = CollectionRepository().displayById(collectionItemId);
+    if (!selected || selected->item.workspaceId != m_workspaceContext.currentWorkspaceId()) {
+        refresh();
+        return;
+    }
+    const QSignalBlocker typeBlocker(m_typeCombo);
+    const QSignalBlocker stateBlocker(m_stateCombo);
+    const QSignalBlocker locationBlocker(m_locationCombo);
+    const QSignalBlocker activeBlocker(m_activeCombo);
+    m_searchEdit->setText(selected->displayReference);
+    m_typeCombo->setCurrentIndex(
+        m_typeCombo->findData(static_cast<int>(selected->item.type)));
+    m_stateCombo->setCurrentIndex(0);
+    m_locationCombo->setCurrentIndex(0);
+    m_activeCombo->setCurrentIndex(m_activeCombo->findData(1));
+    CollectionSearchCriteria criteria;
+    criteria.workspaceId = m_workspaceContext.currentWorkspaceId();
+    criteria.searchText = selected->displayReference;
+    criteria.type = selected->item.type;
+    criteria.activeState = 1;
+    criteria.limit = UserSettings::instance().resultsPerPage();
+    const int total = CollectionRepository().count(criteria);
+    const int pages = qMax(1, (total + criteria.limit - 1) / criteria.limit);
+    m_page = 0;
+    for (int page = 0; page < pages; ++page) {
+        criteria.offset = page * criteria.limit;
+        const auto pageResults = CollectionRepository().search(criteria);
+        bool found = false;
+        for (const auto& result : pageResults) {
+            if (result.item.id == collectionItemId) { found = true; break; }
+        }
+        if (found) { m_page = page; break; }
+    }
+    m_loadedCriteriaKey = effectiveCriteriaKey();
+    loadPage();
+    for (int row = 0; row < m_table->rowCount(); ++row) {
+        QTableWidgetItem* item = m_table->item(row, 0);
+        if (item && item->data(ItemIdRole).toInt() == collectionItemId) {
+            m_table->selectRow(row);
+            m_table->scrollToItem(item, QAbstractItemView::PositionAtCenter);
+            break;
+        }
+    }
 }
 
 void MyCollectionWidget::loadLocations()

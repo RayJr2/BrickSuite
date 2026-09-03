@@ -32,16 +32,19 @@ class SetDetailsProviderService;
 class PartImageService;
 class RebrickableSetPartsService;
 class QTableWidget;
+class WorkspaceContext;
 
 class SetDetailsDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit SetDetailsDialog(int setCatalogId, QWidget* parent = nullptr);
+    explicit SetDetailsDialog(int setCatalogId, WorkspaceContext& workspaceContext,
+                              QWidget* parent = nullptr);
 
 signals:
     void createBuildRequested(int setCatalogId, const QString& buildName);
+    void collectionItemCreated(int collectionItemId);
 
 private:
     bool loadSet();
@@ -54,9 +57,11 @@ private:
     void getPartsFromRebrickable();
     void importPartsList();
     void createBuildFromStock();
+    void addToCollection();
     void setCompositionActionsEnabled(bool enabled);
 
     int m_setCatalogId = 0;
+    WorkspaceContext& m_workspaceContext;
 
     QString m_setNumber;
     QString m_setName;
@@ -92,6 +97,7 @@ private:
     QPushButton* m_getPartsButton = nullptr;
     QPushButton* m_importPartsButton = nullptr;
     QPushButton* m_createBuildButton = nullptr;
+    QPushButton* m_addToCollectionButton = nullptr;
     int m_requiredPieces = 0;
     int m_sparePieces = 0;
 

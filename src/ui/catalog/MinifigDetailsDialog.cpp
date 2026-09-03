@@ -1,4 +1,6 @@
 #include "MinifigDetailsDialog.h"
+#include "../collection/CatalogCollectionDialog.h"
+#include "../../app/WorkspaceContext.h"
 
 #include "../../models/MinifigCatalogItem.h"
 #include "../../models/MinifigExternalIdentifier.h"
@@ -28,9 +30,12 @@
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
-MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent)
+MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId,
+                                           WorkspaceContext& workspaceContext,
+                                           QWidget* parent)
     : QDialog(parent)
     , m_minifigCatalogId(minifigCatalogId)
+    , m_workspaceContext(workspaceContext)
     , m_imageService(new MinifigImageService(this))
     , m_partImageService(new PartImageService(this))
     , m_rebrickablePartsService(new RebrickableMinifigPartsService(this))
@@ -109,8 +114,13 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent
                                              QDialogButtonBox::ActionRole);
     m_createBuildButton->setEnabled(false);
     m_createBuildButton->setToolTip("Import a Minifig parts list first.");
+    m_addToCollectionButton = buttons->addButton("Add to Collection...",
+                                                  QDialogButtonBox::ActionRole);
+    m_addToCollectionButton->setEnabled(false);
     connect(m_createBuildButton, &QPushButton::clicked,
             this, &MinifigDetailsDialog::createBuildFromStock);
+    connect(m_addToCollectionButton, &QPushButton::clicked,
+            this, &MinifigDetailsDialog::addToCollection);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     mainLayout->addWidget(buttons);
     connect(m_importPartsButton,
@@ -156,6 +166,8 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent
     if (!loadMinifig())
         return;
 
+    m_addToCollectionButton->setEnabled(m_workspaceContext.hasCurrentWorkspace());
+
     m_getPartsButton->setEnabled(!m_minifigNumber.isEmpty());
 
     loadComposition();
@@ -169,6 +181,20 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId, QWidget* parent
         m_imageStatusLabel->setText("Loading...");
         m_imageService->requestMinifigImage(m_minifigNumber, m_imageUrl);
     }
+}
+
+void MinifigDetailsDialog::addToCollection()
+{
+    if (!m_workspaceContext.hasCurrentWorkspace()) {
+        QMessageBox::warning(this, "Add to Collection",
+                             "Select a workspace before adding a Minifig to My Collection.");
+        return;
+    }
+    CatalogCollectionDialog dialog(m_workspaceContext.currentWorkspaceId(),
+                                   CollectionItemType::Minifig, m_minifigCatalogId,
+                                   m_minifigNumber, m_minifigName, this);
+    if (dialog.exec() == QDialog::Accepted && dialog.createdCollectionItemId() > 0)
+        emit collectionItemCreated(dialog.createdCollectionItemId());
 }
 
 bool MinifigDetailsDialog::loadMinifig()

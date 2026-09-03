@@ -17,6 +17,7 @@ class MyCollectionWidget : public QWidget
 public:
     explicit MyCollectionWidget(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
     void refresh();
+    void selectCollectionItem(int collectionItemId);
 
 private:
     void loadLocations();

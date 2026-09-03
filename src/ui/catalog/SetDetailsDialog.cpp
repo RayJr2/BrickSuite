@@ -19,6 +19,8 @@
  */
 
 #include "SetDetailsDialog.h"
+#include "../collection/CatalogCollectionDialog.h"
+#include "../../app/WorkspaceContext.h"
 
 #include "../../models/SetCatalogItem.h"
 #include "../../models/SetCatalogPart.h"
@@ -50,9 +52,11 @@
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
-SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
+SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspaceContext,
+                                   QWidget* parent)
     : QDialog(parent)
     , m_setCatalogId(setCatalogId)
+    , m_workspaceContext(workspaceContext)
 {
     setWindowTitle("Set Details");
 
@@ -198,6 +202,9 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
     m_createBuildButton = buttonBox->addButton("Create Build From Stock...",
                                                QDialogButtonBox::ActionRole);
     m_createBuildButton->setEnabled(false);
+    m_addToCollectionButton = buttonBox->addButton("Add to Collection...",
+                                                    QDialogButtonBox::ActionRole);
+    m_addToCollectionButton->setEnabled(false);
 
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
@@ -215,6 +222,8 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
             this, &SetDetailsDialog::importPartsList);
     connect(m_createBuildButton, &QPushButton::clicked,
             this, &SetDetailsDialog::createBuildFromStock);
+    connect(m_addToCollectionButton, &QPushButton::clicked,
+            this, &SetDetailsDialog::addToCollection);
     connect(m_rebrickablePartsService, &RebrickableSetPartsService::finished,
             this, [this](const RebrickableSetPartsService::Result& result) {
         setCompositionActionsEnabled(true);
@@ -393,6 +402,8 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
     if (!loadSet())
         return;
 
+    m_addToCollectionButton->setEnabled(m_workspaceContext.hasCurrentWorkspace());
+
     loadComposition();
 
     loadCachedImage();
@@ -400,6 +411,20 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, QWidget* parent)
     requestImage();
 
     requestProviderEnrichment();
+}
+
+void SetDetailsDialog::addToCollection()
+{
+    if (!m_workspaceContext.hasCurrentWorkspace()) {
+        QMessageBox::warning(this, "Add to Collection",
+                             "Select a workspace before adding a Set to My Collection.");
+        return;
+    }
+    CatalogCollectionDialog dialog(m_workspaceContext.currentWorkspaceId(),
+                                   CollectionItemType::Set, m_setCatalogId,
+                                   m_setNumber, m_setName, this);
+    if (dialog.exec() == QDialog::Accepted && dialog.createdCollectionItemId() > 0)
+        emit collectionItemCreated(dialog.createdCollectionItemId());
 }
 
 bool SetDetailsDialog::loadSet()

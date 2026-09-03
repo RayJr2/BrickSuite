@@ -8,16 +8,19 @@ class PartImageService;
 class RebrickableMinifigPartsService;
 class QPushButton;
 class QTableWidget;
+class WorkspaceContext;
 
 class MinifigDetailsDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit MinifigDetailsDialog(int minifigCatalogId, QWidget* parent = nullptr);
+    explicit MinifigDetailsDialog(int minifigCatalogId, WorkspaceContext& workspaceContext,
+                                  QWidget* parent = nullptr);
 
 signals:
     void createBuildRequested(int minifigCatalogId, const QString& buildName);
+    void collectionItemCreated(int collectionItemId);
 
 private:
     bool loadMinifig();
@@ -26,9 +29,11 @@ private:
     void getPartsFromRebrickable();
     void setCompositionActionsEnabled(bool enabled);
     void createBuildFromStock();
+    void addToCollection();
     void displayImage(const QString& imagePath);
 
     int m_minifigCatalogId = 0;
+    WorkspaceContext& m_workspaceContext;
     QString m_minifigNumber;
     QString m_minifigName;
     QString m_imageUrl;
@@ -44,6 +49,7 @@ private:
     QPushButton* m_importPartsButton = nullptr;
     QPushButton* m_getPartsButton = nullptr;
     QPushButton* m_createBuildButton = nullptr;
+    QPushButton* m_addToCollectionButton = nullptr;
     int m_requiredPieces = 0;
     int m_sparePieces = 0;
     MinifigImageService* m_imageService = nullptr;

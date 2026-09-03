@@ -20,6 +20,7 @@
 
 #include "SetsCatalogWidget.h"
 #include "SetDetailsDialog.h"
+#include "../../app/WorkspaceContext.h"
 
 #include "../../import/RebrickableSetCatalogImporter.h"
 
@@ -43,8 +44,8 @@
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
-SetsCatalogWidget::SetsCatalogWidget(QWidget* parent)
-    : QWidget(parent)
+SetsCatalogWidget::SetsCatalogWidget(WorkspaceContext& workspaceContext, QWidget* parent)
+    : QWidget(parent), m_workspaceContext(workspaceContext)
 {
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -297,10 +298,12 @@ void SetsCatalogWidget::searchSets()
                     actionCombo->setCurrentIndex(0);
 
                     if (action == "details") {
-                        SetDetailsDialog dialog(setCatalogId, this);
+                        SetDetailsDialog dialog(setCatalogId, m_workspaceContext, this);
 
                         connect(&dialog, &SetDetailsDialog::createBuildRequested,
                                 this, &SetsCatalogWidget::createStockBuildRequested);
+                        connect(&dialog, &SetDetailsDialog::collectionItemCreated,
+                                this, &SetsCatalogWidget::collectionItemCreated);
 
                         dialog.exec();
 

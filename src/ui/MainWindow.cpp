@@ -145,10 +145,10 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     m_partsCatalogWidget = new PartsCatalogWidget(m_tabWidget);
 
     // Sets Catalog tab
-    m_setsCatalogWidget = new SetsCatalogWidget(m_tabWidget);
+    m_setsCatalogWidget = new SetsCatalogWidget(m_workspaceContext, m_tabWidget);
 
     // Minifigs Catalog tab
-    m_minifigsCatalogWidget = new MinifigsCatalogWidget(m_tabWidget);
+    m_minifigsCatalogWidget = new MinifigsCatalogWidget(m_workspaceContext, m_tabWidget);
 
     connect(m_setsCatalogWidget,
             &SetsCatalogWidget::createBuildRequested,
@@ -352,6 +352,16 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     connect(m_storageWidget, &StorageWidget::storageLocationsChanged,
             m_myCollectionWidget, &MyCollectionWidget::refresh);
+
+    const auto showCollectionItem = [this](int collectionItemId) {
+        m_tabWidget->setCurrentWidget(m_myCollectionWidget);
+        m_myCollectionWidget->selectCollectionItem(collectionItemId);
+        statusBar()->showMessage("Item added to My Collection.", 5000);
+    };
+    connect(m_setsCatalogWidget, &SetsCatalogWidget::collectionItemCreated,
+            this, showCollectionItem);
+    connect(m_minifigsCatalogWidget, &MinifigsCatalogWidget::collectionItemCreated,
+            this, showCollectionItem);
 
     setCentralWidget(m_tabWidget);
 
