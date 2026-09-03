@@ -98,6 +98,10 @@ qt_add_executable(BrickSuite
     src/services/collection/CollectionItemService.cpp
     src/ui/storage/StorageWidget.cpp
     src/ui/storage/StorageWidget.h
+    src/ui/collection/MyCollectionWidget.h
+    src/ui/collection/MyCollectionWidget.cpp
+    src/ui/collection/CollectionItemDialog.h
+    src/ui/collection/CollectionItemDialog.cpp
     src/models/Part.h
     src/models/Part.cpp
     src/models/PartReferenceEntry.h
@@ -369,6 +373,20 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(MyCollectionTest EXCLUDE_FROM_ALL
+        tests/MyCollectionTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/StorageLocation.h src/models/StorageLocation.cpp
+        src/models/CollectionItem.h src/models/CollectionItem.cpp
+        src/models/CollectionSearchCriteria.h src/models/CollectionSearchResult.h
+        src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
+        src/repositories/CollectionRepository.h src/repositories/CollectionRepository.cpp
+        src/services/database/AutomaticBackupPolicy.h src/services/database/AutomaticBackupPolicy.cpp
+    )
+    target_link_libraries(MyCollectionTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME MyCollection COMMAND MyCollectionTest)
+
     qt_add_executable(CollectionFoundationTest EXCLUDE_FROM_ALL
         tests/CollectionFoundationTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp

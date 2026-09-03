@@ -30,6 +30,7 @@ enum class HelpTopic
     SetsCatalog,
     MinifigsCatalog,
     Inventory,
+    MyCollection,
     RebrickableImport,
     Builds,
     Mocs,

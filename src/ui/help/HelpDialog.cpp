@@ -241,6 +241,7 @@ void HelpDialog::buildContents()
     addTopicItem(inventoryGroup, HelpTopic::SetsCatalog, "Sets Catalog");
     addTopicItem(inventoryGroup, HelpTopic::MinifigsCatalog, "Minifigs Catalog");
     addTopicItem(inventoryGroup, HelpTopic::Inventory, "My Inventory");
+    addTopicItem(inventoryGroup, HelpTopic::MyCollection, "My Collection");
     addTopicItem(inventoryGroup, HelpTopic::RebrickableImport, "Rebrickable Import");
 
     auto* buildsGroup = new QTreeWidgetItem(m_contentsTree);

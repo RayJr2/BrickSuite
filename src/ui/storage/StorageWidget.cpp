@@ -27,6 +27,7 @@
 #include "../../repositories/StorageLocationTypeRepository.h"
 
 #include <QComboBox>
+#include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -53,11 +54,11 @@ StorageWidget::StorageWidget(
 
     m_tree = new QTreeWidget(this);
 
-    m_tree->setColumnCount(2);
+    m_tree->setColumnCount(3);
     // Set auto fit content
     m_tree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_tree->setHeaderLabels(
-        QStringList() << "Location" << "Type");
+        QStringList() << "Location" << "Type" << "Used For");
 
     m_addButton = new QPushButton("Add Location", this);
 
@@ -172,6 +173,10 @@ void StorageWidget::loadStorageTree()
             1,
             typeNames.value(
                 location.locationTypeId()));
+        QStringList capabilities;
+        if (location.allowsInventory()) capabilities << "Inventory";
+        if (location.allowsCollection()) capabilities << "Collection";
+        item->setText(2, capabilities.isEmpty() ? "Hierarchy only" : capabilities.join(" + "));
 
         item->setData(
             0,
@@ -256,6 +261,10 @@ void StorageWidget::addLocation()
     auto* typeCombo =
         new QComboBox(&dialog);
 
+    auto* inventoryCheck = new QCheckBox("Allow Inventory", &dialog);
+    inventoryCheck->setChecked(true);
+    auto* collectionCheck = new QCheckBox("Allow Collection", &dialog);
+
     for (const StorageLocationType& type : types)
     {
         typeCombo->addItem(
@@ -276,6 +285,8 @@ void StorageWidget::addLocation()
     formLayout->addRow(
         "Type:",
         typeCombo);
+    formLayout->addRow("Capabilities:", inventoryCheck);
+    formLayout->addRow(QString(), collectionCheck);
 
     formLayout->addRow(
         buttonBox);
@@ -338,6 +349,8 @@ void StorageWidget::addLocation()
     location.setName(name);
 
     location.setIsActive(true);
+    location.setAllowsInventory(inventoryCheck->isChecked());
+    location.setAllowsCollection(collectionCheck->isChecked());
 
     StorageLocationRepository repository;
 
@@ -352,6 +365,7 @@ void StorageWidget::addLocation()
     }
 
     loadStorageTree();
+    emit storageLocationsChanged();
 }
 
 void StorageWidget::editLocation()
@@ -400,6 +414,11 @@ void StorageWidget::editLocation()
 
     auto* parentCombo = new QComboBox(&dialog);
 
+    auto* inventoryCheck = new QCheckBox("Allow Inventory", &dialog);
+    inventoryCheck->setChecked(existing->allowsInventory());
+    auto* collectionCheck = new QCheckBox("Allow Collection", &dialog);
+    collectionCheck->setChecked(existing->allowsCollection());
+
     parentCombo->addItem("(Top Level)", 0);
 
     for (const StorageLocation& location : allLocations) {
@@ -429,6 +448,8 @@ void StorageWidget::editLocation()
     formLayout->addRow("Type:", typeCombo);
 
     formLayout->addRow("Parent:", parentCombo);
+    formLayout->addRow("Capabilities:", inventoryCheck);
+    formLayout->addRow(QString(), collectionCheck);
 
     formLayout->addRow(buttonBox);
 
@@ -454,6 +475,16 @@ void StorageWidget::editLocation()
     updated.setLocationTypeId(typeCombo->currentData().toInt());
 
     updated.setParentLocationId(parentCombo->currentData().toInt());
+    updated.setAllowsInventory(inventoryCheck->isChecked());
+    updated.setAllowsCollection(collectionCheck->isChecked());
+
+    if (existing->allowsInventory() && !updated.allowsInventory()
+        && locationRepository.hasInventory(locationId)) {
+        QMessageBox::warning(this, "BrickSuite",
+                             "This location still contains loose inventory. Move the inventory "
+                             "before removing its Inventory capability.");
+        return;
+    }
 
     if (!locationRepository.update(updated)) {
         QMessageBox::critical(this, "BrickSuite", "Unable to update the storage location.");
@@ -462,6 +493,7 @@ void StorageWidget::editLocation()
     }
 
     loadStorageTree();
+    emit storageLocationsChanged();
 }
 
 void StorageWidget::deactivateLocation()
@@ -517,6 +549,7 @@ void StorageWidget::deactivateLocation()
     }
 
     loadStorageTree();
+    emit storageLocationsChanged();
 }
 
 void StorageWidget::reactivateLocation()
@@ -574,4 +607,5 @@ void StorageWidget::reactivateLocation()
     }
 
     loadStorageTree();
+    emit storageLocationsChanged();
 }

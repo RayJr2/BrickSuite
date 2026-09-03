@@ -11,7 +11,8 @@ struct CollectionSearchCriteria
     CollectionItemType type = CollectionItemType::Invalid;
     CollectionItemState state = CollectionItemState::Invalid;
     int storageLocationId = 0;
-    bool includeInactive = false;
+    // 1 = active, 0 = archived, -1 = both.
+    int activeState = 1;
     int limit = 100;
     int offset = 0;
 };

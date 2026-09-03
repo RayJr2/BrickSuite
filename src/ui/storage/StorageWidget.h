@@ -35,6 +35,9 @@ public:
         WorkspaceContext& workspaceContext,
         QWidget* parent = nullptr);
 
+signals:
+    void storageLocationsChanged();
+
 private slots:
     void workspaceChanged(int workspaceId);
     void addLocation();

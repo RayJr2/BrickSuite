@@ -70,7 +70,7 @@ CollectionItemService::Result CollectionItemService::createMocFromBuild(
 }
 
 CollectionItemService::Result CollectionItemService::validate(
-    CollectionItem& item, bool creating) const
+    CollectionItem& item, bool creating, int preservedLocationId) const
 {
     if (item.workspaceId <= 0 || item.type == CollectionItemType::Invalid
         || item.state == CollectionItemState::Invalid) {
@@ -93,7 +93,7 @@ CollectionItemService::Result CollectionItemService::validate(
         return failure(Error::InvalidInput, "A MOC Collection item requires a source MOC Build and no catalog identity.");
     }
 
-    if (item.storageLocationId > 0
+    if (item.storageLocationId > 0 && item.storageLocationId != preservedLocationId
         && !StorageLocationRepository().isValidCollectionDestination(
             item.workspaceId, item.storageLocationId)) {
         return failure(Error::LocationInvalid,
@@ -158,7 +158,7 @@ CollectionItemService::Result CollectionItemService::updateDetails(
     item.nickname = nickname;
     item.notes = notes;
     item.allowPartsSource = allowPartsSource;
-    Result validation = validate(item, false);
+    Result validation = validate(item, false, existing->storageLocationId);
     if (!validation.success) return validation;
     QSqlDatabase database = DatabaseManager::instance().database();
     if (!database.transaction())

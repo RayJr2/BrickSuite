@@ -17,6 +17,7 @@ public:
     std::optional<CollectionItem> getBySourceBuild(int buildId) const;
     bool hasSourceBuild(int buildId) const;
     QList<CollectionSearchResult> search(const CollectionSearchCriteria& criteria) const;
+    std::optional<CollectionSearchResult> displayById(int id) const;
     int count(const CollectionSearchCriteria& criteria) const;
     bool update(CollectionItem& item);
     bool setActive(int itemId, bool active);

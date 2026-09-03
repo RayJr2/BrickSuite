@@ -12,4 +12,5 @@ struct CollectionSearchResult
     QString imageUrl;
     QString locationName;
     QString sourceBuildName;
+    QString sourceBuildReference;
 };

@@ -35,6 +35,7 @@ class QAction;
 class StorageWidget;
 class PartsCatalogWidget;
 class MyInventoryWidget;
+class MyCollectionWidget;
 class BuildsWidget;
 class SetsCatalogWidget;
 class MinifigsCatalogWidget;
@@ -83,6 +84,7 @@ private:
     StorageWidget* m_storageWidget = nullptr;
     PartsCatalogWidget* m_partsCatalogWidget = nullptr;
     MyInventoryWidget* m_myInventoryWidget = nullptr;
+    MyCollectionWidget* m_myCollectionWidget = nullptr;
     BuildsWidget* m_buildsWidget = nullptr;
     SetsCatalogWidget* m_setsCatalogWidget = nullptr;
     MinifigsCatalogWidget* m_minifigsCatalogWidget = nullptr;

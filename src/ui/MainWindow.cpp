@@ -62,6 +62,7 @@
 #include "catalog/MinifigsCatalogWidget.h"
 #include "inventory/AddInventoryDialog.h"
 #include "inventory/MyInventoryWidget.h"
+#include "collection/MyCollectionWidget.h"
 #include "parts/PartResolverTestDialog.h"
 #include "parts/PartReferenceDialog.h"
 #include "settings/SettingsDialog.h"
@@ -248,6 +249,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                                                  m_sessionStorageSelectionService,
                                                  m_tabWidget);
 
+    m_myCollectionWidget = new MyCollectionWidget(m_workspaceContext, m_tabWidget);
+
     // Builds tab
     m_buildsWidget = new BuildsWidget(m_workspaceContext,
                                       m_sessionStorageSelectionService,
@@ -343,7 +346,12 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     m_tabWidget->addTab(m_myInventoryWidget, "My Inventory");
 
+    m_tabWidget->addTab(m_myCollectionWidget, "My Collection");
+
     m_tabWidget->addTab(m_buildsWidget, "Builds");
+
+    connect(m_storageWidget, &StorageWidget::storageLocationsChanged,
+            m_myCollectionWidget, &MyCollectionWidget::refresh);
 
     setCentralWidget(m_tabWidget);
 
@@ -683,6 +691,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             topic = HelpTopic::MinifigsCatalog;
         } else if (currentWidget == m_myInventoryWidget) {
             topic = HelpTopic::Inventory;
+        } else if (currentWidget == m_myCollectionWidget) {
+            topic = HelpTopic::MyCollection;
         } else if (currentWidget == m_buildsWidget) {
             topic = HelpTopic::Builds;
         }

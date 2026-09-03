@@ -20,7 +20,7 @@ QString itemColumns()
 
 void appendCriteria(QString& sql, const CollectionSearchCriteria& criteria)
 {
-    if (!criteria.includeInactive) sql += " AND ci.is_active = 1";
+    if (criteria.activeState >= 0) sql += " AND ci.is_active = :active";
     if (criteria.type != CollectionItemType::Invalid) sql += " AND ci.item_type = :type";
     if (criteria.state != CollectionItemState::Invalid) sql += " AND ci.state = :state";
     if (criteria.storageLocationId > 0) {
@@ -30,8 +30,11 @@ void appendCriteria(QString& sql, const CollectionSearchCriteria& criteria)
                 UNION ALL
                 SELECT sl.id FROM storage_location sl
                 JOIN locations parent ON sl.parent_location_id = parent.id
-            ) SELECT id FROM locations))";
+            ) SELECT candidate.id FROM locations candidate
+              JOIN storage_location eligible ON eligible.id = candidate.id
+              WHERE eligible.is_active = 1 AND eligible.allows_collection = 1))";
     }
+    if (criteria.storageLocationId == -1) sql += " AND ci.storage_location_id IS NULL";
     if (!criteria.searchText.trimmed().isEmpty()) {
         sql += R"( AND (ci.nickname LIKE :search OR sc.set_number LIKE :search
             OR sc.name LIKE :search OR mc.name LIKE :search OR b.name LIKE :search
@@ -45,6 +48,7 @@ void appendCriteria(QString& sql, const CollectionSearchCriteria& criteria)
 void bindCriteria(QSqlQuery& query, const CollectionSearchCriteria& criteria)
 {
     query.bindValue(":workspace_id", criteria.workspaceId);
+    if (criteria.activeState >= 0) query.bindValue(":active", criteria.activeState);
     if (criteria.type != CollectionItemType::Invalid)
         query.bindValue(":type", collectionItemTypeToString(criteria.type));
     if (criteria.state != CollectionItemState::Invalid)
@@ -129,7 +133,7 @@ QList<CollectionSearchResult> CollectionRepository::search(
     QString sql = QString(R"(SELECT %1, sc.set_number,
         CASE ci.item_type WHEN 'Set' THEN sc.name WHEN 'Minifig' THEN mc.name ELSE b.name END display_name,
         CASE ci.item_type WHEN 'Set' THEN sc.image_url WHEN 'Minifig' THEN mc.image_url ELSE NULL END image_url,
-        sl.name location_name, b.name source_build_name,
+        sl.name location_name, b.name source_build_name, b.set_number source_build_reference,
         CASE ci.item_type WHEN 'Set' THEN sc.set_number WHEN 'Minifig' THEN (
             SELECT mei.external_id FROM minifig_external_identifier mei
             WHERE mei.minifig_catalog_id=ci.minifig_catalog_id AND mei.provider='Rebrickable'
@@ -160,9 +164,43 @@ QList<CollectionSearchResult> CollectionRepository::search(
         result.imageUrl = query.value("image_url").toString();
         result.locationName = query.value("location_name").toString();
         result.sourceBuildName = query.value("source_build_name").toString();
+        result.sourceBuildReference = query.value("source_build_reference").toString();
         results.append(result);
     }
     return results;
+}
+
+std::optional<CollectionSearchResult> CollectionRepository::displayById(int id) const
+{
+    if (id <= 0) return std::nullopt;
+    QString sql = QString(R"(SELECT %1,
+        CASE ci.item_type WHEN 'Set' THEN sc.name WHEN 'Minifig' THEN mc.name ELSE b.name END display_name,
+        CASE ci.item_type WHEN 'Set' THEN sc.image_url WHEN 'Minifig' THEN mc.image_url ELSE NULL END image_url,
+        sl.name location_name, b.name source_build_name, b.set_number source_build_reference,
+        CASE ci.item_type WHEN 'Set' THEN sc.set_number WHEN 'Minifig' THEN (
+            SELECT mei.external_id FROM minifig_external_identifier mei
+            WHERE mei.minifig_catalog_id=ci.minifig_catalog_id AND mei.provider='Rebrickable'
+            ORDER BY mei.is_active DESC, mei.id LIMIT 1)
+            ELSE b.set_number END display_reference
+        FROM collection_item ci
+        LEFT JOIN set_catalog sc ON sc.id=ci.set_catalog_id
+        LEFT JOIN minifig_catalog mc ON mc.id=ci.minifig_catalog_id
+        LEFT JOIN build b ON b.id=ci.source_build_id
+        LEFT JOIN storage_location sl ON sl.id=ci.storage_location_id
+        WHERE ci.id=:id)").arg(itemColumns());
+    QSqlQuery query(DatabaseManager::instance().database());
+    query.prepare(sql);
+    query.bindValue(":id", id);
+    if (!query.exec() || !query.next()) return std::nullopt;
+    CollectionSearchResult result;
+    result.item = itemFromQuery(query);
+    result.displayReference = query.value("display_reference").toString();
+    result.displayName = query.value("display_name").toString();
+    result.imageUrl = query.value("image_url").toString();
+    result.locationName = query.value("location_name").toString();
+    result.sourceBuildName = query.value("source_build_name").toString();
+    result.sourceBuildReference = query.value("source_build_reference").toString();
+    return result;
 }
 
 int CollectionRepository::count(const CollectionSearchCriteria& criteria) const

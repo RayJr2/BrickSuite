@@ -44,5 +44,6 @@ public:
 
 private:
     Result create(CollectionItem item) const;
-    Result validate(CollectionItem& item, bool creating) const;
+    Result validate(CollectionItem& item, bool creating,
+                    int preservedLocationId = 0) const;
 };
