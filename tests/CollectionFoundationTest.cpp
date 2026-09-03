@@ -144,13 +144,18 @@ int main(int argc, char* argv[])
                   && !locations.isValidCollectionDestination(1, parent), "capability and active-leaf validation");
 
     auto createBuild = [&](const QString& type, const QString& name, int workspace,
-                           int setCatalog, int minifigCatalog, const QString& status) {
+                           int setCatalog, int minifigCatalog, const QString& status,
+                           const QString& inventoryMode = QStringLiteral("Stock")) {
         Build build; build.setWorkspaceId(workspace); build.setBuildType(type); build.setName(name);
-        build.setSetNumber(type == "MOC" ? "MOC-42" : "1000-1"); build.setInventoryMode("Stock");
+        build.setSetNumber(type == "MOC" ? "MOC-42" : "1000-1"); build.setInventoryMode(inventoryMode);
         build.setSetCatalogId(setCatalog); build.setMinifigCatalogId(minifigCatalog); build.setStatus(status);
         ok &= require(BuildRepository().create(build), "create Build " + name); return build.id();
     };
     const int setBuild = createBuild("Set", "Set Build", 1, setId, 0, "Complete");
+    const int completeSetBuild = createBuild("Set", "Complete Set Build", 1, setId, 0,
+                                             "Complete", "CompleteSet");
+    const int legacySetBuild = createBuild("Set", "Legacy Set Build", 1, 0, 0,
+                                           "Complete", "CompleteSet");
     const int minifigBuild = createBuild("Minifig", "Fig Build", 1, 0, minifigId, "Complete");
     const int mocBuild = createBuild("MOC", "Castle MOC", 1, 0, 0, "Complete");
     const int incompleteMoc = createBuild("MOC", "Incomplete", 1, 0, 0, "Planned");
@@ -158,16 +163,25 @@ int main(int argc, char* argv[])
 
     CollectionItemService service;
     const auto setOne = service.createSet(1, setId, CollectionItemState::Sealed, collectionLocation, 0, "Sealed copy", "one");
-    const auto setTwo = service.createSet(1, setId, CollectionItemState::Assembled, bothLocation, setBuild, "Display", "two");
+    const auto setTwo = service.createFromBuild(1, setBuild, CollectionItemState::Assembled, bothLocation, "Display", "two");
+    const auto completeSet = service.createFromBuild(1, completeSetBuild,
+                                                     CollectionItemState::Assembled,
+                                                     collectionLocation);
     const auto figOne = service.createMinifig(1, minifigId, CollectionItemState::Assembled, collectionLocation);
-    const auto figTwo = service.createMinifig(1, minifigId, CollectionItemState::Unassembled, 0, minifigBuild);
-    const auto moc = service.createMocFromBuild(1, mocBuild, CollectionItemState::Assembled, bothLocation);
-    ok &= require(setOne.success && setTwo.success && figOne.success && figTwo.success && moc.success,
-                  "Set, Minifig, MOC, multiple-instance creation");
+    const auto figTwo = service.createFromBuild(1, minifigBuild, CollectionItemState::Unassembled);
+    const auto moc = service.createFromBuild(1, mocBuild, CollectionItemState::Assembled, bothLocation);
+    ok &= require(setOne.success && setTwo.success && completeSet.success
+                  && figOne.success && figTwo.success && moc.success,
+                  "Set Stock/CompleteSet, Minifig, MOC, multiple-instance creation");
+    ok &= require(!service.createFromBuild(1, legacySetBuild,
+                                           CollectionItemState::Assembled).success,
+                  "legacy Set Build remains ineligible without catalog identity inference");
     ok &= require(setOne.collectionItemId != setTwo.collectionItemId
                   && figOne.collectionItemId != figTwo.collectionItemId, "stable independent instance IDs");
     ok &= require(!service.createMocFromBuild(1, incompleteMoc, CollectionItemState::Assembled).success,
                   "incomplete Build rejected");
+    ok &= require(!service.createFromBuild(1, incompleteMoc, CollectionItemState::Assembled).success,
+                  "Build-origin workflow rejects non-Complete status");
     ok &= require(!service.createMocFromBuild(1, otherMoc, CollectionItemState::Assembled).success,
                   "cross-workspace Build rejected");
     ok &= require(!service.createSet(1,setId,CollectionItemState::Assembled,otherWorkspaceLocation).success,
@@ -212,7 +226,7 @@ int main(int argc, char* argv[])
     ok &= require(!failed.success && scalar(db,"SELECT COUNT(*) FROM collection_item")==before,
                   "failed transaction leaves no partial Collection row");
     q.exec("DROP TRIGGER force_collection_failure");
-    ok &= require(scalar(db,"SELECT COUNT(*) FROM collection_item")==5, "no hard-delete operation occurred");
+    ok &= require(scalar(db,"SELECT COUNT(*) FROM collection_item")==6, "no hard-delete operation occurred");
     ok &= require(AutomaticBackupPolicy::versionDirectory(data,30).endsWith("v30")
                   && AutomaticBackupPolicy::versionDirectory(data,29).endsWith("v29")
                   && AutomaticBackupPolicy::versionDirectory(data,30)!=AutomaticBackupPolicy::versionDirectory(data,29),

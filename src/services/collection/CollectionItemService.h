@@ -37,6 +37,9 @@ public:
     Result createMocFromBuild(int workspaceId, int sourceBuildId,
                               CollectionItemState state, int storageLocationId = 0,
                               const QString& nickname = {}, const QString& notes = {}) const;
+    Result createFromBuild(int workspaceId, int sourceBuildId, CollectionItemState state,
+                           int storageLocationId = 0, const QString& nickname = {},
+                           const QString& notes = {}) const;
     Result updateDetails(int itemId, CollectionItemState state, int storageLocationId,
                          const QString& nickname, const QString& notes,
                          bool allowPartsSource) const;

@@ -26,6 +26,8 @@
 #include "../../database/DatabaseManager.h"
 #include "AllocateBuildRequirementDialog.h"
 #include "DisassembleSetDialog.h"
+#include "../collection/CatalogCollectionDialog.h"
+#include "../../repositories/CollectionRepository.h"
 #include "EditBuildDialog.h"
 #include "EditBuildRequirementDialog.h"
 #include "ImportPullListDialog.h"
@@ -562,6 +564,17 @@ void BuildsWidget::loadBuilds()
         auto* actionCombo = new QComboBox(m_buildsTable);
         actionCombo->addItem("Actions...", QString());
 
+        const auto linkedCollection = CollectionRepository().getBySourceBuild(build.id());
+        if (linkedCollection) {
+            actionCombo->addItem("View Collection Item...", "view_collection");
+        } else if (build.isActive() && build.status() == "Complete"
+                   && ((build.buildType() == "Set" && build.setCatalogId() > 0)
+                       || (build.buildType() == "Minifig" && build.minifigCatalogId() > 0)
+                       || (build.buildType() == "MOC" && build.setCatalogId() == 0
+                           && build.minifigCatalogId() == 0))) {
+            actionCombo->addItem("Add to Collection...", "add_collection");
+        }
+
         if (build.isActive()) {
             actionCombo->addItem("Edit Build...", "edit");
 
@@ -626,6 +639,26 @@ void BuildsWidget::loadBuilds()
                     const QString action = actionCombo->itemData(index).toString();
 
                     actionCombo->setCurrentIndex(0);
+
+                    if (action == "view_collection") {
+                        const auto linked = CollectionRepository().getBySourceBuild(buildId);
+                        if (linked) emit collectionItemRequested(linked->id);
+                        return;
+                    }
+
+                    if (action == "add_collection") {
+                        const auto build = BuildRepository().getById(buildId);
+                        if (!build) return;
+                        CollectionItemType type = collectionItemTypeFromString(build->buildType());
+                        CatalogCollectionDialog dialog(build->workspaceId(), type,
+                            type == CollectionItemType::Set ? build->setCatalogId() : build->minifigCatalogId(),
+                            build->sourceReference(), build->name(), this, buildId);
+                        if (dialog.exec() == QDialog::Accepted && dialog.createdCollectionItemId() > 0) {
+                            emit collectionItemRequested(dialog.createdCollectionItemId());
+                            loadBuilds();
+                        }
+                        return;
+                    }
 
                     if (action == "edit") {
                         EditBuildDialog dialog(buildId, this);

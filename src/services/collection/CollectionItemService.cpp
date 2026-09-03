@@ -69,6 +69,34 @@ CollectionItemService::Result CollectionItemService::createMocFromBuild(
     return create(item);
 }
 
+CollectionItemService::Result CollectionItemService::createFromBuild(
+    int workspaceId, int sourceBuildId, CollectionItemState state,
+    int storageLocationId, const QString& nickname, const QString& notes) const
+{
+    const auto build = BuildRepository().getById(sourceBuildId);
+    if (!build) return failure(Error::SourceBuildNotFound, "The source Build is unavailable.");
+    if (!build->isActive()) return failure(Error::SourceBuildMismatch, "Only an active Build can be added to My Collection.");
+    if (build->workspaceId() != workspaceId) return failure(Error::SourceBuildMismatch, "The source Build belongs to another workspace.");
+    if (build->status() != QStringLiteral("Complete")) return failure(Error::SourceBuildIncomplete, "Only a completed Build can be added to My Collection.");
+    if (build->buildType() == QStringLiteral("Set")) {
+        if (build->setCatalogId() <= 0) return failure(Error::CatalogItemNotFound, "This historical Set Build is not linked to a Sets Catalog definition.");
+        return createSet(workspaceId, build->setCatalogId(), state, storageLocationId,
+                         sourceBuildId, nickname, notes);
+    }
+    if (build->buildType() == QStringLiteral("Minifig")) {
+        if (build->minifigCatalogId() <= 0) return failure(Error::CatalogItemNotFound, "This Minifig Build is not linked to a Minifigs Catalog definition.");
+        return createMinifig(workspaceId, build->minifigCatalogId(), state,
+                             storageLocationId, sourceBuildId, nickname, notes);
+    }
+    if (build->buildType() == QStringLiteral("MOC")) {
+        if (build->setCatalogId() > 0 || build->minifigCatalogId() > 0)
+            return failure(Error::SourceBuildMismatch, "The MOC Build has invalid catalog identity data.");
+        return createMocFromBuild(workspaceId, sourceBuildId, state, storageLocationId,
+                                  nickname, notes);
+    }
+    return failure(Error::SourceBuildMismatch, "This Build type cannot be added to My Collection.");
+}
+
 CollectionItemService::Result CollectionItemService::validate(
     CollectionItem& item, bool creating, int preservedLocationId) const
 {

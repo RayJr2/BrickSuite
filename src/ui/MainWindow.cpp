@@ -362,6 +362,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             this, showCollectionItem);
     connect(m_minifigsCatalogWidget, &MinifigsCatalogWidget::collectionItemCreated,
             this, showCollectionItem);
+    connect(m_buildsWidget, &BuildsWidget::collectionItemRequested,
+            this, showCollectionItem);
 
     setCentralWidget(m_tabWidget);
 

@@ -175,12 +175,12 @@ void MyCollectionWidget::selectCollectionItem(int collectionItemId)
         m_typeCombo->findData(static_cast<int>(selected->item.type)));
     m_stateCombo->setCurrentIndex(0);
     m_locationCombo->setCurrentIndex(0);
-    m_activeCombo->setCurrentIndex(m_activeCombo->findData(1));
+    m_activeCombo->setCurrentIndex(m_activeCombo->findData(selected->item.isActive ? 1 : 0));
     CollectionSearchCriteria criteria;
     criteria.workspaceId = m_workspaceContext.currentWorkspaceId();
     criteria.searchText = selected->displayReference;
     criteria.type = selected->item.type;
-    criteria.activeState = 1;
+    criteria.activeState = selected->item.isActive ? 1 : 0;
     criteria.limit = UserSettings::instance().resultsPerPage();
     const int total = CollectionRepository().count(criteria);
     const int pages = qMax(1, (total + criteria.limit - 1) / criteria.limit);

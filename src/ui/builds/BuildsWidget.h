@@ -52,6 +52,9 @@ public:
     void selectBuild(int buildId);
     void reloadManufacturers();
 
+signals:
+    void collectionItemRequested(int collectionItemId);
+
 protected:
     void showEvent(QShowEvent* event) override;
 

@@ -37,8 +37,9 @@ QString qualifiedPath(const StorageLocation& location,
 
 CatalogCollectionDialog::CatalogCollectionDialog(
     int workspaceId, CollectionItemType type, int catalogId,
-    const QString& reference, const QString& name, QWidget* parent)
-    : QDialog(parent), m_workspaceId(workspaceId), m_type(type), m_catalogId(catalogId)
+    const QString& reference, const QString& name, QWidget* parent, int sourceBuildId)
+    : QDialog(parent), m_workspaceId(workspaceId), m_type(type), m_catalogId(catalogId),
+      m_sourceBuildId(sourceBuildId)
 {
     setWindowTitle("Add to Collection");
     resize(520, 360);
@@ -49,6 +50,7 @@ CatalogCollectionDialog::CatalogCollectionDialog(
     auto* nameLabel = new QLabel(name, this);
     nameLabel->setWordWrap(true);
     form->addRow("Name:", nameLabel);
+    if (sourceBuildId > 0) form->addRow("Source Build:", new QLabel(QString("%1 (%2)").arg(name, reference), this));
 
     m_stateCombo = new QComboBox(this);
     for (const auto state : {CollectionItemState::Assembled, CollectionItemState::Unassembled,
@@ -96,7 +98,10 @@ void CatalogCollectionDialog::createItem()
     const int locationId = m_locationCombo->currentData().toInt();
     CollectionItemService service;
     CollectionItemService::Result result;
-    if (m_type == CollectionItemType::Set) {
+    if (m_sourceBuildId > 0) {
+        result = service.createFromBuild(m_workspaceId, m_sourceBuildId, state, locationId,
+                                         m_nicknameEdit->text(), m_notesEdit->toPlainText());
+    } else if (m_type == CollectionItemType::Set) {
         result = service.createSet(m_workspaceId, m_catalogId, state, locationId, 0,
                                    m_nicknameEdit->text(), m_notesEdit->toPlainText());
     } else if (m_type == CollectionItemType::Minifig) {

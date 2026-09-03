@@ -14,7 +14,7 @@ class CatalogCollectionDialog : public QDialog
 public:
     CatalogCollectionDialog(int workspaceId, CollectionItemType type, int catalogId,
                             const QString& reference, const QString& name,
-                            QWidget* parent = nullptr);
+                            QWidget* parent = nullptr, int sourceBuildId = 0);
 
     int createdCollectionItemId() const;
 
@@ -25,6 +25,7 @@ private:
     CollectionItemType m_type = CollectionItemType::Invalid;
     int m_catalogId = 0;
     int m_createdItemId = 0;
+    int m_sourceBuildId = 0;
     QComboBox* m_stateCombo = nullptr;
     QComboBox* m_locationCombo = nullptr;
     QLineEdit* m_nicknameEdit = nullptr;
