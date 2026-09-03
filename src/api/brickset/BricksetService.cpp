@@ -8,6 +8,7 @@
 #include "../ApiNetworkService.h"
 #include "../ApiProvider.h"
 #include "../ApiRequestContext.h"
+#include "../../core/AppVersion.h"
 
 #include <QDateTime>
 #include <QJsonArray>
@@ -17,6 +18,13 @@
 #include <QNetworkRequest>
 #include <QUrl>
 #include <QUrlQuery>
+
+namespace {
+QByteArray brickSuiteUserAgent()
+{
+    return QStringLiteral("BrickSuite/%1").arg(AppVersion::version()).toUtf8();
+}
+}
 
 int BricksetService::s_sessionGetSetsCallCount = 0;
 bool BricksetService::s_keyUsageKnown = false;
@@ -50,7 +58,7 @@ void BricksetService::testConnection(const QString& apiKey)
     url.setQuery(query);
 
     QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("BrickSuite/0.2.0"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, brickSuiteUserAgent());
 
     ApiRequestContext context;
     context.provider = ApiProvider::Brickset;
@@ -155,7 +163,7 @@ void BricksetService::getSetDetails(const QString& fullSetNumber,
     QNetworkRequest request(
         QUrl(QStringLiteral("https://brickset.com/api/v3.asmx/getSets")));
 
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("BrickSuite/0.2.0"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, brickSuiteUserAgent());
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/x-www-form-urlencoded"));
 
@@ -393,7 +401,7 @@ void BricksetService::getKeyUsageStats(const QString& apiKey)
     url.setQuery(query);
 
     QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("BrickSuite/0.2.0"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, brickSuiteUserAgent());
 
     ApiRequestContext context;
     context.provider = ApiProvider::Brickset;
@@ -556,7 +564,7 @@ void BricksetService::getInstructions2(const QString& setNumber,
     url.setQuery(query);
 
     QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("BrickSuite/0.2.0"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, brickSuiteUserAgent());
 
     ApiRequestContext context;
     context.provider = ApiProvider::Brickset;
@@ -678,4 +686,3 @@ void BricksetService::handleInstructionsReply(QNetworkReply* reply,
     reply->deleteLater();
     emit instructionsFinished(result);
 }
-

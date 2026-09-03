@@ -712,6 +712,14 @@ if(BUILD_TESTING)
     )
     target_link_libraries(SetBuildCreationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME SetBuildCreation COMMAND SetBuildCreationTest)
+
+    qt_add_executable(V020ToV030MigrationTest EXCLUDE_FROM_ALL
+        tests/V020ToV030MigrationTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+    )
+    target_link_libraries(V020ToV030MigrationTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME V020ToV030Migration COMMAND V020ToV030MigrationTest)
 endif()
 
 if(WIN32)

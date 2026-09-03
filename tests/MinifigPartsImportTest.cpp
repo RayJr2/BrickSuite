@@ -112,7 +112,7 @@ bool validateMigration(const QString& path)
                  && query.exec("CREATE TABLE build(id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id INTEGER NOT NULL, build_type TEXT NOT NULL, name TEXT NOT NULL, set_number TEXT, inventory_mode TEXT NOT NULL DEFAULT 'Stock', status TEXT NOT NULL DEFAULT 'Planned', is_active INTEGER NOT NULL DEFAULT 1, notes TEXT, created_utc TEXT NOT NULL, modified_utc TEXT NOT NULL, manufacturer_id INTEGER)")
                  && DatabaseSchema::initialize(db)
                  && query.exec("SELECT version FROM schema_version") && query.next()
-                 && query.value(0).toInt() == 30
+                 && query.value(0).toInt() == DatabaseSchema::CurrentSchemaVersion
                  && query.exec("SELECT COUNT(*) FROM pragma_table_info('minifig_catalog_part')")
                  && query.next() && query.value(0).toInt() == 10;
             db.close();
