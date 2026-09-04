@@ -23,6 +23,8 @@
 #include <QColor>
 #include <QComboBox>
 #include <QPalette>
+#include <QIcon>
+#include <QPixmap>
 
 #include <algorithm>
 #include <cmath>
@@ -31,7 +33,8 @@ int ColorComboHelper::addColorItem(
     QComboBox* comboBox,
     const QString& name,
     int colorId,
-    const QString& rgbHex)
+    const QString& rgbHex,
+    bool showCatalogSwatch)
 {
     if (!comboBox)
         return -1;
@@ -53,6 +56,24 @@ int ColorComboHelper::addColorItem(
 
     if (!sourceColor.isValid())
         return index;
+
+    if (showCatalogSwatch) {
+        QPixmap swatch(16, 16);
+        swatch.fill(sourceColor);
+        QIcon icon;
+        // Catalog color is data: never let Qt synthesize a tinted selected
+        // or disabled variant from the current UI palette.
+        for (const auto mode : {QIcon::Normal, QIcon::Disabled, QIcon::Active, QIcon::Selected}) {
+            icon.addPixmap(swatch, mode, QIcon::Off);
+            icon.addPixmap(swatch, mode, QIcon::On);
+        }
+        comboBox->setItemIcon(index, icon);
+
+        // The swatch now carries the catalog color. Leave the name on the
+        // combo's palette-driven foreground so normal and selected text use
+        // BrickSuite's theme-aware Text and HighlightedText colors.
+        return index;
+    }
 
     const QColor backgroundColor =
         comboBox->palette().color(

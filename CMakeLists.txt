@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(BrickSuite
-    VERSION 0.3.0
+    VERSION 0.4.0
     LANGUAGES CXX
 )
 
@@ -731,6 +731,12 @@ if(BUILD_TESTING)
     )
     target_link_libraries(PartRelationshipImportTest PRIVATE Qt6::Core Qt6::Sql ZLIB::ZLIB)
     add_test(NAME PartRelationshipImport COMMAND PartRelationshipImportTest)
+    qt_add_executable(ColorComboHelperTest EXCLUDE_FROM_ALL
+        tests/ColorComboHelperTest.cpp
+        src/ui/helpers/ColorComboHelper.h src/ui/helpers/ColorComboHelper.cpp
+    )
+    target_link_libraries(ColorComboHelperTest PRIVATE Qt6::Widgets)
+    add_test(NAME ColorComboHelper COMMAND ColorComboHelperTest -platform offscreen)
 endif()
 
 if(WIN32)

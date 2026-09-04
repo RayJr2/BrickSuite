@@ -687,7 +687,7 @@ void AddInventoryDialog::loadAllColors()
     const QList<Color> colors = repository.getAll();
 
     for (const Color& color : colors) {
-        ColorComboHelper::addColorItem(m_colorCombo, color.name(), color.id(), color.rgb());
+        ColorComboHelper::addColorItem(m_colorCombo, color.name(), color.id(), color.rgb(), true);
     }
 
     m_colorCombo->setEnabled(true);
@@ -713,7 +713,7 @@ void AddInventoryDialog::applyKnownColors(int preferredColorId)
         // The internal BrickSuite Color ID remains the
         // combo item's user data.
         //
-        ColorComboHelper::addColorItem(m_colorCombo, color.name(), color.id(), color.rgb());
+        ColorComboHelper::addColorItem(m_colorCombo, color.name(), color.id(), color.rgb(), true);
     }
 
     m_colorCombo->setEnabled(true);

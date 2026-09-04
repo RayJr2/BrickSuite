@@ -32,7 +32,8 @@ public:
         QComboBox* comboBox,
         const QString& name,
         int colorId,
-        const QString& rgbHex);
+        const QString& rgbHex,
+        bool showCatalogSwatch = false);
 
     static QColor readableColor(
         const QColor& sourceColor,
