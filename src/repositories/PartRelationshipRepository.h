@@ -16,6 +16,9 @@ public:
     QList<PartRelationship> getByParentPartId(int parentPartId) const;
     QList<PartRelationship> getByChildPartId(int childPartId) const;
     QList<PartRelationship> getByPartId(int partId) const;
+    QList<int> getActiveDecoratedChildPartIdsByParentPartId(
+        int parentPartId,
+        int limit) const;
 
     bool upsert(const PartRelationship& relationship) const;
 

@@ -103,6 +103,43 @@ PartRelationshipRepository::getByChildPartId(int childPartId) const
     return executeRelationshipQuery(query);
 }
 
+QList<int>
+PartRelationshipRepository::getActiveDecoratedChildPartIdsByParentPartId(
+    int parentPartId,
+    int limit) const
+{
+    QList<int> childPartIds;
+    if (parentPartId <= 0 || limit <= 0)
+        return childPartIds;
+
+    QSqlQuery query(DatabaseManager::instance().database());
+    query.prepare(R"(
+        SELECT DISTINCT relationship.child_part_id
+        FROM part_relationship relationship
+        INNER JOIN part child
+            ON child.id = relationship.child_part_id
+           AND child.is_active = 1
+        WHERE relationship.parent_part_id = :part_id
+          AND relationship.is_active = 1
+          AND relationship.relationship_type IN ('Print', 'Pattern')
+        ORDER BY relationship.child_part_id
+        LIMIT :limit
+    )");
+    query.bindValue(QStringLiteral(":part_id"), parentPartId);
+    query.bindValue(QStringLiteral(":limit"), limit);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to retrieve decorated child Part IDs:"
+                    << query.lastError().text();
+        return childPartIds;
+    }
+
+    while (query.next())
+        childPartIds.append(query.value(0).toInt());
+
+    return childPartIds;
+}
+
 QList<PartRelationship>
 PartRelationshipRepository::getByPartId(int partId) const
 {

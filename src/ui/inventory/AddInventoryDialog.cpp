@@ -40,6 +40,8 @@
 
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/parts/PartResolver.h"
+#include "../../services/parts/BrickLinkCandidateDiscoveryService.h"
+#include "../../services/parts/PartExternalIdEnrichmentService.h"
 #include "../../services/parts/RebrickablePartAliasLearner.h"
 #include "../../settings/UserSettings.h"
 
@@ -289,6 +291,16 @@ void AddInventoryDialog::initializeUi()
 
     m_rebrickableApiClient = new RebrickableApiClient(this);
 
+    if (auto* enrichment = PartExternalIdEnrichmentService::instance()) {
+        connect(enrichment,
+                &PartExternalIdEnrichmentService::externalIdsLookupFinished,
+                this,
+                [this](int partId,
+                       PartExternalIdEnrichmentService::LookupOutcome outcome) {
+                    handleCandidateEnrichmentFinished(partId, outcome);
+                });
+    }
+
     connect(m_rebrickableApiClient,
             &RebrickableApiClient::partDetailsFinished,
             this,
@@ -366,6 +378,7 @@ void AddInventoryDialog::initializeUi()
             //
             m_partId = 0;
             m_partNumber.clear();
+            clearBrickLinkCandidateLookup();
 
             if (m_partResolutionLabel) {
                 m_partResolutionLabel->clear();
@@ -399,6 +412,9 @@ void AddInventoryDialog::initializeUi()
 
         connect(m_tryBrickLinkIdCheck, &QCheckBox::toggled, this, [this](bool checked) {
             UserSettings::instance().setAddInventoryTryBrickLinkId(checked);
+
+            if (!checked)
+                clearBrickLinkCandidateLookup();
 
             // A common workflow is to type a BrickLink ID, see Not Found, then
             // enable this option. Re-run resolution immediately so the user does
@@ -871,25 +887,7 @@ void AddInventoryDialog::resolveEnteredPart()
             if (tryResolveBrickLinkExternalId(enteredPartNumber))
                 return;
 
-            // When BrickLink cross-reference mode is enabled, a local miss
-            // must not be sent to Rebrickable's Part Details endpoint as if
-            // the BrickLink identifier were a Rebrickable part number.
-            // That request is expected to return HTTP 404 and adds no useful
-            // information. The mapping must first be learned from a
-            // Rebrickable part's external IDs.
-            qInfo() << "BrickLink resolver local cross-reference miss."
-                    << "BrickLink:" << enteredPartNumber
-                    << "The ID may be uncached or may not have a Rebrickable equivalent.";
-
-            if (m_partResolutionLabel) {
-                m_partResolutionLabel->setText(
-                    QStringLiteral("BrickLink ID not found in local cross-reference — "
-                                   "browse the matching Rebrickable part in Parts Catalog "
-                                   "if one exists."));
-                m_partResolutionLabel->setVisible(true);
-            }
-
-            updateAddButtonState();
+            startBrickLinkCandidateLookup(enteredPartNumber);
             return;
         }
 
@@ -1050,6 +1048,127 @@ bool AddInventoryDialog::tryResolveBrickLinkExternalId(const QString& externalId
     return true;
 }
 
+void AddInventoryDialog::startBrickLinkCandidateLookup(const QString& externalId)
+{
+    clearBrickLinkCandidateLookup();
+
+    const BrickLinkCandidateDiscoveryService::Result discovery =
+        BrickLinkCandidateDiscoveryService().discover(externalId);
+
+    QString message;
+    switch (discovery.status) {
+    case BrickLinkCandidateDiscoveryService::Status::Unsupported:
+        message = QStringLiteral(
+            "BrickLink ID format is not supported for automatic candidate lookup. "
+            "Enter the Rebrickable Part number or select it from Parts Catalog.");
+        break;
+    case BrickLinkCandidateDiscoveryService::Status::NoCandidates:
+        message = QStringLiteral(
+            "No local Rebrickable candidate family was found for this BrickLink ID.");
+        break;
+    case BrickLinkCandidateDiscoveryService::Status::TooBroad:
+        message = QStringLiteral(
+            "The matching Part family is too broad for automatic lookup. "
+            "Select the Rebrickable Part from Parts Catalog.");
+        break;
+    case BrickLinkCandidateDiscoveryService::Status::Candidates:
+        break;
+    }
+
+    if (discovery.status != BrickLinkCandidateDiscoveryService::Status::Candidates) {
+        if (m_partResolutionLabel) {
+            m_partResolutionLabel->setText(message);
+            m_partResolutionLabel->setVisible(true);
+        }
+        updateAddButtonState();
+        return;
+    }
+
+    auto* enrichment = PartExternalIdEnrichmentService::instance();
+    if (!enrichment) {
+        if (m_partResolutionLabel) {
+            m_partResolutionLabel->setText(
+                QStringLiteral("Background Part identity lookup is not available."));
+            m_partResolutionLabel->setVisible(true);
+        }
+        updateAddButtonState();
+        return;
+    }
+
+    ExternalPartIdentifierRepository externalRepository;
+    QList<int> pendingPartIds;
+    for (const Part& candidate : discovery.candidates) {
+        if (!externalRepository.isLookupComplete(candidate.id(), QStringLiteral("Rebrickable"))
+            || enrichment->isLookupPending(candidate.id())) {
+            pendingPartIds.append(candidate.id());
+        }
+    }
+
+    if (pendingPartIds.isEmpty()) {
+        if (m_partResolutionLabel) {
+            m_partResolutionLabel->setText(
+                QStringLiteral("Candidate lookup completed, but no authoritative BrickLink match was found."));
+            m_partResolutionLabel->setVisible(true);
+        }
+        updateAddButtonState();
+        return;
+    }
+
+    m_brickLinkCandidateLookup.begin(discovery.brickLinkId, pendingPartIds);
+    m_candidateLookupHadRetryableFailure = false;
+
+    if (m_partResolutionLabel) {
+        m_partResolutionLabel->setText(
+            QStringLiteral("Checking %1 candidate Part%2…")
+                .arg(discovery.candidates.size())
+                .arg(discovery.candidates.size() == 1 ? QString() : QStringLiteral("s")));
+        m_partResolutionLabel->setVisible(true);
+    }
+
+    enrichment->ensureExternalIds(pendingPartIds);
+    updateAddButtonState();
+}
+
+void AddInventoryDialog::handleCandidateEnrichmentFinished(
+    int partId,
+    PartExternalIdEnrichmentService::LookupOutcome outcome)
+{
+    if (!m_partSearchEdit
+        || !m_brickLinkCandidateLookup.accepts(m_partSearchEdit->text(), partId)) {
+        return;
+    }
+
+    if (outcome == PartExternalIdEnrichmentService::LookupOutcome::RetryableFailure
+        || outcome == PartExternalIdEnrichmentService::LookupOutcome::PersistenceFailure) {
+        m_candidateLookupHadRetryableFailure = true;
+    }
+
+    const QString requested = m_brickLinkCandidateLookup.brickLinkId();
+    if (tryResolveBrickLinkExternalId(requested)) {
+        clearBrickLinkCandidateLookup();
+        return;
+    }
+
+    if (!m_brickLinkCandidateLookup.finish(partId))
+        return;
+
+    if (m_partResolutionLabel) {
+        m_partResolutionLabel->setText(
+            m_candidateLookupHadRetryableFailure
+                ? QStringLiteral("Candidate lookup could not complete. Check the Rebrickable connection and try again.")
+                : QStringLiteral("Candidate lookup completed, but no authoritative BrickLink match was found."));
+        m_partResolutionLabel->setVisible(true);
+    }
+    clearBrickLinkCandidateLookup();
+    updateAddButtonState();
+}
+
+void AddInventoryDialog::clearBrickLinkCandidateLookup()
+{
+    m_brickLinkCandidateLookup.clear();
+    m_candidateLookupHadRetryableFailure = false;
+}
+
 void AddInventoryDialog::handlePartDetailsForAliasLearning(
     const RebrickableService::PartDetailsResult& providerResult)
 {
@@ -1123,6 +1242,8 @@ void AddInventoryDialog::applyResolvedPart(
     if (!part)
         return;
 
+    clearBrickLinkCandidateLookup();
+
     m_partId = part->id();
     m_partNumber = part->partNumber();
 
@@ -1190,6 +1311,7 @@ void AddInventoryDialog::applyResolvedPart(
 
 void AddInventoryDialog::clearPartSelection()
 {
+    clearBrickLinkCandidateLookup();
     m_partId = 0;
 
     m_partNumber.clear();

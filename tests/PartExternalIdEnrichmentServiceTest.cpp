@@ -48,10 +48,13 @@ int main(int argc, char** argv)
     ExternalPartIdentifierRepository ids; ids.setLookupStatus(loaded,"Rebrickable","Loaded");
 
     QStringList batches; QStringList details;
+    QHash<int, PartExternalIdEnrichmentService::LookupOutcome> outcomes;
     {
         PartExternalIdEnrichmentService service(nullptr,false);
         QObject::connect(&service,&PartExternalIdEnrichmentService::batchRequested,[&](const QStringList& value){batches.append(value);});
         QObject::connect(&service,&PartExternalIdEnrichmentService::detailsRequested,[&](const QString& value){details.append(value);});
+        QObject::connect(&service,&PartExternalIdEnrichmentService::externalIdsLookupFinished,
+                         [&](int partId, PartExternalIdEnrichmentService::LookupOutcome outcome){outcomes.insert(partId,outcome);});
 
         service.ensureExternalIds(normal); service.ensureExternalIds(normal); service.ensureExternalIds(loaded); events();
         if (!require(batches.count("normal")==1 && !batches.contains("loaded"),"Deduplication or Loaded skip failed.")) return 1;
@@ -60,6 +63,8 @@ int main(int argc, char** argv)
         item.externalIds={{"BrickLink",{"bl-normal"}},{"BrickOwl",{"bo-1"}},{"LDraw",{"ld-1","ld-2"}},{"LEGO",{"lego-1"}},{"FutureProvider",{"future-1"}}}; response.parts={item};
         service.handleBatchResult(response);
         if (!require(status(db,normal)=="Loaded","Successful persistence was not marked Loaded.")) return 1;
+        if (!require(outcomes.value(normal)==PartExternalIdEnrichmentService::LookupOutcome::Loaded,
+                     "Loaded completion outcome was not emitted.")) return 1;
         for (const QString provider : {"BrickLink","BrickOwl","LDraw","LEGO","FutureProvider"})
             if (!require(!ids.findByProviderAndExternalId(provider, provider=="BrickLink"?"bl-normal":provider=="BrickOwl"?"bo-1":provider=="LDraw"?"ld-1":provider=="LEGO"?"lego-1":"future-1",true).isEmpty(),"Provider was not retained: "+provider)) return 1;
         if (!require(ids.findByProviderAndExternalId("LDraw","ld-2",true).size()==1,"Multiple provider IDs were not retained.")) return 1;
@@ -90,8 +95,12 @@ int main(int argc, char** argv)
         RebrickableService::PartDetailsResult notFound; notFound.requestedPartNumber="3001pr0002"; notFound.httpStatusCode=404;
         service.handleDetailsResult(notFound);
         if (!require(status(db,missingPrinted)=="Unavailable", "A definitive direct 404 was not persisted.")) return 1;
+        if (!require(outcomes.value(missingPrinted)==PartExternalIdEnrichmentService::LookupOutcome::Unavailable,
+                     "Unavailable completion outcome was not emitted.")) return 1;
         RebrickableService::PartDetailsResult directTransient; directTransient.requestedPartNumber="3001pr0003"; directTransient.httpStatusCode=500;
         service.handleDetailsResult(directTransient);
+        if (!require(outcomes.value(transientPrinted)==PartExternalIdEnrichmentService::LookupOutcome::RetryableFailure,
+                     "Retryable completion outcome was not emitted.")) return 1;
         const int directRetryBefore=batches.size(); service.ensureExternalIds(transientPrinted); events();
         if (!require(status(db,transientPrinted).isEmpty() && batches.size()==directRetryBefore+1,
                      "A transient direct failure was not left retryable.")) return 1;

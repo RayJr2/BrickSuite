@@ -48,6 +48,10 @@ public:
 
     QList<Part> searchForInventoryEntry(const QString& searchText, int limit = 20) const;
 
+    // Bounded candidate discovery for decorated Rebrickable identities.
+    QList<Part> findActiveDecoratedByBasePrefix(const QString& basePartNumber,
+                                                int limit) const;
+
     // M23.3 Part Reference: retrieve active, non-printed parts from one or
     // more local Part Category IDs. Used only for the curated reference
     // galleries, not as a replacement for Parts Catalog search.

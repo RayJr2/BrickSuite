@@ -12,6 +12,15 @@ class PartExternalIdEnrichmentService : public QObject
 {
     Q_OBJECT
 public:
+    enum class LookupOutcome
+    {
+        Loaded,
+        Unavailable,
+        RetryableFailure,
+        PersistenceFailure
+    };
+    Q_ENUM(LookupOutcome)
+
     explicit PartExternalIdEnrichmentService(QObject* parent = nullptr,
                                               bool dispatchNetworkRequests = true);
     ~PartExternalIdEnrichmentService() override;
@@ -21,6 +30,7 @@ public:
     void ensureExternalIds(int partId);
     void ensureExternalIds(const QList<int>& partIds);
     void ensureExternalIdsForPartNumber(const QString& partNumber);
+    bool isLookupPending(int partId) const;
     bool persistExternalIds(int partId,
                             const QHash<QString, QStringList>& externalIds);
 
@@ -32,6 +42,7 @@ signals:
     void batchRequested(const QStringList& partNumbers);
     void detailsRequested(const QString& partNumber);
     void generalImageMetadataReady(const QString& partNumber, const QString& imageUrl);
+    void externalIdsLookupFinished(int partId, LookupOutcome outcome);
 
 private:
     void dispatchPending();

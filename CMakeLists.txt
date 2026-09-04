@@ -224,6 +224,8 @@ qt_add_executable(BrickSuite
     src/services/parts/RebrickablePartAliasLearner.cpp
     src/services/parts/PartExternalIdEnrichmentService.h
     src/services/parts/PartExternalIdEnrichmentService.cpp
+    src/services/parts/BrickLinkCandidateDiscoveryService.h
+    src/services/parts/BrickLinkCandidateDiscoveryService.cpp
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
     src/ui/parts/PartReferenceDialog.h
     src/ui/parts/PartReferenceDialog.cpp
@@ -378,6 +380,25 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(BrickLinkCandidateResolutionTest EXCLUDE_FROM_ALL
+        tests/BrickLinkCandidateResolutionTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Part.h src/models/Part.cpp
+        src/models/PartRelationship.h
+        src/models/PartAlias.h
+        src/models/PartResolutionResult.h
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/PartRelationshipRepository.h src/repositories/PartRelationshipRepository.cpp
+        src/repositories/PartAliasRepository.h src/repositories/PartAliasRepository.cpp
+        src/repositories/ExternalPartIdentifierRepository.h src/repositories/ExternalPartIdentifierRepository.cpp
+        src/services/parts/PartResolver.h src/services/parts/PartResolver.cpp
+        src/services/parts/BrickLinkCandidateDiscoveryService.h
+        src/services/parts/BrickLinkCandidateDiscoveryService.cpp
+    )
+    target_link_libraries(BrickLinkCandidateResolutionTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME BrickLinkCandidateResolution COMMAND BrickLinkCandidateResolutionTest)
+
     qt_add_executable(PartExternalIdEnrichmentServiceTest EXCLUDE_FROM_ALL
         tests/PartExternalIdEnrichmentServiceTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp

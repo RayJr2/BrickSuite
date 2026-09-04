@@ -25,6 +25,8 @@
 #include <QModelIndex>
 
 #include "../../api/rebrickable/RebrickableService.h"
+#include "../../services/parts/BrickLinkCandidateDiscoveryService.h"
+#include "../../services/parts/PartExternalIdEnrichmentService.h"
 
 class WorkspaceContext;
 class SessionStorageSelectionService;
@@ -92,6 +94,11 @@ private:
     void applyResolvedPart(int partId, const QString& displayText, const QString& resolutionText);
     void updateAddButtonState();
     bool tryResolveBrickLinkExternalId(const QString& externalId);
+    void startBrickLinkCandidateLookup(const QString& externalId);
+    void handleCandidateEnrichmentFinished(
+        int partId,
+        PartExternalIdEnrichmentService::LookupOutcome outcome);
+    void clearBrickLinkCandidateLookup();
 
     int m_partId = 0;
 
@@ -123,6 +130,8 @@ private:
 
     QString m_partNumber;
     QString m_pendingAliasLookupPartNumber;
+    BrickLinkCandidateLookupSession m_brickLinkCandidateLookup;
+    bool m_candidateLookupHadRetryableFailure = false;
 
     QLineEdit* m_partSearchEdit = nullptr;
     QCompleter* m_partCompleter = nullptr;

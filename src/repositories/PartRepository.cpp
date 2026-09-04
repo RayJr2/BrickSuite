@@ -209,6 +209,52 @@ std::optional<Part> PartRepository::getByPartNumber(const QString& partNumber) c
     return partFromQuery(query);
 }
 
+QList<Part> PartRepository::findActiveDecoratedByBasePrefix(
+    const QString& basePartNumber,
+    int limit) const
+{
+    QList<Part> parts;
+    QString base = basePartNumber.trimmed();
+    if (base.isEmpty() || limit <= 0)
+        return parts;
+
+    // LIKE metacharacters are valid identifier characters, so escape them
+    // before constructing the two deliberately constrained prefix patterns.
+    base.replace(QStringLiteral("\\"), QStringLiteral("\\\\"));
+    base.replace(QStringLiteral("%"), QStringLiteral("\\%"));
+    base.replace(QStringLiteral("_"), QStringLiteral("\\_"));
+
+    QSqlQuery query(DatabaseManager::instance().database());
+    query.prepare(R"(
+        SELECT
+            id, part_number, name, part_category_id, rebrickable_part_id,
+            material, is_active, created_utc, modified_utc
+        FROM part
+        WHERE is_active = 1
+          AND
+          (
+              part_number LIKE :print_prefix ESCAPE '\' COLLATE NOCASE
+              OR part_number LIKE :pattern_prefix ESCAPE '\' COLLATE NOCASE
+          )
+        ORDER BY part_number COLLATE NOCASE
+        LIMIT :limit
+    )");
+    query.bindValue(QStringLiteral(":print_prefix"), base + QStringLiteral("pr%"));
+    query.bindValue(QStringLiteral(":pattern_prefix"), base + QStringLiteral("pat%"));
+    query.bindValue(QStringLiteral(":limit"), limit);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to retrieve bounded decorated Part candidates:"
+                    << query.lastError().text();
+        return parts;
+    }
+
+    while (query.next())
+        parts.append(partFromQuery(query));
+
+    return parts;
+}
+
 bool PartRepository::update(Part& part)
 {
     if (part.id() <= 0 || part.partNumber().trimmed().isEmpty() || part.name().trimmed().isEmpty()) {

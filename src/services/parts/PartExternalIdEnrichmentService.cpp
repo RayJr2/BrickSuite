@@ -57,6 +57,14 @@ void PartExternalIdEnrichmentService::ensureExternalIds(const QList<int>& partId
     for (int partId : partIds) ensureExternalIds(partId);
 }
 
+bool PartExternalIdEnrichmentService::isLookupPending(int partId) const
+{
+    if (m_queuedPartIds.contains(partId) || m_activePartIds.contains(partId))
+        return true;
+    const auto part = PartRepository().getById(partId);
+    return part && m_directPending.contains(part->partNumber().trimmed().toLower());
+}
+
 void PartExternalIdEnrichmentService::dispatchPending()
 {
     m_dispatchScheduled = false;
@@ -83,8 +91,14 @@ void PartExternalIdEnrichmentService::dispatchPending()
         const QString key = UserSettings::instance().rebrickableApiKey().trimmed();
         if (!key.isEmpty() && !RebrickableApiClient::isSessionBlocked())
             m_apiClient->getPartImageUrls(numbers, key, RebrickableApiClient::RequestPriority::Background);
-        else
-            for (const QString& number : numbers) m_activePartIds.remove(m_partIdByRequestedNumber.take(number.toLower()));
+        else {
+            for (const QString& number : numbers) {
+                const int partId = m_partIdByRequestedNumber.take(number.toLower());
+                m_activePartIds.remove(partId);
+                if (partId > 0)
+                    emit externalIdsLookupFinished(partId, LookupOutcome::RetryableFailure);
+            }
+        }
     }
 }
 
@@ -140,8 +154,15 @@ void PartExternalIdEnrichmentService::handleBatchResult(
             for (auto it = item.externalIds.constBegin(); it != item.externalIds.constEnd(); ++it)
                 if (it.key().compare(QStringLiteral("BrickLink"), Qt::CaseInsensitive) == 0
                     && !it.value().isEmpty()) hasBrickLink = true;
-            if (persisted && isLikelyPrintedPartNumber(item.partNumber) && !hasBrickLink)
+            if (persisted && isLikelyPrintedPartNumber(item.partNumber) && !hasBrickLink) {
                 requestDirectDetails(item.partNumber);
+            } else {
+                emit externalIdsLookupFinished(
+                    partId,
+                    persisted ? LookupOutcome::Loaded : LookupOutcome::PersistenceFailure);
+            }
+        } else if (partId > 0) {
+            emit externalIdsLookupFinished(partId, LookupOutcome::RetryableFailure);
         }
         if (!item.partImageUrl.trimmed().isEmpty()) emit generalImageMetadataReady(item.partNumber, item.partImageUrl);
         m_activePartIds.remove(partId); m_partIdByRequestedNumber.remove(key);
@@ -151,10 +172,20 @@ void PartExternalIdEnrichmentService::handleBatchResult(
         if (returned.contains(key)) continue;
         const int partId = m_partIdByRequestedNumber.take(key);
         m_activePartIds.remove(partId);
-        if (!result.success || partId <= 0) continue; // transient/provider failures remain retryable
-        if (isLikelyPrintedPartNumber(requested)) requestDirectDetails(requested);
-        else ExternalPartIdentifierRepository().setLookupStatus(
-            partId, QStringLiteral("Rebrickable"), QStringLiteral("Unavailable"));
+        if (partId <= 0) continue;
+        if (!result.success) {
+            emit externalIdsLookupFinished(partId, LookupOutcome::RetryableFailure);
+            continue;
+        }
+        if (isLikelyPrintedPartNumber(requested)) {
+            requestDirectDetails(requested);
+        } else {
+            const bool stored = ExternalPartIdentifierRepository().setLookupStatus(
+                partId, QStringLiteral("Rebrickable"), QStringLiteral("Unavailable"));
+            emit externalIdsLookupFinished(
+                partId,
+                stored ? LookupOutcome::Unavailable : LookupOutcome::PersistenceFailure);
+        }
     }
 }
 
@@ -166,8 +197,15 @@ void PartExternalIdEnrichmentService::requestDirectDetails(const QString& partNu
     emit detailsRequested(partNumber);
     if (m_apiClient) {
         const QString apiKey = UserSettings::instance().rebrickableApiKey().trimmed();
-        if (!apiKey.isEmpty()) m_apiClient->getPartDetails(
-            partNumber, apiKey, RebrickableApiClient::RequestPriority::Background);
+        if (!apiKey.isEmpty() && !RebrickableApiClient::isSessionBlocked()) {
+            m_apiClient->getPartDetails(
+                partNumber, apiKey, RebrickableApiClient::RequestPriority::Background);
+        } else {
+            m_directPending.remove(key);
+            const auto part = PartRepository().getByPartNumber(partNumber);
+            if (part)
+                emit externalIdsLookupFinished(part->id(), LookupOutcome::RetryableFailure);
+        }
     }
 }
 
@@ -179,12 +217,20 @@ void PartExternalIdEnrichmentService::handleDetailsResult(
     const auto part = PartRepository().getByPartNumber(result.requestedPartNumber);
     if (!part) return;
     if (result.success) {
-        persistExternalIds(part->id(), result.part.externalIds);
+        const bool persisted = persistExternalIds(part->id(), result.part.externalIds);
         if (!result.part.partImageUrl.trimmed().isEmpty())
             emit generalImageMetadataReady(result.part.partNumber, result.part.partImageUrl);
+        emit externalIdsLookupFinished(
+            part->id(),
+            persisted ? LookupOutcome::Loaded : LookupOutcome::PersistenceFailure);
     } else if (result.httpStatusCode == 404) {
-        ExternalPartIdentifierRepository().setLookupStatus(
+        const bool stored = ExternalPartIdentifierRepository().setLookupStatus(
             part->id(), QStringLiteral("Rebrickable"), QStringLiteral("Unavailable"));
+        emit externalIdsLookupFinished(
+            part->id(),
+            stored ? LookupOutcome::Unavailable : LookupOutcome::PersistenceFailure);
+    } else {
+        emit externalIdsLookupFinished(part->id(), LookupOutcome::RetryableFailure);
     }
 }
 
