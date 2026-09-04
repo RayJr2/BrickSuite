@@ -95,7 +95,7 @@ PartsCatalogWidget::PartsCatalogWidget(QWidget* parent)
     m_importPartsButton = new QPushButton("Import Rebrickable Parts (CSV/ZIP)", this);
 
     m_importPartRelationshipsButton =
-        new QPushButton("Import part_relationships.csv", this);
+        new QPushButton("Import part_relationships (CSV/ZIP)", this);
 
     mainLayout->addLayout(titleLayout);
 
@@ -912,7 +912,7 @@ void PartsCatalogWidget::importPartRelationshipsCsv()
             this,
             "Import Rebrickable part_relationships.csv",
             QString(),
-            "CSV Files (*.csv)");
+            "Rebrickable CSV or ZIP (*.csv *.zip *.CSV *.ZIP)");
 
     if (fileName.isEmpty())
         return;

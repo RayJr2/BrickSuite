@@ -36,8 +36,12 @@ Application::Application() = default;
 
 Application::~Application() = default;
 
-bool Application::initialize()
+bool Application::initialize(const StartupProgress& progress)
 {
+    const auto report = [&progress](int stage, const QString& message) {
+        if (progress) progress(stage, message);
+    };
+    report(1, QStringLiteral("Initializing database..."));
     if (!DatabaseManager::instance().initialize())
     {
         QMessageBox::critical(
@@ -50,6 +54,7 @@ bool Application::initialize()
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
+    report(2, QStringLiteral("Initializing reference data..."));
     ReferenceDataSeeder seeder(database);
 
     if (!seeder.seedIfRequired()) {
@@ -60,17 +65,20 @@ bool Application::initialize()
         return false;
     }
 
+    report(3, QStringLiteral("Preparing main window and catalog services..."));
     m_workspaceContext = std::make_unique<WorkspaceContext>();
     m_sessionStorageSelectionService = std::make_unique<SessionStorageSelectionService>();
 
     m_mainWindow = std::make_unique<MainWindow>(*m_workspaceContext,
                                                 *m_sessionStorageSelectionService);
+    report(4, QStringLiteral("Starting background services..."));
     m_automaticBackupService = std::make_unique<AutomaticBackupService>();
     m_mainWindow->setAutomaticBackupService(m_automaticBackupService.get());
     m_mainWindow->show();
 
     m_automaticBackupService->start();
 
+    report(5, QStringLiteral("Ready"));
     return true;
 }
 

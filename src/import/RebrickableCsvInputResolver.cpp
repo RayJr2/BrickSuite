@@ -553,6 +553,16 @@ bool RebrickableCsvInputResolver::resolve(const QString& inputFileName,
         return false;
     }
 
+    // Never accept traversal/absolute paths, even though extraction uses our
+    // own fixed filename rather than an archive-controlled filesystem path.
+    QString selectedPath = selectedEntry.fileName;
+    selectedPath.replace('\\', '/');
+    if (selectedPath.startsWith('/') || selectedPath.contains(':')
+        || selectedPath.split('/').contains(QStringLiteral(".."))) {
+        errorMessage = "The selected CSV has an unsafe path inside the ZIP file.";
+        return false;
+    }
+
     if (selectedEntry.uncompressedSize > MaximumExtractedCsvSize) {
         errorMessage = QString("The selected CSV declares an uncompressed size larger than "
                                "the %1 MiB safety limit.")

@@ -4,6 +4,7 @@
  * Copyright (C) 2026 RF StateSide, LLC
  */
 #include "RebrickablePartRelationshipImporter.h"
+#include "RebrickableCsvInputResolver.h"
 
 #include "../database/DatabaseManager.h"
 #include "../models/PartRelationship.h"
@@ -17,6 +18,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QTextStream>
+#include <QTemporaryDir>
 
 namespace
 {
@@ -108,7 +110,16 @@ RebrickablePartRelationshipImporter::importFile(
 {
     Result result;
 
-    QFile file(fileName);
+    QTemporaryDir temporaryDirectory;
+    QString csvFileName = fileName;
+    // Keep direct-file parsing unchanged; resolve ZIPs fully before database work.
+    if (fileName.endsWith(QStringLiteral(".zip"), Qt::CaseInsensitive)
+        && !RebrickableCsvInputResolver::resolve(fileName,
+                QStringLiteral("part_relationships.csv"), temporaryDirectory,
+                csvFileName, result.message)) {
+        return result;
+    }
+    QFile file(csvFileName);
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         result.message =

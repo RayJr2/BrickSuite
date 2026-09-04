@@ -21,6 +21,9 @@
 #include <QApplication>
 #include <QDebug>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QLabel>
+#include <QProgressBar>
 #include <QFont>
 #include <QIcon>
 #include <QLockFile>
@@ -77,11 +80,6 @@ QPixmap createSplashPixmap(const QApplication& application)
                      Qt::AlignCenter,
                      QString("Version %1").arg(AppVersion::version()));
 
-    painter.setPen(palette.color(QPalette::Disabled, QPalette::WindowText));
-    painter.drawText(QRect(20, 250, splashWidth - 40, 24),
-                     Qt::AlignCenter,
-                     QStringLiteral("Starting BrickSuite..."));
-
     return pixmap;
 }
 
@@ -89,6 +87,8 @@ QPixmap createSplashPixmap(const QApplication& application)
 
 int main(int argc, char *argv[])
 {
+    QElapsedTimer startupTimer;
+    startupTimer.start();
     QApplication qtApplication(argc, argv);
 
     QApplication::setApplicationName(AppConstants::name());
@@ -126,6 +126,14 @@ int main(int argc, char *argv[])
     ThemeManager::applySavedTheme(qtApplication);
 
     QSplashScreen splash(createSplashPixmap(qtApplication));
+    QLabel startupStatus(QStringLiteral("Starting BrickSuite..."), &splash);
+    startupStatus.setGeometry(20, 244, 480, 24);
+    startupStatus.setAlignment(Qt::AlignCenter);
+    QProgressBar startupProgress(&splash);
+    startupProgress.setGeometry(30, 276, 460, 12);
+    startupProgress.setRange(0, 5);
+    startupProgress.setValue(0);
+    startupProgress.setTextVisible(false);
     splash.show();
 
     // Ensure the splash is painted before synchronous database and window
@@ -135,7 +143,12 @@ int main(int argc, char *argv[])
 
     Application application;
 
-    if (!application.initialize()) {
+    if (!application.initialize([&](int stage, const QString& status) {
+            startupStatus.setText(status);
+            startupProgress.setValue(stage);
+            // Paint real stage boundaries without a timer or nested event dispatch.
+            splash.repaint();
+        })) {
         splash.close();
         qCritical() << "BrickSuite application initialization failed.";
         Logger::shutdown();
@@ -143,6 +156,8 @@ int main(int argc, char *argv[])
     }
 
     splash.finish(application.mainWindow());
+    qInfo().noquote() << QStringLiteral("BrickSuite startup completed in %1 seconds.")
+                            .arg(startupTimer.elapsed() / 1000.0, 0, 'f', 2);
 
     const int result = qtApplication.exec();
 

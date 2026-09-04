@@ -720,6 +720,16 @@ if(BUILD_TESTING)
     )
     target_link_libraries(V020ToV030MigrationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME V020ToV030Migration COMMAND V020ToV030MigrationTest)
+
+    qt_add_executable(PartRelationshipImportTest EXCLUDE_FROM_ALL
+        tests/PartRelationshipImportTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/import/RebrickableCsvInputResolver.h src/import/RebrickableCsvInputResolver.cpp
+        src/import/RebrickablePartRelationshipImporter.h src/import/RebrickablePartRelationshipImporter.cpp
+    )
+    target_link_libraries(PartRelationshipImportTest PRIVATE Qt6::Core Qt6::Sql ZLIB::ZLIB)
+    add_test(NAME PartRelationshipImport COMMAND PartRelationshipImportTest)
 endif()
 
 if(WIN32)

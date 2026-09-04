@@ -23,6 +23,8 @@
 #pragma once
 
 #include <memory>
+#include <functional>
+#include <QString>
 
 class MainWindow;
 class QWidget;
@@ -36,7 +38,9 @@ public:
     Application();
     ~Application();
 
-    bool initialize();
+    // Stage boundaries, not an estimate of elapsed-time percentage.
+    using StartupProgress = std::function<void(int, const QString&)>;
+    bool initialize(const StartupProgress& progress = {});
     QWidget* mainWindow() const;
 
 private:
