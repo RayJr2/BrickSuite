@@ -361,6 +361,7 @@ qt_add_executable(BrickSuite
     src/core/AppConstants.h
     CONTRIBUTING.md
     SECURITY.md
+    deployment/update/update.json
 
 )
 target_link_libraries(BrickSuite PRIVATE

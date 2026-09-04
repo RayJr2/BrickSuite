@@ -4,9 +4,9 @@
 
 BrickSuite is a free, open-source desktop application for keeping a traceable digital record of a physical brick workshop. It connects reference catalogs, loose inventory, storage, Builds, and owned models without treating those concepts as interchangeable.
 
-> **Current development release:** BrickSuite **v0.3.0 (Unreleased)**
+> **Current release:** BrickSuite **v0.3.0**
 >
-> **Windows:** packaged installer supported for published releases
+> **Windows:** packaged installer available from the GitHub Releases page
 >
 > **macOS / Linux:** source builds supported; packaged distributions remain deferred
 
