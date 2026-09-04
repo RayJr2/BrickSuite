@@ -48,6 +48,7 @@
 #include "../services/builds/MinifigBuildCreationService.h"
 #include "../services/builds/SetBuildCreationService.h"
 #include "../services/mappings/BrickLinkMappingService.h"
+#include "../services/parts/PartExternalIdEnrichmentService.h"
 
 #include "../settings/UserSettings.h"
 
@@ -134,6 +135,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     resize(1200, 800);
 
     m_tabWidget = new QTabWidget(this);
+    m_partExternalIdEnrichmentService = new PartExternalIdEnrichmentService(this);
 
     // Workspace tab
     QWidget* workspaceTab = createWorkspaceTab();
@@ -142,7 +144,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     m_storageWidget = new StorageWidget(m_workspaceContext, m_tabWidget);
 
     // Parts Catalog tab
-    m_partsCatalogWidget = new PartsCatalogWidget(m_tabWidget);
+    m_partsCatalogWidget = new PartsCatalogWidget(m_partExternalIdEnrichmentService, m_tabWidget);
 
     // Sets Catalog tab
     m_setsCatalogWidget = new SetsCatalogWidget(m_workspaceContext, m_tabWidget);

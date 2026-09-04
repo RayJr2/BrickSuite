@@ -45,6 +45,7 @@ class PartReferenceDialog;
 class DatabaseStatusDialog;
 class AutomaticBackupService;
 class SessionStorageSelectionService;
+class PartExternalIdEnrichmentService;
 
 class MainWindow : public QMainWindow
 {
@@ -97,4 +98,5 @@ private:
     QAction* m_restoreDatabaseAction = nullptr;
     QAction* m_applicationLogAction = nullptr;
     AutomaticBackupService* m_automaticBackupService = nullptr;
+    PartExternalIdEnrichmentService* m_partExternalIdEnrichmentService = nullptr;
 };

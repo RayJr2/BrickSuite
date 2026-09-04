@@ -222,6 +222,8 @@ qt_add_executable(BrickSuite
     src/services/parts/PartReferenceManifest.cpp
     src/services/parts/RebrickablePartAliasLearner.h
     src/services/parts/RebrickablePartAliasLearner.cpp
+    src/services/parts/PartExternalIdEnrichmentService.h
+    src/services/parts/PartExternalIdEnrichmentService.cpp
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
     src/ui/parts/PartReferenceDialog.h
     src/ui/parts/PartReferenceDialog.cpp
@@ -376,6 +378,29 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(PartExternalIdEnrichmentServiceTest EXCLUDE_FROM_ALL
+        tests/PartExternalIdEnrichmentServiceTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Part.h src/models/Part.cpp
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/ExternalPartIdentifierRepository.h src/repositories/ExternalPartIdentifierRepository.cpp
+        src/repositories/ExternalPartMappingRepository.h src/repositories/ExternalPartMappingRepository.cpp
+        src/services/images/PartImageService.h src/services/images/PartImageService.cpp
+        src/services/parts/PartExternalIdEnrichmentService.h src/services/parts/PartExternalIdEnrichmentService.cpp
+        src/services/mappings/BrickLinkMappingService.h src/services/mappings/BrickLinkMappingService.cpp
+        src/services/RebrickableApiClient.h src/services/RebrickableApiClient.cpp
+        src/api/rebrickable/RebrickableService.h src/api/rebrickable/RebrickableService.cpp
+        src/api/ApiNetworkService.h src/api/ApiNetworkService.cpp
+        src/settings/UserSettings.h src/settings/UserSettings.cpp
+        src/services/CredentialStore.h src/services/CredentialStore.cpp
+        src/models/Color.h src/models/Color.cpp
+        src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
+        src/models/ExternalColorMapping.h
+        src/repositories/ExternalColorMappingRepository.h src/repositories/ExternalColorMappingRepository.cpp
+    )
+    target_link_libraries(PartExternalIdEnrichmentServiceTest PRIVATE Qt6::Core Qt6::Sql Qt6::Network)
+    add_test(NAME PartExternalIdEnrichmentService COMMAND PartExternalIdEnrichmentServiceTest)
     qt_add_executable(CatalogToCollectionTest EXCLUDE_FROM_ALL
         tests/CatalogToCollectionTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp

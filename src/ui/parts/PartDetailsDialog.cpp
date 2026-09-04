@@ -25,10 +25,9 @@
 
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/PartRepository.h"
-#include "../../repositories/ExternalPartIdentifierRepository.h"
 
 #include "../../services/images/PartImageService.h"
-#include "../../services/mappings/BrickLinkMappingService.h"
+#include "../../services/parts/PartExternalIdEnrichmentService.h"
 #include "../../settings/UserSettings.h"
 
 #include <QDebug>
@@ -420,20 +419,13 @@ PartDetailsDialog::PartDetailsDialog(
 
                 populateExternalIds(result);
 
-                ExternalPartIdentifierRepository externalIdentifierRepository;
-                externalIdentifierRepository.replaceProviderIds(
-                    m_partId,
-                    result.part.externalIds,
-                    QStringLiteral("Rebrickable"));
-                externalIdentifierRepository.setLookupStatus(
-                    m_partId,
-                    QStringLiteral("Rebrickable"),
-                    QStringLiteral("Loaded"));
-
-                BrickLinkMappingService mappingService;
-                mappingService.storePartExternalIds(
-                    m_partId,
-                    result.part.externalIds);
+                if (auto* enrichment = PartExternalIdEnrichmentService::instance();
+                    !enrichment || !enrichment->persistExternalIds(m_partId, result.part.externalIds)) {
+                    qWarning() << "Part Details displayed external IDs but could not cache them."
+                               << "PartId:" << m_partId;
+                    m_rebrickableStatusLabel->setText(
+                        "Details loaded, but external IDs could not be cached.");
+                }
 
                 if (!result.part.partImageUrl.isEmpty()) {
                     m_partImageService->requestPartImage(result.part.partNumber,

@@ -19,6 +19,7 @@
  */
 
 #include "PartImageService.h"
+#include "../parts/PartExternalIdEnrichmentService.h"
 
 #include <QDebug>
 #include <QDir>
@@ -37,6 +38,16 @@ PartImageService::PartImageService(
 {
     m_networkManager =
         new QNetworkAccessManager(this);
+
+    // General Part images are a natural, bounded signal that a Part is in
+    // active use. Both cache hits and completed downloads pass through this
+    // signal; color-specific images use a different signal and do not trigger
+    // catalog identity enrichment.
+    connect(this, &PartImageService::imageReady, this,
+            [](const QString& partNumber, const QString&) {
+                if (auto* enrichment = PartExternalIdEnrichmentService::instance())
+                    enrichment->ensureExternalIdsForPartNumber(partNumber);
+            });
 }
 
 QString PartImageService::cacheDirectory() const

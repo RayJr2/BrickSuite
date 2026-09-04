@@ -21,7 +21,6 @@
 #pragma once
 
 #include <QHash>
-#include <QSet>
 #include <QWidget>
 
 #include "../../api/rebrickable/RebrickableService.h"
@@ -33,13 +32,15 @@ class QTableWidget;
 class QLabel;
 class PartImageService;
 class RebrickableApiClient;
+class PartExternalIdEnrichmentService;
 
 class PartsCatalogWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit PartsCatalogWidget(QWidget* parent = nullptr);
+    explicit PartsCatalogWidget(PartExternalIdEnrichmentService* enrichmentService,
+                                QWidget* parent = nullptr);
     void settingsChanged();
 
 private slots:
@@ -58,12 +59,7 @@ private:
     void loadCategories();
     void updatePagingControls();
     void requestMissingPartEnrichment(const QStringList& partNumbers);
-    void handlePartDetailsForExternalIdEnrichment(
-        const RebrickableService::PartDetailsResult& result);
-    void requestPrintedPartExternalIdDetails(const QString& partNumber);
-
     static constexpr int ResultsPerPage = 250;
-    static constexpr int PartImageBatchSize = 20;
 
     int m_currentPage = 0;
     int m_lastResultCount = 0;
@@ -83,11 +79,10 @@ private:
 
     PartImageService* m_partImageService = nullptr;
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
+    PartExternalIdEnrichmentService* m_enrichmentService = nullptr;
 
     QHash<QString, int> m_rowByPartNumber;
     QString m_pendingAliasLookupPartNumber;
-    QSet<QString> m_pendingExternalIdDetailLookups;
-
     QPushButton* m_importPartsButton = nullptr;
     QPushButton* m_importPartRelationshipsButton = nullptr;
 };
