@@ -6,6 +6,7 @@
 #include "../src/services/parts/PartReferenceManifest.h"
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -56,6 +57,18 @@ int main(int argc, char** argv)
     PartReferenceManifest manifest; QString manifestError;
     if(!check(manifest.load(&manifestError),"built-in manifest loads: "+manifestError)
        || !check(manifest.entryCount()==PartReferenceManifest::ExpectedEntryCount,"built-in count unchanged"))return 1;
+    const PartReferenceEntry* correctedEntry = manifest.findByPartNumber("4032a");
+    if(!check(correctedEntry != nullptr,"production Part Reference contains 4032a")
+       || !check(correctedEntry->partName == "Plate Round 2 x 2 with Axle Hole Type 1 (+ Opening)","4032a uses canonical catalog name")
+       || !check(correctedEntry->catalog == "Plates" && correctedEntry->section == "Round & Curved","4032a catalog and family retained")
+       || !check(correctedEntry->displayOrder == 4 && correctedEntry->sourceCategoryId == 21
+                 && correctedEntry->sourceCategory == "Plates Round Curved and Dishes","4032a ordering and category metadata retained")
+       || !check(manifest.findByPartNumber("4032b") == nullptr,"4032b no longer occupies a built-in reference entry"))return 1;
+    QFile catalogParts(":/rebrickable/parts.csv");
+    if(!check(catalogParts.open(QIODevice::ReadOnly | QIODevice::Text),"embedded Parts catalog opens"))return 1;
+    const QByteArray catalogData = catalogParts.readAll();
+    if(!check(catalogData.contains("4032a,Plate Round 2 x 2 with Axle Hole Type 1 (+ Opening),21,Plastic"),"4032a remains a distinct canonical catalog Part")
+       || !check(catalogData.contains("4032b,Plate Round 2 x 2 with Axle Hole Type 2 (X Opening),21,Plastic"),"4032b remains a distinct canonical catalog Part"))return 1;
     PartReferenceCustomizationService service(manifest);
     PartReferenceDestination ordinary;
     for(const auto& d:service.destinations()) if(!d.structured){ordinary=d;break;}
