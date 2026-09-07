@@ -139,8 +139,19 @@ AboutDialog::AboutDialog(QWidget* parent)
     mainLayout->addWidget(
         createWrappedLabel(QStringLiteral(
                                "%1 is an open-source desktop application for managing "
-                               "brick inventory, storage locations, Sets, MOCs, Builds, missing "
-                               "parts, Lost/Found inventory, and Rebrickable reference data.")
+                               "a personal LEGO collection. Parts Catalog, My Inventory, "
+                               "My Collection, Sets, Minifigs, MOCs and Builds, and the visual "
+                               "Part Reference bring catalog, storage, and collection workflows "
+                               "together. Build From Stock and interactive pulling help plan and "
+                               "assemble Builds using owned inventory.")
+                               .arg(AppConstants::name()),
+                           this));
+
+    mainLayout->addWidget(
+        createWrappedLabel(QStringLiteral(
+                               "%1 integrates with Rebrickable for supported catalog and inventory "
+                               "data workflows, and with Brickset for supported Set information "
+                               "and instructions.")
                                .arg(AppConstants::name()),
                            this));
 
@@ -161,9 +172,9 @@ AboutDialog::AboutDialog(QWidget* parent)
     auto* trademarkLabel = createWrappedLabel(
         QStringLiteral("<b>Third-Party Notice:</b> LEGO® is a trademark of the LEGO Group "
                        "of companies, which does not sponsor, authorize, or endorse "
-                       "%1. Rebrickable is a trademark or brand name of its "
-                       "respective owner. %1 is an independent application and "
-                       "is not affiliated with or endorsed by Rebrickable.")
+                       "%1. Rebrickable and Brickset are trademarks or brand names of their "
+                       "respective owners. %1 is an independent application and is not "
+                       "affiliated with or endorsed by the LEGO Group, Rebrickable, or Brickset.")
             .arg(AppConstants::name()),
         this);
 
