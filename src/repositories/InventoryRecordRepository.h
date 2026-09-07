@@ -72,7 +72,8 @@ public:
 
     bool removeEntry(int inventoryRecordId,
                      int quantityToRemove,
-                     const QString& notes = QString());
+                     const QString& notes = QString(),
+                     QString* errorMessage = nullptr);
 
     bool moveInventory(int inventoryRecordId, int destinationStorageLocationId, int quantityToMove);
 

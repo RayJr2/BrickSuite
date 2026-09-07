@@ -275,8 +275,14 @@ int BuildAllocationRepository::totalAllocatedForPartColorForBuild(int buildId, i
 
 int BuildAllocationRepository::totalAllocatedForInventoryRecord(int inventoryRecordId) const
 {
+    return tryTotalAllocatedForInventoryRecord(inventoryRecordId).value_or(0);
+}
+
+std::optional<int> BuildAllocationRepository::tryTotalAllocatedForInventoryRecord(
+    int inventoryRecordId) const
+{
     if (inventoryRecordId <= 0)
-        return 0;
+        return std::nullopt;
 
     QSqlQuery query(DatabaseManager::instance().database());
     query.prepare(R"(
@@ -289,11 +295,11 @@ int BuildAllocationRepository::totalAllocatedForInventoryRecord(int inventoryRec
     if (!query.exec()) {
         qCritical() << "Unable to calculate inventory-record allocation:"
                     << query.lastError().text();
-        return 0;
+        return std::nullopt;
     }
 
     if (!query.next())
-        return 0;
+        return std::nullopt;
 
     return query.value(0).toInt();
 }

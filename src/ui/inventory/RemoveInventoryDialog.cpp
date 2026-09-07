@@ -11,6 +11,7 @@
 #include "../../models/Part.h"
 #include "../../models/StorageLocation.h"
 #include "../../repositories/ColorRepository.h"
+#include "../../repositories/BuildAllocationRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
@@ -81,10 +82,28 @@ bool RemoveInventoryDialog::loadInventoryRecord()
     if (storage)
         context << QString("Storage: %1").arg(storage->name());
     context << QString("Available Qty: %1").arg(record->quantity());
+
+    BuildAllocationRepository allocationRepository;
+    const std::optional<int> allocated =
+        allocationRepository.tryTotalAllocatedForInventoryRecord(m_inventoryRecordId);
+    if (!allocated)
+        return false;
+
+    const int maximumRemovable = qMax(0, record->quantity() - *allocated);
+    context << QString("Allocated to Builds: %1").arg(*allocated);
+    context << QString("Maximum Removable: %1").arg(maximumRemovable);
     m_contextLabel->setText(context.join("   |   "));
 
-    m_quantitySpin->setMaximum(record->quantity());
-    m_quantitySpin->setValue(record->quantity());
+    m_quantitySpin->setMaximum(qMax(1, maximumRemovable));
+    m_quantitySpin->setValue(qMax(1, maximumRemovable));
+    if (maximumRemovable == 0) {
+        m_quantitySpin->setEnabled(false);
+        if (auto* ok = m_buttonBox->button(QDialogButtonBox::Ok))
+            ok->setEnabled(false);
+        m_contextLabel->setToolTip(
+            "All inventory in this record is allocated to active Builds. "
+            "Reduce or release those allocations before removing inventory.");
+    }
     return true;
 }
 
@@ -103,8 +122,16 @@ void RemoveInventoryDialog::removeEntry()
         return;
 
     InventoryRecordRepository repository;
-    if (!repository.removeEntry(m_inventoryRecordId, m_quantitySpin->value(), m_notesEdit->text())) {
-        QMessageBox::critical(this, "BrickSuite", "Unable to remove the inventory entry.");
+    QString errorMessage;
+    if (!repository.removeEntry(m_inventoryRecordId,
+                                m_quantitySpin->value(),
+                                m_notesEdit->text(),
+                                &errorMessage)) {
+        QMessageBox::critical(this,
+                              "BrickSuite",
+                              errorMessage.isEmpty()
+                                  ? QStringLiteral("Unable to remove the inventory entry.")
+                                  : errorMessage);
         return;
     }
 

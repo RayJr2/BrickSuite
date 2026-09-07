@@ -20,6 +20,8 @@
 
 #include "InventoryRecordRepository.h"
 
+#include "BuildAllocationRepository.h"
+
 #include "../database/DatabaseManager.h"
 
 #include "../models/InventoryMovement.h"
@@ -1429,25 +1431,82 @@ bool InventoryRecordRepository::correctEntry(int inventoryRecordId,
 
 bool InventoryRecordRepository::removeEntry(int inventoryRecordId,
                                             int quantityToRemove,
-                                            const QString& notes)
+                                            const QString& notes,
+                                            QString* errorMessage)
 {
-    if (inventoryRecordId <= 0 || quantityToRemove <= 0)
+    auto fail = [errorMessage](const QString& message) {
+        if (errorMessage)
+            *errorMessage = message;
         return false;
+    };
+
+    if (inventoryRecordId <= 0 || quantityToRemove <= 0)
+        return fail(QStringLiteral("The inventory record or removal quantity is invalid."));
+
+    QSqlDatabase database = DatabaseManager::instance().database();
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin inventory removal transaction:"
+                    << database.lastError().text();
+        return fail(QStringLiteral("Unable to begin the inventory removal transaction."));
+    }
 
     const std::optional<InventoryRecord> record = getById(inventoryRecordId);
 
-    if (!record || record->quantity() <= 0 || quantityToRemove > record->quantity())
-        return false;
+    if (!record || record->quantity() <= 0 || quantityToRemove > record->quantity()) {
+        database.rollback();
+        return fail(QStringLiteral("The inventory quantity changed. Refresh My Inventory and try again."));
+    }
 
-    return setQuantityWithMovement(inventoryRecordId,
-                                   record->quantity() - quantityToRemove,
-                                   QStringLiteral("EntryRemoved"),
-                                   QStringLiteral("Correction"),
-                                   QString(),
-                                   notes.trimmed().isEmpty()
-                                       ? QStringLiteral("Inventory entry removed as a correction.")
-                                       : notes.trimmed(),
-                                   true);
+    BuildAllocationRepository allocationRepository;
+    const std::optional<int> allocated =
+        allocationRepository.tryTotalAllocatedForInventoryRecord(inventoryRecordId);
+    if (!allocated) {
+        database.rollback();
+        return fail(QStringLiteral("Unable to verify active Build allocations. No inventory was removed."));
+    }
+
+    const int maximumRemovable = qMax(0, record->quantity() - *allocated);
+    if (quantityToRemove > maximumRemovable) {
+        database.rollback();
+        if (maximumRemovable == 0) {
+            return fail(QStringLiteral(
+                            "Cannot remove inventory from this record. It has %1 part(s), and all %2 "
+                            "are currently allocated to active Builds. Reduce or release the Build "
+                            "allocations before removing inventory.")
+                            .arg(record->quantity())
+                            .arg(*allocated));
+        }
+        return fail(QStringLiteral(
+                        "Cannot remove %1. This inventory record has %2 part(s), and %3 are currently "
+                        "allocated to active Builds. You may remove at most %4. Reduce or release the "
+                        "Build allocations before removing more.")
+                        .arg(quantityToRemove)
+                        .arg(record->quantity())
+                        .arg(*allocated)
+                        .arg(maximumRemovable));
+    }
+
+    if (!setQuantityWithMovement(inventoryRecordId,
+                                 record->quantity() - quantityToRemove,
+                                 QStringLiteral("EntryRemoved"),
+                                 QStringLiteral("Correction"),
+                                 QString(),
+                                 notes.trimmed().isEmpty()
+                                     ? QStringLiteral("Inventory entry removed as a correction.")
+                                     : notes.trimmed(),
+                                 false)) {
+        database.rollback();
+        return fail(QStringLiteral("Unable to update inventory and record its history."));
+    }
+
+    if (!database.commit()) {
+        qCritical() << "Unable to commit inventory removal transaction:"
+                    << database.lastError().text();
+        database.rollback();
+        return fail(QStringLiteral("Unable to commit the inventory removal transaction."));
+    }
+
+    return true;
 }
 
 bool InventoryRecordRepository::moveInventory(int inventoryRecordId,

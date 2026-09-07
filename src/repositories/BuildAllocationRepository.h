@@ -29,6 +29,7 @@ public:
     int totalAllocatedForPartColor(int workspaceId, int partId, int colorId) const;
     int totalAllocatedForPartColorForBuild(int buildId, int partId, int colorId) const;
     int totalAllocatedForInventoryRecord(int inventoryRecordId) const;
+    std::optional<int> tryTotalAllocatedForInventoryRecord(int inventoryRecordId) const;
     int totalAllocatedForInventoryRecordForBuild(int inventoryRecordId, int buildId) const;
 
     bool recordPulledManufacturer(int buildId,

@@ -380,6 +380,24 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(InventoryRemoveHardeningTest EXCLUDE_FROM_ALL
+        tests/InventoryRemoveHardeningTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/BuildAllocation.h src/models/BuildAllocation.cpp
+        src/models/InventoryMovement.h src/models/InventoryMovement.cpp
+        src/models/InventoryRecord.h src/models/InventoryRecord.cpp
+        src/models/Manufacturer.h
+        src/models/Part.h src/models/Part.cpp
+        src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
+        src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
+        src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+    )
+    target_link_libraries(InventoryRemoveHardeningTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME InventoryRemoveHardening COMMAND InventoryRemoveHardeningTest)
+
     qt_add_executable(BrickLinkCandidateResolutionTest EXCLUDE_FROM_ALL
         tests/BrickLinkCandidateResolutionTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp
