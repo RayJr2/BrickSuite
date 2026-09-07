@@ -51,9 +51,12 @@
 #include "../../services/storage/SessionStorageSelectionService.h"
 
 #include "../helpers/ColorComboHelper.h"
+#include "../helpers/LargeViewLoadingGuard.h"
 
 #include <QColor>
 #include <QComboBox>
+#include <QDebug>
+#include <QElapsedTimer>
 #include <QHBoxLayout>
 #include <QHash>
 #include <QSet>
@@ -593,14 +596,28 @@ void MyInventoryWidget::loadStorageLocations()
     }
 }
 
-void MyInventoryWidget::searchInventory()
+void MyInventoryWidget::searchInventory(const QString& loadingMessage)
 {
+    LargeViewLoadingGuard loading(
+        this, m_refreshInProgress,
+        loadingMessage.isEmpty() ? QStringLiteral("Loading My Inventory...") : loadingMessage,
+        {m_searchButton, m_searchEdit, m_categoryCombo, m_colorCombo, m_storageCombo,
+         m_manufacturerCombo},
+        {m_previousButton, m_nextButton});
+    if (!loading.active())
+        return;
+
+    QElapsedTimer totalTimer;
+    totalTimer.start();
+    QElapsedTimer phaseTimer;
+    phaseTimer.start();
     m_resultsTable->setRowCount(0);
 
     m_rowsByPartNumber.clear();
     m_rowsByPartColor.clear();
     m_rowsWithColorImage.clear();
     m_partDetailsRequested.clear();
+    const qint64 clearMs = phaseTimer.elapsed();
 
     if (!m_workspaceContext.hasCurrentWorkspace()) {
         m_lastResultCount = 0;
@@ -635,7 +652,9 @@ void MyInventoryWidget::searchInventory()
 
     InventoryRecordRepository repository;
 
+    phaseTimer.restart();
     m_totalResultCount = repository.count(criteria);
+    const qint64 countMs = phaseTimer.elapsed();
 
     //
     // If a data change leaves the current page beyond the new last page,
@@ -651,7 +670,9 @@ void MyInventoryWidget::searchInventory()
         criteria.offset = m_currentPage * resultsPerPage;
     }
 
+    phaseTimer.restart();
     const QList<InventorySearchResult> results = repository.search(criteria);
+    const qint64 searchMs = phaseTimer.elapsed();
 
     m_lastResultCount = results.size();
 
@@ -659,20 +680,25 @@ void MyInventoryWidget::searchInventory()
 
     int row = 0;
 
-    ColorRepository colorRepository;
+    qint64 mapSetupNs = 0;
+    qint64 itemCreationNs = 0;
+    qint64 colorSetupNs = 0;
+    qint64 storageSetupNs = 0;
+    qint64 metadataSetupNs = 0;
+    qint64 actionCreationNs = 0;
+    qint64 tableAttachNs = 0;
+    qint64 imageSetupNs = 0;
+    const bool tableUpdatesEnabled = m_resultsTable->updatesEnabled();
+    m_resultsTable->setUpdatesEnabled(false);
+    m_resultsTable->setRowCount(results.size());
+    phaseTimer.restart();
 
     for (const InventorySearchResult& result : results) {
-        m_resultsTable->insertRow(row);
-
+        QElapsedTimer rowPhaseTimer;
+        rowPhaseTimer.start();
         const QString partNumber = result.partNumber;
 
-        int rebrickableColorId = -1;
-
-        const std::optional<Color> color = colorRepository.getById(result.colorId);
-
-        if (color) {
-            rebrickableColorId = color->rebrickableId();
-        }
+        const int rebrickableColorId = result.rebrickableColorId;
 
         if (rebrickableColorId >= 0) {
             const QString colorKey = partColorKey(partNumber, rebrickableColorId);
@@ -686,7 +712,9 @@ void MyInventoryWidget::searchInventory()
         // locations, conditions, etc.
         //
         m_rowsByPartNumber[partNumber].append(row);
+        mapSetupNs += rowPhaseTimer.nsecsElapsed();
 
+        rowPhaseTimer.restart();
         auto* imageItem = new QTableWidgetItem();
 
         imageItem->setTextAlignment(Qt::AlignCenter);
@@ -700,7 +728,10 @@ void MyInventoryWidget::searchInventory()
         auto* categoryItem = new QTableWidgetItem(result.categoryName);
 
         auto* colorItem = new QTableWidgetItem(result.colorName);
+        auto* quantityItem = new QTableWidgetItem(QString::number(result.quantity));
+        itemCreationNs += rowPhaseTimer.nsecsElapsed();
 
+        rowPhaseTimer.restart();
         QString normalizedRgb = result.colorRgb.trimmed();
 
         if (!normalizedRgb.isEmpty() && !normalizedRgb.startsWith('#')) {
@@ -717,23 +748,26 @@ void MyInventoryWidget::searchInventory()
 
             colorItem->setForeground(displayColor);
         }
+        colorSetupNs += rowPhaseTimer.nsecsElapsed();
 
-        auto* quantityItem = new QTableWidgetItem(QString::number(result.quantity));
-
+        rowPhaseTimer.restart();
         QString storagePath = storagePathForId(result.storageLocationId);
 
         if (storagePath.isEmpty()) {
             storagePath = result.storageLocationName;
         }
-
         auto* storageItem = new QTableWidgetItem(storagePath);
+        storageSetupNs += rowPhaseTimer.nsecsElapsed();
 
+        rowPhaseTimer.restart();
         auto* manufacturerItem = new QTableWidgetItem(result.manufacturerName);
 
         auto* conditionItem = new QTableWidgetItem(result.condition);
 
         auto* ownershipItem = new QTableWidgetItem(result.ownershipType);
+        metadataSetupNs += rowPhaseTimer.nsecsElapsed();
 
+        rowPhaseTimer.restart();
         auto* actionCombo = new QComboBox(m_resultsTable);
 
         actionCombo->addItem("Actions...");
@@ -821,7 +855,9 @@ void MyInventoryWidget::searchInventory()
                     // to its neutral state.
                     actionCombo->setCurrentIndex(0);
                 });
+        actionCreationNs += rowPhaseTimer.nsecsElapsed();
 
+        rowPhaseTimer.restart();
         m_resultsTable->setItem(row, 0, imageItem);
 
         m_resultsTable->setItem(row, 1, partNumberItem);
@@ -843,6 +879,7 @@ void MyInventoryWidget::searchInventory()
         m_resultsTable->setItem(row, 9, ownershipItem);
 
         m_resultsTable->setCellWidget(row, 10, actionCombo);
+        tableAttachNs += rowPhaseTimer.nsecsElapsed();
 
         //
         // My Loose Inventory prefers an actual Part+Color
@@ -851,6 +888,7 @@ void MyInventoryWidget::searchInventory()
         // Until the background worker fills that cache,
         // fall back to the existing generic Part image.
         //
+        rowPhaseTimer.restart();
         bool colorImageLoaded = false;
 
         if (rebrickableColorId >= 0) {
@@ -877,10 +915,17 @@ void MyInventoryWidget::searchInventory()
                 m_partImageService->requestPartImage(partNumber, QString());
             }
         }
+        imageSetupNs += rowPhaseTimer.nsecsElapsed();
 
         ++row;
     }
 
+    const qint64 rowAggregateMs = phaseTimer.elapsed();
+    QElapsedTimer finalizeTimer;
+    finalizeTimer.start();
+    m_resultsTable->setUpdatesEnabled(tableUpdatesEnabled);
+    const qint64 tableFinalizeMs = finalizeTimer.elapsed();
+    phaseTimer.restart();
     if (results.isEmpty()) {
         if (m_currentPage > 0) {
             m_resultLabel->setText("No more matching inventory records.");
@@ -912,6 +957,27 @@ void MyInventoryWidget::searchInventory()
     }
 
     updatePagingControls();
+    const qint64 statusMs = phaseTimer.elapsed();
+    const auto milliseconds = [](qint64 nanoseconds) {
+        return QString::number(static_cast<double>(nanoseconds) / 1000000.0, 'f', 1);
+    };
+    const qint64 measuredRowNs = mapSetupNs + itemCreationNs + colorSetupNs
+        + storageSetupNs + metadataSetupNs + actionCreationNs + tableAttachNs + imageSetupNs;
+    qInfo().noquote()
+        << QStringLiteral("Performance MyInventory page=%1 rows=%2 total=%3ms count=%4ms "
+                          "search=%5ms clear=%6ms item-create=%7ms actions=%8ms "
+                          "table-attach=%9ms metadata=%10ms storage=%11ms color=%12ms "
+                          "row-maps=%13ms image-setup=%14ms row-other=%15ms "
+                          "table-finalize=%16ms status=%17ms color-lookups=0")
+               .arg(m_currentPage + 1).arg(results.size()).arg(totalTimer.elapsed())
+               .arg(countMs).arg(searchMs).arg(clearMs)
+               .arg(milliseconds(itemCreationNs)).arg(milliseconds(actionCreationNs))
+               .arg(milliseconds(tableAttachNs)).arg(milliseconds(metadataSetupNs))
+               .arg(milliseconds(storageSetupNs)).arg(milliseconds(colorSetupNs))
+               .arg(milliseconds(mapSetupNs)).arg(milliseconds(imageSetupNs))
+               .arg(QString::number(qMax(0.0, static_cast<double>(rowAggregateMs)
+                   - static_cast<double>(measuredRowNs) / 1000000.0), 'f', 1))
+               .arg(tableFinalizeMs).arg(statusMs);
 }
 
 void MyInventoryWidget::previousPage()
@@ -921,7 +987,7 @@ void MyInventoryWidget::previousPage()
 
     --m_currentPage;
 
-    searchInventory();
+    searchInventory(QStringLiteral("Loading page %1...").arg(m_currentPage + 1));
 }
 
 void MyInventoryWidget::nextPage()
@@ -936,7 +1002,7 @@ void MyInventoryWidget::nextPage()
 
     ++m_currentPage;
 
-    searchInventory();
+    searchInventory(QStringLiteral("Loading page %1...").arg(m_currentPage + 1));
 }
 
 void MyInventoryWidget::updatePagingControls()
@@ -967,7 +1033,16 @@ void MyInventoryWidget::refresh()
 {
     m_currentPage = 0;
 
-    loadStorageLocations();
+    {
+        LargeViewLoadingGuard loading(
+            this, m_refreshInProgress, QStringLiteral("Loading My Inventory..."),
+            {m_searchButton, m_searchEdit, m_categoryCombo, m_colorCombo, m_storageCombo,
+             m_manufacturerCombo},
+            {m_previousButton, m_nextButton});
+        if (!loading.active())
+            return;
+        loadStorageLocations();
+    }
 
     searchInventory();
 }

@@ -606,14 +606,27 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     connect(settingsAction, &QAction::triggered, this, [this]() {
         SettingsDialog dialog(m_workspaceContext, m_automaticBackupService, this);
+        const int initialResultsPerPage = UserSettings::instance().resultsPerPage();
 
-        connect(&dialog, &SettingsDialog::settingsChanged, this, [this]() {
+        connect(&dialog, &SettingsDialog::settingsChanged, this,
+                [this, resultsPerPage = initialResultsPerPage]() mutable {
             if (m_partsCatalogWidget) {
                 m_partsCatalogWidget->settingsChanged();
             }
 
             if (m_myInventoryWidget) {
                 m_myInventoryWidget->settingsChanged();
+            }
+
+            const int updatedResultsPerPage = UserSettings::instance().resultsPerPage();
+            if (updatedResultsPerPage != resultsPerPage) {
+                if (m_setsCatalogWidget)
+                    m_setsCatalogWidget->refresh();
+                if (m_minifigsCatalogWidget)
+                    m_minifigsCatalogWidget->refresh();
+                if (m_myCollectionWidget)
+                    m_myCollectionWidget->refresh();
+                resultsPerPage = updatedResultsPerPage;
             }
 
             ensureBrickLinkColorMappings();

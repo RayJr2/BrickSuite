@@ -67,7 +67,7 @@ protected:
 
 private slots:
     void workspaceChanged(int workspaceId);
-    void searchInventory();
+    void searchInventory(const QString& loadingMessage = QString());
     void previousPage();
     void nextPage();
     void importCsv();
@@ -91,6 +91,7 @@ private:
     int m_currentPage = 0;
     int m_lastResultCount = 0;
     int m_totalResultCount = 0;
+    bool m_refreshInProgress = false;
 
     QLineEdit* m_searchEdit = nullptr;
     QComboBox* m_categoryCombo = nullptr;

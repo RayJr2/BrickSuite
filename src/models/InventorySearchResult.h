@@ -34,6 +34,7 @@ struct InventorySearchResult
     QString categoryName;
 
     int colorId = 0;
+    int rebrickableColorId = -1;
     QString colorName;
     QString colorRgb;
 

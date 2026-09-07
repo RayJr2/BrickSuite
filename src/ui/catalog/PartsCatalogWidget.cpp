@@ -34,9 +34,11 @@
 #include "../../services/images/PartImageService.h"
 #include "../../settings/UserSettings.h"
 #include "../parts/PartDetailsDialog.h"
+#include "../helpers/LargeViewLoadingGuard.h"
 
 #include <QComboBox>
 #include <QDebug>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -202,16 +204,42 @@ PartsCatalogWidget::PartsCatalogWidget(PartExternalIdEnrichmentService* enrichme
 
                 const int row = m_rowByPartNumber.value(partNumber);
 
+                QElapsedTimer imagePhaseTimer;
+                imagePhaseTimer.start();
                 QPixmap pixmap(imagePath);
+                const qint64 decodeMs = imagePhaseTimer.elapsed();
 
-                if (pixmap.isNull())
+                const auto recordCachedTiming = [this, &partNumber](qint64 decode,
+                                                                    qint64 scale,
+                                                                    qint64 apply) {
+                    if (!m_timedCachedImages.remove(partNumber))
+                        return;
+                    m_cachedImageDecodeMs += decode;
+                    m_cachedImageScaleMs += scale;
+                    m_cachedImageApplyMs += apply;
+                    if (m_timedCachedImages.isEmpty()) {
+                        qInfo().noquote()
+                            << QStringLiteral("Performance PartsCatalog cached-images "
+                                              "decode=%1ms scale=%2ms apply=%3ms")
+                                   .arg(m_cachedImageDecodeMs)
+                                   .arg(m_cachedImageScaleMs)
+                                   .arg(m_cachedImageApplyMs);
+                    }
+                };
+
+                if (pixmap.isNull()) {
+                    recordCachedTiming(decodeMs, 0, 0);
                     return;
+                }
 
+                imagePhaseTimer.restart();
                 const QPixmap thumbnail = pixmap.scaled(44,
                                                         44,
                                                         Qt::KeepAspectRatio,
                                                         Qt::SmoothTransformation);
+                const qint64 scaleMs = imagePhaseTimer.elapsed();
 
+                imagePhaseTimer.restart();
                 QTableWidgetItem* item = m_resultsTable->item(row, 0);
 
                 if (!item) {
@@ -221,6 +249,8 @@ PartsCatalogWidget::PartsCatalogWidget(PartExternalIdEnrichmentService* enrichme
                 }
 
                 item->setIcon(QIcon(thumbnail));
+                const qint64 applyMs = imagePhaseTimer.elapsed();
+                recordCachedTiming(decodeMs, scaleMs, applyMs);
             });
 
     if (m_enrichmentService) {
@@ -267,8 +297,18 @@ void PartsCatalogWidget::loadCategories()
     }
 }
 
-void PartsCatalogWidget::searchParts()
+void PartsCatalogWidget::searchParts(const QString& loadingMessage)
 {
+    LargeViewLoadingGuard loading(
+        this, m_refreshInProgress,
+        loadingMessage.isEmpty() ? QStringLiteral("Loading Parts Catalog...") : loadingMessage,
+        {m_searchButton, m_searchEdit, m_categoryCombo},
+        {m_previousButton, m_nextButton});
+    if (!loading.active())
+        return;
+
+    QElapsedTimer totalTimer;
+    totalTimer.start();
     PartSearchCriteria criteria;
 
     criteria.searchText = m_searchEdit->text().trimmed();
@@ -283,9 +323,14 @@ void PartsCatalogWidget::searchParts()
 
     PartRepository repository;
 
+    QElapsedTimer phaseTimer;
+    phaseTimer.start();
     m_totalResultCount = repository.count(criteria);
+    const qint64 countMs = phaseTimer.elapsed();
 
+    phaseTimer.restart();
     const QList<PartSearchResult> results = repository.search(criteria);
+    const qint64 searchMs = phaseTimer.elapsed();
 
     m_lastResultCount = results.size();
 
@@ -323,19 +368,32 @@ void PartsCatalogWidget::searchParts()
         }
     }
 
+    phaseTimer.restart();
     m_resultsTable->setRowCount(0);
 
     m_rowByPartNumber.clear();
+    m_timedCachedImages.clear();
+    m_cachedImageDecodeMs = 0;
+    m_cachedImageScaleMs = 0;
+    m_cachedImageApplyMs = 0;
+    const qint64 clearMs = phaseTimer.elapsed();
 
-    QStringList missingPartEnrichment;
+    QList<int> missingPartEnrichment;
+    qint64 itemCreationMs = 0;
+    qint64 actionCreationMs = 0;
+    qint64 tableAttachMs = 0;
+    qint64 imagePathLookupMs = 0;
+    qint64 imageDispatchMs = 0;
+    const bool tableUpdatesEnabled = m_resultsTable->updatesEnabled();
+    m_resultsTable->setUpdatesEnabled(false);
+    m_resultsTable->setRowCount(results.size());
+    phaseTimer.restart();
     int row = 0;
 
     for (const PartSearchResult& result : results) {
         const Part& part = result.part;
 
         const QString partNumber = part.partNumber();
-
-        m_resultsTable->insertRow(row);
 
         //
         // Remember which table row belongs
@@ -344,6 +402,8 @@ void PartsCatalogWidget::searchParts()
         //
         m_rowByPartNumber.insert(partNumber, row);
 
+        QElapsedTimer rowPhaseTimer;
+        rowPhaseTimer.start();
         auto* imageItem = new QTableWidgetItem();
 
         imageItem->setTextAlignment(Qt::AlignCenter);
@@ -380,7 +440,9 @@ void PartsCatalogWidget::searchParts()
 
             matchItem->setToolTip(tooltip);
         }
+        itemCreationMs += rowPhaseTimer.elapsed();
 
+        rowPhaseTimer.restart();
         auto* actionCombo = new QComboBox(m_resultsTable);
 
         actionCombo->addItem("Actions...");
@@ -414,7 +476,9 @@ void PartsCatalogWidget::searchParts()
                     // Return to neutral state.
                     actionCombo->setCurrentIndex(0);
                 });
+        actionCreationMs += rowPhaseTimer.elapsed();
 
+        rowPhaseTimer.restart();
         m_resultsTable->setItem(row, 0, imageItem);
 
         m_resultsTable->setItem(row, 1, partNumberItem);
@@ -428,25 +492,38 @@ void PartsCatalogWidget::searchParts()
         m_resultsTable->setItem(row, 5, matchItem);
 
         m_resultsTable->setCellWidget(row, 6, actionCombo);
+        tableAttachMs += rowPhaseTimer.elapsed();
 
         //
         // Resolve thumbnail.
         //
+        rowPhaseTimer.restart();
         const QString cachedPath = m_partImageService->cachedImagePath(partNumber);
+        imagePathLookupMs += rowPhaseTimer.elapsed();
 
         if (!cachedPath.isEmpty()) {
-            // requestPartImage() will immediately emit imageReady() when the
-            // file is already cached. External-ID enrichment is independent
-            // of image state and may still be needed below.
+            m_timedCachedImages.insert(partNumber);
+            rowPhaseTimer.restart();
+            // Cache hits are emitted one per event-loop turn so decode, scale,
+            // and cell updates do not block the initial table construction.
             m_partImageService->requestPartImage(partNumber, QString());
+            imageDispatchMs += rowPhaseTimer.elapsed();
         }
 
-        missingPartEnrichment.append(partNumber);
+        missingPartEnrichment.append(part.id());
 
         ++row;
     }
 
+    const qint64 rowAndImageMs = phaseTimer.elapsed();
+    QElapsedTimer finalizeTimer;
+    finalizeTimer.start();
+    m_resultsTable->setUpdatesEnabled(tableUpdatesEnabled);
+    const qint64 tableFinalizeMs = finalizeTimer.elapsed();
+    phaseTimer.restart();
     requestMissingPartEnrichment(missingPartEnrichment);
+    const qint64 enrichmentMs = phaseTimer.elapsed();
+    phaseTimer.restart();
 
     if (results.isEmpty()) {
         if (m_currentPage > 0) {
@@ -484,18 +561,27 @@ void PartsCatalogWidget::searchParts()
     }
 
     updatePagingControls();
+    const qint64 statusMs = phaseTimer.elapsed();
+    qInfo().noquote()
+        << QStringLiteral("Performance PartsCatalog page=%1 rows=%2 total=%3ms count=%4ms "
+                          "search=%5ms clear=%6ms item-create=%7ms actions=%8ms "
+                          "table-attach=%9ms row-other=%10ms image-path=%11ms "
+                          "image-dispatch=%12ms table-finalize=%13ms "
+                          "enrichment-schedule=%14ms status=%15ms "
+                          "repository-lookups=0")
+               .arg(m_currentPage + 1).arg(results.size()).arg(totalTimer.elapsed())
+               .arg(countMs).arg(searchMs).arg(clearMs)
+               .arg(itemCreationMs).arg(actionCreationMs).arg(tableAttachMs)
+               .arg(qMax<qint64>(0, rowAndImageMs - itemCreationMs - actionCreationMs
+                                    - tableAttachMs - imagePathLookupMs - imageDispatchMs))
+               .arg(imagePathLookupMs).arg(imageDispatchMs).arg(tableFinalizeMs)
+               .arg(enrichmentMs).arg(statusMs);
 }
 
-void PartsCatalogWidget::requestMissingPartEnrichment(const QStringList& partNumbers)
+void PartsCatalogWidget::requestMissingPartEnrichment(const QList<int>& partIds)
 {
-    if (partNumbers.isEmpty() || !m_enrichmentService)
+    if (partIds.isEmpty() || !m_enrichmentService)
         return;
-    PartRepository repository;
-    QList<int> partIds;
-    for (const QString& number : partNumbers) {
-        const auto part = repository.getByPartNumber(number);
-        if (part) partIds.append(part->id());
-    }
     m_enrichmentService->ensureExternalIds(partIds);
 }
 
@@ -543,7 +629,7 @@ void PartsCatalogWidget::previousPage()
 
     --m_currentPage;
 
-    searchParts();
+    searchParts(QStringLiteral("Loading page %1...").arg(m_currentPage + 1));
 }
 
 void PartsCatalogWidget::nextPage()
@@ -556,7 +642,7 @@ void PartsCatalogWidget::nextPage()
 
     ++m_currentPage;
 
-    searchParts();
+    searchParts(QStringLiteral("Loading page %1...").arg(m_currentPage + 1));
 }
 
 void PartsCatalogWidget::settingsChanged()

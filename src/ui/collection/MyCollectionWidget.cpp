@@ -3,6 +3,7 @@
 #include "CollectionItemDialog.h"
 #include "../help/HelpManager.h"
 #include "../help/HelpTopic.h"
+#include "../helpers/LargeViewLoadingGuard.h"
 #include "../../app/WorkspaceContext.h"
 #include "../../models/CollectionSearchCriteria.h"
 #include "../../models/CollectionSearchResult.h"
@@ -89,20 +90,20 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext, QWidg
     m_activeCombo->addItem("Active", 1);
     m_activeCombo->addItem("Archived", 0);
     m_activeCombo->addItem("Active and Archived", -1);
-    auto* searchButton = new QPushButton("Search", this);
+    m_searchButton = new QPushButton("Search", this);
     m_typeCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     m_stateCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     m_conditionCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     m_completenessCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     m_activeCombo->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-    searchButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    m_searchButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     filters->addWidget(new QLabel("Search:", this)); filters->addWidget(m_searchEdit, 2);
     filters->addWidget(new QLabel("Type:", this)); filters->addWidget(m_typeCombo);
     filters->addWidget(new QLabel("State:", this)); filters->addWidget(m_stateCombo);
     filters->addWidget(new QLabel("Condition:", this)); filters->addWidget(m_conditionCombo);
     filters->addWidget(new QLabel("Completeness:", this)); filters->addWidget(m_completenessCombo);
     filters->addWidget(new QLabel("Location:", this)); filters->addWidget(m_locationCombo, 1);
-    filters->addWidget(m_activeCombo); filters->addWidget(searchButton);
+    filters->addWidget(m_activeCombo); filters->addWidget(m_searchButton);
 
     m_messageLabel = new QLabel(this);
     m_table = new QTableWidget(this);
@@ -127,20 +128,24 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext, QWidg
     root->addWidget(m_messageLabel); root->addWidget(m_table, 1); root->addLayout(paging);
 
     auto criteriaChange = [this]() { loadPage(true); };
-    connect(searchButton, &QPushButton::clicked, this, criteriaChange);
+    connect(m_searchButton, &QPushButton::clicked, this, criteriaChange);
     connect(m_searchEdit, &QLineEdit::returnPressed, this, criteriaChange);
     for (QComboBox* combo : {m_typeCombo, m_stateCombo, m_conditionCombo,
                              m_completenessCombo, m_locationCombo, m_activeCombo})
         connect(combo, &QComboBox::currentIndexChanged, this, criteriaChange);
     connect(m_previousButton, &QPushButton::clicked, this, [this]() {
-        if (effectiveCriteriaKey() != m_loadedCriteriaKey) m_page = 0;
+        const bool criteriaChanged = effectiveCriteriaKey() != m_loadedCriteriaKey;
+        if (criteriaChanged) m_page = 0;
         else if (m_page > 0) --m_page;
-        loadPage();
+        loadPage(criteriaChanged, criteriaChanged ? QString()
+            : QStringLiteral("Loading page %1...").arg(m_page + 1));
     });
     connect(m_nextButton, &QPushButton::clicked, this, [this]() {
-        if (effectiveCriteriaKey() != m_loadedCriteriaKey) m_page = 0;
+        const bool criteriaChanged = effectiveCriteriaKey() != m_loadedCriteriaKey;
+        if (criteriaChanged) m_page = 0;
         else ++m_page;
-        loadPage();
+        loadPage(criteriaChanged, criteriaChanged ? QString()
+            : QStringLiteral("Loading page %1...").arg(m_page + 1));
     });
     connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged,
             this, [this](int) { refresh(); });
@@ -172,8 +177,17 @@ QString MyCollectionWidget::effectiveCriteriaKey() const
 
 void MyCollectionWidget::refresh()
 {
-    loadLocations();
     m_page = 0;
+    {
+        LargeViewLoadingGuard loading(
+            this, m_refreshInProgress, QStringLiteral("Loading My Collection..."),
+            {m_searchButton, m_searchEdit, m_typeCombo, m_stateCombo, m_conditionCombo,
+             m_completenessCombo, m_locationCombo, m_activeCombo},
+            {m_previousButton, m_nextButton});
+        if (!loading.active())
+            return;
+        loadLocations();
+    }
     loadPage(true);
 }
 
@@ -246,8 +260,17 @@ void MyCollectionWidget::loadLocations()
     m_locationCombo->blockSignals(false);
 }
 
-void MyCollectionWidget::loadPage(bool criteriaChanged)
+void MyCollectionWidget::loadPage(bool criteriaChanged, const QString& loadingMessage)
 {
+    LargeViewLoadingGuard loading(
+        this, m_refreshInProgress,
+        loadingMessage.isEmpty() ? QStringLiteral("Loading My Collection...") : loadingMessage,
+        {m_searchButton, m_searchEdit, m_typeCombo, m_stateCombo, m_conditionCombo,
+         m_completenessCombo, m_locationCombo, m_activeCombo},
+        {m_previousButton, m_nextButton});
+    if (!loading.active())
+        return;
+
     const QString key = effectiveCriteriaKey();
     if (criteriaChanged || key != m_loadedCriteriaKey) m_page = 0;
     m_loadedCriteriaKey = key;

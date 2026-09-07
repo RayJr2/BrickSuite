@@ -119,8 +119,12 @@ int main(int argc, char** argv)
         if (!require(cached.open(QIODevice::WriteOnly) && cached.write("image") == 5,
                      "Unable to create the general image cache fixture.")) return 1;
         cached.close();
-        PartImageService images; const int cachedBefore=batches.size(); images.requestPartImage("cached",QString()); events();
-        if (!require(batches.size()==cachedBefore+1 && batches.contains("cached"),"A general image cache hit did not trigger enrichment.")) return 1;
+        PartImageService images; bool cachedReady=false;
+        QObject::connect(&images,&PartImageService::imageReady,[&](const QString& partNumber,const QString&){if(partNumber=="cached")cachedReady=true;});
+        const int cachedBefore=batches.size(); images.requestPartImage("cached",QString());
+        if (!require(!cachedReady,"A general image cache hit was emitted synchronously.")) return 1;
+        events();
+        if (!require(cachedReady&&batches.size()==cachedBefore+1&&batches.contains("cached"),"A deferred general image cache hit did not trigger enrichment.")) return 1;
         QDir().mkpath(QDir(data).filePath("cache/parts/colors")); QFile color(QDir(data).filePath("cache/parts/colors/coloronly_1.jpg"));
         if (!require(color.open(QIODevice::WriteOnly) && color.write("image") == 5,
                      "Unable to create the color image cache fixture.")) return 1;

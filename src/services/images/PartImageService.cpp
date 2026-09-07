@@ -30,6 +30,7 @@
 #include <QNetworkRequest>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QUrl>
 
 PartImageService::PartImageService(
@@ -132,44 +133,52 @@ QString PartImageService::cacheFilePath(
 bool PartImageService::hasCachedImage(
     const QString& partNumber) const
 {
-    const QString safe =
-        safePartNumber(
-            partNumber);
-
-    QDir directory(
-        cacheDirectory());
-
-    const QStringList matches =
-        directory.entryList(
-            QStringList()
-                << QString("%1.*").arg(safe),
-            QDir::Files);
-
-    return !matches.isEmpty();
+    return !cachedImagePath(partNumber).isEmpty();
 }
 
 QString PartImageService::cachedImagePath(const QString& partNumber) const
 {
     const QString safe = safePartNumber(partNumber);
+    auto* service = const_cast<PartImageService*>(this);
+    service->ensureGeneralCacheIndex();
+    return m_cachedPaths.value(safe);
+}
 
-    if (m_cachedPaths.contains(safe)) {
-        return m_cachedPaths.value(safe);
+void PartImageService::ensureGeneralCacheIndex()
+{
+    if (m_generalCacheIndexed)
+        return;
+
+    m_generalCacheIndexed = true;
+    const QDir directory(cacheDirectory());
+    const QFileInfoList files = directory.entryInfoList(QDir::Files, QDir::Name);
+    for (const QFileInfo& file : files) {
+        const QString key = file.completeBaseName();
+        if (!m_cachedPaths.contains(key))
+            m_cachedPaths.insert(key, file.absoluteFilePath());
+    }
+}
+
+void PartImageService::queueCachedImage(const QString& partNumber, const QString& imagePath)
+{
+    m_cachedImageEmissions.enqueue({partNumber, imagePath});
+    if (m_cachedEmissionScheduled)
+        return;
+
+    m_cachedEmissionScheduled = true;
+    QTimer::singleShot(0, this, &PartImageService::emitNextCachedImage);
+}
+
+void PartImageService::emitNextCachedImage()
+{
+    if (m_cachedImageEmissions.isEmpty()) {
+        m_cachedEmissionScheduled = false;
+        return;
     }
 
-    QDir directory(cacheDirectory());
-
-    const QStringList matches = directory.entryList(QStringList() << QString("%1.*").arg(safe),
-                                                    QDir::Files,
-                                                    QDir::Name);
-
-    if (matches.isEmpty())
-        return QString();
-
-    const QString path = directory.filePath(matches.first());
-
-    const_cast<PartImageService*>(this)->m_cachedPaths.insert(safe, path);
-
-    return path;
+    const auto cached = m_cachedImageEmissions.dequeue();
+    emit imageReady(cached.first, cached.second);
+    QTimer::singleShot(0, this, &PartImageService::emitNextCachedImage);
 }
 
 void PartImageService::requestPartImage(const QString& partNumber, const QString& imageUrl)
@@ -185,7 +194,7 @@ void PartImageService::requestPartImage(const QString& partNumber, const QString
     const QString cachedPath = cachedImagePath(trimmedPartNumber);
 
     if (!cachedPath.isEmpty()) {
-        emit imageReady(trimmedPartNumber, cachedPath);
+        queueCachedImage(trimmedPartNumber, cachedPath);
 
         return;
     }

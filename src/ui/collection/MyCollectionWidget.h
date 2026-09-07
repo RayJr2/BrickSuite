@@ -21,7 +21,7 @@ public:
 
 private:
     void loadLocations();
-    void loadPage(bool criteriaChanged = false);
+    void loadPage(bool criteriaChanged = false, const QString& loadingMessage = QString());
     void updatePaging();
     void handleAction(int itemId, bool active, const QString& action);
     QString effectiveCriteriaKey() const;
@@ -40,9 +40,11 @@ private:
     QLabel* m_summaryLabel = nullptr;
     QLabel* m_pageLabel = nullptr;
     QLabel* m_messageLabel = nullptr;
+    QPushButton* m_searchButton = nullptr;
     QPushButton* m_previousButton = nullptr;
     QPushButton* m_nextButton = nullptr;
     int m_page = 0;
     int m_total = 0;
     QString m_loadedCriteriaKey;
+    bool m_refreshInProgress = false;
 };

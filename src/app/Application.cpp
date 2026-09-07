@@ -30,6 +30,7 @@
 #include "../ui/MainWindow.h"
 
 #include <QDebug>
+#include <QElapsedTimer>
 #include <QMessageBox>
 
 Application::Application() = default;
@@ -38,6 +39,10 @@ Application::~Application() = default;
 
 bool Application::initialize(const StartupProgress& progress)
 {
+    QElapsedTimer initializationTimer;
+    QElapsedTimer phaseTimer;
+    initializationTimer.start();
+    phaseTimer.start();
     const auto report = [&progress](int stage, const QString& message) {
         if (progress) progress(stage, message);
     };
@@ -51,10 +56,13 @@ bool Application::initialize(const StartupProgress& progress)
 
         return false;
     }
+    qInfo() << "Startup phase database initialization completed in"
+            << phaseTimer.elapsed() << "ms.";
 
     QSqlDatabase database = DatabaseManager::instance().database();
 
     report(2, QStringLiteral("Initializing reference data..."));
+    phaseTimer.restart();
     ReferenceDataSeeder seeder(database);
 
     if (!seeder.seedIfRequired()) {
@@ -64,21 +72,34 @@ bool Application::initialize(const StartupProgress& progress)
 
         return false;
     }
+    qInfo() << "Startup phase reference data initialization completed in"
+            << phaseTimer.elapsed() << "ms.";
 
     report(3, QStringLiteral("Preparing main window and catalog services..."));
+    phaseTimer.restart();
     m_workspaceContext = std::make_unique<WorkspaceContext>();
     m_sessionStorageSelectionService = std::make_unique<SessionStorageSelectionService>();
+    qInfo() << "Startup phase application service creation completed in"
+            << phaseTimer.elapsed() << "ms.";
 
+    phaseTimer.restart();
     m_mainWindow = std::make_unique<MainWindow>(*m_workspaceContext,
                                                 *m_sessionStorageSelectionService);
+    qInfo() << "Startup phase MainWindow construction completed in"
+            << phaseTimer.elapsed() << "ms.";
     report(4, QStringLiteral("Starting background services..."));
+    phaseTimer.restart();
     m_automaticBackupService = std::make_unique<AutomaticBackupService>();
     m_mainWindow->setAutomaticBackupService(m_automaticBackupService.get());
     m_mainWindow->show();
 
     m_automaticBackupService->start();
+    qInfo() << "Startup phase background services and first show completed in"
+            << phaseTimer.elapsed() << "ms.";
 
     report(5, QStringLiteral("Ready"));
+    qInfo() << "Application initialization phases completed in"
+            << initializationTimer.elapsed() << "ms.";
     return true;
 }
 

@@ -239,6 +239,7 @@ qt_add_executable(BrickSuite
     src/ui/parts/PartResolverTestDialog.h
     src/ui/parts/PartResolverTestDialog.cpp
     src/ui/helpers/ColorComboHelper.cpp src/ui/helpers/ColorComboHelper.h
+    src/ui/helpers/LargeViewLoadingGuard.h
     src/models/Build.h
     src/models/Build.cpp
     src/repositories/BuildRepository.h
@@ -824,6 +825,32 @@ if(BUILD_TESTING)
     )
     target_link_libraries(PartReferenceCustomizationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME PartReferenceCustomization COMMAND PartReferenceCustomizationTest)
+    qt_add_executable(PagingProjectionTest EXCLUDE_FROM_ALL
+        tests/PagingProjectionTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Part.h src/models/Part.cpp
+        src/models/PartSearchCriteria.h src/models/PartSearchResult.h
+        src/models/InventoryRecord.h src/models/InventoryRecord.cpp
+        src/models/InventoryMovement.h src/models/InventoryMovement.cpp
+        src/models/BuildAllocation.h src/models/BuildAllocation.cpp
+        src/models/Manufacturer.h
+        src/models/InventorySearchCriteria.h src/models/InventorySearchResult.h
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
+        src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
+        src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+    )
+    target_link_libraries(PagingProjectionTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME PagingProjection COMMAND PagingProjectionTest)
+    qt_add_executable(LargeViewLoadingGuardTest EXCLUDE_FROM_ALL
+        tests/LargeViewLoadingGuardTest.cpp
+        src/ui/helpers/LargeViewLoadingGuard.h
+    )
+    target_link_libraries(LargeViewLoadingGuardTest PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+    add_test(NAME LargeViewLoadingGuard COMMAND LargeViewLoadingGuardTest)
+    set_tests_properties(LargeViewLoadingGuard PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 if(WIN32)

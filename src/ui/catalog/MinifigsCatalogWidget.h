@@ -24,7 +24,7 @@ signals:
     void collectionItemCreated(int collectionItemId);
 
 private slots:
-    void searchMinifigs();
+    void searchMinifigs(const QString& loadingMessage = QString());
     void previousPage();
     void nextPage();
     void importMinifigs();
@@ -40,6 +40,7 @@ private:
     int m_totalResultCount = 0;
     QString m_loadedSearchText;
     int m_loadedThemeCatalogId = 0;
+    bool m_refreshInProgress = false;
     QLineEdit* m_searchEdit = nullptr;
     QPushButton* m_searchButton = nullptr;
     QPushButton* m_importButton = nullptr;

@@ -457,6 +457,7 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
             pc.name AS category_name,
 
             c.id AS color_id,
+            c.rebrickable_id AS rebrickable_color_id,
             c.name AS color_name,
             c.rgb AS color_rgb,
 
@@ -600,6 +601,9 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
         result.categoryName = query.value("category_name").toString();
 
         result.colorId = query.value("color_id").toInt();
+
+        if (!query.value("rebrickable_color_id").isNull())
+            result.rebrickableColorId = query.value("rebrickable_color_id").toInt();
 
         result.colorName = query.value("color_name").toString();
 

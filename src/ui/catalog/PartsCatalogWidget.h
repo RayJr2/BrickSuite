@@ -21,6 +21,7 @@
 #pragma once
 
 #include <QHash>
+#include <QSet>
 #include <QWidget>
 
 #include "../../api/rebrickable/RebrickableService.h"
@@ -44,7 +45,7 @@ public:
     void settingsChanged();
 
 private slots:
-    void searchParts();
+    void searchParts(const QString& loadingMessage = QString());
     void previousPage();
     void nextPage();
     void importPartsCsv();
@@ -59,12 +60,13 @@ signals:
 private:
     void loadCategories();
     void updatePagingControls();
-    void requestMissingPartEnrichment(const QStringList& partNumbers);
+    void requestMissingPartEnrichment(const QList<int>& partIds);
     static constexpr int ResultsPerPage = 250;
 
     int m_currentPage = 0;
     int m_lastResultCount = 0;
     int m_totalResultCount = 0;
+    bool m_refreshInProgress = false;
 
     QLineEdit* m_searchEdit = nullptr;
     QComboBox* m_categoryCombo = nullptr;
@@ -83,6 +85,10 @@ private:
     PartExternalIdEnrichmentService* m_enrichmentService = nullptr;
 
     QHash<QString, int> m_rowByPartNumber;
+    QSet<QString> m_timedCachedImages;
+    qint64 m_cachedImageDecodeMs = 0;
+    qint64 m_cachedImageScaleMs = 0;
+    qint64 m_cachedImageApplyMs = 0;
     QString m_pendingAliasLookupPartNumber;
     QPushButton* m_importPartsButton = nullptr;
     QPushButton* m_importPartRelationshipsButton = nullptr;

@@ -39,7 +39,7 @@ public:
     void refresh();
 
 private slots:
-    void searchSets();
+    void searchSets(const QString& loadingMessage = QString());
     void previousPage();
     void nextPage();
     void importSetsCsv();
@@ -57,6 +57,7 @@ private:
     int m_currentPage = 0;
     int m_lastResultCount = 0;
     int m_totalResultCount = 0;
+    bool m_refreshInProgress = false;
 
     QLineEdit* m_searchEdit = nullptr;
 

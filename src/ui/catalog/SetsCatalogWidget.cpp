@@ -20,6 +20,7 @@
 
 #include "SetsCatalogWidget.h"
 #include "SetDetailsDialog.h"
+#include "../helpers/LargeViewLoadingGuard.h"
 #include "../../app/WorkspaceContext.h"
 
 #include "../../import/RebrickableSetCatalogImporter.h"
@@ -166,26 +167,30 @@ SetsCatalogWidget::SetsCatalogWidget(WorkspaceContext& workspaceContext, QWidget
 
 void SetsCatalogWidget::refresh()
 {
-    SetCatalogRepository repository;
+    {
+        LargeViewLoadingGuard loading(
+            this, m_refreshInProgress, QStringLiteral("Loading Sets Catalog..."),
+            {m_searchButton, m_searchEdit, m_yearCombo},
+            {m_previousButton, m_nextButton});
+        if (!loading.active())
+            return;
 
-    const int total = repository.count();
+        SetCatalogRepository repository;
+        const int total = repository.count();
+        loadYears();
+        m_currentPage = 0;
 
-    loadYears();
-
-    m_currentPage = 0;
-
-    if (total > 0) {
-        searchSets();
-    } else {
-        m_resultsTable->setRowCount(0);
-
-        m_resultLabel->setText("No Sets Catalog has been imported yet.");
-
-        m_lastResultCount = 0;
-        m_totalResultCount = 0;
-
-        updatePagingControls();
+        if (total <= 0) {
+            m_resultsTable->setRowCount(0);
+            m_resultLabel->setText("No Sets Catalog has been imported yet.");
+            m_lastResultCount = 0;
+            m_totalResultCount = 0;
+            updatePagingControls();
+            return;
+        }
     }
+
+    searchSets();
 }
 
 void SetsCatalogWidget::loadYears()
@@ -215,8 +220,16 @@ void SetsCatalogWidget::loadYears()
     m_yearCombo->blockSignals(false);
 }
 
-void SetsCatalogWidget::searchSets()
+void SetsCatalogWidget::searchSets(const QString& loadingMessage)
 {
+    LargeViewLoadingGuard loading(
+        this, m_refreshInProgress,
+        loadingMessage.isEmpty() ? QStringLiteral("Loading Sets Catalog...") : loadingMessage,
+        {m_searchButton, m_searchEdit, m_yearCombo},
+        {m_previousButton, m_nextButton});
+    if (!loading.active())
+        return;
+
     SetCatalogSearchCriteria criteria;
 
     criteria.searchText = m_searchEdit->text().trimmed();
@@ -352,7 +365,7 @@ void SetsCatalogWidget::previousPage()
 
     --m_currentPage;
 
-    searchSets();
+    searchSets(QStringLiteral("Loading page %1...").arg(m_currentPage + 1));
 }
 
 void SetsCatalogWidget::nextPage()
@@ -365,7 +378,7 @@ void SetsCatalogWidget::nextPage()
 
     ++m_currentPage;
 
-    searchSets();
+    searchSets(QStringLiteral("Loading page %1...").arg(m_currentPage + 1));
 }
 
 void SetsCatalogWidget::updatePagingControls()

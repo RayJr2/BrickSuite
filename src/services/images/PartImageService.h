@@ -22,6 +22,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QQueue>
 #include <QSet>
 #include <QString>
 
@@ -94,6 +95,10 @@ private:
         const QString& partNumber,
         const QString& imageUrl);
 
+    void ensureGeneralCacheIndex();
+    void queueCachedImage(const QString& partNumber, const QString& imagePath);
+    void emitNextCachedImage();
+
     QString colorCacheDirectory() const;
 
     QString unavailableColorCacheDirectory() const;
@@ -116,6 +121,9 @@ private:
     QSet<QString> m_pendingPartNumbers;
 
     QHash<QString, QString> m_cachedPaths;
+    bool m_generalCacheIndexed = false;
+    bool m_cachedEmissionScheduled = false;
+    QQueue<QPair<QString, QString>> m_cachedImageEmissions;
 
     QSet<QString> m_pendingPartColors;
 

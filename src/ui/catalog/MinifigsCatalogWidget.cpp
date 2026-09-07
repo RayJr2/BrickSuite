@@ -13,6 +13,7 @@
 #include "../../settings/UserSettings.h"
 #include "../help/HelpManager.h"
 #include "../help/HelpTopic.h"
+#include "../helpers/LargeViewLoadingGuard.h"
 
 #include <QAbstractItemView>
 #include <QComboBox>
@@ -145,21 +146,38 @@ void MinifigsCatalogWidget::loadThemes()
 
 void MinifigsCatalogWidget::refresh()
 {
-    m_currentPage = 0;
-    MinifigCatalogRepository repository;
-    if (repository.count() > 0) {
-        searchMinifigs();
-        return;
+    {
+        LargeViewLoadingGuard loading(
+            this, m_refreshInProgress, QStringLiteral("Loading Minifigs Catalog..."),
+            {m_searchButton, m_searchEdit, m_themeCombo},
+            {m_previousButton, m_nextButton});
+        if (!loading.active())
+            return;
+
+        m_currentPage = 0;
+        MinifigCatalogRepository repository;
+        if (repository.count() <= 0) {
+            m_resultsTable->setRowCount(0);
+            m_totalResultCount = 0;
+            m_resultLabel->setText("No Minifigs Catalog has been imported yet.");
+            updatePagingControls();
+            return;
+        }
     }
 
-    m_resultsTable->setRowCount(0);
-    m_totalResultCount = 0;
-    m_resultLabel->setText("No Minifigs Catalog has been imported yet.");
-    updatePagingControls();
+    searchMinifigs();
 }
 
-void MinifigsCatalogWidget::searchMinifigs()
+void MinifigsCatalogWidget::searchMinifigs(const QString& loadingMessage)
 {
+    LargeViewLoadingGuard loading(
+        this, m_refreshInProgress,
+        loadingMessage.isEmpty() ? QStringLiteral("Loading Minifigs Catalog...") : loadingMessage,
+        {m_searchButton, m_searchEdit, m_themeCombo},
+        {m_previousButton, m_nextButton});
+    if (!loading.active())
+        return;
+
     const QString effectiveSearchText = m_searchEdit->text().trimmed();
     const int effectiveThemeId = m_themeCombo->currentData().toInt();
     if (effectiveSearchText != m_loadedSearchText || effectiveThemeId != m_loadedThemeCatalogId) {
@@ -272,7 +290,7 @@ void MinifigsCatalogWidget::previousPage()
     if (m_currentPage <= 0)
         return;
     --m_currentPage;
-    searchMinifigs();
+    searchMinifigs(QStringLiteral("Loading page %1...").arg(m_currentPage + 1));
 }
 
 void MinifigsCatalogWidget::nextPage()
@@ -287,7 +305,7 @@ void MinifigsCatalogWidget::nextPage()
     if (m_currentPage + 1 >= totalPages)
         return;
     ++m_currentPage;
-    searchMinifigs();
+    searchMinifigs(QStringLiteral("Loading page %1...").arg(m_currentPage + 1));
 }
 
 void MinifigsCatalogWidget::updatePagingControls()
