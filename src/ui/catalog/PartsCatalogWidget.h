@@ -54,6 +54,7 @@ private slots:
 
 signals:
     void addPartToInventoryRequested(int partId);
+    void addPartToReferenceRequested(int partId);
 
 private:
     void loadCategories();

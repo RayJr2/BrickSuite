@@ -7,9 +7,11 @@
  */
 
 #include "PartReferenceDialog.h"
+#include "AddPartReferenceDialog.h"
 
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/images/PartImageService.h"
+#include "../../services/parts/PartReferenceCustomizationService.h"
 #include "../../settings/UserSettings.h"
 #include "../help/HelpManager.h"
 
@@ -75,6 +77,7 @@ PartReferenceDialog::PartReferenceDialog(QWidget* parent)
     }
 
     initializeDimensionDefinitions();
+    refreshCustomizations();
     initializeUi();
     restoreUiState();
 
@@ -113,6 +116,22 @@ void PartReferenceDialog::setAddInventoryAvailable(bool available)
 
     if (m_sendButton)
         m_sendButton->setEnabled(available && !m_selectedPartNumber.isEmpty());
+}
+
+void PartReferenceDialog::refreshCustomizations()
+{
+    QString error;
+    m_effectiveEntries = PartReferenceCustomizationService(m_manifest).effectiveEntries(&error);
+    if (!error.isEmpty()) qWarning().noquote() << error;
+    if (!m_contentStack) return;
+    m_cardsByPartNumber.clear();
+    m_pagesByKey.clear();
+    m_searchPage = nullptr;
+    while (m_contentStack->count() > 0) {
+        QWidget* page = m_contentStack->widget(0);
+        m_contentStack->removeWidget(page); delete page;
+    }
+    showCurrentCatalogPage();
 }
 
 void PartReferenceDialog::closeEvent(QCloseEvent* event)
@@ -189,12 +208,17 @@ void PartReferenceDialog::initializeUi()
 
     m_copyButton = new QPushButton(tr("Copy Part #"), this);
     m_sendButton = new QPushButton(tr("Send to Add Inventory"), this);
+    m_addReferenceButton = new QPushButton(tr("Add Part to Reference..."), this);
+    m_removeReferenceButton = new QPushButton(tr("Remove from Part Reference"), this);
     m_copyButton->setEnabled(false);
     m_sendButton->setEnabled(false);
+    m_removeReferenceButton->setEnabled(false);
 
     selectedRow->addWidget(m_selectedLabel, 1);
     selectedRow->addWidget(m_copyButton);
     selectedRow->addWidget(m_sendButton);
+    selectedRow->addWidget(m_addReferenceButton);
+    selectedRow->addWidget(m_removeReferenceButton);
     mainLayout->addLayout(selectedRow);
 
     populateCatalogList();
@@ -222,6 +246,8 @@ void PartReferenceDialog::initializeUi()
 
     connect(m_copyButton, &QPushButton::clicked, this, &PartReferenceDialog::copySelectedPart);
     connect(m_sendButton, &QPushButton::clicked, this, &PartReferenceDialog::sendSelectedPartToInventory);
+    connect(m_addReferenceButton, &QPushButton::clicked, this, &PartReferenceDialog::addPartToReference);
+    connect(m_removeReferenceButton, &QPushButton::clicked, this, &PartReferenceDialog::removeSelectedCustomization);
 }
 
 QList<PartReferenceDialog::DimensionEntry> PartReferenceDialog::makeDimensionEntries(
@@ -438,7 +464,10 @@ QWidget* PartReferenceDialog::buildCatalogGalleryPage(const QString& catalog)
 
     auto* scrollArea = new QScrollArea(page);
     scrollArea->setWidgetResizable(true);
-    scrollArea->setWidget(buildGalleryContent(m_manifest.entriesForCatalog(catalog),
+    QList<PartReferenceEntry> entries;
+    for (const PartReferenceEntry& entry : m_effectiveEntries)
+        if (normalizedKey(entry.catalog) == normalizedKey(catalog)) entries.append(entry);
+    scrollArea->setWidget(buildGalleryContent(entries,
                                               scrollArea,
                                               true));
     layout->addWidget(scrollArea);
@@ -481,7 +510,7 @@ QWidget* PartReferenceDialog::buildGalleryContent(const QList<PartReferenceEntry
             contentLayout->addWidget(sectionWidget);
         }
 
-        QToolButton* card = createPartCard(content, entry.partNumber, entry.partName);
+        QToolButton* card = createPartCard(content, entry);
         sectionGrid->addWidget(card, sectionIndex / GalleryColumns, sectionIndex % GalleryColumns);
         loadCardImageOrQueue(entry.partNumber, missingImages);
         ++sectionIndex;
@@ -573,16 +602,14 @@ QWidget* PartReferenceDialog::buildCatalogDimensionPage(const QString& catalog)
         }
 
         for (const DimensionEntry& gridEntry : definition.entries) {
-            const PartReferenceEntry* manifestEntry = m_manifest.findByPartNumber(gridEntry.partNumber);
+            const PartReferenceEntry* manifestEntry = findEffectiveEntry(gridEntry.partNumber);
             if (!manifestEntry) {
                 qWarning() << "Part Reference dimension grid references unknown part:"
                            << gridEntry.partNumber;
                 continue;
             }
 
-            QToolButton* card = createPartCard(matrixWidget,
-                                               manifestEntry->partNumber,
-                                               manifestEntry->partName);
+            QToolButton* card = createPartCard(matrixWidget, *manifestEntry);
             grid->addWidget(card, gridEntry.row + 1, gridEntry.column + 1);
             loadCardImageOrQueue(manifestEntry->partNumber, missingImages);
         }
@@ -591,7 +618,8 @@ QWidget* PartReferenceDialog::buildCatalogDimensionPage(const QString& catalog)
     }
 
     const QList<PartReferenceEntry> remaining = entriesNotInDimensionGrid(
-        m_manifest.entriesForCatalog(catalog), definitions);
+        [&]() { QList<PartReferenceEntry> values; for (const auto& entry : m_effectiveEntries)
+            if (normalizedKey(entry.catalog) == normalizedKey(catalog)) values.append(entry); return values; }(), definitions);
     if (!remaining.isEmpty()) {
         auto* otherLabel = new QLabel(tr("Other %1").arg(catalog), content);
         QFont font = otherLabel->font();
@@ -651,7 +679,9 @@ void PartReferenceDialog::showCurrentCatalogPage()
     if (catalog.isEmpty())
         return;
 
-    const QList<PartReferenceEntry> entries = m_manifest.entriesForCatalog(catalog);
+    QList<PartReferenceEntry> entries;
+    for (const auto& entry : m_effectiveEntries)
+        if (normalizedKey(entry.catalog) == normalizedKey(catalog)) entries.append(entry);
     m_catalogTitleLabel->setText(catalog);
     m_catalogCountLabel->setText(tr("%1 parts").arg(entries.size()));
 
@@ -683,7 +713,13 @@ void PartReferenceDialog::refreshSearchResults()
     if (m_viewCombo)
         m_viewCombo->setEnabled(false);
 
-    const QList<PartReferenceEntry> allMatches = m_manifest.search(search);
+    QList<PartReferenceEntry> allMatches;
+    for (const PartReferenceEntry& entry : m_effectiveEntries) {
+        if (normalizedKey(entry.partNumber).contains(normalizedKey(search))
+            || normalizedKey(entry.partName).contains(normalizedKey(search))
+            || normalizedKey(entry.catalog).contains(normalizedKey(search))
+            || normalizedKey(entry.section).contains(normalizedKey(search))) allMatches.append(entry);
+    }
     const QList<PartReferenceEntry> displayed = allMatches.mid(0, SearchDisplayLimit);
 
     m_catalogTitleLabel->setText(tr("Search Results"));
@@ -700,10 +736,10 @@ void PartReferenceDialog::refreshSearchResults()
     m_contentStack->setCurrentWidget(m_searchPage);
 }
 
-QToolButton* PartReferenceDialog::createPartCard(QWidget* parent,
-                                                 const QString& partNumber,
-                                                 const QString& partName)
+QToolButton* PartReferenceDialog::createPartCard(QWidget* parent, const PartReferenceEntry& entry)
 {
+    const QString partNumber = entry.partNumber;
+    const QString partName = entry.partName;
     auto* button = new QToolButton(parent);
     button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
     button->setIconSize(QSize(88, 88));
@@ -713,6 +749,7 @@ QToolButton* PartReferenceDialog::createPartCard(QWidget* parent,
     button->setToolTip(QString("%1 — %2").arg(partNumber, partName));
     button->setProperty("partNumber", partNumber);
     button->setProperty("partName", partName);
+    button->setProperty("userEntryId", entry.userEntryId);
 
     m_cardsByPartNumber[normalizedKey(partNumber)].append(button);
 
@@ -725,7 +762,8 @@ QToolButton* PartReferenceDialog::createPartCard(QWidget* parent,
             m_cardsByPartNumber.erase(it);
     });
 
-    connect(button, &QToolButton::clicked, this, [this, partNumber, partName]() {
+    connect(button, &QToolButton::clicked, this, [this, partNumber, partName, entry]() {
+        m_selectedUserEntryId = entry.userEntryId;
         selectPart(partNumber, partName);
     });
 
@@ -733,21 +771,29 @@ QToolButton* PartReferenceDialog::createPartCard(QWidget* parent,
     connect(button,
             &QWidget::customContextMenuRequested,
             this,
-            [this, button, partNumber, partName](const QPoint& pos) {
+            [this, button, partNumber, partName, entry](const QPoint& pos) {
                 // Right-click always makes the card the active selection first so
                 // there is no ambiguity about which part the commands apply to.
+                m_selectedUserEntryId = entry.userEntryId;
                 selectPart(partNumber, partName);
 
                 QMenu menu(button);
                 QAction* copyAction = menu.addAction(tr("Copy Part #"));
                 QAction* sendAction = menu.addAction(tr("Send to Add Inventory"));
                 sendAction->setEnabled(m_sendButton && m_sendButton->isEnabled());
+                QAction* addAction = menu.addAction(tr("Add Part to Reference..."));
+                QAction* removeAction = menu.addAction(tr("Remove from Part Reference"));
+                removeAction->setEnabled(entry.origin == PartReferenceEntry::Origin::User);
 
                 QAction* chosen = menu.exec(button->mapToGlobal(pos));
                 if (chosen == copyAction)
                     copySelectedPart();
                 else if (chosen == sendAction)
                     sendSelectedPartToInventory();
+                else if (chosen == addAction)
+                    addPartToReference();
+                else if (chosen == removeAction)
+                    removeSelectedCustomization();
             });
 
     setCardSelected(button, normalizedKey(partNumber) == normalizedKey(m_selectedPartNumber));
@@ -828,6 +874,10 @@ void PartReferenceDialog::selectPart(const QString& partNumber, const QString& p
 
     m_copyButton->setEnabled(!m_selectedPartNumber.isEmpty());
     m_sendButton->setEnabled(m_addInventoryAvailable && !m_selectedPartNumber.isEmpty());
+    const PartReferenceEntry* selected = findEffectiveEntry(m_selectedPartNumber);
+    m_selectedUserEntryId = selected ? selected->userEntryId : 0;
+    if (m_removeReferenceButton)
+        m_removeReferenceButton->setEnabled(m_selectedUserEntryId > 0);
 }
 
 void PartReferenceDialog::setCardSelected(QToolButton* card, bool selected)
@@ -875,6 +925,36 @@ void PartReferenceDialog::sendSelectedPartToInventory()
         return;
 
     emit sendToAddInventoryRequested(m_selectedPartNumber);
+}
+
+const PartReferenceEntry* PartReferenceDialog::findEffectiveEntry(const QString& partNumber) const
+{
+    for (const PartReferenceEntry& entry : m_effectiveEntries)
+        if (normalizedKey(entry.partNumber) == normalizedKey(partNumber)) return &entry;
+    return nullptr;
+}
+
+void PartReferenceDialog::addPartToReference()
+{
+    const PartReferenceEntry* anchor = findEffectiveEntry(m_selectedPartNumber);
+    AddPartReferenceDialog dialog(0, anchor, this);
+    if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded())
+        refreshCustomizations();
+}
+
+void PartReferenceDialog::removeSelectedCustomization()
+{
+    if (m_selectedUserEntryId <= 0) return;
+    if (QMessageBox::question(this, tr("Remove from Part Reference"),
+                              tr("Remove %1 from your Part Reference customizations?\n\n"
+                                 "The catalog Part and inventory will not be changed.")
+                                  .arg(m_selectedPartNumber)) != QMessageBox::Yes) return;
+    const auto result = PartReferenceCustomizationService(m_manifest).remove(m_selectedUserEntryId);
+    if (!result.success) { QMessageBox::warning(this, tr("Part Reference"), result.message); return; }
+    m_selectedPartNumber.clear(); m_selectedPartName.clear(); m_selectedUserEntryId = 0;
+    m_selectedLabel->setText(tr("Selected: None")); m_copyButton->setEnabled(false);
+    m_sendButton->setEnabled(false); m_removeReferenceButton->setEnabled(false);
+    refreshCustomizations();
 }
 
 void PartReferenceDialog::restoreUiState()

@@ -12,6 +12,11 @@
 
 struct PartReferenceEntry
 {
+    enum class Origin { BuiltIn, User };
+
+    int userEntryId = 0;
+    int partId = 0;
+    Origin origin = Origin::BuiltIn;
     QString partNumber;
     QString partName;
     QString catalog;

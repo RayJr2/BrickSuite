@@ -388,6 +388,7 @@ void PartsCatalogWidget::searchParts()
         actionCombo->addItem("Details", "details");
 
         actionCombo->addItem("Add to Inventory", "add");
+        actionCombo->addItem("Add to Part Reference...", "reference");
 
         const int partId = part.id();
 
@@ -406,6 +407,8 @@ void PartsCatalogWidget::searchParts()
                         dialog.exec();
                     } else if (action == "add") {
                         emit addPartToInventoryRequested(partId);
+                    } else if (action == "reference") {
+                        emit addPartToReferenceRequested(partId);
                     }
 
                     // Return to neutral state.

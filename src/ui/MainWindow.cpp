@@ -66,6 +66,7 @@
 #include "collection/MyCollectionWidget.h"
 #include "parts/PartResolverTestDialog.h"
 #include "parts/PartReferenceDialog.h"
+#include "parts/AddPartReferenceDialog.h"
 #include "settings/SettingsDialog.h"
 #include "storage/StorageWidget.h"
 #include "reference/ReferenceDataDialog.h"
@@ -333,6 +334,17 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                     }
 
                     statusBar()->showMessage("Inventory updated.", 5000);
+                }
+            });
+
+    connect(m_partsCatalogWidget,
+            &PartsCatalogWidget::addPartToReferenceRequested,
+            this,
+            [this](int partId) {
+                AddPartReferenceDialog dialog(partId, nullptr, this);
+                if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded()
+                    && m_partReferenceDialog) {
+                    m_partReferenceDialog->refreshCustomizations();
                 }
             });
 

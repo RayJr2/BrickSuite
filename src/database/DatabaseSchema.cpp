@@ -552,6 +552,18 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 31;
     }
 
+    if (version == 31) {
+        if (!migrateVersion31ToVersion32(database)) {
+            database.rollback();
+            return false;
+        }
+        if (!setSchemaVersion(database, 32)) {
+            database.rollback();
+            return false;
+        }
+        version = 32;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -3633,6 +3645,40 @@ bool DatabaseSchema::migrateVersion30ToVersion31(QSqlDatabase& database)
     QSqlQuery pragma(database);
     if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
         qCritical() << "Foreign-key validation failed after Version 31 migration.";
+        return false;
+    }
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion31ToVersion32(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+    const QStringList statements = {
+        R"(CREATE TABLE user_part_reference_entry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            part_id INTEGER NOT NULL,
+            catalog TEXT NOT NULL,
+            section TEXT NOT NULL,
+            anchor_part_number TEXT,
+            placement_mode TEXT NOT NULL CHECK(placement_mode IN ('Before','After','Append')),
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            FOREIGN KEY(part_id) REFERENCES part(id) ON DELETE RESTRICT,
+            UNIQUE(part_id)
+        ))",
+        "CREATE INDEX idx_user_part_reference_destination "
+        "ON user_part_reference_entry(catalog, section, placement_mode, id)"
+    };
+    for (const QString& statement : statements) {
+        if (!query.exec(statement)) {
+            qCritical() << "Unable to migrate schema to Version 32:"
+                        << query.lastError().text();
+            return false;
+        }
+    }
+    QSqlQuery pragma(database);
+    if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
+        qCritical() << "Foreign-key validation failed after Version 32 migration.";
         return false;
     }
     return true;

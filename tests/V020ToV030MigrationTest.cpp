@@ -201,8 +201,8 @@ bool verifyMigratedData(QSqlDatabase database, const Snapshot& snapshot)
     bool ok = true;
     for (auto it = snapshot.cbegin(); it != snapshot.cend(); ++it)
         ok &= require(readRows(database, it.key()) == it.value(), "historical rows preserved: " + it.key());
-    ok &= require(scalar(database, "SELECT version FROM schema_version").toInt() == 31,
-                  "schema migrated from 19 to 31");
+    ok &= require(scalar(database, "SELECT version FROM schema_version").toInt() == 32,
+                  "schema migrated from 19 to 32");
     ok &= require(scalar(database, "SELECT name FROM workspace WHERE id=7").toString()
                       == QStringLiteral("Workshop"), "workspace identity preserved");
     ok &= require(scalar(database, "SELECT parent_location_id FROM storage_location WHERE id=11").toInt() == 10,
@@ -295,7 +295,7 @@ bool runScenario(bool forceLateFailure)
         snapshot = captureHistoricalRows(database);
         if (forceLateFailure && !executeAll(database, {
                 "CREATE TRIGGER force_late_migration_failure BEFORE INSERT ON schema_version "
-                "WHEN NEW.version=31 BEGIN SELECT RAISE(ABORT,'forced late migration failure'); END"}))
+                "WHEN NEW.version=32 BEGIN SELECT RAISE(ABORT,'forced late migration failure'); END"}))
             return false;
         database.close();
     }
@@ -303,10 +303,10 @@ bool runScenario(bool forceLateFailure)
         if (!require(!manager.initialize(), "forced late migration reports failure")) return false;
         QSqlDatabase database = manager.database();
         // The normal chain commits 19->26 and the v27 table rebuild separately.
-        // A later failure must retain that valid checkpoint, never claim v31.
+        // A later failure must retain that valid checkpoint, never claim v32.
         if (!require(scalar(database, "SELECT version FROM schema_version").toInt() == 27
                      && scalar(database, "SELECT COUNT(*) FROM sqlite_master WHERE name='collection_item'").toInt() == 0,
-                     "late failure rolls back 28->31 and retains the valid v27 checkpoint")) return false;
+                     "late failure rolls back 28->32 and retains the valid v27 checkpoint")) return false;
         if (!executeAll(database, {"DROP TRIGGER force_late_migration_failure"})) return false;
         manager.close();
     }
@@ -316,7 +316,7 @@ bool runScenario(bool forceLateFailure)
         return false;
 
     manager.close();
-    if (!require(manager.initialize(), "schema-31 database reopens through normal initialization"))
+    if (!require(manager.initialize(), "schema-32 database reopens through normal initialization"))
         return false;
     if (!verifyMigratedData(manager.database(), snapshot))
         return false;
@@ -336,6 +336,6 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    qInfo() << "v0.2.0 schema 19 to v0.3.0 schema 31 migration validation passed.";
+    qInfo() << "Schema 19 to schema 32 migration validation passed.";
     return 0;
 }

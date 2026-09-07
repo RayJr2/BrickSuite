@@ -107,11 +107,14 @@ qt_add_executable(BrickSuite
     src/models/Part.h
     src/models/Part.cpp
     src/models/PartReferenceEntry.h
+    src/models/UserPartReferenceEntry.h
     src/models/InventoryRecord.h
     src/models/InventoryRecord.cpp
     src/models/Manufacturer.h
     src/repositories/PartRepository.h
     src/repositories/PartRepository.cpp
+    src/repositories/UserPartReferenceRepository.h
+    src/repositories/UserPartReferenceRepository.cpp
     src/repositories/InventoryRecordRepository.h
     src/repositories/InventoryRecordRepository.cpp
     src/repositories/ManufacturerRepository.h
@@ -220,6 +223,8 @@ qt_add_executable(BrickSuite
     src/services/parts/PartResolver.cpp
     src/services/parts/PartReferenceManifest.h
     src/services/parts/PartReferenceManifest.cpp
+    src/services/parts/PartReferenceCustomizationService.h
+    src/services/parts/PartReferenceCustomizationService.cpp
     src/services/parts/RebrickablePartAliasLearner.h
     src/services/parts/RebrickablePartAliasLearner.cpp
     src/services/parts/PartExternalIdEnrichmentService.h
@@ -229,6 +234,8 @@ qt_add_executable(BrickSuite
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
     src/ui/parts/PartReferenceDialog.h
     src/ui/parts/PartReferenceDialog.cpp
+    src/ui/parts/AddPartReferenceDialog.h
+    src/ui/parts/AddPartReferenceDialog.cpp
     src/ui/parts/PartResolverTestDialog.h
     src/ui/parts/PartResolverTestDialog.cpp
     src/ui/helpers/ColorComboHelper.cpp src/ui/helpers/ColorComboHelper.h
@@ -801,6 +808,22 @@ if(BUILD_TESTING)
     )
     target_link_libraries(ColorComboHelperTest PRIVATE Qt6::Widgets)
     add_test(NAME ColorComboHelper COMMAND ColorComboHelperTest -platform offscreen)
+    qt_add_executable(PartReferenceCustomizationTest EXCLUDE_FROM_ALL
+        tests/PartReferenceCustomizationTest.cpp
+        resources/resources.qrc
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Part.h src/models/Part.cpp
+        src/models/PartReferenceEntry.h src/models/UserPartReferenceEntry.h
+        src/models/PartSearchCriteria.h src/models/PartSearchResult.h
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/UserPartReferenceRepository.h src/repositories/UserPartReferenceRepository.cpp
+        src/services/parts/PartReferenceManifest.h src/services/parts/PartReferenceManifest.cpp
+        src/services/parts/PartReferenceCustomizationService.h
+        src/services/parts/PartReferenceCustomizationService.cpp
+    )
+    target_link_libraries(PartReferenceCustomizationTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME PartReferenceCustomization COMMAND PartReferenceCustomizationTest)
 endif()
 
 if(WIN32)

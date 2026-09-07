@@ -40,6 +40,7 @@ public:
     ~PartReferenceDialog() override;
 
     void setAddInventoryAvailable(bool available);
+    void refreshCustomizations();
 
 signals:
     void sendToAddInventoryRequested(const QString& partNumber);
@@ -97,9 +98,7 @@ private:
         const QList<PartReferenceEntry>& catalogEntries,
         const QList<DimensionDefinition>& definitions) const;
 
-    QToolButton* createPartCard(QWidget* parent,
-                                const QString& partNumber,
-                                const QString& partName);
+    QToolButton* createPartCard(QWidget* parent, const PartReferenceEntry& entry);
     void setCardImage(const QString& partNumber, const QString& imagePath);
     void loadCardImageOrQueue(const QString& partNumber, QSet<QString>& missingImages);
     void requestMissingImages(const QStringList& partNumbers);
@@ -110,6 +109,9 @@ private:
     void setPartCardsSelected(const QString& partNumber, bool selected);
     void copySelectedPart();
     void sendSelectedPartToInventory();
+    void addPartToReference();
+    void removeSelectedCustomization();
+    const PartReferenceEntry* findEffectiveEntry(const QString& partNumber) const;
 
     static QList<DimensionEntry> makeDimensionEntries(
         const QStringList& columnLabels,
@@ -126,6 +128,8 @@ private:
     QLabel* m_selectedLabel = nullptr;
     QPushButton* m_copyButton = nullptr;
     QPushButton* m_sendButton = nullptr;
+    QPushButton* m_addReferenceButton = nullptr;
+    QPushButton* m_removeReferenceButton = nullptr;
 
     QList<DimensionDefinition> m_dimensionDefinitions;
     QHash<QString, QWidget*> m_pagesByKey;
@@ -133,12 +137,14 @@ private:
 
     QString m_selectedPartNumber;
     QString m_selectedPartName;
+    int m_selectedUserEntryId = 0;
     bool m_addInventoryAvailable = false;
     bool m_restoringUiState = false;
 
     QHash<QString, QList<QToolButton*>> m_cardsByPartNumber;
 
     PartReferenceManifest m_manifest;
+    QList<PartReferenceEntry> m_effectiveEntries;
 
     PartImageService* m_partImageService = nullptr;
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
