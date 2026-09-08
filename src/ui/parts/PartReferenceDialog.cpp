@@ -146,6 +146,16 @@ void PartReferenceDialog::initializeUi()
 {
     auto* mainLayout = new QVBoxLayout(this);
 
+    const ApplicationServiceStatus customizationStatus = m_customizationService.status();
+    if (!customizationStatus.isAvailable()) {
+        auto* unavailableLabel = new QLabel(
+            customizationStatus.message
+                + tr(" Built-in Part Reference entries remain available; shared customizations are unavailable."),
+            this);
+        unavailableLabel->setWordWrap(true);
+        mainLayout->addWidget(unavailableLabel);
+    }
+
     auto* searchRow = new QHBoxLayout();
     auto* searchLabel = new QLabel(tr("Find:"), this);
     m_searchEdit = new QLineEdit(this);

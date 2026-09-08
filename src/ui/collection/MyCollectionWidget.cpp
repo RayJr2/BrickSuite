@@ -180,6 +180,15 @@ QString MyCollectionWidget::effectiveCriteriaKey() const
 void MyCollectionWidget::refresh()
 {
     m_page = 0;
+    const ApplicationServiceStatus serviceStatus = m_collectionService.status();
+    if (!serviceStatus.isAvailable()) {
+        m_table->setRowCount(0);
+        m_total = 0;
+        m_messageLabel->setText(serviceStatus.message);
+        m_summaryLabel->setText(serviceStatus.message);
+        updatePaging();
+        return;
+    }
     {
         LargeViewLoadingGuard loading(
             this, m_refreshInProgress, QStringLiteral("Loading My Collection..."),
@@ -264,6 +273,15 @@ void MyCollectionWidget::loadLocations()
 
 void MyCollectionWidget::loadPage(bool criteriaChanged, const QString& loadingMessage)
 {
+    const ApplicationServiceStatus serviceStatus = m_collectionService.status();
+    if (!serviceStatus.isAvailable()) {
+        m_table->setRowCount(0);
+        m_total = 0;
+        m_messageLabel->setText(serviceStatus.message);
+        m_summaryLabel->setText(serviceStatus.message);
+        updatePaging();
+        return;
+    }
     LargeViewLoadingGuard loading(
         this, m_refreshInProgress,
         loadingMessage.isEmpty() ? QStringLiteral("Loading My Collection...") : loadingMessage,

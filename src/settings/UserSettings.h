@@ -24,6 +24,8 @@
 #include <QDateTime>
 #include <QString>
 
+#include "../services/application/SharedDataSource.h"
+
 class UserSettings
 {
 public:
@@ -33,6 +35,10 @@ public:
 
     Theme theme() const;
     void setTheme(Theme theme);
+
+    SharedDataSource sharedDataSource() const;
+    void setSharedDataSource(SharedDataSource source);
+    static QString sharedDataSourceToString(SharedDataSource source);
 
     int resultsPerPage() const;
     void setResultsPerPage(int resultsPerPage);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SharedDataSource.h"
+
 // M26 ownership boundary: catalog/reference services remain local to each
 // device. These contracts cover shared, Host-authoritative application data.
 // The composition root supplies local implementations today and may supply
@@ -25,10 +27,30 @@
 
 class PartReferenceManifest;
 
+enum class ApplicationServiceAvailability
+{
+    AvailableLocal,
+    AvailableRemote,
+    UnavailableNotConnected,
+    UnavailableMaintenance
+};
+
+struct ApplicationServiceStatus
+{
+    ApplicationServiceAvailability availability = ApplicationServiceAvailability::AvailableLocal;
+    QString message;
+    bool isAvailable() const
+    {
+        return availability == ApplicationServiceAvailability::AvailableLocal
+            || availability == ApplicationServiceAvailability::AvailableRemote;
+    }
+};
+
 class WorkspaceApplicationService
 {
 public:
     virtual ~WorkspaceApplicationService() = default;
+    virtual ApplicationServiceStatus status() const { return {}; }
     virtual QList<Workspace> list() const = 0;
     virtual std::optional<Workspace> get(int workspaceId) const = 0;
     virtual bool exists(int workspaceId) const = 0;
@@ -41,6 +63,7 @@ class InventoryApplicationService
 public:
     struct Page { QList<InventorySearchResult> rows; int total = 0; };
     virtual ~InventoryApplicationService() = default;
+    virtual ApplicationServiceStatus status() const { return {}; }
     virtual int count(const InventorySearchCriteria& criteria) const = 0;
     virtual QList<InventorySearchResult> searchRows(
         const InventorySearchCriteria& criteria) const = 0;
@@ -55,6 +78,7 @@ class BuildApplicationService
 {
 public:
     virtual ~BuildApplicationService() = default;
+    virtual ApplicationServiceStatus status() const { return {}; }
     virtual QList<Build> list(int workspaceId, bool includeArchived) const = 0;
     virtual std::optional<Build> get(int buildId) const = 0;
     virtual QList<BuildRequirement> requirements(int buildId) const = 0;
@@ -68,6 +92,7 @@ class CollectionApplicationService
 public:
     struct Page { QList<CollectionSearchResult> rows; int total = 0; };
     virtual ~CollectionApplicationService() = default;
+    virtual ApplicationServiceStatus status() const { return {}; }
     virtual int count(const CollectionSearchCriteria& criteria) const = 0;
     virtual QList<CollectionSearchResult> searchRows(
         const CollectionSearchCriteria& criteria) const = 0;
@@ -80,6 +105,7 @@ class SharedPartReferenceCustomizationService
 {
 public:
     virtual ~SharedPartReferenceCustomizationService() = default;
+    virtual ApplicationServiceStatus status() const { return {}; }
     virtual QList<PartReferenceEntry> effectiveEntries(
         const PartReferenceManifest& manifest, QString* errorMessage) const = 0;
     virtual PartReferenceCustomizationResult add(
@@ -98,13 +124,16 @@ public:
                         std::unique_ptr<InventoryApplicationService> inventory,
                         std::unique_ptr<BuildApplicationService> builds,
                         std::unique_ptr<CollectionApplicationService> collection,
-                        std::unique_ptr<SharedPartReferenceCustomizationService> partReference);
+                        std::unique_ptr<SharedPartReferenceCustomizationService> partReference,
+                        SharedDataSource source = SharedDataSource::ThisComputer);
 
     WorkspaceApplicationService& workspaces() const;
     InventoryApplicationService& inventory() const;
     BuildApplicationService& builds() const;
     CollectionApplicationService& collection() const;
     SharedPartReferenceCustomizationService& partReferenceCustomizations() const;
+    SharedDataSource sharedDataSource() const;
+    ApplicationServiceStatus sharedStatus() const;
 
 private:
     std::unique_ptr<WorkspaceApplicationService> m_workspaces;
@@ -112,4 +141,7 @@ private:
     std::unique_ptr<BuildApplicationService> m_builds;
     std::unique_ptr<CollectionApplicationService> m_collection;
     std::unique_ptr<SharedPartReferenceCustomizationService> m_partReference;
+    SharedDataSource m_source = SharedDataSource::ThisComputer;
 };
+
+std::unique_ptr<ApplicationServices> createUnavailableHostApplicationServices();

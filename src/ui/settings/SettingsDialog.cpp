@@ -23,8 +23,8 @@
 #include "../../app/WorkspaceContext.h"
 #include "../help/HelpManager.h"
 #include "../../models/Workspace.h"
-#include "../../repositories/WorkspaceRepository.h"
 #include "../../services/RebrickableApiClient.h"
+#include "../../services/application/ApplicationServices.h"
 #include "../../api/brickset/BricksetService.h"
 #include "../../api/ApiProviderStatusRegistry.h"
 #include "../../settings/ThemeManager.h"
@@ -57,10 +57,12 @@
 #include <QWidget>
 
 SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
+                               WorkspaceApplicationService& workspaceService,
                                AutomaticBackupService* automaticBackupService,
                                QWidget* parent)
     : QDialog(parent)
     , m_workspaceContext(workspaceContext)
+    , m_workspaceService(workspaceService)
     , m_automaticBackupService(automaticBackupService)
 {
     setWindowTitle("BrickSuite Settings");
@@ -221,11 +223,15 @@ void SettingsDialog::loadWorkspaces()
 {
     m_defaultWorkspaceCombo->clear();
 
+    if (!m_workspaceService.status().isAvailable()) {
+        m_defaultWorkspaceCombo->addItem("Unavailable while using BrickSuite Host", 0);
+        m_defaultWorkspaceCombo->setEnabled(false);
+        return;
+    }
+
     m_defaultWorkspaceCombo->addItem("(None)", 0);
 
-    WorkspaceRepository repository;
-
-    const QList<Workspace> workspaces = repository.getAll();
+    const QList<Workspace> workspaces = m_workspaceService.list();
 
     for (const Workspace& workspace : workspaces) {
         m_defaultWorkspaceCombo->addItem(workspace.name(), workspace.id());
@@ -235,6 +241,11 @@ void SettingsDialog::loadWorkspaces()
 void SettingsDialog::loadSettings()
 {
     UserSettings& settings = UserSettings::instance();
+
+    m_originalSharedDataSource = settings.sharedDataSource();
+    const int sourceIndex = m_sharedDataSourceCombo->findData(
+        static_cast<int>(m_originalSharedDataSource));
+    m_sharedDataSourceCombo->setCurrentIndex(sourceIndex >= 0 ? sourceIndex : 0);
 
     const int resultsIndex = m_resultsPerPageCombo->findData(settings.resultsPerPage());
 
@@ -332,15 +343,19 @@ void SettingsDialog::saveSettings()
     const int defaultWorkspaceId = m_defaultWorkspaceCombo->currentData().toInt();
 
     const auto theme = static_cast<UserSettings::Theme>(m_themeCombo->currentData().toInt());
+    const auto sharedDataSource = static_cast<SharedDataSource>(
+        m_sharedDataSourceCombo->currentData().toInt());
 
     const QString apiKey = m_apiKeyEdit->text().trimmed();
     const QString bricksetApiKey = m_bricksetApiKeyEdit->text().trimmed();
 
     settings.setResultsPerPage(resultsPerPage);
 
-    settings.setDefaultWorkspaceId(defaultWorkspaceId);
+    if (m_workspaceService.status().isAvailable())
+        settings.setDefaultWorkspaceId(defaultWorkspaceId);
 
     settings.setTheme(theme);
+    settings.setSharedDataSource(sharedDataSource);
 
     const bool rebrickableKeyChanged =
         (apiKey != m_originalRebrickableApiKey.trimmed());
@@ -401,6 +416,19 @@ void SettingsDialog::saveSettings()
     }
 
     emit settingsChanged();
+
+    if (sharedDataSource != m_originalSharedDataSource) {
+        const QString message = sharedDataSource == SharedDataSource::BrickSuiteHost
+            ? tr("This device will continue using its local Rebrickable catalogs and image cache. "
+                 "After restart, Workspaces, Storage, Inventory, Builds, and Collection will come "
+                 "from the BrickSuite Host. Existing local workshop data will remain on this device "
+                 "but will not be shown while Host mode is active.\n\n"
+                 "BrickSuite Host connectivity is not available yet. Restart BrickSuite to apply this change.")
+            : tr("After restart, BrickSuite will again use this device's local Workspaces, Storage, "
+                 "Inventory, Builds, and Collection. Host data will not be copied or merged.\n\n"
+                 "Restart BrickSuite to apply this change.");
+        QMessageBox::information(this, tr("Shared Data Source Changed"), message);
+    }
 
     accept();
 }
@@ -585,9 +613,26 @@ void SettingsDialog::buildGeneralTab()
 
     m_defaultWorkspaceCombo = new QComboBox(generalGroup);
 
+    m_sharedDataSourceCombo = new QComboBox(generalGroup);
+    m_sharedDataSourceCombo->addItem("This Computer",
+                                     static_cast<int>(SharedDataSource::ThisComputer));
+    m_sharedDataSourceCombo->addItem("BrickSuite Host",
+                                     static_cast<int>(SharedDataSource::BrickSuiteHost));
+    m_sharedDataSourceCombo->setToolTip(
+        "Select where shared workshop data comes from. Changes take effect after restart.");
+
+    auto* sharedDataDescription = new QLabel(
+        "This Computer owns both reference catalogs and workshop data. BrickSuite Host keeps "
+        "reference catalogs and images on this device while shared workshop data comes from the Host. "
+        "Changing this setting requires a restart.", generalGroup);
+    sharedDataDescription->setWordWrap(true);
+
     generalLayout->addRow("Results per page:", m_resultsPerPageCombo);
 
     generalLayout->addRow("Default workspace:", m_defaultWorkspaceCombo);
+
+    generalLayout->addRow("Shared Data Source:", m_sharedDataSourceCombo);
+    generalLayout->addRow(QString(), sharedDataDescription);
 
     layout->addWidget(generalGroup);
 

@@ -1,4 +1,6 @@
 #include "../src/services/application/ApplicationServices.h"
+#include "../src/services/parts/PartReferenceManifest.h"
+#include "../src/app/WorkspaceContext.h"
 
 #include <QCoreApplication>
 #include <cstdio>
@@ -98,5 +100,45 @@ int main(int argc, char** argv)
                 "Collection paged search contract");
     ok &= check(collection.getDisplay(1)->displayName == "Injected",
                 "Collection detail contract");
+
+    auto host = createUnavailableHostApplicationServices();
+    ok &= check(host->sharedDataSource() == SharedDataSource::BrickSuiteHost,
+                "Host composition identifies its source");
+    ok &= check(!host->sharedStatus().isAvailable()
+                    && host->sharedStatus().availability
+                        == ApplicationServiceAvailability::UnavailableNotConnected,
+                "Host composition reports not connected");
+    ok &= check(host->workspaces().list().isEmpty()
+                    && !host->workspaces().get(1).has_value()
+                    && !host->workspaces().exists(1),
+                "Host Workspace composition has no local fallback");
+    ok &= check(host->inventory().count(criteria) == 0
+                    && host->inventory().searchRows(criteria).isEmpty()
+                    && !host->inventory().get(901).has_value()
+                    && host->inventory().history(1, 2, 3).isEmpty(),
+                "Host Inventory composition has no local fallback");
+    ok &= check(host->builds().list(5, false).isEmpty()
+                    && !host->builds().get(9).has_value()
+                    && host->builds().requirements(9).isEmpty()
+                    && host->builds().missingParts(5, 9).isEmpty()
+                    && !host->builds().pullingView(9).success,
+                "Host Build composition has no local fallback");
+    ok &= check(host->collection().count(collectionCriteria) == 0
+                    && host->collection().searchRows(collectionCriteria).isEmpty()
+                    && !host->collection().getDisplay(1).has_value(),
+                "Host Collection composition has no local fallback");
+    PartReferenceManifest manifest;
+    QString partReferenceError;
+    const auto effective = host->partReferenceCustomizations().effectiveEntries(
+        manifest, &partReferenceError);
+    const auto add = host->partReferenceCustomizations().add(
+        manifest, "3001", "Test", "Test", PartReferencePlacement::Append);
+    ok &= check(effective.isEmpty() && !partReferenceError.isEmpty()
+                    && !add.success && !add.message.isEmpty(),
+                "Host Part Reference customization has no local fallback");
+    WorkspaceContext hostWorkspaceContext;
+    ok &= check(!hostWorkspaceContext.hasCurrentWorkspace()
+                    && hostWorkspaceContext.currentWorkspaceId() == 0,
+                "Host WorkspaceContext starts unset without a synthetic identity");
     return ok ? 0 : 1;
 }

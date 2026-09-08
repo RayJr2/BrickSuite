@@ -28,6 +28,7 @@
 #include "../services/database/AutomaticBackupService.h"
 #include "../services/storage/SessionStorageSelectionService.h"
 #include "../services/application/ApplicationServices.h"
+#include "../settings/UserSettings.h"
 #include "../ui/MainWindow.h"
 
 #include <QDebug>
@@ -80,7 +81,15 @@ bool Application::initialize(const StartupProgress& progress)
     phaseTimer.restart();
     m_workspaceContext = std::make_unique<WorkspaceContext>();
     m_sessionStorageSelectionService = std::make_unique<SessionStorageSelectionService>();
-    m_applicationServices = std::make_unique<ApplicationServices>();
+    const SharedDataSource sharedDataSource = UserSettings::instance().sharedDataSource();
+    m_applicationServices = sharedDataSource == SharedDataSource::ThisComputer
+        ? std::make_unique<ApplicationServices>()
+        : createUnavailableHostApplicationServices();
+    qInfo().noquote() << "Shared data source:"
+                      << (sharedDataSource == SharedDataSource::ThisComputer
+                              ? "This Computer" : "BrickSuite Host");
+    if (!m_applicationServices->sharedStatus().isAvailable())
+        qWarning().noquote() << "BrickSuite Host shared services are unavailable until remote connectivity is configured.";
     qInfo() << "Startup phase application service creation completed in"
             << phaseTimer.elapsed() << "ms.";
 

@@ -40,6 +40,7 @@ constexpr auto kThemeKey = "Theme";
 constexpr auto kResultsPerPageKey = "ResultsPerPage";
 
 constexpr auto kDefaultWorkspaceIdKey = "DefaultWorkspaceId";
+constexpr auto kSharedDataSourceKey = "SharedDataSource";
 
 constexpr auto kRebrickableApiKey = "ApiKey";
 constexpr auto kRebrickableConnectionPreviouslyVerifiedKey = "ConnectionPreviouslyVerified";
@@ -122,6 +123,34 @@ void UserSettings::setTheme(Theme theme)
     settings.setValue(kThemeKey, themeToString(theme));
 
     settings.endGroup();
+}
+
+SharedDataSource UserSettings::sharedDataSource() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupGeneral);
+    const QString value = settings.value(kSharedDataSourceKey, "this-computer").toString();
+    settings.endGroup();
+    if (value.compare("this-computer", Qt::CaseInsensitive) == 0)
+        return SharedDataSource::ThisComputer;
+    if (value.compare("bricksuite-host", Qt::CaseInsensitive) == 0)
+        return SharedDataSource::BrickSuiteHost;
+    qWarning() << "Unknown Shared Data Source setting; using This Computer:" << value;
+    return SharedDataSource::ThisComputer;
+}
+
+void UserSettings::setSharedDataSource(SharedDataSource source)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupGeneral);
+    settings.setValue(kSharedDataSourceKey, sharedDataSourceToString(source));
+    settings.endGroup();
+}
+
+QString UserSettings::sharedDataSourceToString(SharedDataSource source)
+{
+    return source == SharedDataSource::BrickSuiteHost
+        ? QStringLiteral("bricksuite-host") : QStringLiteral("this-computer");
 }
 
 int UserSettings::resultsPerPage() const

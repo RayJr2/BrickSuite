@@ -440,7 +440,8 @@ MyInventoryWidget::MyInventoryWidget(
 
     loadCategories();
     loadColors();
-    loadManufacturers();
+    if (m_inventoryService.status().isAvailable())
+        loadManufacturers();
 
     workspaceChanged(
         m_workspaceContext.currentWorkspaceId());
@@ -620,6 +621,19 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
     m_rowsWithColorImage.clear();
     m_partDetailsRequested.clear();
     const qint64 clearMs = phaseTimer.elapsed();
+
+    const ApplicationServiceStatus serviceStatus = m_inventoryService.status();
+    if (!serviceStatus.isAvailable()) {
+        m_lastResultCount = 0;
+        m_totalResultCount = 0;
+        m_resultLabel->setText(serviceStatus.message);
+        m_summaryLabel->setText(serviceStatus.message);
+        m_addPartButton->setEnabled(false);
+        m_lostInventoryButton->setEnabled(false);
+        m_importButton->setEnabled(false);
+        updatePagingControls();
+        return;
+    }
 
     if (!m_workspaceContext.hasCurrentWorkspace()) {
         m_lastResultCount = 0;

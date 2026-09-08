@@ -101,6 +101,9 @@ qt_add_executable(BrickSuite
     src/services/storage/SessionStorageSelectionService.cpp
     src/services/application/ApplicationServices.h
     src/services/application/ApplicationServices.cpp
+    src/services/application/ApplicationServicesCore.cpp
+    src/services/application/UnavailableApplicationServices.cpp
+    src/services/application/SharedDataSource.h
     src/services/database/AutomaticBackupRetention.h
     src/services/database/AutomaticBackupRetention.cpp
     src/services/Logger.h
@@ -958,9 +961,30 @@ if(BUILD_TESTING)
         src/models/InventoryRecord.h src/models/InventoryRecord.cpp
         src/models/CollectionItem.h src/models/CollectionItem.cpp
         src/services/application/ApplicationServices.h
+        src/services/application/ApplicationServicesCore.cpp
+        src/services/application/UnavailableApplicationServices.cpp
+        src/services/application/SharedDataSource.h
+        src/services/parts/PartReferenceManifest.h src/services/parts/PartReferenceManifest.cpp
+        src/app/WorkspaceContext.h src/app/WorkspaceContext.cpp
     )
     target_link_libraries(ApplicationServiceContractsTest PRIVATE Qt6::Core)
     add_test(NAME ApplicationServiceContracts COMMAND ApplicationServiceContractsTest)
+
+    qt_add_executable(SharedDataSourceSettingsTest EXCLUDE_FROM_ALL
+        tests/SharedDataSourceSettingsTest.cpp
+        src/settings/UserSettings.h src/settings/UserSettings.cpp
+        src/services/application/SharedDataSource.h
+        src/services/CredentialStore.h src/services/CredentialStore.cpp
+        src/services/database/AutomaticBackupPolicy.h
+        src/services/database/AutomaticBackupPolicy.cpp
+    )
+    target_link_libraries(SharedDataSourceSettingsTest PRIVATE Qt6::Core Qt6::Sql)
+    if(WIN32)
+        target_link_libraries(SharedDataSourceSettingsTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(SharedDataSourceSettingsTest PRIVATE "-framework Security")
+    endif()
+    add_test(NAME SharedDataSourceSettings COMMAND SharedDataSourceSettingsTest)
 endif()
 
 if(WIN32)

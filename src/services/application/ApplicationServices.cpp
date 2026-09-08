@@ -77,6 +77,7 @@ public:
                                               int id) const override
     { return PartReferenceCustomizationService(manifest).remove(id); }
 };
+
 }
 
 ApplicationServices::ApplicationServices()
@@ -85,17 +86,3 @@ ApplicationServices::ApplicationServices()
                           std::make_unique<LocalBuildService>(),
                           std::make_unique<LocalCollectionService>(),
                           std::make_unique<LocalPartReferenceService>()) {}
-
-ApplicationServices::ApplicationServices(std::unique_ptr<WorkspaceApplicationService> w,
-    std::unique_ptr<InventoryApplicationService> i, std::unique_ptr<BuildApplicationService> b,
-    std::unique_ptr<CollectionApplicationService> c,
-    std::unique_ptr<SharedPartReferenceCustomizationService> p)
-    : m_workspaces(std::move(w)), m_inventory(std::move(i)), m_builds(std::move(b)),
-      m_collection(std::move(c)), m_partReference(std::move(p)) {}
-
-WorkspaceApplicationService& ApplicationServices::workspaces() const { return *m_workspaces; }
-InventoryApplicationService& ApplicationServices::inventory() const { return *m_inventory; }
-BuildApplicationService& ApplicationServices::builds() const { return *m_builds; }
-CollectionApplicationService& ApplicationServices::collection() const { return *m_collection; }
-SharedPartReferenceCustomizationService& ApplicationServices::partReferenceCustomizations() const
-{ return *m_partReference; }

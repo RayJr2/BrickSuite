@@ -160,6 +160,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             &SetsCatalogWidget::createBuildRequested,
             this,
             [this](int setCatalogId, const QString& inventoryMode) {
+                if (!m_applicationServices.sharedStatus().isAvailable()) {
+                    QMessageBox::information(this, "Create Build",
+                                             m_applicationServices.sharedStatus().message);
+                    return;
+                }
                 if (!m_workspaceContext.hasCurrentWorkspace()) {
                     QMessageBox::warning(this,
                                          "Create Build",
@@ -270,6 +275,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             &SetsCatalogWidget::createStockBuildRequested,
             this,
             [this](int setCatalogId, const QString& buildName) {
+                if (!m_applicationServices.sharedStatus().isAvailable()) {
+                    QMessageBox::information(this, "Create Set Build",
+                                             m_applicationServices.sharedStatus().message);
+                    return;
+                }
                 if (!m_workspaceContext.hasCurrentWorkspace()) {
                     QMessageBox::warning(this, "Create Set Build",
                                          "Select a workspace before creating a Set Build.");
@@ -295,6 +305,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             &MinifigsCatalogWidget::createBuildRequested,
             this,
             [this](int minifigCatalogId, const QString& buildName) {
+                if (!m_applicationServices.sharedStatus().isAvailable()) {
+                    QMessageBox::information(this, "Create Minifig Build",
+                                             m_applicationServices.sharedStatus().message);
+                    return;
+                }
                 if (!m_workspaceContext.hasCurrentWorkspace()) {
                     QMessageBox::warning(this, "Create Minifig Build",
                                          "Select a workspace before creating a Minifig Build.");
@@ -322,6 +337,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             &PartsCatalogWidget::addPartToInventoryRequested,
             this,
             [this](int partId) {
+                if (!m_applicationServices.sharedStatus().isAvailable()) {
+                    QMessageBox::information(this, "Add Inventory",
+                                             m_applicationServices.sharedStatus().message);
+                    return;
+                }
                 if (!m_workspaceContext.hasCurrentWorkspace()) {
                     QMessageBox::warning(this,
                                          "BrickSuite",
@@ -372,6 +392,15 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     m_tabWidget->addTab(m_buildsWidget, "Builds");
 
+    const ApplicationServiceStatus sharedStatus = m_applicationServices.sharedStatus();
+    if (!sharedStatus.isAvailable()) {
+        m_storageWidget->setEnabled(false);
+        m_storageWidget->setToolTip(sharedStatus.message);
+        const int storageIndex = m_tabWidget->indexOf(m_storageWidget);
+        if (storageIndex >= 0)
+            m_tabWidget->setTabText(storageIndex, "Storage (Host unavailable)");
+    }
+
     connect(m_storageWidget, &StorageWidget::storageLocationsChanged,
             m_myCollectionWidget, &MyCollectionWidget::refresh);
 
@@ -395,10 +424,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     // Slowly populate actual-color images for
     // Part/Color combinations in My Loose Inventory.
     //
-    m_backgroundPartColorImageCacheService
-        = new BackgroundPartColorImageCacheService(m_workspaceContext, this);
+    if (sharedStatus.isAvailable()) {
+        m_backgroundPartColorImageCacheService
+            = new BackgroundPartColorImageCacheService(m_workspaceContext, this);
 
-    connect(m_backgroundPartColorImageCacheService,
+        connect(m_backgroundPartColorImageCacheService,
             &BackgroundPartColorImageCacheService::partColorImageCached,
             m_myInventoryWidget,
             &MyInventoryWidget::updatePartColorImage);
@@ -408,12 +438,13 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     // inventory changes so newly added/imported Part+Color combinations are
     // picked up without requiring an application restart.
     //
-    connect(m_myInventoryWidget,
+        connect(m_myInventoryWidget,
             &MyInventoryWidget::inventoryChanged,
             m_backgroundPartColorImageCacheService,
             &BackgroundPartColorImageCacheService::rebuildQueue);
 
-    m_backgroundPartColorImageCacheService->start();
+        m_backgroundPartColorImageCacheService->start();
+    }
 
     //
     // Restore provider availability immediately from previously verified
@@ -428,7 +459,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     // File menu
     auto* fileMenu = menuBar()->addMenu("File");
 
-    m_backupDatabaseAction = fileMenu->addAction("Backup Database...");
+    m_backupDatabaseAction = fileMenu->addAction(
+        sharedStatus.isAvailable() ? "Backup Database..." : "Back Up This Device Database...");
 
     m_restoreDatabaseAction = fileMenu->addAction("Restore Database...");
 
@@ -613,7 +645,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     auto* settingsAction = editMenu->addAction("Settings...");
 
     connect(settingsAction, &QAction::triggered, this, [this]() {
-        SettingsDialog dialog(m_workspaceContext, m_automaticBackupService, this);
+        SettingsDialog dialog(m_workspaceContext, m_applicationServices.workspaces(),
+                              m_automaticBackupService, this);
         const int initialResultsPerPage = UserSettings::instance().resultsPerPage();
 
         connect(&dialog, &SettingsDialog::settingsChanged, this,
@@ -663,6 +696,10 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     toolsMenu->addSeparator();
 
     auto* referenceDataAction = toolsMenu->addAction("Lists && Reference Data...");
+    if (!sharedStatus.isAvailable()) {
+        referenceDataAction->setEnabled(false);
+        referenceDataAction->setToolTip(sharedStatus.message);
+    }
     connect(referenceDataAction, &QAction::triggered, this, [this]() {
         ReferenceDataDialog dialog(this);
         connect(&dialog, &ReferenceDataDialog::manufacturersChanged, this, [this]() {
@@ -1887,6 +1924,26 @@ void MainWindow::loadWorkspaces()
 {
     m_workspaceList->clear();
 
+    const ApplicationServiceStatus serviceStatus = m_applicationServices.workspaces().status();
+    if (!serviceStatus.isAvailable()) {
+        m_workspaceContext.clearCurrentWorkspace();
+        m_workspaceList->addItem(serviceStatus.message);
+        m_workspaceList->setEnabled(false);
+        m_nameEdit->clear();
+        m_descriptionEdit->clear();
+        m_nameEdit->setEnabled(false);
+        m_descriptionEdit->setEnabled(false);
+        m_addButton->setEnabled(false);
+        m_updateButton->setEnabled(false);
+        statusBar()->showMessage(serviceStatus.message);
+        return;
+    }
+
+    m_workspaceList->setEnabled(true);
+    m_nameEdit->setEnabled(true);
+    m_descriptionEdit->setEnabled(true);
+    m_addButton->setEnabled(true);
+
     const QList<Workspace> workspaces = m_applicationServices.workspaces().list();
 
     const int defaultWorkspaceId = UserSettings::instance().defaultWorkspaceId();
@@ -1954,6 +2011,11 @@ void MainWindow::workspaceSelected()
 
 void MainWindow::updateWorkspace()
 {
+    if (!m_applicationServices.workspaces().status().isAvailable()) {
+        QMessageBox::information(this, "Edit Workspace",
+                                 m_applicationServices.workspaces().status().message);
+        return;
+    }
     QListWidgetItem* item = m_workspaceList->currentItem();
 
     if (!item) {
@@ -2011,6 +2073,11 @@ void MainWindow::updateWorkspace()
 
 void MainWindow::addWorkspace()
 {
+    if (!m_applicationServices.workspaces().status().isAvailable()) {
+        QMessageBox::information(this, "Add Workspace",
+                                 m_applicationServices.workspaces().status().message);
+        return;
+    }
     const QString name = m_nameEdit->text().trimmed();
 
     const QString description = m_descriptionEdit->toPlainText().trimmed();

@@ -23,8 +23,10 @@
 #include <QDialog>
 
 #include "../../api/ApiConnectionStatus.h"
+#include "../../services/application/SharedDataSource.h"
 
 class WorkspaceContext;
+class WorkspaceApplicationService;
 class QComboBox;
 class QDialogButtonBox;
 class QLineEdit;
@@ -45,6 +47,7 @@ class SettingsDialog : public QDialog
 
 public:
     explicit SettingsDialog(WorkspaceContext& workspaceContext,
+                            WorkspaceApplicationService& workspaceService,
                             AutomaticBackupService* automaticBackupService = nullptr,
                             QWidget* parent = nullptr);
 
@@ -82,6 +85,7 @@ private:
     void loadWorkspaces();
 
     WorkspaceContext& m_workspaceContext;
+    WorkspaceApplicationService& m_workspaceService;
     AutomaticBackupService* m_automaticBackupService = nullptr;
 
     QTabWidget* m_tabWidget = nullptr;
@@ -89,6 +93,8 @@ private:
     // General
     QComboBox* m_resultsPerPageCombo = nullptr;
     QComboBox* m_defaultWorkspaceCombo = nullptr;
+    QComboBox* m_sharedDataSourceCombo = nullptr;
+    SharedDataSource m_originalSharedDataSource = SharedDataSource::ThisComputer;
 
     // Appearance
     QComboBox* m_themeCombo = nullptr;

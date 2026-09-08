@@ -473,7 +473,8 @@ BuildsWidget::BuildsWidget(
     });
 
     loadColors();
-    loadManufacturers();
+    if (m_buildService.status().isAvailable())
+        loadManufacturers();
 
     workspaceChanged(m_workspaceContext.currentWorkspaceId());
 
@@ -522,6 +523,16 @@ void BuildsWidget::reloadManufacturers()
 
 void BuildsWidget::loadBuilds()
 {
+    const ApplicationServiceStatus serviceStatus = m_buildService.status();
+    if (!serviceStatus.isAvailable()) {
+        m_selectedBuildId = 0;
+        m_buildsTable->setRowCount(0);
+        m_requirementsTable->setRowCount(0);
+        m_statusLabel->setText(serviceStatus.message);
+        updateUiState();
+        updateRequirementUiState();
+        return;
+    }
     m_buildsTable->setRowCount(0);
 
     if (!m_workspaceContext.hasCurrentWorkspace()) {
@@ -1302,7 +1313,8 @@ void BuildsWidget::addBuild()
 
 void BuildsWidget::updateUiState()
 {
-    const bool enabled = m_workspaceContext.hasCurrentWorkspace();
+    const bool enabled = m_buildService.status().isAvailable()
+        && m_workspaceContext.hasCurrentWorkspace();
 
     m_typeCombo->setEnabled(enabled);
 

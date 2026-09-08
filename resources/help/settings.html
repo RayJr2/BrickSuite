@@ -36,6 +36,16 @@ Application Settings
 automatically when the application starts. When only one Workspace exists, BrickSuite can select
 it automatically.</p>
 
+<p><b>Shared Data Source</b> controls where workshop data is owned. <b>This Computer</b> uses this
+device for both local reference catalogs and Workspaces, Storage, Inventory, Builds, and Collection.
+<b>BrickSuite Host</b> continues using this device's Rebrickable catalogs, compositions, images, and
+built-in Part Reference while shared workshop data comes from a Host. Changing this setting takes
+effect after restarting BrickSuite; it never copies, merges, or deletes either source's data.</p>
+
+<div class="note"><b>Development status:</b> Host connectivity is not configured in this phase.
+Selecting BrickSuite Host therefore leaves shared workshop views visibly unavailable after restart,
+while local catalog browsing and Rebrickable file imports remain available.</div>
+
 <div class="note"><b>Changing the Default Workspace does not move or combine inventory.</b>
 It changes the Workspace selected by default; each Workspace continues to maintain its own data.</div>
 
