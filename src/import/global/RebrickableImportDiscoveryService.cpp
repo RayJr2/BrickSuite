@@ -202,9 +202,9 @@ void RebrickableImportDiscoveryService::applyDependencies(RebrickableImportPlan&
         if (!descriptor)
             continue;
 
-        if (descriptor->requiresSchema33 || !descriptor->importerImplemented) {
+        if (!descriptor->importerImplemented) {
             entry.status = RebrickableImportStatus::NotImplemented;
-            entry.message = QStringLiteral("Source is valid; persistence is planned for a later M25 phase.");
+            entry.message = QStringLiteral("Source is valid, but this dataset is not supported by this BrickSuite version.");
             continue;
         }
 

@@ -10,7 +10,6 @@ struct RebrickableDatasetDescriptor {
     QVector<RebrickableDatasetId> hardDependencies;
     int importOrder = 0;
     bool importerImplemented = false;
-    bool requiresSchema33 = false;
     bool exactHeaders = false;
 };
 

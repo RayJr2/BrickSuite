@@ -16,6 +16,38 @@ img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px au
 
 <h1>Rebrickable Import</h1>
 
+<h2>Import Reference Catalog and Composition Data</h2>
+
+<p>Choose <b>Tools → Import Rebrickable Data Files...</b> to scan a folder containing official
+Rebrickable <code>.csv</code> or <code>.csv.zip</code> bulk downloads. BrickSuite recognizes all
+twelve datasets: Themes, Colors, Part Categories, Parts, Elements, Part Relationships, Sets,
+Minifigs, Inventories, Inventory Parts, Inventory Minifigs, and Inventory Sets.</p>
+
+<p>The scan validates discovered files and their dependencies before enabling Import. Missing
+datasets are optional for a partial run; invalid or ambiguous files require attention. Large-file
+work runs on a worker-owned database connection with visible progress and cooperative cancellation.
+Each dataset has its own transaction, so a failed or cancelled dataset rolls back without undoing
+earlier datasets that already completed successfully.</p>
+
+<p>Rebrickable Inventories and their child files provide historical Set revisions, Part/Color
+composition, included Minifigs, and contained Sets. After a complete composition run, BrickSuite
+selects the highest active Rebrickable revision for each Set as preferred. Set Details and new Set
+Builds use that preferred local composition when available, with the existing Catalog Parts List
+as fallback. Spare rows remain catalog metadata but are excluded from required Build pieces.
+Existing Builds remain unchanged snapshots.</p>
+
+<p>Minifig-owned Inventory Parts populate the local Minifig parts list. Set and Minifig Details
+display available local composition automatically without requesting the API. Their
+<b>Get Parts from Rebrickable...</b> and <b>Import Parts List...</b> buttons remain available for
+explicit refresh or replacement. Elements preserve exact Rebrickable Element ID to Part-and-Color
+identity mappings; they do not create alternate Part numbers.</p>
+
+<div class="note"><b>Data source:</b> Rebrickable supplies the imported reference and composition
+data. Catalog data describes brick identities and model contents; it does not add physical pieces
+to My Inventory.</div>
+
+<h2>Import or Compare Loose Inventory</h2>
+
 <p>BrickSuite can use an owned-parts or parts-list CSV exported from Rebrickable to add, replace,
 subtract, or compare loose inventory in <a href="inventory.html">My Inventory</a>. Every operation
 is previewed first so you can review its effect before changing BrickSuite inventory.</p>

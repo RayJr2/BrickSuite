@@ -65,7 +65,7 @@ GlobalRebrickableImportDialog::GlobalRebrickableImportDialog(QWidget* parent)
 
     m_progressLabel = new QLabel(QStringLiteral("No import is running."), this);
     m_summaryLabel = new QLabel(
-        QStringLiteral("M25.1 provides discovery and validation only. Dataset import will be enabled in a later M25 phase."),
+        QStringLiteral("Select a folder to discover and validate available Rebrickable datasets."),
         this);
     m_summaryLabel->setWordWrap(true);
     layout->addWidget(m_progressLabel);

@@ -81,7 +81,7 @@ void RebrickableImportPlanController::completeDataset(
                            .arg(counters.selfReferencesIgnored));
     if (counters.replaced) details.append(QStringLiteral("%1 replaced").arg(counters.replaced));
     if (counters.preferredChanged)
-        details.append(QStringLiteral("%1 preferred flags changed")
+        details.append(QStringLiteral("%1 preferred revision flag state changes")
                            .arg(counters.preferredChanged));
     if (counters.setInventoryRows)
         details.append(QStringLiteral("%1 Set-inventory rows processed")

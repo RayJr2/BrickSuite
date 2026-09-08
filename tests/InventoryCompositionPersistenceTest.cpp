@@ -33,6 +33,15 @@ int scalar(QSqlDatabase& db, const QString& sql)
 { QSqlQuery q(db); return q.exec(sql)&&q.next()?q.value(0).toInt():-1; }
 bool exec(QSqlDatabase& db, const QString& sql)
 { QSqlQuery q(db); if(q.exec(sql))return true;qCritical()<<q.lastError().text();return false; }
+bool databaseHealthy(QSqlDatabase& db)
+{
+    QSqlQuery integrity(db);
+    if(!integrity.exec("PRAGMA integrity_check")||!integrity.next()
+        ||integrity.value(0).toString().compare("ok",Qt::CaseInsensitive)!=0
+        ||integrity.next())return false;
+    QSqlQuery foreignKeys(db);
+    return foreignKeys.exec("PRAGMA foreign_key_check")&&!foreignKeys.next();
+}
 }
 
 int main(int argc, char** argv)
@@ -194,6 +203,10 @@ int main(int argc, char** argv)
         &&scalar(db,"SELECT COUNT(*) FROM set_inventory_part")==before+1200,"Large streamed fixture failed."))return 1;
     qInfo()<<"Large synthetic Inventory Parts elapsed ms:" << largeTimer.elapsed();
     if(!require(scalar(db,"SELECT COUNT(*) FROM set_catalog_part")==legacySetParts,"Legacy composition changed."))return 1;
+    if(!require(databaseHealthy(db)
+        &&scalar(db,"SELECT COUNT(*) FROM set_inventory_revision WHERE provider='Rebrickable' AND is_preferred=1 AND is_active=0")==0
+        &&scalar(db,"SELECT COUNT(*) FROM (SELECT set_catalog_id,COUNT(*) n FROM set_inventory_revision WHERE provider='Rebrickable' AND is_preferred=1 GROUP BY set_catalog_id HAVING n>1)")==0,
+        "Final inventory revision/composition integrity validation failed."))return 1;
 
     // Simulate an existing schema-32 database and verify its data survives the sequential migration.
     if(!require(exec(db,"UPDATE schema_version SET version=32"),"Unable to stage schema 32."))return 1;
