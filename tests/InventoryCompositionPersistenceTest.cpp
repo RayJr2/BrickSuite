@@ -42,12 +42,12 @@ int main(int argc, char** argv)
     const QString connection="inventory-composition-test";
     QSqlDatabase db=QSqlDatabase::addDatabase("QSQLITE",connection);
     db.setDatabaseName(directory.filePath("test.db"));
-    if(!require(db.open()&&DatabaseSchema::initialize(db),"Fresh schema 33 failed."))return 1;
-    if(!require(scalar(db,"SELECT version FROM schema_version")==33,"Schema is not 33."))return 1;
+    if(!require(db.open()&&DatabaseSchema::initialize(db),"Fresh schema 34 failed."))return 1;
+    if(!require(scalar(db,"SELECT version FROM schema_version")==34,"Schema is not 34."))return 1;
     const QStringList tables={"set_inventory_revision","set_inventory_part","set_inventory_minifig","set_inventory_contained_set"};
     for(const QString& table:tables)if(!require(db.tables().contains(table),"Missing table "+table))return 1;
     if(!require(exec(db,"INSERT INTO set_catalog(set_number,name,year,theme_id,num_parts,image_url,created_utc,modified_utc) VALUES('s1','One',2026,1,2,'','n','n'),('s2','Two',2026,1,1,'','n','n')")
-        &&exec(db,"INSERT INTO part(part_number,name,rebrickable_part_id,is_active,created_utc,modified_utc,material) VALUES('p1','Part','p1',1,'n','n','Plastic')")
+        &&exec(db,"INSERT INTO part(part_number,name,rebrickable_part_id,is_active,created_utc,modified_utc,material) VALUES('p1','Part','p1',1,'n','n','Plastic'),('p2','Manual Part','p2',1,'n','n','Plastic')")
         &&exec(db,"INSERT INTO color(name,rgb,is_transparent,rebrickable_id,created_utc,modified_utc) VALUES('Red','ff0000',0,5,'n','n')")
         &&exec(db,"INSERT INTO minifig_catalog(name,num_parts,image_url,is_active,created_utc,modified_utc) VALUES('Fig',1,'',1,'n','n')")
         &&exec(db,"INSERT INTO minifig_external_identifier(minifig_catalog_id,provider,external_id,source,is_active,created_utc,modified_utc) SELECT id,'Rebrickable','fig-1','test',1,'n','n' FROM minifig_catalog"),"Seed failed."))return 1;
@@ -78,16 +78,33 @@ int main(int argc, char** argv)
     if(!require(exec(db,"UPDATE minifig_external_identifier SET is_active=0 WHERE provider='Rebrickable' AND external_id='s2'"),"Unable to retire ambiguous test identity."))return 1;
 
     const QString parts=directory.filePath("inventory_parts.csv");
-    writeFile(parts,"inventory_id,part_num,color_id,quantity,is_spare,img_url\n10,p1,5,2,f,https://x/one.png\n10,p1,5,1,t,\n11,p1,5,3,false,https://x/two.png\n20,p1,5,1,0,\n30,not-a-set-part,999,1,f,\n");
+    if(!require(exec(db,"INSERT INTO minifig_catalog_part(minifig_catalog_id,part_id,color_id,quantity_required,is_spare,provider,source,created_utc,modified_utc) SELECT m.id,p.id,c.id,2,0,'Manual','test','n','n' FROM minifig_catalog m,part p,color c WHERE m.name='Fig' AND p.part_number='p2' AND c.rebrickable_id=5"),"Unable to seed manual Minifig composition."))return 1;
+    writeFile(parts,"inventory_id,part_num,color_id,quantity,is_spare,img_url\n10,p1,5,2,f,https://x/one.png\n10,p1,5,1,t,\n11,p1,5,3,false,https://x/two.png\n20,p1,5,1,0,\n30,p1,5,4,t,\n");
     result=importer.importParts(parts,db);
     if(!require(result.success&&result.rowsRead==5&&result.setInventoryRows==4
-        &&result.ignoredMinifigPartRows==1
-        &&scalar(db,"SELECT COUNT(*) FROM set_inventory_part")==4,"Inventory Parts ownership classification failed."))return 1;
+        &&result.minifigPartRows==1
+        &&scalar(db,"SELECT COUNT(*) FROM set_inventory_part")==4
+        &&scalar(db,"SELECT COUNT(*) FROM minifig_catalog_part WHERE provider='Rebrickable' AND quantity_required=4 AND is_spare=1")==1
+        &&scalar(db,"SELECT COUNT(*) FROM minifig_catalog_part WHERE provider='Manual'")==1,"Inventory Parts ownership classification/persistence failed."))return 1;
     if(!require(scalar(db,"SELECT COUNT(*) FROM set_inventory_part WHERE is_spare=1")==1
         &&scalar(db,"SELECT COUNT(*) FROM set_inventory_part WHERE image_url='https://x/two.png'")==1,"Spare/image metadata failed."))return 1;
     result=importer.importParts(parts,db);
     if(!require(result.success&&result.inserted==0&&result.updated==0
-        &&result.unchanged==4&&result.replaced==0&&result.ignoredMinifigPartRows==1,"Inventory Parts reimport was not idempotent."))return 1;
+        &&result.unchanged==5&&result.replaced==0&&result.minifigPartRows==1,"Inventory Parts reimport was not idempotent."))return 1;
+    const QString invalidParts=directory.filePath("invalid-inventory-parts.csv");
+    writeFile(invalidParts,"inventory_id,part_num,color_id,quantity,is_spare,img_url\n10,p1,5,99,f,\n30,p1,5,88,t,\n20,missing,5,1,f,\n");
+    if(!require(!importer.importParts(invalidParts,db).success
+        &&scalar(db,"SELECT quantity FROM set_inventory_part WHERE set_inventory_revision_id=(SELECT id FROM set_inventory_revision WHERE external_inventory_id='10') AND is_spare=0")==2
+        &&scalar(db,"SELECT quantity_required FROM minifig_catalog_part WHERE provider='Rebrickable'")==4,
+        "Invalid Inventory Parts source did not roll back Set and Minifig changes atomically."))return 1;
+    if(!require(exec(db,"WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<512) INSERT INTO part(part_number,name,rebrickable_part_id,is_active,created_utc,modified_utc,material) SELECT 'bulk'||x,'Bulk','bulk'||x,1,'n','n','Plastic' FROM n"),"Unable to seed cancellation Parts."))return 1;
+    QByteArray cancellationCsv("inventory_id,part_num,color_id,quantity,is_spare,img_url\n");
+    for(int row=0;row<1024;++row)cancellationCsv+=QStringLiteral("%1,bulk%2,5,1,f,\n").arg((row&1)?"30":"10").arg((row/2)+1).toUtf8();
+    const QString cancellationParts=directory.filePath("cancelled-inventory-parts.csv");writeFile(cancellationParts,cancellationCsv);
+    const int setRowsBeforeCancel=scalar(db,"SELECT COUNT(*) FROM set_inventory_part"),minifigRowsBeforeCancel=scalar(db,"SELECT COUNT(*) FROM minifig_catalog_part");
+    RebrickableImportCancellation midImportCancellation;
+    const auto cancelledResult=importer.importParts(cancellationParts,db,&midImportCancellation,[&](qint64 rows){if(rows>=1024)midImportCancellation.requestCancellation();});
+    if(!require(!cancelledResult.success&&setRowsBeforeCancel==scalar(db,"SELECT COUNT(*) FROM set_inventory_part")&&minifigRowsBeforeCancel==scalar(db,"SELECT COUNT(*) FROM minifig_catalog_part"),"Cancellation did not roll back both Set and Minifig composition."))return 1;
     RebrickableInventoryCompositionImporter partialImporter;
     const auto partialResult=partialImporter.importParts(parts,db);
     if(!require(!partialResult.success
@@ -110,7 +127,7 @@ int main(int argc, char** argv)
     result=importer.selectPreferredRevisions(db);
     const int s1=scalar(db,"SELECT id FROM set_catalog WHERE set_number='s1'");
     const int s2=scalar(db,"SELECT id FROM set_catalog WHERE set_number='s2'");
-    if(!require(result.success&&scalar(db,"SELECT version FROM set_inventory_revision WHERE set_catalog_id=(SELECT id FROM set_catalog WHERE set_number='s1') AND is_preferred=1")==2,"Highest revision was not preferred."))return 1;
+    if(!require(result.success&&result.preferredChanged==2&&scalar(db,"SELECT version FROM set_inventory_revision WHERE set_catalog_id=(SELECT id FROM set_catalog WHERE set_number='s1') AND is_preferred=1")==2,"Highest revision or initial preferred-flag counter was incorrect."))return 1;
     if(!require(importer.selectPreferredRevisions(db).preferredChanged==0,"Preferred selection was not idempotent."))return 1;
     QSqlQuery constraint(db);
     constraint.prepare("INSERT INTO set_inventory_revision(provider,external_inventory_id,set_catalog_id,version,is_active,is_preferred,created_utc,modified_utc) VALUES('Rebrickable',:external,:set_id,:version,1,:preferred,'n','n')");
@@ -126,10 +143,12 @@ int main(int argc, char** argv)
         "Unable to seed another provider's composition."))return 1;
     writeFile(parts,"inventory_id,part_num,color_id,quantity,is_spare,img_url\n10,p1,5,4,f,https://x/replaced.png\n");
     result=importer.importParts(parts,db);
-    if(!require(result.success&&result.updated==1&&result.replaced==1
+    if(!require(result.success&&result.updated==1&&result.replaced==2
         &&scalar(db,"SELECT COUNT(*) FROM set_inventory_part WHERE set_inventory_revision_id=(SELECT id FROM set_inventory_revision WHERE provider='Rebrickable' AND external_inventory_id='10')")==1
         &&scalar(db,"SELECT COUNT(*) FROM set_inventory_part WHERE set_inventory_revision_id=(SELECT id FROM set_inventory_revision WHERE provider='OtherProvider' AND external_inventory_id='other-1')")==1
-        &&scalar(db,"SELECT COUNT(*) FROM set_inventory_part WHERE set_inventory_revision_id=(SELECT id FROM set_inventory_revision WHERE provider='Rebrickable' AND external_inventory_id='11')")==1,
+        &&scalar(db,"SELECT COUNT(*) FROM set_inventory_part WHERE set_inventory_revision_id=(SELECT id FROM set_inventory_revision WHERE provider='Rebrickable' AND external_inventory_id='11')")==1
+        &&scalar(db,"SELECT COUNT(*) FROM minifig_catalog_part WHERE provider='Rebrickable'")==0
+        &&scalar(db,"SELECT COUNT(*) FROM minifig_catalog_part WHERE provider='Manual'")==1,
         "Affected-revision replacement was not scoped by revision/provider."))return 1;
     SetInventoryRevisionRepository repository(db);
     const auto revisions=repository.revisionsForSet(s1,"Rebrickable");
@@ -180,9 +199,9 @@ int main(int argc, char** argv)
     if(!require(exec(db,"UPDATE schema_version SET version=32"),"Unable to stage schema 32."))return 1;
     for(const QString& table:QStringList{"set_inventory_part","set_inventory_minifig","set_inventory_contained_set","set_inventory_revision"})
         if(!require(exec(db,"DROP TABLE "+table),"Unable to stage schema 32 tables."))return 1;
-    if(!require(DatabaseSchema::initialize(db)&&scalar(db,"SELECT version FROM schema_version")==33
-        &&scalar(db,"SELECT COUNT(*) FROM set_catalog")==2,"Schema 32 to 33 migration failed or lost data."))return 1;
-    if(!require(DatabaseSchema::initialize(db),"Schema 33 reinitialization was not idempotent."))return 1;
+    if(!require(DatabaseSchema::initialize(db)&&scalar(db,"SELECT version FROM schema_version")==34
+        &&scalar(db,"SELECT COUNT(*) FROM set_catalog")==2,"Schema 32 to 34 migration failed or lost data."))return 1;
+    if(!require(DatabaseSchema::initialize(db),"Schema 34 reinitialization was not idempotent."))return 1;
     db.close(); db=QSqlDatabase(); QSqlDatabase::removeDatabase(connection);
     qInfo()<<"Inventory composition persistence tests passed.";return 0;
 }

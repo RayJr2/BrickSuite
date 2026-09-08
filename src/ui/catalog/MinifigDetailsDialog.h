@@ -45,6 +45,7 @@ private:
     QLabel* m_providerLabel = nullptr;
     QLabel* m_sourceLabel = nullptr;
     QLabel* m_compositionSummaryLabel = nullptr;
+    QLabel* m_compositionSourceLabel = nullptr;
     QTableWidget* m_compositionTable = nullptr;
     QPushButton* m_importPartsButton = nullptr;
     QPushButton* m_getPartsButton = nullptr;

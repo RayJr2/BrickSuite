@@ -21,7 +21,7 @@ public:
         qint64 preferredChanged = 0;
         qint64 setInventoryRows = 0;
         qint64 recognizedMinifigInventories = 0;
-        qint64 ignoredMinifigPartRows = 0;
+        qint64 minifigPartRows = 0;
         QString message;
     };
 
@@ -43,4 +43,5 @@ private:
     // True identifies a Set inventory; false identifies a Minifig inventory.
     // This exact provider ownership map lives only for one global import run.
     QHash<QString, bool> m_inventoryOwners;
+    QHash<QString, int> m_minifigInventoryOwners;
 };

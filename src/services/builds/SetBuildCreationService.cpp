@@ -5,7 +5,7 @@
 #include "../../models/BuildRequirement.h"
 #include "../../repositories/BuildRepository.h"
 #include "../../repositories/BuildRequirementRepository.h"
-#include "../../repositories/SetCatalogPartRepository.h"
+#include "../../repositories/EffectiveSetCompositionRepository.h"
 #include "../../repositories/SetCatalogRepository.h"
 #include "../../repositories/WorkspaceRepository.h"
 
@@ -40,11 +40,16 @@ SetBuildCreationService::Result SetBuildCreationService::create(
         return result;
     }
 
-    QList<SetCatalogPart> requiredParts;
-    const QList<SetCatalogPart> composition = SetCatalogPartRepository().listForSet(setCatalogId);
-    for (const SetCatalogPart& part : composition) {
-        if (part.isSpare)
-            result.excludedSparePieces += part.quantityRequired;
+    QList<EffectiveSetCompositionPart> requiredParts;
+    const auto composition = EffectiveSetCompositionRepository(database).forSet(setCatalogId, true);
+    if (!composition.success) {
+        database.rollback();
+        result.message = QStringLiteral("Unable to load effective Set composition: ") + composition.message;
+        return result;
+    }
+    for (const EffectiveSetCompositionPart& part : composition.parts) {
+        if (part.spare)
+            result.excludedSparePieces += part.quantity;
         else
             requiredParts.append(part);
     }
@@ -69,14 +74,16 @@ SetBuildCreationService::Result SetBuildCreationService::create(
     }
 
     BuildRequirementRepository requirements;
-    for (const SetCatalogPart& part : requiredParts) {
+    // Both persisted composition sources guarantee one logical row per exact
+    // Part+Color+spare identity, so no cross-row aggregation is necessary.
+    for (const EffectiveSetCompositionPart& part : requiredParts) {
         BuildRequirement requirement;
         requirement.setBuildId(build.id());
         requirement.setPartId(part.partId);
         requirement.setColorId(part.colorId);
         requirement.setSubstitutePartId(0);
         requirement.setSubstituteColorId(0);
-        requirement.setQuantityRequired(part.quantityRequired);
+        requirement.setQuantityRequired(part.quantity);
         requirement.setQuantityPulled(0);
         requirement.setQuantityReleased(0);
         requirement.setIsSpare(false);
@@ -89,7 +96,7 @@ SetBuildCreationService::Result SetBuildCreationService::create(
             return result;
         }
         ++result.requirementRows;
-        result.requiredPieces += part.quantityRequired;
+        result.requiredPieces += part.quantity;
     }
 
     if (!database.commit()) {
@@ -102,6 +109,10 @@ SetBuildCreationService::Result SetBuildCreationService::create(
     result.message = QStringLiteral("Set Build created.");
     qInfo() << "Set Build created from catalog composition."
             << "BuildId:" << build.id() << "SetCatalogId:" << setCatalogId
-            << "RequirementRows:" << result.requirementRows;
+            << "RequirementRows:" << result.requirementRows
+            << "Source:" << (composition.source==EffectiveSetCompositionSource::PreferredRebrickableRevision
+                                ? QStringLiteral("PreferredRebrickableRevision")
+                                : QStringLiteral("LegacyCatalogFallback"))
+            << "Revision:" << composition.revisionId << composition.revisionVersion;
     return result;
 }

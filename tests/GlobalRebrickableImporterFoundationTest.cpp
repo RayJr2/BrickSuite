@@ -248,12 +248,13 @@ int main(int argc, char** argv)
     writeFile(executionSources.filePath("colors.csv"), "id,name,rgb,is_trans\n1,Black,000000,false\n");
     writeFile(executionSources.filePath("part_categories.csv"), "id,name\n1,Bricks\n");
     writeFile(executionSources.filePath("parts.csv"), "part_num,name,part_cat_id,part_material\np1,Part One,1,Plastic\np2,Part Two,1,Plastic\n");
+    writeFile(executionSources.filePath("elements.csv"), "element_id,part_num,color_id,design_id\ne1,p1,1,d1\ne2,p1,1,d1\n");
     writeFile(executionSources.filePath("part_relationships.csv"),
               "rel_type,child_part_num,parent_part_num\nA,p2,p1\nR,p1,p1\n");
     writeFile(executionSources.filePath("sets.csv"), "set_num,name,year,theme_id,num_parts,img_url\n1-1,Set One,2026,2,2,https://example.invalid/set.png\n");
     writeFile(executionSources.filePath("minifigs.csv"), "fig_num,name,num_parts,img_url\nfig-1,Figure One,2,https://example.invalid/fig.png\n");
     writeFile(executionSources.filePath("inventories.csv"), "id,version,set_num\n100,1,1-1\n200,1,fig-1\n");
-    writeFile(executionSources.filePath("inventory_parts.csv"), "inventory_id,part_num,color_id,quantity,is_spare,img_url\n100,p1,1,2,f,\n200,not-a-set-part,999,1,f,\n");
+    writeFile(executionSources.filePath("inventory_parts.csv"), "inventory_id,part_num,color_id,quantity,is_spare,img_url\n100,p1,1,2,f,\n200,p2,1,1,t,\n");
     writeFile(executionSources.filePath("inventory_minifigs.csv"), "inventory_id,fig_num,quantity\n100,fig-1,1\n");
     writeFile(executionSources.filePath("inventory_sets.csv"), "inventory_id,set_num,quantity\n100,1-1,1\n");
     QByteArray cancelledParts("part_num,name,part_cat_id,part_material\n");
@@ -274,22 +275,26 @@ int main(int argc, char** argv)
                     executionSources.filePath("cancelled-parts.csv"), database, &cancelled);
                 if (cancelledResult.success) return false;
                 QSqlQuery counts(database);
-                return counts.exec("SELECT (SELECT COUNT(*) FROM theme_external_identifier WHERE provider='Rebrickable'), (SELECT COUNT(*) FROM part), (SELECT COUNT(*) FROM part_relationship WHERE source='Rebrickable'), (SELECT COUNT(*) FROM set_catalog), (SELECT COUNT(*) FROM minifig_catalog), (SELECT COUNT(*) FROM set_inventory_revision WHERE is_preferred=1), (SELECT COUNT(*) FROM set_inventory_part), (SELECT COUNT(*) FROM set_inventory_minifig), (SELECT COUNT(*) FROM set_inventory_contained_set)")
+                return counts.exec("SELECT (SELECT COUNT(*) FROM theme_external_identifier WHERE provider='Rebrickable'), (SELECT COUNT(*) FROM part), (SELECT COUNT(*) FROM part_element_identifier WHERE provider='Rebrickable'), (SELECT COUNT(*) FROM part_relationship WHERE source='Rebrickable'), (SELECT COUNT(*) FROM set_catalog), (SELECT COUNT(*) FROM minifig_catalog), (SELECT COUNT(*) FROM set_inventory_revision WHERE is_preferred=1), (SELECT COUNT(*) FROM set_inventory_part), (SELECT COUNT(*) FROM set_inventory_minifig), (SELECT COUNT(*) FROM set_inventory_contained_set), (SELECT COUNT(*) FROM minifig_theme WHERE provider='Rebrickable'), (SELECT COUNT(*) FROM minifig_catalog_part WHERE provider='Rebrickable')")
                     && counts.next() && counts.value(0).toInt()==2 && counts.value(1).toInt()==2
-                    && counts.value(2).toInt()==1 && counts.value(3).toInt()==1 && counts.value(4).toInt()==1
-                    && counts.value(5).toInt()==1 && counts.value(6).toInt()==1
-                    && counts.value(7).toInt()==1 && counts.value(8).toInt()==1;
+                    && counts.value(2).toInt()==2 && counts.value(3).toInt()==1
+                    && counts.value(4).toInt()==1 && counts.value(5).toInt()==1
+                    && counts.value(6).toInt()==1 && counts.value(7).toInt()==1
+                    && counts.value(8).toInt()==1 && counts.value(9).toInt()==1
+                    && counts.value(10).toInt()==1 && counts.value(11).toInt()==1;
             }, executionError);
     });
     importThread->start(); importThread->wait(); delete importThread;
-    if (!require(executionSuccess, "Synthetic seven-dataset import failed: " + executionError)) return 1;
+    if (!require(executionSuccess, "Synthetic twelve-dataset import failed: " + executionError)) return 1;
     for (int dataset = int(RebrickableDatasetId::Themes); dataset <= int(RebrickableDatasetId::InventorySets); ++dataset) {
-        if (RebrickableDatasetId(dataset) == RebrickableDatasetId::Elements)
-            continue;
         const auto status = entryFor(importPlan, RebrickableDatasetId(dataset)).status;
         if (!require(status == RebrickableImportStatus::Imported || status == RebrickableImportStatus::NoChanges,
                      "An implemented dataset did not complete.")) return 1;
     }
+    const auto& elementsResult = entryFor(importPlan, RebrickableDatasetId::Elements);
+    if (!require(elementsResult.counters.rowsRead == 2
+                     && elementsResult.counters.inserted == 2,
+                 "Elements counters were not included in the global result.")) return 1;
     if (!require(progressEvents >= 14, "Global import did not publish validation/import progress.")) return 1;
     const auto& relationshipResult = entryFor(importPlan, RebrickableDatasetId::PartRelationships);
     if (!require(relationshipResult.counters.rowsRead == 2
@@ -307,10 +312,10 @@ int main(int argc, char** argv)
     const auto& inventoryPartsResult = entryFor(importPlan, RebrickableDatasetId::InventoryParts);
     if (!require(inventoryPartsResult.counters.rowsRead == 2
                      && inventoryPartsResult.counters.setInventoryRows == 1
-                     && inventoryPartsResult.counters.ignoredMinifigPartRows == 1
+                     && inventoryPartsResult.counters.minifigPartRows == 1
                      && inventoryPartsResult.counters.unresolved == 0
-                     && inventoryPartsResult.message.contains("1 Minifig-owned Part rows ignored"),
-                 "Minifig-owned Inventory Part rows were not reported as intentional no-ops.")) return 1;
+                     && inventoryPartsResult.message.contains("1 Minifig-owned Part rows processed"),
+                 "Minifig-owned Inventory Part rows were not persisted/reported.")) return 1;
 
     QTemporaryDir malformedRelationships;
     QTemporaryDir unresolvedParent;

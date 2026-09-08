@@ -27,6 +27,7 @@
 #include "../../import/RebrickableSetPartsImporter.h"
 #include "../../repositories/SetCatalogPartRepository.h"
 #include "../../repositories/SetCatalogRepository.h"
+#include "../../repositories/EffectiveSetCompositionRepository.h"
 #include "../../services/images/PartImageService.h"
 #include "../../services/images/SetImageService.h"
 #include "../../services/sets/RebrickableSetPartsService.h"
@@ -229,6 +230,7 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
         setCompositionActionsEnabled(true);
         m_compositionStatusLabel->clear();
         if (!result.success) {
+            loadComposition();
             QMessageBox::critical(this, "Get Set Parts from Rebrickable", result.message);
             return;
         }
@@ -465,16 +467,26 @@ bool SetDetailsDialog::loadSet()
 
 void SetDetailsDialog::loadComposition()
 {
-    const QList<SetCatalogPart> composition =
-        SetCatalogPartRepository().listForSet(m_setCatalogId);
+    const EffectiveSetComposition composition =
+        EffectiveSetCompositionRepository().forSet(m_setCatalogId, true);
     m_compositionTable->setRowCount(0);
     m_requiredPieces = 0;
     m_sparePieces = 0;
-    for (const SetCatalogPart& part : composition) {
-        if (part.isSpare)
-            m_sparePieces += part.quantityRequired;
+    if (!composition.success) {
+        m_compositionSummaryLabel->setText("Unable to load the local catalog parts list.");
+        m_compositionStatusLabel->setText(composition.message);
+        m_createBuildButton->setEnabled(false);
+        return;
+    }
+    m_compositionStatusLabel->setText(
+        composition.source == EffectiveSetCompositionSource::PreferredRebrickableRevision
+            ? QString("Source: Rebrickable inventory v%1").arg(composition.revisionVersion)
+            : QStringLiteral("Source: Catalog Parts List"));
+    for (const EffectiveSetCompositionPart& part : composition.parts) {
+        if (part.spare)
+            m_sparePieces += part.quantity;
         else
-            m_requiredPieces += part.quantityRequired;
+            m_requiredPieces += part.quantity;
         const int row = m_compositionTable->rowCount();
         m_compositionTable->insertRow(row);
         m_compositionTable->setRowHeight(row, 54);
@@ -493,19 +505,19 @@ void SetDetailsDialog::loadComposition()
         m_compositionTable->setItem(row, 1, new QTableWidgetItem(part.partNumber));
         m_compositionTable->setItem(row, 2, new QTableWidgetItem(part.partName));
         m_compositionTable->setItem(row, 3, new QTableWidgetItem(part.colorName));
-        auto* quantity = new QTableWidgetItem(QString::number(part.quantityRequired));
+        auto* quantity = new QTableWidgetItem(QString::number(part.quantity));
         quantity->setTextAlignment(Qt::AlignCenter);
         m_compositionTable->setItem(row, 4, quantity);
-        auto* spare = new QTableWidgetItem(part.isSpare ? "Yes" : "No");
+        auto* spare = new QTableWidgetItem(part.spare ? "Yes" : "No");
         spare->setTextAlignment(Qt::AlignCenter);
         m_compositionTable->setItem(row, 5, spare);
     }
-    if (composition.isEmpty()) {
+    if (composition.parts.isEmpty()) {
         m_compositionSummaryLabel->setText("No catalog parts list has been acquired for this Set.");
     } else {
         m_compositionSummaryLabel->setText(
             QString("%1 distinct rows; %2 required pieces; %3 spare pieces retained.")
-                .arg(composition.size()).arg(m_requiredPieces).arg(m_sparePieces));
+                .arg(composition.parts.size()).arg(m_requiredPieces).arg(m_sparePieces));
     }
     m_createBuildButton->setEnabled(m_requiredPieces > 0);
     m_createBuildButton->setToolTip(m_requiredPieces > 0

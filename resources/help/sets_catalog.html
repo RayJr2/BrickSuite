@@ -49,14 +49,19 @@ including the Set number, name, year, Theme ID, parts count, and cached Set imag
 
 <h3>Catalog Parts List</h3>
 
-<p>The <b>Catalog Parts List</b> stores reusable exact Part, Color, quantity, and spare information
-for the selected Set. Choose <b>Get Parts from Rebrickable...</b> to retrieve the complete list
-through the Rebrickable API. This API workflow includes the constituent pieces of Minifigs in the
-Set so the catalog composition represents the physical pieces needed to assemble it.</p>
+<p>The <b>Catalog Parts List</b> automatically displays locally available exact Part, Color,
+quantity, and spare information when Set Details opens. BrickSuite uses the preferred local
+Rebrickable inventory revision when one is available and otherwise uses the existing Catalog
+Parts List fallback. The source line identifies which composition is displayed.</p>
+
+<p>Choose <b>Get Parts from Rebrickable...</b> to explicitly refresh the complete list through
+the Rebrickable API. This API workflow includes the constituent pieces of Minifigs in the Set so
+the catalog composition represents the physical pieces needed to assemble it.</p>
 
 <p>If API access is unavailable, choose <b>Import Parts List...</b> and select a Rebrickable parts
-list in CSV or ZIP form. ZIP files may contain the CSV in a nested folder. Both acquisition methods
-replace the same catalog composition and require confirmation when a parts list already exists.</p>
+list in CSV or ZIP form. ZIP files may contain the CSV in a nested folder. Both manual acquisition
+methods remain available as explicit refresh or replacement workflows and require confirmation
+when a parts list already exists. Opening Set Details itself never starts an API request.</p>
 
 <div class="note"><b>Exact catalog identities:</b> Every imported row must resolve to an existing
 BrickSuite Part and Rebrickable Color. If the input is malformed or an identity cannot be resolved,

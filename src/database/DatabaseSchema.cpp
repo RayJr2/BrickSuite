@@ -576,6 +576,18 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 33;
     }
 
+    if (version == 33) {
+        if (!migrateVersion33ToVersion34(database)) {
+            database.rollback();
+            return false;
+        }
+        if (!setSchemaVersion(database, 34)) {
+            database.rollback();
+            return false;
+        }
+        version = 34;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -3787,6 +3799,53 @@ bool DatabaseSchema::migrateVersion32ToVersion33(QSqlDatabase& database)
     QSqlQuery pragma(database);
     if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
         qCritical() << "Foreign-key validation failed after Version 33 migration.";
+        return false;
+    }
+    return true;
+}
+
+bool DatabaseSchema::createPartElementIdentifierTable(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+    const QStringList statements = {
+        R"(CREATE TABLE IF NOT EXISTS part_element_identifier (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider TEXT NOT NULL COLLATE NOCASE,
+            element_id TEXT NOT NULL COLLATE NOCASE,
+            part_id INTEGER NOT NULL,
+            color_id INTEGER NOT NULL,
+            design_id TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            FOREIGN KEY(part_id) REFERENCES part(id),
+            FOREIGN KEY(color_id) REFERENCES color(id),
+            UNIQUE(provider, element_id)
+        ))",
+        "CREATE INDEX IF NOT EXISTS idx_part_element_part_color "
+        "ON part_element_identifier(part_id,color_id,is_active)",
+        "CREATE INDEX IF NOT EXISTS idx_part_element_design "
+        "ON part_element_identifier(provider,design_id,is_active)",
+        "CREATE INDEX IF NOT EXISTS idx_part_element_provider_active "
+        "ON part_element_identifier(provider,is_active)"
+    };
+    for (const QString& statement : statements) {
+        if (!query.exec(statement)) {
+            qCritical() << "Unable to create Element identifier schema:"
+                        << query.lastError().text();
+            return false;
+        }
+    }
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion33ToVersion34(QSqlDatabase& database)
+{
+    if (!createPartElementIdentifierTable(database))
+        return false;
+    QSqlQuery check(database);
+    if (!check.exec("PRAGMA foreign_key_check") || check.next()) {
+        qCritical() << "Foreign-key validation failed after Version 34 migration.";
         return false;
     }
     return true;

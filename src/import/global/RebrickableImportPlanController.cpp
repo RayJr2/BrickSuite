@@ -89,9 +89,9 @@ void RebrickableImportPlanController::completeDataset(
     if (counters.recognizedMinifigInventories)
         details.append(QStringLiteral("%1 Minifig inventories recognized")
                            .arg(counters.recognizedMinifigInventories));
-    if (counters.ignoredMinifigPartRows)
-        details.append(QStringLiteral("%1 Minifig-owned Part rows ignored")
-                           .arg(counters.ignoredMinifigPartRows));
+    if (counters.minifigPartRows)
+        details.append(QStringLiteral("%1 Minifig-owned Part rows processed")
+                           .arg(counters.minifigPartRows));
     entry->message = QStringLiteral("%1 — %2.")
                          .arg(noChanges ? QStringLiteral("No changes")
                                         : QStringLiteral("Imported"),

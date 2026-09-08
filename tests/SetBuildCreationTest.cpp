@@ -47,12 +47,29 @@ int main(int argc, char* argv[])
     if (!require(requirements.size()==1 && requirements.first().partId()>0 && requirements.first().colorId()>0 && requirements.first().quantityRequired()==2 && requirements.first().quantityPulled()==0 && requirements.first().quantityReleased()==0 && !requirements.first().isSpare() && requirements.first().substitutePartId()==0 && requirements.first().substituteColorId()==0, "Requirement snapshot semantics are incorrect.")) return 1;
     const int snapPart=requirements.first().partId(), snapColor=requirements.first().colorId(), snapQuantity=requirements.first().quantityRequired();
 
+    const int p1=scalar(db,"SELECT id FROM part WHERE part_number='p1'");
+    const int p2=scalar(db,"SELECT id FROM part WHERE part_number='p2'");
+    const int red=scalar(db,"SELECT id FROM color WHERE rebrickable_id=1");
+    const int blue=scalar(db,"SELECT id FROM color WHERE rebrickable_id=2");
+    if(!require(q.exec(QStringLiteral("INSERT INTO set_inventory_revision(provider,external_inventory_id,set_catalog_id,version,is_active,is_preferred,created_utc,modified_utc) VALUES('Rebrickable','preferred-1',%1,2,1,1,'%2','%2')").arg(setId).arg(now)),"Preferred revision seed failed."))return 1;
+    const int revision=q.lastInsertId().toInt();
+    if(!require(q.exec(QStringLiteral("INSERT INTO set_inventory_part(set_inventory_revision_id,part_id,color_id,quantity,is_spare,image_url,created_utc,modified_utc) VALUES(%1,%2,%3,4,0,'','%4','%4'),(%1,%5,%6,2,1,'','%4','%4')").arg(revision).arg(p2).arg(blue).arg(now).arg(p1).arg(red)),"Preferred composition seed failed."))return 1;
     const auto second = service.create(workspaceId, setId, "Second");
-    if (!require(second.success && second.buildId!=created.buildId, "Multiple Builds per Set failed.")) return 1;
+    const auto preferredRequirements=BuildRequirementRepository().getByBuild(second.buildId);
+    if (!require(second.success && second.buildId!=created.buildId&&second.requiredPieces==4&&second.excludedSparePieces==2
+        &&preferredRequirements.size()==1&&preferredRequirements.first().partId()==p2&&preferredRequirements.first().colorId()==blue&&preferredRequirements.first().quantityRequired()==4,
+        "Preferred revision Set Build failed.")) return 1;
     replaced = composition.replace(setId, {{"p2",2,9,false,"refresh"}}, "Rebrickable", "refresh");
     requirements = BuildRequirementRepository().getByBuild(created.buildId);
     if (!require(replaced.success && requirements.size()==1 && requirements.first().partId()==snapPart && requirements.first().colorId()==snapColor && requirements.first().quantityRequired()==snapQuantity, "Catalog refresh changed an existing Build snapshot.")) return 1;
+    if(!require(q.exec("UPDATE set_inventory_revision SET is_preferred=0 WHERE external_inventory_id='preferred-1'")
+        &&q.exec(QStringLiteral("INSERT INTO set_inventory_revision(provider,external_inventory_id,set_catalog_id,version,is_active,is_preferred,created_utc,modified_utc) VALUES('Rebrickable','preferred-2',%1,3,1,1,'%2','%2')").arg(setId).arg(now)),"Preferred revision transition failed."))return 1;
+    const int revision2=q.lastInsertId().toInt();
+    if(!require(q.exec(QStringLiteral("INSERT INTO set_inventory_part(set_inventory_revision_id,part_id,color_id,quantity,is_spare,image_url,created_utc,modified_utc) VALUES(%1,%2,%3,7,0,'','%4','%4')").arg(revision2).arg(p1).arg(red).arg(now)),"New preferred composition seed failed."))return 1;
+    const auto frozenPreferred=BuildRequirementRepository().getByBuild(second.buildId);
+    if(!require(frozenPreferred.size()==1&&frozenPreferred.first().partId()==p2&&frozenPreferred.first().quantityRequired()==4&&scalar(db,"SELECT COUNT(*) FROM build_allocation WHERE build_id="+QString::number(second.buildId))==0,"Preferred revision change altered an existing Build snapshot/allocation state."))return 1;
 
+    q.exec("UPDATE set_inventory_revision SET is_preferred=0,is_active=0");
     q.exec("DELETE FROM set_catalog_part"); const int buildsBefore=scalar(db,"SELECT COUNT(*) FROM build");
     if (!require(!service.create(workspaceId,setId,"Empty").success && scalar(db,"SELECT COUNT(*) FROM build")==buildsBefore, "Empty composition created a Build.")) return 1;
     replaced=composition.replace(setId,{{"p2",2,1,true,"spare"}},"Rebrickable","test");

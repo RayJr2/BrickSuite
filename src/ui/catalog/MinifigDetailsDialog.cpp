@@ -76,12 +76,17 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId,
     auto* compositionGroup = new QGroupBox("Imported Parts List", this);
     auto* compositionLayout = new QVBoxLayout(compositionGroup);
     auto* compositionHeader = new QHBoxLayout();
+    auto* compositionLabels = new QVBoxLayout();
     m_compositionSummaryLabel = new QLabel(compositionGroup);
     m_compositionSummaryLabel->setWordWrap(true);
+    m_compositionSourceLabel = new QLabel(compositionGroup);
+    m_compositionSourceLabel->setWordWrap(true);
     m_getPartsButton = new QPushButton("Get Parts from Rebrickable...", compositionGroup);
     m_getPartsButton->setEnabled(false);
     m_importPartsButton = new QPushButton("Import Parts List...", compositionGroup);
-    compositionHeader->addWidget(m_compositionSummaryLabel, 1);
+    compositionLabels->addWidget(m_compositionSummaryLabel);
+    compositionLabels->addWidget(m_compositionSourceLabel);
+    compositionHeader->addLayout(compositionLabels, 1);
     compositionHeader->addWidget(m_getPartsButton);
     compositionHeader->addWidget(m_importPartsButton);
     compositionLayout->addLayout(compositionHeader);
@@ -241,10 +246,23 @@ void MinifigDetailsDialog::loadComposition()
     if (composition.isEmpty()) {
         m_compositionSummaryLabel->setText(
             "Parts list has not been imported for this Minifig.");
+        m_compositionSourceLabel->setText("Source: No local parts list");
         m_createBuildButton->setEnabled(false);
         m_createBuildButton->setToolTip("Import a Minifig parts list first.");
         return;
     }
+
+    bool bulkInventory = true;
+    for (const MinifigCatalogPart& part : composition) {
+        if (part.provider.compare("Rebrickable", Qt::CaseInsensitive) != 0
+            || part.source != "Global inventory_parts.csv") {
+            bulkInventory = false;
+            break;
+        }
+    }
+    m_compositionSourceLabel->setText(bulkInventory
+        ? "Source: Rebrickable bulk inventory"
+        : "Source: Imported Parts List");
 
     qint64 requiredQuantity = 0;
     qint64 spareQuantity = 0;

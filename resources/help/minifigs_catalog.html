@@ -41,8 +41,11 @@ describes the Sets in which a Minifig appears; it does not import the Minifig's 
 <h2>Minifig Details and Images</h2>
 
 <p>Use <b>Actions... → Details</b> to view the selected Minifig's catalog metadata, provider
-source, and imported composition. Images are downloaded asynchronously from the imported
-Rebrickable image URL and cached in BrickSuite's dedicated Minifig image cache.</p>
+source, and local composition. A Global Rebrickable import can populate this composition from the
+Minifig-owned rows in <code>inventory_parts.csv</code>. Existing local composition is displayed
+automatically when Details opens; opening the dialog does not request parts from an API. Images
+are downloaded asynchronously from the imported Rebrickable image URL and cached in BrickSuite's
+dedicated Minifig image cache.</p>
 
 <h2>Get or Import a Minifig Parts List</h2>
 
@@ -55,7 +58,8 @@ exists, BrickSuite asks for confirmation before replacing it.</p>
 
 <p><b>Import Parts List...</b> remains available as the offline/manual fallback. Select the
 Rebrickable Parts CSV or its downloaded ZIP. The selected BrickSuite Minifig is always the
-destination.</p>
+destination. Both manual buttons remain explicit refresh/replacement options even when bulk-imported
+local composition is already displayed.</p>
 
 <p>If the filename contains a recognizable identifier such as <code>fig-005210</code>, BrickSuite
 checks it against the selected Minifig before saving anything. A renamed file without a

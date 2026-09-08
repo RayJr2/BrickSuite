@@ -78,8 +78,14 @@ qt_add_executable(BrickSuite
     src/import/RebrickableThemeCatalogImporter.cpp
     src/import/RebrickableInventoryCompositionImporter.h
     src/import/RebrickableInventoryCompositionImporter.cpp
+    src/import/RebrickableElementImporter.h
+    src/import/RebrickableElementImporter.cpp
     src/repositories/SetInventoryRevisionRepository.h
     src/repositories/SetInventoryRevisionRepository.cpp
+    src/repositories/PartElementIdentifierRepository.h
+    src/repositories/PartElementIdentifierRepository.cpp
+    src/repositories/EffectiveSetCompositionRepository.h
+    src/repositories/EffectiveSetCompositionRepository.cpp
     src/ui/import/GlobalRebrickableImportDialog.h
     src/ui/import/GlobalRebrickableImportDialog.cpp
     resources/resources.qrc
@@ -380,6 +386,8 @@ qt_add_executable(BrickSuite
     src/services/minifigs/MinifigCompositionReplacementService.cpp
     src/services/minifigs/RebrickableMinifigPartsService.h
     src/services/minifigs/RebrickableMinifigPartsService.cpp
+    src/services/minifigs/RebrickableMinifigThemeDerivationService.h
+    src/services/minifigs/RebrickableMinifigThemeDerivationService.cpp
     src/models/SetCatalogPart.h
     src/repositories/SetCatalogPartRepository.h
     src/repositories/SetCatalogPartRepository.cpp
@@ -803,6 +811,7 @@ if(BUILD_TESTING)
         src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
         src/repositories/SetCatalogRepository.h src/repositories/SetCatalogRepository.cpp
         src/repositories/SetCatalogPartRepository.h src/repositories/SetCatalogPartRepository.cpp
+        src/repositories/EffectiveSetCompositionRepository.h src/repositories/EffectiveSetCompositionRepository.cpp
         src/services/builds/SetBuildCreationService.h src/services/builds/SetBuildCreationService.cpp
         src/services/sets/SetCompositionReplacementService.h src/services/sets/SetCompositionReplacementService.cpp
     )
@@ -897,6 +906,9 @@ if(BUILD_TESTING)
         src/import/RebrickableSetCatalogImporter.h src/import/RebrickableSetCatalogImporter.cpp
         src/import/RebrickableMinifigCatalogImporter.h src/import/RebrickableMinifigCatalogImporter.cpp
         src/import/RebrickableInventoryCompositionImporter.h src/import/RebrickableInventoryCompositionImporter.cpp
+        src/import/RebrickableElementImporter.h src/import/RebrickableElementImporter.cpp
+        src/services/minifigs/RebrickableMinifigThemeDerivationService.h
+        src/services/minifigs/RebrickableMinifigThemeDerivationService.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp
         src/models/PartRelationship.h
     )
@@ -920,6 +932,22 @@ if(BUILD_TESTING)
         Qt6::Core Qt6::Sql ZLIB::ZLIB)
     add_test(NAME InventoryCompositionPersistence
         COMMAND InventoryCompositionPersistenceTest)
+
+    qt_add_executable(ElementsEffectiveCompositionTest EXCLUDE_FROM_ALL
+        tests/ElementsEffectiveCompositionTest.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/import/RebrickableCsvInputResolver.h src/import/RebrickableCsvInputResolver.cpp
+        src/import/global/RebrickableImportCancellation.h
+        src/import/RebrickableElementImporter.h src/import/RebrickableElementImporter.cpp
+        src/repositories/PartElementIdentifierRepository.h src/repositories/PartElementIdentifierRepository.cpp
+        src/repositories/EffectiveSetCompositionRepository.h src/repositories/EffectiveSetCompositionRepository.cpp
+        src/services/minifigs/RebrickableMinifigThemeDerivationService.h
+        src/services/minifigs/RebrickableMinifigThemeDerivationService.cpp
+    )
+    target_link_libraries(ElementsEffectiveCompositionTest PRIVATE
+        Qt6::Core Qt6::Sql ZLIB::ZLIB)
+    add_test(NAME ElementsEffectiveComposition COMMAND ElementsEffectiveCompositionTest)
 endif()
 
 if(WIN32)

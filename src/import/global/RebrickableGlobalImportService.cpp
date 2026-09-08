@@ -5,11 +5,13 @@
 #include "../RebrickableCsvInputResolver.h"
 #include "../RebrickableMinifigCatalogImporter.h"
 #include "../RebrickableInventoryCompositionImporter.h"
+#include "../RebrickableElementImporter.h"
 #include "../RebrickablePartCatalogImporter.h"
 #include "../RebrickablePartRelationshipImporter.h"
 #include "../RebrickableReferenceImporter.h"
 #include "../RebrickableSetCatalogImporter.h"
 #include "../RebrickableThemeCatalogImporter.h"
+#include "../../services/minifigs/RebrickableMinifigThemeDerivationService.h"
 
 #include <QElapsedTimer>
 #include <QDateTime>
@@ -107,6 +109,7 @@ bool validateSnapshot(const RebrickableImportPlanEntry& entry, QSqlDatabase& dat
     const int count = headers.indexOf(entry.dataset == RebrickableDatasetId::Minifigs
                                           ? QStringLiteral("num_parts") : QStringLiteral("num_parts"));
     const int figNum = headers.indexOf(QStringLiteral("fig_num"));
+    const int elementId = headers.indexOf(QStringLiteral("element_id"));
     QSet<QString> primaryIds;
     while (!stream.atEnd()) {
         const QString line = stream.readLine(); if (line.trimmed().isEmpty()) continue; ++counters.rowsRead;
@@ -126,6 +129,8 @@ bool validateSnapshot(const RebrickableImportPlanEntry& entry, QSqlDatabase& dat
             primary = fields.at(setNum).trimmed();
         else if (entry.dataset == RebrickableDatasetId::Minifigs && figNum >= 0)
             primary = fields.at(figNum).trimmed();
+        else if (entry.dataset == RebrickableDatasetId::Elements && elementId >= 0)
+            primary = fields.at(elementId).trimmed();
         if (!primary.isEmpty() && primaryIds.contains(primary.toCaseFolded())) { error = QStringLiteral("Duplicate identity %1 at row %2.").arg(primary).arg(counters.rowsRead); return false; }
         if (!primary.isEmpty()) primaryIds.insert(primary.toCaseFolded());
         if (entry.dataset == RebrickableDatasetId::Parts) {
@@ -218,8 +223,9 @@ RebrickableImportPlan RebrickableGlobalImportService::run(
         case RebrickableDatasetId::PartRelationships: { auto r=RebrickablePartRelationshipImporter().importFile(entry->sourcePath,database,&cancellation,rowProgress,true);success=r.success;message=r.message;imported={r.rowsRead,r.inserted,r.updated,r.unchanged,r.skippedInvalid,r.deactivated,r.skippedMissingParent+r.skippedMissingChild,0,r.selfReferencesIgnored};noChanges=r.inserted+r.updated+r.deactivated==0;break; }
         case RebrickableDatasetId::Sets: { auto r=RebrickableSetCatalogImporter().importFile(entry->sourcePath,database,&cancellation,rowProgress);success=r.success;message=r.message;imported={r.rowsRead,r.inserted,r.updated,r.unchanged,r.skipped,0,0,0};noChanges=r.inserted+r.updated==0;break; }
         case RebrickableDatasetId::Minifigs: { auto r=RebrickableMinifigCatalogImporter().importFile(entry->sourcePath,database,&cancellation,rowProgress);success=r.success;message=r.message;imported={r.rowsRead,r.inserted,r.updated,r.unchanged,0,r.deactivated,0,0};noChanges=r.inserted+r.updated+r.deactivated==0;break; }
+        case RebrickableDatasetId::Elements: { auto r=RebrickableElementImporter().importFile(entry->sourcePath,database,&cancellation,rowProgress);success=r.success;message=r.message;imported.rowsRead=r.rowsRead;imported.inserted=r.inserted;imported.updated=r.updated;imported.unchanged=r.unchanged;imported.reactivated=r.reactivated;imported.deactivated=r.deactivated;noChanges=r.inserted+r.updated+r.reactivated+r.deactivated==0;break; }
         case RebrickableDatasetId::Inventories: { auto r=compositionImporter.importInventories(entry->sourcePath,database,&cancellation,rowProgress);success=r.success;message=r.message;imported.rowsRead=r.rowsRead;imported.inserted=r.inserted;imported.updated=r.updated;imported.unchanged=r.unchanged;imported.deactivated=r.deactivated;imported.setInventoryRows=r.setInventoryRows;imported.recognizedMinifigInventories=r.recognizedMinifigInventories;noChanges=r.inserted+r.updated+r.deactivated==0;break; }
-        case RebrickableDatasetId::InventoryParts: { auto r=compositionImporter.importParts(entry->sourcePath,database,&cancellation,rowProgress);success=r.success;message=r.message;imported.rowsRead=r.rowsRead;imported.inserted=r.inserted;imported.updated=r.updated;imported.unchanged=r.unchanged;imported.replaced=r.replaced;imported.setInventoryRows=r.setInventoryRows;imported.ignoredMinifigPartRows=r.ignoredMinifigPartRows;noChanges=r.inserted+r.updated+r.replaced==0;break; }
+        case RebrickableDatasetId::InventoryParts: { auto r=compositionImporter.importParts(entry->sourcePath,database,&cancellation,rowProgress);success=r.success;message=r.message;imported.rowsRead=r.rowsRead;imported.inserted=r.inserted;imported.updated=r.updated;imported.unchanged=r.unchanged;imported.replaced=r.replaced;imported.setInventoryRows=r.setInventoryRows;imported.minifigPartRows=r.minifigPartRows;noChanges=r.inserted+r.updated+r.replaced==0;break; }
         case RebrickableDatasetId::InventoryMinifigs: { auto r=compositionImporter.importMinifigs(entry->sourcePath,database,&cancellation,rowProgress);success=r.success;message=r.message;imported.rowsRead=r.rowsRead;imported.inserted=r.inserted;imported.updated=r.updated;imported.unchanged=r.unchanged;imported.replaced=r.replaced;imported.setInventoryRows=r.setInventoryRows;noChanges=r.inserted+r.updated+r.replaced==0;break; }
         case RebrickableDatasetId::InventorySets: { auto r=compositionImporter.importSets(entry->sourcePath,database,&cancellation,rowProgress);success=r.success;message=r.message;imported.rowsRead=r.rowsRead;imported.inserted=r.inserted;imported.updated=r.updated;imported.unchanged=r.unchanged;imported.replaced=r.replaced;imported.setInventoryRows=r.setInventoryRows;noChanges=r.inserted+r.updated+r.replaced==0;break; }
         default: break;
@@ -245,8 +251,21 @@ RebrickableImportPlan RebrickableGlobalImportService::run(
         } else if (entry && preferred.preferredChanged) {
             entry->counters.preferredChanged = preferred.preferredChanged;
             entry->message.chop(1);
-            entry->message += QStringLiteral(", %1 preferred flags changed.")
+            entry->message += QStringLiteral(", %1 preferred revision flag state changes.")
                                   .arg(preferred.preferredChanged);
+        }
+        if (preferred.success && completed(RebrickableDatasetId::Themes)
+            && completed(RebrickableDatasetId::Sets)
+            && completed(RebrickableDatasetId::Minifigs)) {
+            const auto themes=RebrickableMinifigThemeDerivationService().rebuild(database);
+            if (!themes.success) {
+                RebrickableImportPlanController::failDataset(
+                    plan,RebrickableDatasetId::InventorySets,themes.message,false);
+            } else if (entry) {
+                entry->message.chop(1);
+                entry->message+=QStringLiteral(", %1 Minifig Theme associations derived.")
+                                    .arg(themes.associations);
+            }
         }
     }
     qInfo() << "Global Rebrickable import finished."; return plan;
