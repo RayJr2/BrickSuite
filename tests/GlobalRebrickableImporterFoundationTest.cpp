@@ -153,6 +153,15 @@ int main(int argc, char** argv)
                      == RebrickableImportStatus::Ready,
                  "Parts with a missing dependency file must reach source-aware execution validation.")) return 1;
 
+    QTemporaryDir partialInventoryParts;
+    writeFile(partialInventoryParts.filePath("inventory_parts.csv"),
+              "inventory_id,part_num,color_id,quantity,is_spare,img_url\n100,p1,1,1,f,\n");
+    const auto partialInventoryPlan = RebrickableImportDiscoveryService().buildPlan(partialInventoryParts.path());
+    const auto& partialInventoryEntry = entryFor(partialInventoryPlan, RebrickableDatasetId::InventoryParts);
+    if (!require(partialInventoryEntry.status == RebrickableImportStatus::BlockedByDependency
+                     && partialInventoryEntry.message.contains("Inventories source is required"),
+                 "Inventory Parts without ownership classification was not conservatively blocked.")) return 1;
+
     RebrickableImportPlan executionPlan = allPlan;
     if (!require(RebrickableImportPlanController::beginDataset(
                      executionPlan, RebrickableDatasetId::PartCategories),
@@ -243,6 +252,10 @@ int main(int argc, char** argv)
               "rel_type,child_part_num,parent_part_num\nA,p2,p1\nR,p1,p1\n");
     writeFile(executionSources.filePath("sets.csv"), "set_num,name,year,theme_id,num_parts,img_url\n1-1,Set One,2026,2,2,https://example.invalid/set.png\n");
     writeFile(executionSources.filePath("minifigs.csv"), "fig_num,name,num_parts,img_url\nfig-1,Figure One,2,https://example.invalid/fig.png\n");
+    writeFile(executionSources.filePath("inventories.csv"), "id,version,set_num\n100,1,1-1\n200,1,fig-1\n");
+    writeFile(executionSources.filePath("inventory_parts.csv"), "inventory_id,part_num,color_id,quantity,is_spare,img_url\n100,p1,1,2,f,\n200,not-a-set-part,999,1,f,\n");
+    writeFile(executionSources.filePath("inventory_minifigs.csv"), "inventory_id,fig_num,quantity\n100,fig-1,1\n");
+    writeFile(executionSources.filePath("inventory_sets.csv"), "inventory_id,set_num,quantity\n100,1-1,1\n");
     QByteArray cancelledParts("part_num,name,part_cat_id,part_material\n");
     for (int row = 0; row < 300; ++row)
         cancelledParts += QStringLiteral("cancel-%1,Cancelled Part,1,Plastic\n").arg(row).toUtf8();
@@ -261,14 +274,18 @@ int main(int argc, char** argv)
                     executionSources.filePath("cancelled-parts.csv"), database, &cancelled);
                 if (cancelledResult.success) return false;
                 QSqlQuery counts(database);
-                return counts.exec("SELECT (SELECT COUNT(*) FROM theme_external_identifier WHERE provider='Rebrickable'), (SELECT COUNT(*) FROM part), (SELECT COUNT(*) FROM part_relationship WHERE source='Rebrickable'), (SELECT COUNT(*) FROM set_catalog), (SELECT COUNT(*) FROM minifig_catalog)")
+                return counts.exec("SELECT (SELECT COUNT(*) FROM theme_external_identifier WHERE provider='Rebrickable'), (SELECT COUNT(*) FROM part), (SELECT COUNT(*) FROM part_relationship WHERE source='Rebrickable'), (SELECT COUNT(*) FROM set_catalog), (SELECT COUNT(*) FROM minifig_catalog), (SELECT COUNT(*) FROM set_inventory_revision WHERE is_preferred=1), (SELECT COUNT(*) FROM set_inventory_part), (SELECT COUNT(*) FROM set_inventory_minifig), (SELECT COUNT(*) FROM set_inventory_contained_set)")
                     && counts.next() && counts.value(0).toInt()==2 && counts.value(1).toInt()==2
-                    && counts.value(2).toInt()==1 && counts.value(3).toInt()==1 && counts.value(4).toInt()==1;
+                    && counts.value(2).toInt()==1 && counts.value(3).toInt()==1 && counts.value(4).toInt()==1
+                    && counts.value(5).toInt()==1 && counts.value(6).toInt()==1
+                    && counts.value(7).toInt()==1 && counts.value(8).toInt()==1;
             }, executionError);
     });
     importThread->start(); importThread->wait(); delete importThread;
     if (!require(executionSuccess, "Synthetic seven-dataset import failed: " + executionError)) return 1;
-    for (int dataset = int(RebrickableDatasetId::Themes); dataset <= int(RebrickableDatasetId::Minifigs); ++dataset) {
+    for (int dataset = int(RebrickableDatasetId::Themes); dataset <= int(RebrickableDatasetId::InventorySets); ++dataset) {
+        if (RebrickableDatasetId(dataset) == RebrickableDatasetId::Elements)
+            continue;
         const auto status = entryFor(importPlan, RebrickableDatasetId(dataset)).status;
         if (!require(status == RebrickableImportStatus::Imported || status == RebrickableImportStatus::NoChanges,
                      "An implemented dataset did not complete.")) return 1;
@@ -281,6 +298,19 @@ int main(int argc, char** argv)
                  "Resolved self-reference was not reported as a distinct provider no-op.")) return 1;
     if (!require(relationshipResult.message.contains("1 self-reference ignored"),
                  "Self-reference summary was not user-visible.")) return 1;
+    const auto& inventoriesResult = entryFor(importPlan, RebrickableDatasetId::Inventories);
+    if (!require(inventoriesResult.counters.rowsRead == 2
+                     && inventoriesResult.counters.setInventoryRows == 1
+                     && inventoriesResult.counters.recognizedMinifigInventories == 1
+                     && inventoriesResult.message.contains("1 Minifig inventories recognized"),
+                 "Mixed Inventory ownership was not reported accurately.")) return 1;
+    const auto& inventoryPartsResult = entryFor(importPlan, RebrickableDatasetId::InventoryParts);
+    if (!require(inventoryPartsResult.counters.rowsRead == 2
+                     && inventoryPartsResult.counters.setInventoryRows == 1
+                     && inventoryPartsResult.counters.ignoredMinifigPartRows == 1
+                     && inventoryPartsResult.counters.unresolved == 0
+                     && inventoryPartsResult.message.contains("1 Minifig-owned Part rows ignored"),
+                 "Minifig-owned Inventory Part rows were not reported as intentional no-ops.")) return 1;
 
     QTemporaryDir malformedRelationships;
     QTemporaryDir unresolvedParent;

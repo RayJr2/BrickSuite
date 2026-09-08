@@ -79,6 +79,19 @@ void RebrickableImportPlanController::completeDataset(
     if (counters.selfReferencesIgnored)
         details.append(QStringLiteral("%1 self-reference ignored")
                            .arg(counters.selfReferencesIgnored));
+    if (counters.replaced) details.append(QStringLiteral("%1 replaced").arg(counters.replaced));
+    if (counters.preferredChanged)
+        details.append(QStringLiteral("%1 preferred flags changed")
+                           .arg(counters.preferredChanged));
+    if (counters.setInventoryRows)
+        details.append(QStringLiteral("%1 Set-inventory rows processed")
+                           .arg(counters.setInventoryRows));
+    if (counters.recognizedMinifigInventories)
+        details.append(QStringLiteral("%1 Minifig inventories recognized")
+                           .arg(counters.recognizedMinifigInventories));
+    if (counters.ignoredMinifigPartRows)
+        details.append(QStringLiteral("%1 Minifig-owned Part rows ignored")
+                           .arg(counters.ignoredMinifigPartRows));
     entry->message = QStringLiteral("%1 — %2.")
                          .arg(noChanges ? QStringLiteral("No changes")
                                         : QStringLiteral("Imported"),

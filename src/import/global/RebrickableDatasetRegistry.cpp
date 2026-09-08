@@ -11,10 +11,10 @@ const QVector<RebrickableDatasetDescriptor>& RebrickableDatasetRegistry::dataset
         {RebrickableDatasetId::Sets, "Sets", "sets.csv", {"set_num", "name", "year", "theme_id", "num_parts", "img_url"}, {}, 6, true, false, true},
         {RebrickableDatasetId::Minifigs, "Minifigs", "minifigs.csv", {"fig_num", "name", "num_parts", "img_url"}, {}, 7, true, false, true},
         {RebrickableDatasetId::Elements, "Elements", "elements.csv", {"element_id", "part_num", "color_id", "design_id"}, {RebrickableDatasetId::Parts, RebrickableDatasetId::Colors}, 8, false, true, false},
-        {RebrickableDatasetId::Inventories, "Inventories", "inventories.csv", {"id", "version", "set_num"}, {RebrickableDatasetId::Sets}, 9, false, true, false},
-        {RebrickableDatasetId::InventoryParts, "Inventory Parts", "inventory_parts.csv", {"inventory_id", "part_num", "color_id", "quantity", "is_spare", "img_url"}, {RebrickableDatasetId::Inventories, RebrickableDatasetId::Parts, RebrickableDatasetId::Colors}, 10, false, true, false},
-        {RebrickableDatasetId::InventoryMinifigs, "Inventory Minifigs", "inventory_minifigs.csv", {"inventory_id", "fig_num", "quantity"}, {RebrickableDatasetId::Inventories, RebrickableDatasetId::Minifigs}, 11, false, true, false},
-        {RebrickableDatasetId::InventorySets, "Inventory Sets", "inventory_sets.csv", {"inventory_id", "set_num", "quantity"}, {RebrickableDatasetId::Inventories, RebrickableDatasetId::Sets}, 12, false, true, false}
+        {RebrickableDatasetId::Inventories, "Inventories", "inventories.csv", {"id", "version", "set_num"}, {RebrickableDatasetId::Sets}, 9, true, false, false},
+        {RebrickableDatasetId::InventoryParts, "Inventory Parts", "inventory_parts.csv", {"inventory_id", "part_num", "color_id", "quantity", "is_spare", "img_url"}, {RebrickableDatasetId::Inventories, RebrickableDatasetId::Parts, RebrickableDatasetId::Colors}, 10, true, false, false},
+        {RebrickableDatasetId::InventoryMinifigs, "Inventory Minifigs", "inventory_minifigs.csv", {"inventory_id", "fig_num", "quantity"}, {RebrickableDatasetId::Inventories, RebrickableDatasetId::Minifigs}, 11, true, false, false},
+        {RebrickableDatasetId::InventorySets, "Inventory Sets", "inventory_sets.csv", {"inventory_id", "set_num", "quantity"}, {RebrickableDatasetId::Inventories, RebrickableDatasetId::Sets}, 12, true, false, false}
     };
     return registry;
 }

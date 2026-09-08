@@ -218,6 +218,12 @@ void RebrickableImportDiscoveryService::applyDependencies(RebrickableImportPlan&
                 continue;
             }
             const auto dependencyStatus = plan.entries.at(iterator.value()).status;
+            if (entry.dataset == RebrickableDatasetId::InventoryParts
+                && dependency == RebrickableDatasetId::Inventories
+                && dependencyStatus == RebrickableImportStatus::Missing) {
+                unavailable.append(dependencyDescriptor->displayName);
+                continue;
+            }
             // A missing source can be satisfied only by source-aware validation
             // against the existing database at execution time. Invalid or
             // ambiguous dependency sources must never be bypassed this way.
@@ -229,8 +235,11 @@ void RebrickableImportDiscoveryService::applyDependencies(RebrickableImportPlan&
         }
         if (!unavailable.isEmpty()) {
             entry.status = RebrickableImportStatus::BlockedByDependency;
-            entry.message = QStringLiteral("Needs a valid dependency: %1.")
-                                .arg(unavailable.join(", "));
+            entry.message = entry.dataset == RebrickableDatasetId::InventoryParts
+                && unavailable.contains(QStringLiteral("Inventories"))
+                ? QStringLiteral("Inventories source is required to classify Set and Minifig inventory rows.")
+                : QStringLiteral("Needs a valid dependency: %1.")
+                      .arg(unavailable.join(", "));
             qWarning() << "Rebrickable dataset blocked by dependency" << entry.displayName
                        << unavailable;
         }

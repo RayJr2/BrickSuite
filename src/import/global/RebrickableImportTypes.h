@@ -56,6 +56,11 @@ struct RebrickableImportCounters {
     qint64 unresolved = 0;
     qint64 reactivated = 0;
     qint64 selfReferencesIgnored = 0;
+    qint64 replaced = 0;
+    qint64 preferredChanged = 0;
+    qint64 setInventoryRows = 0;
+    qint64 recognizedMinifigInventories = 0;
+    qint64 ignoredMinifigPartRows = 0;
 };
 
 struct RebrickableImportPlanEntry {

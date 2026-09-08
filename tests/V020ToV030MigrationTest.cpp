@@ -201,7 +201,7 @@ bool verifyMigratedData(QSqlDatabase database, const Snapshot& snapshot)
     bool ok = true;
     for (auto it = snapshot.cbegin(); it != snapshot.cend(); ++it)
         ok &= require(readRows(database, it.key()) == it.value(), "historical rows preserved: " + it.key());
-    ok &= require(scalar(database, "SELECT version FROM schema_version").toInt() == 32,
+    ok &= require(scalar(database, "SELECT version FROM schema_version").toInt() == 33,
                   "schema migrated from 19 to 32");
     ok &= require(scalar(database, "SELECT name FROM workspace WHERE id=7").toString()
                       == QStringLiteral("Workshop"), "workspace identity preserved");
@@ -295,7 +295,7 @@ bool runScenario(bool forceLateFailure)
         snapshot = captureHistoricalRows(database);
         if (forceLateFailure && !executeAll(database, {
                 "CREATE TRIGGER force_late_migration_failure BEFORE INSERT ON schema_version "
-                "WHEN NEW.version=32 BEGIN SELECT RAISE(ABORT,'forced late migration failure'); END"}))
+                "WHEN NEW.version=33 BEGIN SELECT RAISE(ABORT,'forced late migration failure'); END"}))
             return false;
         database.close();
     }
@@ -316,7 +316,7 @@ bool runScenario(bool forceLateFailure)
         return false;
 
     manager.close();
-    if (!require(manager.initialize(), "schema-32 database reopens through normal initialization"))
+    if (!require(manager.initialize(), "schema-33 database reopens through normal initialization"))
         return false;
     if (!verifyMigratedData(manager.database(), snapshot))
         return false;
@@ -336,6 +336,6 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    qInfo() << "Schema 19 to schema 32 migration validation passed.";
+    qInfo() << "Schema 19 to schema 33 migration validation passed.";
     return 0;
 }

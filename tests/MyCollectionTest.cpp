@@ -25,10 +25,10 @@ int main(int argc, char** argv)
     QStandardPaths::setTestModeEnabled(true);
     const QString data = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir(data).removeRecursively(); Cleanup cleanup(data);
-    bool ok = check(DatabaseManager::instance().initialize(), "initialize schema 32");
+    bool ok = check(DatabaseManager::instance().initialize(), "initialize schema 33");
     QSqlDatabase db = DatabaseManager::instance().database(); QSqlQuery q(db);
     const QString now = "2026-01-01T00:00:00.000Z";
-    ok &= check(scalar(db,"SELECT version FROM schema_version")==32, "schema is version 32");
+    ok &= check(scalar(db,"SELECT version FROM schema_version")==33, "schema is version 33");
     ok &= check(q.exec("INSERT INTO workspace(name,description,created_utc,modified_utc) VALUES('One','', '"+now+"','"+now+"')"), "workspace");
     ok &= check(q.exec("INSERT INTO set_catalog(set_number,name,year,theme_id,num_parts,image_url,created_utc,modified_utc) VALUES('100-1','City Set',2026,1,10,'set-url','"+now+"','"+now+"')"), "set");
     const int setId=q.lastInsertId().toInt();

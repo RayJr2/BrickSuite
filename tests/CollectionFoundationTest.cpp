@@ -66,7 +66,7 @@ bool validateMigration29To30()
         bool seeded = true;
         for (const QString& statement : statements) seeded = seeded && q.exec(statement);
         ok = seeded && DatabaseSchema::initialize(database)
-             && scalar(database, "SELECT version FROM schema_version") == 32
+             && scalar(database, "SELECT version FROM schema_version") == 33
              && scalar(database, "SELECT allows_inventory FROM storage_location WHERE id=1") == 1
              && scalar(database, "SELECT allows_collection FROM storage_location WHERE id=1") == 0
              && scalar(database, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='collection_item'") == 1;
@@ -104,12 +104,12 @@ bool validateMigration30To31()
         bool seeded = true;
         for (const QString& statement : statements) seeded = seeded && q.exec(statement);
         ok = seeded && DatabaseSchema::initialize(database)
-             && scalar(database, "SELECT version FROM schema_version") == 32
+             && scalar(database, "SELECT version FROM schema_version") == 33
              && scalar(database, "SELECT COUNT(*) FROM collection_item WHERE condition='Used' AND completeness='Unknown'") == 1
              && !q.exec("INSERT INTO collection_item(workspace_id,item_type,set_catalog_id,state,condition,completeness,created_utc,modified_utc) VALUES(1,'Set',1,'Assembled','Damaged','Unknown','x','x')")
              && !q.exec("INSERT INTO collection_item(workspace_id,item_type,set_catalog_id,state,condition,completeness,created_utc,modified_utc) VALUES(1,'Set',1,'Assembled','Used','Partial','x','x')")
              && DatabaseSchema::initialize(database)
-             && scalar(database, "SELECT version FROM schema_version") == 32;
+             && scalar(database, "SELECT version FROM schema_version") == 33;
         database.close();
     }
     QSqlDatabase::removeDatabase(connection);
@@ -133,7 +133,7 @@ int main(int argc, char* argv[])
     QSqlDatabase db = DatabaseManager::instance().database();
     QSqlQuery q(db);
     const QString now = "2026-01-01T00:00:00.000Z";
-    ok &= require(scalar(db, "SELECT version FROM schema_version") == 32, "fresh schema is version 32");
+    ok &= require(scalar(db, "SELECT version FROM schema_version") == 33, "fresh schema is version 33");
     ok &= require(q.exec("INSERT INTO workspace(name,description,created_utc,modified_utc) VALUES('One','', '"+now+"','"+now+"'),('Two','', '"+now+"','"+now+"')"), "workspace seed");
     ok &= require(q.exec("INSERT INTO set_catalog(set_number,name,year,theme_id,num_parts,image_url,created_utc,modified_utc) VALUES('1000-1','Test Set',2026,1,3,'set.png','"+now+"','"+now+"')"), "Set seed");
     const int setId = q.lastInsertId().toInt();

@@ -92,7 +92,7 @@ int main(int argc, char** argv)
     ok &= require(restartedService.rememberedDestination(1) == 0,
                   "fresh process-equivalent service has no prior state");
     ok &= require(QSettings().allKeys().isEmpty(), "session selections do not use QSettings");
-    ok &= require(DatabaseSchema::CurrentSchemaVersion == 32, "schema is version 32");
+    ok &= require(DatabaseSchema::CurrentSchemaVersion == 33, "schema is version 33");
 
     if (ok) QTextStream(stdout) << "SessionStorageSelectionServiceTest passed\n";
     return ok ? 0 : 1;

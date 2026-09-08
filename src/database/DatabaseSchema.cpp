@@ -564,6 +564,18 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 32;
     }
 
+    if (version == 32) {
+        if (!migrateVersion32ToVersion33(database)) {
+            database.rollback();
+            return false;
+        }
+        if (!setSchemaVersion(database, 33)) {
+            database.rollback();
+            return false;
+        }
+        version = 33;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -3679,6 +3691,102 @@ bool DatabaseSchema::migrateVersion31ToVersion32(QSqlDatabase& database)
     QSqlQuery pragma(database);
     if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
         qCritical() << "Foreign-key validation failed after Version 32 migration.";
+        return false;
+    }
+    return true;
+}
+
+bool DatabaseSchema::createSetInventoryRevisionTables(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+    const QStringList statements = {
+        R"(CREATE TABLE IF NOT EXISTS set_inventory_revision (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider TEXT NOT NULL COLLATE NOCASE,
+            external_inventory_id TEXT NOT NULL,
+            set_catalog_id INTEGER NOT NULL,
+            version INTEGER NOT NULL CHECK(version >= 0),
+            is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+            is_preferred INTEGER NOT NULL DEFAULT 0 CHECK(is_preferred IN (0, 1)),
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            FOREIGN KEY(set_catalog_id) REFERENCES set_catalog(id),
+            UNIQUE(provider, external_inventory_id),
+            UNIQUE(provider, set_catalog_id, version)
+        ))",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_set_inventory_one_preferred "
+        "ON set_inventory_revision(provider, set_catalog_id) WHERE is_preferred=1",
+        "CREATE INDEX IF NOT EXISTS idx_set_inventory_preferred "
+        "ON set_inventory_revision(provider, set_catalog_id, is_preferred, is_active)",
+        "CREATE INDEX IF NOT EXISTS idx_set_inventory_history "
+        "ON set_inventory_revision(set_catalog_id, version DESC)",
+        R"(CREATE TABLE IF NOT EXISTS set_inventory_part (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_inventory_revision_id INTEGER NOT NULL,
+            part_id INTEGER NOT NULL,
+            color_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL CHECK(quantity > 0),
+            is_spare INTEGER NOT NULL CHECK(is_spare IN (0, 1)),
+            image_url TEXT,
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            FOREIGN KEY(set_inventory_revision_id) REFERENCES set_inventory_revision(id),
+            FOREIGN KEY(part_id) REFERENCES part(id),
+            FOREIGN KEY(color_id) REFERENCES color(id),
+            UNIQUE(set_inventory_revision_id, part_id, color_id, is_spare)
+        ))",
+        "CREATE INDEX IF NOT EXISTS idx_set_inventory_part_revision "
+        "ON set_inventory_part(set_inventory_revision_id, is_spare, part_id, color_id)",
+        "CREATE INDEX IF NOT EXISTS idx_set_inventory_part_reverse "
+        "ON set_inventory_part(part_id, color_id, set_inventory_revision_id)",
+        R"(CREATE TABLE IF NOT EXISTS set_inventory_minifig (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_inventory_revision_id INTEGER NOT NULL,
+            minifig_catalog_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL CHECK(quantity > 0),
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            FOREIGN KEY(set_inventory_revision_id) REFERENCES set_inventory_revision(id),
+            FOREIGN KEY(minifig_catalog_id) REFERENCES minifig_catalog(id),
+            UNIQUE(set_inventory_revision_id, minifig_catalog_id)
+        ))",
+        "CREATE INDEX IF NOT EXISTS idx_set_inventory_minifig_revision "
+        "ON set_inventory_minifig(set_inventory_revision_id, minifig_catalog_id)",
+        "CREATE INDEX IF NOT EXISTS idx_set_inventory_minifig_reverse "
+        "ON set_inventory_minifig(minifig_catalog_id, set_inventory_revision_id)",
+        R"(CREATE TABLE IF NOT EXISTS set_inventory_contained_set (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_inventory_revision_id INTEGER NOT NULL,
+            contained_set_catalog_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL CHECK(quantity > 0),
+            created_utc TEXT NOT NULL,
+            modified_utc TEXT NOT NULL,
+            FOREIGN KEY(set_inventory_revision_id) REFERENCES set_inventory_revision(id),
+            FOREIGN KEY(contained_set_catalog_id) REFERENCES set_catalog(id),
+            UNIQUE(set_inventory_revision_id, contained_set_catalog_id)
+        ))",
+        "CREATE INDEX IF NOT EXISTS idx_set_inventory_contained_revision "
+        "ON set_inventory_contained_set(set_inventory_revision_id, contained_set_catalog_id)",
+        "CREATE INDEX IF NOT EXISTS idx_set_inventory_contained_reverse "
+        "ON set_inventory_contained_set(contained_set_catalog_id, set_inventory_revision_id)"
+    };
+    for (const QString& statement : statements) {
+        if (!query.exec(statement)) {
+            qCritical() << "Unable to create Set inventory revision schema:"
+                        << query.lastError().text();
+            return false;
+        }
+    }
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion32ToVersion33(QSqlDatabase& database)
+{
+    if (!createSetInventoryRevisionTables(database))
+        return false;
+    QSqlQuery pragma(database);
+    if (!pragma.exec("PRAGMA foreign_key_check") || pragma.next()) {
+        qCritical() << "Foreign-key validation failed after Version 33 migration.";
         return false;
     }
     return true;

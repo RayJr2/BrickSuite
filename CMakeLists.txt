@@ -76,6 +76,10 @@ qt_add_executable(BrickSuite
     src/import/global/RebrickableGlobalImportService.cpp
     src/import/RebrickableThemeCatalogImporter.h
     src/import/RebrickableThemeCatalogImporter.cpp
+    src/import/RebrickableInventoryCompositionImporter.h
+    src/import/RebrickableInventoryCompositionImporter.cpp
+    src/repositories/SetInventoryRevisionRepository.h
+    src/repositories/SetInventoryRevisionRepository.cpp
     src/ui/import/GlobalRebrickableImportDialog.h
     src/ui/import/GlobalRebrickableImportDialog.cpp
     resources/resources.qrc
@@ -892,6 +896,7 @@ if(BUILD_TESTING)
         src/import/RebrickablePartRelationshipImporter.h src/import/RebrickablePartRelationshipImporter.cpp
         src/import/RebrickableSetCatalogImporter.h src/import/RebrickableSetCatalogImporter.cpp
         src/import/RebrickableMinifigCatalogImporter.h src/import/RebrickableMinifigCatalogImporter.cpp
+        src/import/RebrickableInventoryCompositionImporter.h src/import/RebrickableInventoryCompositionImporter.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp
         src/models/PartRelationship.h
     )
@@ -899,6 +904,22 @@ if(BUILD_TESTING)
         Qt6::Core Qt6::Sql ZLIB::ZLIB)
     add_test(NAME GlobalRebrickableImporterFoundation
         COMMAND GlobalRebrickableImporterFoundationTest)
+
+    qt_add_executable(InventoryCompositionPersistenceTest EXCLUDE_FROM_ALL
+        tests/InventoryCompositionPersistenceTest.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/import/RebrickableCsvInputResolver.h src/import/RebrickableCsvInputResolver.cpp
+        src/import/global/RebrickableImportCancellation.h
+        src/import/RebrickableInventoryCompositionImporter.h
+        src/import/RebrickableInventoryCompositionImporter.cpp
+        src/repositories/SetInventoryRevisionRepository.h
+        src/repositories/SetInventoryRevisionRepository.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+    )
+    target_link_libraries(InventoryCompositionPersistenceTest PRIVATE
+        Qt6::Core Qt6::Sql ZLIB::ZLIB)
+    add_test(NAME InventoryCompositionPersistence
+        COMMAND InventoryCompositionPersistenceTest)
 endif()
 
 if(WIN32)
