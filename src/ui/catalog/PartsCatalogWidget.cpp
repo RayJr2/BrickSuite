@@ -652,6 +652,13 @@ void PartsCatalogWidget::settingsChanged()
     searchParts();
 }
 
+void PartsCatalogWidget::refreshCatalog()
+{
+    loadCategories();
+    m_currentPage = 0;
+    searchParts();
+}
+
 void PartsCatalogWidget::updatePagingControls()
 {
     const int resultsPerPage = UserSettings::instance().resultsPerPage();

@@ -21,6 +21,9 @@
 #pragma once
 
 #include <QString>
+#include "global/RebrickableImportCancellation.h"
+
+class QSqlDatabase;
 
 class RebrickableSetCatalogImporter
 {
@@ -40,4 +43,7 @@ public:
     };
 
     Result importFile(const QString& fileName);
+    Result importFile(const QString& fileName, QSqlDatabase& database,
+                      const RebrickableImportCancellation* cancellation = nullptr,
+                      const RebrickableRowProgress& progress = {});
 };

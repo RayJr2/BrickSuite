@@ -72,6 +72,10 @@ qt_add_executable(BrickSuite
     src/import/global/RebrickableImportPlanController.cpp
     src/import/global/RebrickableWorkerDatabaseSession.h
     src/import/global/RebrickableWorkerDatabaseSession.cpp
+    src/import/global/RebrickableGlobalImportService.h
+    src/import/global/RebrickableGlobalImportService.cpp
+    src/import/RebrickableThemeCatalogImporter.h
+    src/import/RebrickableThemeCatalogImporter.cpp
     src/ui/import/GlobalRebrickableImportDialog.h
     src/ui/import/GlobalRebrickableImportDialog.cpp
     resources/resources.qrc
@@ -633,6 +637,8 @@ if(BUILD_TESTING)
         src/import/RebrickableMinifigCatalogImporter.cpp
         src/import/RebrickableMinifigThemeImporter.h
         src/import/RebrickableMinifigThemeImporter.cpp
+        src/import/RebrickableThemeCatalogImporter.h
+        src/import/RebrickableThemeCatalogImporter.cpp
         src/models/ThemeCatalogItem.h
         src/repositories/ThemeCatalogRepository.h
         src/repositories/ThemeCatalogRepository.cpp
@@ -878,6 +884,16 @@ if(BUILD_TESTING)
         src/import/global/RebrickableImportPlanController.cpp
         src/import/global/RebrickableWorkerDatabaseSession.h
         src/import/global/RebrickableWorkerDatabaseSession.cpp
+        src/import/global/RebrickableGlobalImportService.h
+        src/import/global/RebrickableGlobalImportService.cpp
+        src/import/RebrickableReferenceImporter.h src/import/RebrickableReferenceImporter.cpp
+        src/import/RebrickableThemeCatalogImporter.h src/import/RebrickableThemeCatalogImporter.cpp
+        src/import/RebrickablePartCatalogImporter.h src/import/RebrickablePartCatalogImporter.cpp
+        src/import/RebrickablePartRelationshipImporter.h src/import/RebrickablePartRelationshipImporter.cpp
+        src/import/RebrickableSetCatalogImporter.h src/import/RebrickableSetCatalogImporter.cpp
+        src/import/RebrickableMinifigCatalogImporter.h src/import/RebrickableMinifigCatalogImporter.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/models/PartRelationship.h
     )
     target_link_libraries(GlobalRebrickableImporterFoundationTest PRIVATE
         Qt6::Core Qt6::Sql ZLIB::ZLIB)

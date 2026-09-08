@@ -644,6 +644,12 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     connect(importRebrickableDataAction, &QAction::triggered, this, [this]() {
         auto* dialog = new GlobalRebrickableImportDialog(this);
         dialog->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dialog, &GlobalRebrickableImportDialog::catalogDataChanged, this,
+                [this](bool parts, bool sets, bool minifigs) {
+                    if (parts && m_partsCatalogWidget) m_partsCatalogWidget->refreshCatalog();
+                    if (sets && m_setsCatalogWidget) m_setsCatalogWidget->refresh();
+                    if (minifigs && m_minifigsCatalogWidget) m_minifigsCatalogWidget->refresh();
+                });
         dialog->show();
     });
 

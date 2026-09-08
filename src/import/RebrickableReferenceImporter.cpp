@@ -19,6 +19,7 @@
  */
 
 #include "RebrickableReferenceImporter.h"
+#include "global/RebrickableImportCancellation.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -106,7 +107,9 @@ bool RebrickableReferenceImporter::validateHeader(
 
 bool RebrickableReferenceImporter::importColors(const QString& filePath,
                                                 ImportResult& result,
-                                                bool manageTransaction)
+                                                bool manageTransaction,
+                                                const RebrickableImportCancellation* cancellation,
+                                                const RebrickableRowProgress& progress)
 {
     result = {};
 
@@ -173,6 +176,7 @@ bool RebrickableReferenceImporter::importColors(const QString& filePath,
 
             return false;
         }
+        if ((result.recordsProcessed & 255) == 0 && progress) progress(result.recordsProcessed);
     }
 
     QSqlQuery query(m_database);
@@ -223,6 +227,12 @@ bool RebrickableReferenceImporter::importColors(const QString& filePath,
             continue;
 
         ++result.recordsProcessed;
+
+        if ((result.recordsProcessed & 255) == 0 && cancellation
+            && cancellation->isCancellationRequested()) {
+            if (manageTransaction) m_database.rollback();
+            return false;
+        }
 
         const QStringList fields =
             parseCsvLine(line);
@@ -349,7 +359,9 @@ bool RebrickableReferenceImporter::importColors(const QString& filePath,
 
 bool RebrickableReferenceImporter::importPartCategories(const QString& filePath,
                                                         ImportResult& result,
-                                                        bool manageTransaction)
+                                                        bool manageTransaction,
+                                                        const RebrickableImportCancellation* cancellation,
+                                                        const RebrickableRowProgress& progress)
 {
     result = {};
 
@@ -408,6 +420,7 @@ bool RebrickableReferenceImporter::importPartCategories(const QString& filePath,
 
             return false;
         }
+        if ((result.recordsProcessed & 255) == 0 && progress) progress(result.recordsProcessed);
     }
 
     QSqlQuery query(m_database);
@@ -452,6 +465,12 @@ bool RebrickableReferenceImporter::importPartCategories(const QString& filePath,
             continue;
 
         ++result.recordsProcessed;
+
+        if ((result.recordsProcessed & 255) == 0 && cancellation
+            && cancellation->isCancellationRequested()) {
+            if (manageTransaction) m_database.rollback();
+            return false;
+        }
 
         const QStringList fields =
             parseCsvLine(line);

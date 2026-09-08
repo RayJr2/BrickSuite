@@ -21,6 +21,7 @@
 #include "RebrickableSetCatalogImporter.h"
 
 #include "RebrickableCsvInputResolver.h"
+#include "global/RebrickableImportCancellation.h"
 
 #include "../database/DatabaseManager.h"
 
@@ -90,6 +91,15 @@ QString signature(const QString& name, int year, int themeId, int numParts, cons
 RebrickableSetCatalogImporter::Result RebrickableSetCatalogImporter::importFile(
     const QString& fileName)
 {
+    QSqlDatabase database = DatabaseManager::instance().database();
+    return importFile(fileName, database);
+}
+
+RebrickableSetCatalogImporter::Result RebrickableSetCatalogImporter::importFile(
+    const QString& fileName, QSqlDatabase& database,
+    const RebrickableImportCancellation* cancellation,
+    const RebrickableRowProgress& progress)
+{
     Result result;
 
     QTemporaryDir temporaryDirectory;
@@ -146,8 +156,6 @@ RebrickableSetCatalogImporter::Result RebrickableSetCatalogImporter::importFile(
         return result;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
-
     //
     // Load the current catalog into memory so we can
     // classify New / Updated / Unchanged efficiently.
@@ -173,6 +181,7 @@ RebrickableSetCatalogImporter::Result RebrickableSetCatalogImporter::importFile(
 
             return result;
         }
+        if ((result.rowsRead & 255) == 0 && progress) progress(result.rowsRead);
 
         while (query.next()) {
             existingSignatures.insert(query.value(0).toString(),
@@ -241,6 +250,13 @@ RebrickableSetCatalogImporter::Result RebrickableSetCatalogImporter::importFile(
             continue;
 
         ++result.rowsRead;
+
+        if ((result.rowsRead & 255) == 0 && cancellation
+            && cancellation->isCancellationRequested()) {
+            database.rollback();
+            result.message = QStringLiteral("Set Catalog import cancelled.");
+            return result;
+        }
 
         bool rowOk = false;
 

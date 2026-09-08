@@ -69,8 +69,20 @@ void RebrickableImportPlanController::completeDataset(
     entry->elapsedMilliseconds = elapsedMilliseconds;
     entry->status = noChanges ? RebrickableImportStatus::NoChanges
                               : RebrickableImportStatus::Imported;
-    entry->message = noChanges ? QStringLiteral("Import completed with no changes.")
-                               : QStringLiteral("Import transaction committed.");
+    QStringList details;
+    details.append(QStringLiteral("%1 rows read").arg(counters.rowsRead));
+    if (counters.inserted) details.append(QStringLiteral("%1 inserted").arg(counters.inserted));
+    if (counters.updated) details.append(QStringLiteral("%1 updated").arg(counters.updated));
+    if (counters.unchanged) details.append(QStringLiteral("%1 unchanged").arg(counters.unchanged));
+    if (counters.reactivated) details.append(QStringLiteral("%1 reactivated").arg(counters.reactivated));
+    if (counters.deactivated) details.append(QStringLiteral("%1 deactivated").arg(counters.deactivated));
+    if (counters.selfReferencesIgnored)
+        details.append(QStringLiteral("%1 self-reference ignored")
+                           .arg(counters.selfReferencesIgnored));
+    entry->message = QStringLiteral("%1 — %2.")
+                         .arg(noChanges ? QStringLiteral("No changes")
+                                        : QStringLiteral("Imported"),
+                              details.join(QStringLiteral(", ")));
 }
 
 void RebrickableImportPlanController::failDataset(RebrickableImportPlan& plan,
@@ -86,4 +98,3 @@ void RebrickableImportPlanController::failDataset(RebrickableImportPlan& plan,
     entry->message = message;
     blockDependents(plan, dataset);
 }
-

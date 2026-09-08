@@ -22,6 +22,7 @@
 
 #include <QString>
 #include <QStringList>
+#include "global/RebrickableImportCancellation.h"
 
 class QSqlDatabase;
 
@@ -37,11 +38,15 @@ public:
 
     explicit RebrickableReferenceImporter(QSqlDatabase& database);
 
-    bool importColors(const QString& filePath, ImportResult& result, bool manageTransaction = true);
+    bool importColors(const QString& filePath, ImportResult& result, bool manageTransaction = true,
+                      const RebrickableImportCancellation* cancellation = nullptr,
+                      const RebrickableRowProgress& progress = {});
 
     bool importPartCategories(const QString& filePath,
                               ImportResult& result,
-                              bool manageTransaction = true);
+                              bool manageTransaction = true,
+                              const RebrickableImportCancellation* cancellation = nullptr,
+                              const RebrickableRowProgress& progress = {});
 
     bool importParts(const QString& filePath, ImportResult& result, bool manageTransaction = true);
 

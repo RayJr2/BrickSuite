@@ -1,9 +1,12 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <memory>
 
 #include <QDebug>
+
+using RebrickableRowProgress = std::function<void(qint64)>;
 
 class RebrickableImportCancellation
 {

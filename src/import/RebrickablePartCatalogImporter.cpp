@@ -21,6 +21,7 @@
 #include "RebrickablePartCatalogImporter.h"
 
 #include "RebrickableCsvInputResolver.h"
+#include "global/RebrickableImportCancellation.h"
 
 #include "../database/DatabaseManager.h"
 
@@ -93,6 +94,15 @@ QString signature(const QString& name, int categoryId, const QString& material)
 RebrickablePartCatalogImporter::Result RebrickablePartCatalogImporter::importFile(
     const QString& fileName)
 {
+    QSqlDatabase database = DatabaseManager::instance().database();
+    return importFile(fileName, database);
+}
+
+RebrickablePartCatalogImporter::Result RebrickablePartCatalogImporter::importFile(
+    const QString& fileName, QSqlDatabase& database,
+    const RebrickableImportCancellation* cancellation,
+    const RebrickableRowProgress& progress)
+{
     Result result;
 
     QTemporaryDir temporaryDirectory;
@@ -154,8 +164,6 @@ RebrickablePartCatalogImporter::Result RebrickablePartCatalogImporter::importFil
 
         return result;
     }
-
-    QSqlDatabase database = DatabaseManager::instance().database();
 
     //
     // Rebrickable category ID
@@ -301,6 +309,14 @@ RebrickablePartCatalogImporter::Result RebrickablePartCatalogImporter::importFil
             continue;
 
         ++result.rowsRead;
+
+        if ((result.rowsRead & 255) == 0 && cancellation
+            && cancellation->isCancellationRequested()) {
+            database.rollback();
+            result.message = QStringLiteral("Parts Catalog import cancelled.");
+            return result;
+        }
+        if ((result.rowsRead & 255) == 0 && progress) progress(result.rowsRead);
 
         bool rowOk = false;
 

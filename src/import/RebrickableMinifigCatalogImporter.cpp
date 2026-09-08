@@ -1,6 +1,7 @@
 #include "RebrickableMinifigCatalogImporter.h"
 
 #include "RebrickableCsvInputResolver.h"
+#include "global/RebrickableImportCancellation.h"
 
 #include "../database/DatabaseManager.h"
 
@@ -90,6 +91,16 @@ bool failTransaction(QSqlDatabase& database,
 RebrickableMinifigCatalogImporter::Result
 RebrickableMinifigCatalogImporter::importFile(const QString& fileName)
 {
+    QSqlDatabase database = DatabaseManager::instance().database();
+    return importFile(fileName, database);
+}
+
+RebrickableMinifigCatalogImporter::Result
+RebrickableMinifigCatalogImporter::importFile(const QString& fileName,
+                                              QSqlDatabase& database,
+                                              const RebrickableImportCancellation* cancellation,
+                                              const RebrickableRowProgress& progress)
+{
     Result result;
     QTemporaryDir temporaryDirectory;
     QString csvFileName;
@@ -144,6 +155,12 @@ RebrickableMinifigCatalogImporter::importFile(const QString& fileName)
             continue;
 
         ++result.rowsRead;
+        if ((result.rowsRead & 255) == 0 && cancellation
+            && cancellation->isCancellationRequested()) {
+            result.message = QStringLiteral("Minifig Catalog import cancelled.");
+            return result;
+        }
+        if ((result.rowsRead & 255) == 0 && progress) progress(result.rowsRead);
         bool rowOk = false;
         const QStringList fields = parseCsvLine(line, rowOk);
 
@@ -189,7 +206,6 @@ RebrickableMinifigCatalogImporter::importFile(const QString& fileName)
 
     file.close();
 
-    QSqlDatabase database = DatabaseManager::instance().database();
     QHash<QString, ExistingRow> existingRows;
     {
         QSqlQuery query(database);
@@ -271,6 +287,11 @@ RebrickableMinifigCatalogImporter::importFile(const QString& fileName)
     }
 
     for (const ImportRow& row : rows) {
+        if (cancellation && cancellation->isCancellationRequested()) {
+            failTransaction(database, result,
+                            QStringLiteral("Minifig Catalog import cancelled."));
+            return result;
+        }
         const QString key = row.externalId.toCaseFolded();
 
         if (!existingRows.contains(key)) {

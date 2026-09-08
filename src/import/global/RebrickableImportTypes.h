@@ -54,12 +54,16 @@ struct RebrickableImportCounters {
     qint64 skipped = 0;
     qint64 deactivated = 0;
     qint64 unresolved = 0;
+    qint64 reactivated = 0;
+    qint64 selfReferencesIgnored = 0;
 };
 
 struct RebrickableImportPlanEntry {
     RebrickableDatasetId dataset = RebrickableDatasetId::Themes;
     QString displayName;
     QString sourcePath;
+    qint64 sourceSize = -1;
+    qint64 sourceModifiedMilliseconds = -1;
     QStringList conflictingSourcePaths;
     RebrickableImportSourceType sourceType = RebrickableImportSourceType::None;
     RebrickableImportStatus status = RebrickableImportStatus::Missing;
@@ -88,4 +92,3 @@ struct RebrickableImportProgress {
 };
 
 QString rebrickableImportStatusText(RebrickableImportStatus status);
-

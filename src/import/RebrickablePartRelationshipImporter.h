@@ -6,6 +6,9 @@
 #pragma once
 
 #include <QString>
+#include "global/RebrickableImportCancellation.h"
+
+class QSqlDatabase;
 
 class RebrickablePartRelationshipImporter
 {
@@ -22,6 +25,7 @@ public:
         int skippedInvalid = 0;
         int skippedMissingParent = 0;
         int skippedMissingChild = 0;
+        int selfReferencesIgnored = 0;
 
         int deactivated = 0;
 
@@ -29,4 +33,8 @@ public:
     };
 
     Result importFile(const QString& fileName);
+    Result importFile(const QString& fileName, QSqlDatabase& database,
+                      const RebrickableImportCancellation* cancellation = nullptr,
+                      const RebrickableRowProgress& progress = {},
+                      bool requireCompleteSnapshot = false);
 };

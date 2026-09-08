@@ -43,6 +43,7 @@ public:
     explicit PartsCatalogWidget(PartExternalIdEnrichmentService* enrichmentService,
                                 QWidget* parent = nullptr);
     void settingsChanged();
+    void refreshCatalog();
 
 private slots:
     void searchParts(const QString& loadingMessage = QString());

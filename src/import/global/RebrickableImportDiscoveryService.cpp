@@ -4,6 +4,7 @@
 #include "../RebrickableCsvInputResolver.h"
 
 #include <QDebug>
+#include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -85,6 +86,9 @@ RebrickableImportDiscoveryService::buildPlan(const QString& directoryPath) const
                        << entry.conflictingSourcePaths;
         } else {
             entry.sourcePath = entry.conflictingSourcePaths.constFirst();
+            const QFileInfo sourceInfo(entry.sourcePath);
+            entry.sourceSize = sourceInfo.size();
+            entry.sourceModifiedMilliseconds = sourceInfo.lastModified().toMSecsSinceEpoch();
             entry.sourceType = sourceType(entry.sourcePath);
             preflight(entry);
         }
@@ -208,19 +212,30 @@ void RebrickableImportDiscoveryService::applyDependencies(RebrickableImportPlan&
         for (const auto dependency : descriptor->hardDependencies) {
             const auto* dependencyDescriptor = RebrickableDatasetRegistry::descriptor(dependency);
             const auto iterator = indexes.constFind(dependency);
-            if (iterator == indexes.constEnd()
-                || plan.entries.at(iterator.value()).status != RebrickableImportStatus::Ready) {
+            if (iterator == indexes.constEnd()) {
+                unavailable.append(dependencyDescriptor ? dependencyDescriptor->displayName
+                                                        : QStringLiteral("Unknown"));
+                continue;
+            }
+            const auto dependencyStatus = plan.entries.at(iterator.value()).status;
+            // A missing source can be satisfied only by source-aware validation
+            // against the existing database at execution time. Invalid or
+            // ambiguous dependency sources must never be bypassed this way.
+            if (dependencyStatus != RebrickableImportStatus::Ready
+                && dependencyStatus != RebrickableImportStatus::Missing) {
                 unavailable.append(dependencyDescriptor ? dependencyDescriptor->displayName
                                                         : QStringLiteral("Unknown"));
             }
         }
         if (!unavailable.isEmpty()) {
             entry.status = RebrickableImportStatus::BlockedByDependency;
-            entry.message = QStringLiteral("Needs a valid current-run dependency: %1. Existing-database sufficiency is not yet safely defined.")
+            entry.message = QStringLiteral("Needs a valid dependency: %1.")
                                 .arg(unavailable.join(", "));
             qWarning() << "Rebrickable dataset blocked by dependency" << entry.displayName
                        << unavailable;
         }
+        if (unavailable.isEmpty() && !descriptor->hardDependencies.isEmpty())
+            entry.message = QStringLiteral("Ready; required source identities will be validated before mutation.");
     }
     qInfo() << "Rebrickable import plan is ready for review.";
 }

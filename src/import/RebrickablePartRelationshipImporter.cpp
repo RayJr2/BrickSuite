@@ -5,6 +5,7 @@
  */
 #include "RebrickablePartRelationshipImporter.h"
 #include "RebrickableCsvInputResolver.h"
+#include "global/RebrickableImportCancellation.h"
 
 #include "../database/DatabaseManager.h"
 #include "../models/PartRelationship.h"
@@ -108,6 +109,17 @@ RebrickablePartRelationshipImporter::Result
 RebrickablePartRelationshipImporter::importFile(
     const QString& fileName)
 {
+    QSqlDatabase database = DatabaseManager::instance().database();
+    return importFile(fileName, database);
+}
+
+RebrickablePartRelationshipImporter::Result
+RebrickablePartRelationshipImporter::importFile(
+    const QString& fileName, QSqlDatabase& database,
+    const RebrickableImportCancellation* cancellation,
+    const RebrickableRowProgress& progress,
+    bool requireCompleteSnapshot)
+{
     Result result;
 
     QTemporaryDir temporaryDirectory;
@@ -172,9 +184,6 @@ RebrickablePartRelationshipImporter::importFile(
         return result;
     }
 
-    QSqlDatabase database =
-        DatabaseManager::instance().database();
-
     //
     // Build one in-memory Part Number -> BrickSuite part.id map.
     // This avoids tens of thousands of SELECTs during the import.
@@ -196,6 +205,7 @@ RebrickablePartRelationshipImporter::importFile(
 
             return result;
         }
+        if ((result.rowsRead & 255) == 0 && progress) progress(result.rowsRead);
 
         while (query.next()) {
             partIdByNumber.insert(
@@ -338,6 +348,13 @@ RebrickablePartRelationshipImporter::importFile(
 
         ++result.rowsRead;
 
+        if ((result.rowsRead & 255) == 0 && cancellation
+            && cancellation->isCancellationRequested()) {
+            database.rollback();
+            result.message = QStringLiteral("Part Relationship import cancelled.");
+            return result;
+        }
+
         bool rowOk = false;
         const QStringList fields =
             parseCsvLine(line, rowOk);
@@ -350,6 +367,14 @@ RebrickablePartRelationshipImporter::importFile(
                        << "Reason: Malformed CSV row or unexpected field count."
                        << "ExpectedFields:" << headers.size()
                        << "ActualFields:" << fields.size();
+
+            if (requireCompleteSnapshot) {
+                database.rollback();
+                result.message = QStringLiteral(
+                    "Part Relationship snapshot contains malformed CSV data at row %1.")
+                                     .arg(result.rowsRead);
+                return result;
+            }
 
             continue;
         }
@@ -394,6 +419,15 @@ RebrickablePartRelationshipImporter::importFile(
                        << "ParentPart:" << parentNumber
                        << "Reason:" << reason;
 
+            if (requireCompleteSnapshot) {
+                database.rollback();
+                result.message = QStringLiteral(
+                    "Part Relationship snapshot contains invalid data at row %1: %2")
+                                     .arg(result.rowsRead)
+                                     .arg(reason);
+                return result;
+            }
+
             continue;
         }
 
@@ -402,6 +436,14 @@ RebrickablePartRelationshipImporter::importFile(
 
         if (parentIt == partIdByNumber.constEnd()) {
             ++result.skippedMissingParent;
+            if (requireCompleteSnapshot) {
+                database.rollback();
+                result.message = QStringLiteral(
+                    "Part Relationship snapshot has an unresolved parent Part %1 at row %2.")
+                                     .arg(parentNumber)
+                                     .arg(result.rowsRead);
+                return result;
+            }
             continue;
         }
 
@@ -410,6 +452,14 @@ RebrickablePartRelationshipImporter::importFile(
 
         if (childIt == partIdByNumber.constEnd()) {
             ++result.skippedMissingChild;
+            if (requireCompleteSnapshot) {
+                database.rollback();
+                result.message = QStringLiteral(
+                    "Part Relationship snapshot has an unresolved child Part %1 at row %2.")
+                                     .arg(childNumber)
+                                     .arg(result.rowsRead);
+                return result;
+            }
             continue;
         }
 
@@ -417,15 +467,7 @@ RebrickablePartRelationshipImporter::importFile(
         const int childPartId = childIt.value();
 
         if (parentPartId == childPartId) {
-            ++result.skippedInvalid;
-
-            qWarning() << "Part Relationship import skipped invalid row."
-                       << "Row:" << result.rowsRead
-                       << "RelType:" << sourceType
-                       << "ChildPart:" << childNumber
-                       << "ParentPart:" << parentNumber
-                       << "Reason: Parent and child reference the same part.";
-
+            ++result.selfReferencesIgnored;
             continue;
         }
 
@@ -572,6 +614,7 @@ RebrickablePartRelationshipImporter::importFile(
             << "SkippedInvalid:" << result.skippedInvalid
             << "SkippedMissingParent:" << result.skippedMissingParent
             << "SkippedMissingChild:" << result.skippedMissingChild
+            << "SelfReferencesIgnored:" << result.selfReferencesIgnored
             << "Deactivated:" << result.deactivated;
 
     return result;

@@ -4,6 +4,8 @@
 #include "../src/import/global/RebrickableImportDiscoveryService.h"
 #include "../src/import/global/RebrickableImportPlanController.h"
 #include "../src/import/global/RebrickableWorkerDatabaseSession.h"
+#include "../src/import/global/RebrickableGlobalImportService.h"
+#include "../src/import/RebrickablePartCatalogImporter.h"
 
 #include <QCoreApplication>
 #include <QDataStream>
@@ -148,8 +150,8 @@ int main(int argc, char** argv)
     writeFile(dependencyFixture.filePath("parts.csv"), csvFor(*parts));
     const auto dependencyPlan = RebrickableImportDiscoveryService().buildPlan(dependencyFixture.path());
     if (!require(entryFor(dependencyPlan, RebrickableDatasetId::Parts).status
-                     == RebrickableImportStatus::BlockedByDependency,
-                 "Missing Part Categories did not conservatively block Parts.")) return 1;
+                     == RebrickableImportStatus::Ready,
+                 "Parts with a missing dependency file must reach source-aware execution validation.")) return 1;
 
     RebrickableImportPlan executionPlan = allPlan;
     if (!require(RebrickableImportPlanController::beginDataset(
@@ -231,6 +233,144 @@ int main(int argc, char** argv)
     for (const QString& connection : QSqlDatabase::connectionNames())
         if (!require(!connection.startsWith("rebrickable-import-"),
                      "Worker database connection leaked.")) return 1;
+
+    QTemporaryDir executionSources;
+    writeFile(executionSources.filePath("themes.csv"), "id,name,parent_id\n1,Root,\n2,Child,1\n");
+    writeFile(executionSources.filePath("colors.csv"), "id,name,rgb,is_trans\n1,Black,000000,false\n");
+    writeFile(executionSources.filePath("part_categories.csv"), "id,name\n1,Bricks\n");
+    writeFile(executionSources.filePath("parts.csv"), "part_num,name,part_cat_id,part_material\np1,Part One,1,Plastic\np2,Part Two,1,Plastic\n");
+    writeFile(executionSources.filePath("part_relationships.csv"),
+              "rel_type,child_part_num,parent_part_num\nA,p2,p1\nR,p1,p1\n");
+    writeFile(executionSources.filePath("sets.csv"), "set_num,name,year,theme_id,num_parts,img_url\n1-1,Set One,2026,2,2,https://example.invalid/set.png\n");
+    writeFile(executionSources.filePath("minifigs.csv"), "fig_num,name,num_parts,img_url\nfig-1,Figure One,2,https://example.invalid/fig.png\n");
+    QByteArray cancelledParts("part_num,name,part_cat_id,part_material\n");
+    for (int row = 0; row < 300; ++row)
+        cancelledParts += QStringLiteral("cancel-%1,Cancelled Part,1,Plastic\n").arg(row).toUtf8();
+    writeFile(executionSources.filePath("cancelled-parts.csv"), cancelledParts);
+    RebrickableImportPlan importPlan = RebrickableImportDiscoveryService().buildPlan(executionSources.path());
+    int progressEvents = 0; bool executionSuccess = false; QString executionError;
+    QThread* importThread = QThread::create([&]() {
+        executionSuccess = RebrickableWorkerDatabaseSession::execute(databasePath,
+            [&](QSqlDatabase& database, QString&) {
+                RebrickableImportCancellation token;
+                importPlan = RebrickableGlobalImportService().run(importPlan, database, token,
+                    [&](const RebrickableImportProgress&) { ++progressEvents; });
+                RebrickableImportCancellation cancelled;
+                cancelled.requestCancellation();
+                const auto cancelledResult = RebrickablePartCatalogImporter().importFile(
+                    executionSources.filePath("cancelled-parts.csv"), database, &cancelled);
+                if (cancelledResult.success) return false;
+                QSqlQuery counts(database);
+                return counts.exec("SELECT (SELECT COUNT(*) FROM theme_external_identifier WHERE provider='Rebrickable'), (SELECT COUNT(*) FROM part), (SELECT COUNT(*) FROM part_relationship WHERE source='Rebrickable'), (SELECT COUNT(*) FROM set_catalog), (SELECT COUNT(*) FROM minifig_catalog)")
+                    && counts.next() && counts.value(0).toInt()==2 && counts.value(1).toInt()==2
+                    && counts.value(2).toInt()==1 && counts.value(3).toInt()==1 && counts.value(4).toInt()==1;
+            }, executionError);
+    });
+    importThread->start(); importThread->wait(); delete importThread;
+    if (!require(executionSuccess, "Synthetic seven-dataset import failed: " + executionError)) return 1;
+    for (int dataset = int(RebrickableDatasetId::Themes); dataset <= int(RebrickableDatasetId::Minifigs); ++dataset) {
+        const auto status = entryFor(importPlan, RebrickableDatasetId(dataset)).status;
+        if (!require(status == RebrickableImportStatus::Imported || status == RebrickableImportStatus::NoChanges,
+                     "An implemented dataset did not complete.")) return 1;
+    }
+    if (!require(progressEvents >= 14, "Global import did not publish validation/import progress.")) return 1;
+    const auto& relationshipResult = entryFor(importPlan, RebrickableDatasetId::PartRelationships);
+    if (!require(relationshipResult.counters.rowsRead == 2
+                     && relationshipResult.counters.selfReferencesIgnored == 1
+                     && relationshipResult.counters.unresolved == 0,
+                 "Resolved self-reference was not reported as a distinct provider no-op.")) return 1;
+    if (!require(relationshipResult.message.contains("1 self-reference ignored"),
+                 "Self-reference summary was not user-visible.")) return 1;
+
+    QTemporaryDir malformedRelationships;
+    QTemporaryDir unresolvedParent;
+    QTemporaryDir unresolvedChild;
+    QTemporaryDir replacementRelationships;
+    writeFile(malformedRelationships.filePath("part_relationships.csv"),
+              "rel_type,child_part_num,parent_part_num\nA,p2\n");
+    writeFile(unresolvedParent.filePath("part_relationships.csv"),
+              "rel_type,child_part_num,parent_part_num\nA,p2,missing-parent\n");
+    writeFile(unresolvedChild.filePath("part_relationships.csv"),
+              "rel_type,child_part_num,parent_part_num\nA,missing-child,p1\n");
+    writeFile(replacementRelationships.filePath("part_relationships.csv"),
+              "rel_type,child_part_num,parent_part_num\nM,p1,p2\n");
+
+    bool relationshipSafetyPassed = false;
+    QString relationshipSafetyError;
+    QThread* relationshipThread = QThread::create([&]() {
+        relationshipSafetyPassed = RebrickableWorkerDatabaseSession::execute(
+            databasePath, [&](QSqlDatabase& database, QString& error) {
+                QSqlQuery schema(database);
+                if (!schema.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='part_relationship'")
+                    || !schema.next()
+                    || !schema.value(0).toString().contains("CHECK(parent_part_id <> child_part_id)")) {
+                    error = "Part Relationship self-reference CHECK changed.";
+                    return false;
+                }
+
+                QSqlQuery seed(database);
+                if (!seed.exec("INSERT INTO part_relationship(parent_part_id,child_part_id,relationship_type,source_relationship_type,source,is_active,created_utc,modified_utc) SELECT p1.id,p2.id,'Alternate','A','OtherProvider',1,'2026-01-01','2026-01-01' FROM part p1,part p2 WHERE p1.part_number='p1' AND p2.part_number='p2'")) {
+                    error = seed.lastError().text();
+                    return false;
+                }
+
+                auto runRelationships = [&](const QString& directory) {
+                    RebrickableImportPlan plan = RebrickableImportDiscoveryService().buildPlan(directory);
+                    for (auto& entry : plan.entries) {
+                        if (entry.dataset == RebrickableDatasetId::PartRelationships
+                            && !entry.sourcePath.isEmpty()) {
+                            entry.status = RebrickableImportStatus::Ready;
+                            entry.message.clear();
+                        }
+                    }
+                    RebrickableImportCancellation token;
+                    return RebrickableGlobalImportService().run(plan, database, token);
+                };
+                auto countActive = [&](const QString& source) {
+                    QSqlQuery count(database);
+                    count.prepare("SELECT COUNT(*) FROM part_relationship WHERE source=:source AND is_active=1");
+                    count.bindValue(":source", source);
+                    return count.exec() && count.next() ? count.value(0).toInt() : -1;
+                };
+
+                const auto malformed = runRelationships(malformedRelationships.path());
+                if (entryFor(malformed, RebrickableDatasetId::PartRelationships).status
+                        != RebrickableImportStatus::Failed
+                    || countActive("Rebrickable") != 1 || countActive("OtherProvider") != 1) {
+                    error = "Malformed snapshot failed to preserve relationships.";
+                    return false;
+                }
+                const auto missingParent = runRelationships(unresolvedParent.path());
+                if (entryFor(missingParent, RebrickableDatasetId::PartRelationships).status
+                        != RebrickableImportStatus::Failed
+                    || countActive("Rebrickable") != 1) {
+                    error = "Unresolved parent did not fail without deactivation.";
+                    return false;
+                }
+                const auto missingChild = runRelationships(unresolvedChild.path());
+                if (entryFor(missingChild, RebrickableDatasetId::PartRelationships).status
+                        != RebrickableImportStatus::Failed
+                    || countActive("Rebrickable") != 1) {
+                    error = "Unresolved child did not fail without deactivation.";
+                    return false;
+                }
+                const auto replacement = runRelationships(replacementRelationships.path());
+                const auto& replacementResult = entryFor(
+                    replacement, RebrickableDatasetId::PartRelationships);
+                if (replacementResult.status != RebrickableImportStatus::Imported
+                    || replacementResult.counters.inserted != 1
+                    || replacementResult.counters.deactivated != 1
+                    || countActive("Rebrickable") != 1
+                    || countActive("OtherProvider") != 1) {
+                    error = "Complete snapshot synchronization or provider isolation failed.";
+                    return false;
+                }
+                return true;
+            }, relationshipSafetyError);
+    });
+    relationshipThread->start(); relationshipThread->wait(); delete relationshipThread;
+    if (!require(relationshipSafetyPassed,
+                 "Relationship snapshot-safety validation failed: " + relationshipSafetyError)) return 1;
 
     qInfo() << "Global Rebrickable importer foundation tests passed.";
     return 0;
