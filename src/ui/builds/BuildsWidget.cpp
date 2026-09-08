@@ -57,6 +57,7 @@
 #include "../../services/builds/MissingPartsService.h"
 #include "../../services/procurement/ProcurementDraftService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
+#include "../../services/application/ApplicationServices.h"
 #include "../../ui/procurement/ProcurementPreviewDialog.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
@@ -133,10 +134,12 @@ MocFileMetadata parseRebrickableMocFileName(const QString& fileName)
 BuildsWidget::BuildsWidget(
     WorkspaceContext& workspaceContext,
     SessionStorageSelectionService& sessionStorageSelectionService,
+    BuildApplicationService& buildService,
     QWidget* parent)
     : QWidget(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
+    , m_buildService(buildService)
 {
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -526,10 +529,9 @@ void BuildsWidget::loadBuilds()
         return;
     }
 
-    BuildRepository repository;
     ManufacturerRepository manufacturerRepository;
 
-    const QList<Build> builds = repository.getByWorkspace(
+    const QList<Build> builds = m_buildService.list(
         m_workspaceContext.currentWorkspaceId(),
         m_showArchivedBuildsCheck && m_showArchivedBuildsCheck->isChecked());
 
@@ -1405,10 +1407,8 @@ void BuildsWidget::loadRequirements()
                                : name;
     }
 
-    BuildRepository buildRepository;
-
     const std::optional<Build> selectedBuild =
-        buildRepository.getById(m_selectedBuildId);
+        m_buildService.get(m_selectedBuildId);
 
     const bool completeSet =
         selectedBuild && selectedBuild->inventoryMode() == "CompleteSet";
@@ -1421,9 +1421,8 @@ void BuildsWidget::loadRequirements()
             ? QString("Set Contents for: %1").arg(buildDescription)
             : QString("Requirements for: %1").arg(buildDescription));
 
-    BuildRequirementRepository requirementRepository;
     const QList<BuildRequirement> requirements =
-        requirementRepository.getByBuild(m_selectedBuildId);
+        m_buildService.requirements(m_selectedBuildId);
 
     PartRepository partRepository;
     ColorRepository colorRepository;
@@ -2939,10 +2938,8 @@ void BuildsWidget::exportMissingParts()
         return;
     }
 
-    MissingPartsService service;
-
     const QList<MissingPartsService::MissingPart> missingParts =
-        service.getMissingParts(
+        m_buildService.missingParts(
             m_workspaceContext.currentWorkspaceId(),
             m_selectedBuildId);
 

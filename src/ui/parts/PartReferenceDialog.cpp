@@ -12,6 +12,7 @@
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/images/PartImageService.h"
 #include "../../services/parts/PartReferenceCustomizationService.h"
+#include "../../services/application/ApplicationServices.h"
 #include "../../settings/UserSettings.h"
 #include "../help/HelpManager.h"
 
@@ -55,8 +56,9 @@ QString viewModeName(bool dimensionGrid)
 
 } // namespace
 
-PartReferenceDialog::PartReferenceDialog(QWidget* parent)
-    : QDialog(parent)
+PartReferenceDialog::PartReferenceDialog(
+    SharedPartReferenceCustomizationService& customizationService, QWidget* parent)
+    : QDialog(parent), m_customizationService(customizationService)
 {
     setWindowTitle(tr("Part Reference"));
     setWindowFlag(Qt::Window, true);
@@ -121,7 +123,7 @@ void PartReferenceDialog::setAddInventoryAvailable(bool available)
 void PartReferenceDialog::refreshCustomizations()
 {
     QString error;
-    m_effectiveEntries = PartReferenceCustomizationService(m_manifest).effectiveEntries(&error);
+    m_effectiveEntries = m_customizationService.effectiveEntries(m_manifest, &error);
     if (!error.isEmpty()) qWarning().noquote() << error;
     if (!m_contentStack) return;
     m_cardsByPartNumber.clear();
@@ -937,7 +939,7 @@ const PartReferenceEntry* PartReferenceDialog::findEffectiveEntry(const QString&
 void PartReferenceDialog::addPartToReference()
 {
     const PartReferenceEntry* anchor = findEffectiveEntry(m_selectedPartNumber);
-    AddPartReferenceDialog dialog(0, anchor, this);
+    AddPartReferenceDialog dialog(m_customizationService, 0, anchor, this);
     if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded())
         refreshCustomizations();
 }
@@ -949,7 +951,7 @@ void PartReferenceDialog::removeSelectedCustomization()
                               tr("Remove %1 from your Part Reference customizations?\n\n"
                                  "The catalog Part and inventory will not be changed.")
                                   .arg(m_selectedPartNumber)) != QMessageBox::Yes) return;
-    const auto result = PartReferenceCustomizationService(m_manifest).remove(m_selectedUserEntryId);
+    const auto result = m_customizationService.remove(m_manifest, m_selectedUserEntryId);
     if (!result.success) { QMessageBox::warning(this, tr("Part Reference"), result.message); return; }
     m_selectedPartNumber.clear(); m_selectedPartName.clear(); m_selectedUserEntryId = 0;
     m_selectedLabel->setText(tr("Selected: None")); m_copyButton->setEnabled(false);

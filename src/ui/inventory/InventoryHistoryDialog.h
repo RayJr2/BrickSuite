@@ -26,6 +26,7 @@
 class WorkspaceContext;
 class QTableWidget;
 class QLabel;
+class InventoryApplicationService;
 
 class InventoryHistoryDialog : public QDialog
 {
@@ -35,6 +36,7 @@ public:
     explicit InventoryHistoryDialog(int partId,
                                     int colorId,
                                     WorkspaceContext& workspaceContext,
+                                    InventoryApplicationService& inventoryService,
                                     QWidget* parent = nullptr);
 
 private:
@@ -48,6 +50,7 @@ private:
     int m_colorId = 0;
 
     WorkspaceContext& m_workspaceContext;
+    InventoryApplicationService& m_inventoryService;
 
     QLabel* m_titleLabel = nullptr;
     QTableWidget* m_table = nullptr;

@@ -41,10 +41,19 @@ RebrickableElementImporter::Result RebrickableElementImporter::importFile(
     while(!stream.atEnd()){
         const QString line=stream.readLine();if(line.trimmed().isEmpty())continue;++result.rowsRead;
         if((result.rowsRead&1023)==0){if(progress)progress(result.rowsRead);if(cancellation&&cancellation->isCancellationRequested()){result.message="Elements import cancelled.";database.rollback();return result;}}
-        const QStringList f=parseCsv(line,ok);bool colorOk=false;if(f.size()==4)f.at(2).trimmed().toInt(&colorOk);
-        const QString element=f.size()==4?f.at(0).trimmed():QString(),part=f.size()==4?f.at(1).trimmed():QString(),color=f.size()==4?f.at(2).trimmed():QString(),design=f.size()==4?f.at(3).trimmed():QString();
-        const auto partIt=parts.constFind(part),colorIt=colors.constFind(color);
-        if(!ok||f.size()!=4||element.isEmpty()||part.isEmpty()||design.isEmpty()||!colorOk||partIt==parts.constEnd()||colorIt==colors.constEnd()||seen.contains(element)){result.message=QStringLiteral("Invalid, duplicate, or unresolved Element at row %1.").arg(result.rowsRead);database.rollback();return result;}
+        const QStringList f=parseCsv(line,ok);
+        if(!ok||f.size()!=4){result.message=QStringLiteral("Malformed Element CSV data at row %1.").arg(result.rowsRead);database.rollback();return result;}
+        const QString element=f.at(0).trimmed(),part=f.at(1).trimmed(),color=f.at(2).trimmed();
+        QString design=f.at(3).trimmed();
+        if(design.isNull())design=QStringLiteral("");
+        if(element.isEmpty()||part.isEmpty()){result.message=QStringLiteral("Missing required Element field at row %1.").arg(result.rowsRead);database.rollback();return result;}
+        bool colorOk=false;color.toInt(&colorOk);
+        if(!colorOk){result.message=QStringLiteral("Invalid Element color value at row %1.").arg(result.rowsRead);database.rollback();return result;}
+        const auto partIt=parts.constFind(part);
+        if(partIt==parts.constEnd()){result.message=QStringLiteral("Unresolved Element Part at row %1.").arg(result.rowsRead);database.rollback();return result;}
+        const auto colorIt=colors.constFind(color);
+        if(colorIt==colors.constEnd()){result.message=QStringLiteral("Unresolved Element Color at row %1.").arg(result.rowsRead);database.rollback();return result;}
+        if(seen.contains(element)){result.message=QStringLiteral("Duplicate Element ID in source at row %1.").arg(result.rowsRead);database.rollback();return result;}
         seen.insert(element);const auto oldIt=old.constFind(element);
         if(oldIt==old.constEnd()){insert.bindValue(":element",element);insert.bindValue(":part",partIt.value());insert.bindValue(":color",colorIt.value());insert.bindValue(":design",design);insert.bindValue(":now",now);if(!insert.exec()){result.message=insert.lastError().text();database.rollback();return result;}++result.inserted;}
         else if(oldIt->part==partIt.value()&&oldIt->color==colorIt.value()&&oldIt->design==design&&oldIt->active)++result.unchanged;

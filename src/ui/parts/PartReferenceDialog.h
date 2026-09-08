@@ -30,13 +30,15 @@ class QToolButton;
 class QWidget;
 class PartImageService;
 class RebrickableApiClient;
+class SharedPartReferenceCustomizationService;
 
 class PartReferenceDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit PartReferenceDialog(QWidget* parent = nullptr);
+    explicit PartReferenceDialog(SharedPartReferenceCustomizationService& customizationService,
+                                 QWidget* parent = nullptr);
     ~PartReferenceDialog() override;
 
     void setAddInventoryAvailable(bool available);
@@ -148,6 +150,7 @@ private:
 
     PartImageService* m_partImageService = nullptr;
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
+    SharedPartReferenceCustomizationService& m_customizationService;
 
     static constexpr int ImageBatchSize = 20;
     static constexpr int GalleryColumns = 6;

@@ -24,6 +24,7 @@
 
 class WorkspaceContext;
 class SessionStorageSelectionService;
+class BuildApplicationService;
 
 class QComboBox;
 class QLabel;
@@ -46,6 +47,7 @@ public:
     explicit BuildsWidget(
         WorkspaceContext& workspaceContext,
         SessionStorageSelectionService& sessionStorageSelectionService,
+        BuildApplicationService& buildService,
         QWidget* parent = nullptr);
 
     void refresh();
@@ -85,6 +87,7 @@ private:
 
     WorkspaceContext& m_workspaceContext;
     SessionStorageSelectionService& m_sessionStorageSelectionService;
+    BuildApplicationService& m_buildService;
 
     QComboBox* m_typeCombo = nullptr;
     QLineEdit* m_setNumberEdit = nullptr;

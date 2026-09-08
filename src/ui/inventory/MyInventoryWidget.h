@@ -36,6 +36,7 @@ class QLabel;
 class PartImageService;
 class RebrickableApiClient;
 class AddInventoryDialog;
+class InventoryApplicationService;
 
 class MyInventoryWidget : public QWidget
 {
@@ -45,6 +46,7 @@ public:
     explicit MyInventoryWidget(
         WorkspaceContext& workspaceContext,
         SessionStorageSelectionService& sessionStorageSelectionService,
+        InventoryApplicationService& inventoryService,
         QWidget* parent = nullptr);
 
     void refresh();
@@ -87,6 +89,7 @@ private:
 
     WorkspaceContext& m_workspaceContext;
     SessionStorageSelectionService& m_sessionStorageSelectionService;
+    InventoryApplicationService& m_inventoryService;
 
     int m_currentPage = 0;
     int m_lastResultCount = 0;

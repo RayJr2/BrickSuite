@@ -27,6 +27,7 @@
 #include "../services/ReferenceDataSeeder.h"
 #include "../services/database/AutomaticBackupService.h"
 #include "../services/storage/SessionStorageSelectionService.h"
+#include "../services/application/ApplicationServices.h"
 #include "../ui/MainWindow.h"
 
 #include <QDebug>
@@ -79,12 +80,14 @@ bool Application::initialize(const StartupProgress& progress)
     phaseTimer.restart();
     m_workspaceContext = std::make_unique<WorkspaceContext>();
     m_sessionStorageSelectionService = std::make_unique<SessionStorageSelectionService>();
+    m_applicationServices = std::make_unique<ApplicationServices>();
     qInfo() << "Startup phase application service creation completed in"
             << phaseTimer.elapsed() << "ms.";
 
     phaseTimer.restart();
     m_mainWindow = std::make_unique<MainWindow>(*m_workspaceContext,
-                                                *m_sessionStorageSelectionService);
+                                                *m_sessionStorageSelectionService,
+                                                *m_applicationServices);
     qInfo() << "Startup phase MainWindow construction completed in"
             << phaseTimer.elapsed() << "ms.";
     report(4, QStringLiteral("Starting background services..."));

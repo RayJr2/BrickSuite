@@ -2,6 +2,7 @@
 #include "AddPartReferenceDialog.h"
 #include "../../repositories/PartRepository.h"
 #include "../../services/parts/PartReferenceCustomizationService.h"
+#include "../../services/application/ApplicationServices.h"
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -12,10 +13,13 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
-AddPartReferenceDialog::AddPartReferenceDialog(int initialPartId,
+AddPartReferenceDialog::AddPartReferenceDialog(
+                                               SharedPartReferenceCustomizationService& customizationService,
+                                               int initialPartId,
                                                const PartReferenceEntry* anchor,
                                                QWidget* parent)
-    : QDialog(parent), m_initialPartId(initialPartId)
+    : QDialog(parent), m_initialPartId(initialPartId),
+      m_customizationService(customizationService)
 {
     setWindowTitle(tr("Add Part to Reference")); resize(620, 520);
     if (anchor) { m_defaultCatalog = anchor->catalog; m_defaultSection = anchor->section;
@@ -23,7 +27,7 @@ AddPartReferenceDialog::AddPartReferenceDialog(int initialPartId,
     QString error;
     if (!m_manifest.load(&error)) { QMessageBox::critical(this, windowTitle(), error); return; }
     PartReferenceCustomizationService service(m_manifest);
-    m_effective = service.effectiveEntries();
+    m_effective = m_customizationService.effectiveEntries(m_manifest, nullptr);
 
     auto* layout = new QVBoxLayout(this);
     auto* form = new QFormLayout;
@@ -70,6 +74,7 @@ void AddPartReferenceDialog::searchParts()
     for (const Part& part : parts) {
         auto* item = new QListWidgetItem(QStringLiteral("%1 — %2").arg(part.partNumber(), part.name()), m_results);
         item->setData(Qt::UserRole, part.id());
+        item->setData(Qt::UserRole + 1, part.partNumber());
         if (part.id() == m_initialPartId) m_results->setCurrentItem(item);
     }
     if (!m_results->currentItem() && m_results->count() == 1) m_results->setCurrentRow(0);
@@ -103,11 +108,13 @@ void AddPartReferenceDialog::save()
 {
     const int partId = selectedPartId();
     if (partId <= 0) { QMessageBox::warning(this, windowTitle(), tr("Select a catalog Part.")); return; }
+    const QString partNumber = m_results->currentItem()->data(Qt::UserRole + 1).toString();
     const QStringList destination = m_destination->currentData().toStringList();
     if (destination.size() != 2) return;
     const auto placement = static_cast<PartReferencePlacement>(m_placement->currentData().toInt());
-    const auto result = PartReferenceCustomizationService(m_manifest).add(
-        partId, destination.at(0), destination.at(1), placement, m_anchor->currentData().toString());
+    const auto result = m_customizationService.add(
+        m_manifest, partNumber, destination.at(0), destination.at(1), placement,
+        m_anchor->currentData().toString());
     if (!result.success) { QMessageBox::warning(this, windowTitle(), result.message); return; }
     m_added = true; accept();
 }

@@ -6,12 +6,14 @@
 #include "../../services/parts/PartReferenceManifest.h"
 
 class QComboBox; class QLabel; class QLineEdit; class QListWidget; class QPushButton;
+class SharedPartReferenceCustomizationService;
 
 class AddPartReferenceDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit AddPartReferenceDialog(int initialPartId = 0,
+    explicit AddPartReferenceDialog(SharedPartReferenceCustomizationService& customizationService,
+                                    int initialPartId = 0,
                                     const PartReferenceEntry* anchor = nullptr,
                                     QWidget* parent = nullptr);
     bool customizationAdded() const { return m_added; }
@@ -34,4 +36,5 @@ private:
     QString m_defaultSection;
     QString m_defaultAnchor;
     bool m_added = false;
+    SharedPartReferenceCustomizationService& m_customizationService;
 };

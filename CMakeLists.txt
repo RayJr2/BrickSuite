@@ -99,6 +99,8 @@ qt_add_executable(BrickSuite
     src/services/database/AutomaticBackupService.cpp
     src/services/storage/SessionStorageSelectionService.h
     src/services/storage/SessionStorageSelectionService.cpp
+    src/services/application/ApplicationServices.h
+    src/services/application/ApplicationServices.cpp
     src/services/database/AutomaticBackupRetention.h
     src/services/database/AutomaticBackupRetention.cpp
     src/services/Logger.h
@@ -948,6 +950,17 @@ if(BUILD_TESTING)
     target_link_libraries(ElementsEffectiveCompositionTest PRIVATE
         Qt6::Core Qt6::Sql ZLIB::ZLIB)
     add_test(NAME ElementsEffectiveComposition COMMAND ElementsEffectiveCompositionTest)
+
+    qt_add_executable(ApplicationServiceContractsTest EXCLUDE_FROM_ALL
+        tests/ApplicationServiceContractsTest.cpp
+        src/models/Build.h src/models/Build.cpp
+        src/models/BuildRequirement.h src/models/BuildRequirement.cpp
+        src/models/InventoryRecord.h src/models/InventoryRecord.cpp
+        src/models/CollectionItem.h src/models/CollectionItem.cpp
+        src/services/application/ApplicationServices.h
+    )
+    target_link_libraries(ApplicationServiceContractsTest PRIVATE Qt6::Core)
+    add_test(NAME ApplicationServiceContracts COMMAND ApplicationServiceContractsTest)
 endif()
 
 if(WIN32)

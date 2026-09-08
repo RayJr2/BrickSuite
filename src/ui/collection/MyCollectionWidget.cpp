@@ -8,9 +8,9 @@
 #include "../../models/CollectionSearchCriteria.h"
 #include "../../models/CollectionSearchResult.h"
 #include "../../models/StorageLocation.h"
-#include "../../repositories/CollectionRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/collection/CollectionItemService.h"
+#include "../../services/application/ApplicationServices.h"
 #include "../../services/images/MinifigImageService.h"
 #include "../../services/images/SetImageService.h"
 #include "../../settings/UserSettings.h"
@@ -51,8 +51,10 @@ QString locationPath(const StorageLocation& location, const QHash<int, StorageLo
 }
 }
 
-MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext, QWidget* parent)
-    : QWidget(parent), m_workspaceContext(workspaceContext)
+MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext,
+                                       CollectionApplicationService& collectionService,
+                                       QWidget* parent)
+    : QWidget(parent), m_workspaceContext(workspaceContext), m_collectionService(collectionService)
 {
     HelpManager::setContextTopic(this, HelpTopic::MyCollection);
     m_setImages = new SetImageService(this);
@@ -193,7 +195,7 @@ void MyCollectionWidget::refresh()
 
 void MyCollectionWidget::selectCollectionItem(int collectionItemId)
 {
-    const auto selected = CollectionRepository().displayById(collectionItemId);
+    const auto selected = m_collectionService.getDisplay(collectionItemId);
     if (!selected || selected->item.workspaceId != m_workspaceContext.currentWorkspaceId()) {
         refresh();
         return;
@@ -218,12 +220,12 @@ void MyCollectionWidget::selectCollectionItem(int collectionItemId)
     criteria.type = selected->item.type;
     criteria.activeState = selected->item.isActive ? 1 : 0;
     criteria.limit = UserSettings::instance().resultsPerPage();
-    const int total = CollectionRepository().count(criteria);
+    const int total = m_collectionService.count(criteria);
     const int pages = qMax(1, (total + criteria.limit - 1) / criteria.limit);
     m_page = 0;
     for (int page = 0; page < pages; ++page) {
         criteria.offset = page * criteria.limit;
-        const auto pageResults = CollectionRepository().search(criteria);
+        const auto pageResults = m_collectionService.searchRows(criteria);
         bool found = false;
         for (const auto& result : pageResults) {
             if (result.item.id == collectionItemId) { found = true; break; }
@@ -286,11 +288,10 @@ void MyCollectionWidget::loadPage(bool criteriaChanged, const QString& loadingMe
     criteria.activeState = m_activeCombo->currentData().toInt();
     criteria.limit = UserSettings::instance().resultsPerPage();
     criteria.offset = m_page * criteria.limit;
-    CollectionRepository repository;
-    m_total = repository.count(criteria);
+    m_total = m_collectionService.count(criteria);
     const int pages = qMax(1, (m_total + criteria.limit - 1) / criteria.limit);
     if (m_page >= pages) { m_page = pages - 1; criteria.offset = m_page * criteria.limit; }
-    const auto results = repository.search(criteria);
+    const auto results = m_collectionService.searchRows(criteria);
     m_table->setRowCount(0);
     for (const auto& result : results) {
         const int row = m_table->rowCount(); m_table->insertRow(row);

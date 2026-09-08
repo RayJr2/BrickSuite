@@ -37,7 +37,6 @@
 #include "../repositories/BuildRepository.h"
 #include "../repositories/PartRepository.h"
 #include "../repositories/SetCatalogRepository.h"
-#include "../repositories/WorkspaceRepository.h"
 
 #include "../services/RebrickableApiClient.h"
 #include "../services/Updater.h"
@@ -74,6 +73,7 @@
 #include "database/DatabaseStatusDialog.h"
 #include "../services/database/AutomaticBackupService.h"
 #include "../services/storage/SessionStorageSelectionService.h"
+#include "../services/application/ApplicationServices.h"
 
 #include <QAction>
 #include <QApplication>
@@ -128,10 +128,12 @@ bool windowIsVisibleOnAnyScreen(const QRect& windowGeometry)
 
 MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                        SessionStorageSelectionService& sessionStorageSelectionService,
+                       ApplicationServices& applicationServices,
                        QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
+    , m_applicationServices(applicationServices)
 {
     setWindowTitle("BrickSuite");
     resize(1200, 800);
@@ -251,13 +253,17 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     // My Inventory tab
     m_myInventoryWidget = new MyInventoryWidget(m_workspaceContext,
                                                  m_sessionStorageSelectionService,
+                                                 m_applicationServices.inventory(),
                                                  m_tabWidget);
 
-    m_myCollectionWidget = new MyCollectionWidget(m_workspaceContext, m_tabWidget);
+    m_myCollectionWidget = new MyCollectionWidget(m_workspaceContext,
+                                                   m_applicationServices.collection(),
+                                                   m_tabWidget);
 
     // Builds tab
     m_buildsWidget = new BuildsWidget(m_workspaceContext,
                                       m_sessionStorageSelectionService,
+                                      m_applicationServices.builds(),
                                       m_tabWidget);
 
     connect(m_setsCatalogWidget,
@@ -342,7 +348,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             &PartsCatalogWidget::addPartToReferenceRequested,
             this,
             [this](int partId) {
-                AddPartReferenceDialog dialog(partId, nullptr, this);
+                AddPartReferenceDialog dialog(
+                    m_applicationServices.partReferenceCustomizations(), partId, nullptr, this);
                 if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded()
                     && m_partReferenceDialog) {
                     m_partReferenceDialog->refreshCustomizations();
@@ -695,7 +702,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     connect(partReferenceAction, &QAction::triggered, this, [this]() {
         if (!m_partReferenceDialog) {
-            m_partReferenceDialog = new PartReferenceDialog(this);
+            m_partReferenceDialog = new PartReferenceDialog(
+                m_applicationServices.partReferenceCustomizations(), this);
             m_partReferenceDialog->setAddInventoryAvailable(
                 m_myInventoryWidget && m_myInventoryWidget->hasActiveAddInventoryDialog());
 
@@ -1879,9 +1887,7 @@ void MainWindow::loadWorkspaces()
 {
     m_workspaceList->clear();
 
-    WorkspaceRepository repository;
-
-    const QList<Workspace> workspaces = repository.getAll();
+    const QList<Workspace> workspaces = m_applicationServices.workspaces().list();
 
     const int defaultWorkspaceId = UserSettings::instance().defaultWorkspaceId();
 
@@ -1925,9 +1931,7 @@ void MainWindow::workspaceSelected()
 
     const int workspaceId = item->data(Qt::UserRole).toInt();
 
-    WorkspaceRepository repository;
-
-    const std::optional<Workspace> workspace = repository.getById(workspaceId);
+    const std::optional<Workspace> workspace = m_applicationServices.workspaces().get(workspaceId);
 
     if (!workspace) {
         m_workspaceContext.clearCurrentWorkspace();
@@ -1971,9 +1975,7 @@ void MainWindow::updateWorkspace()
 
     const int workspaceId = item->data(Qt::UserRole).toInt();
 
-    WorkspaceRepository repository;
-
-    std::optional<Workspace> workspace = repository.getById(workspaceId);
+    std::optional<Workspace> workspace = m_applicationServices.workspaces().get(workspaceId);
 
     if (!workspace) {
         QMessageBox::critical(this,
@@ -1989,7 +1991,7 @@ void MainWindow::updateWorkspace()
     // Preserve the existing active state and database identity. Only the
     // editable Workspace metadata is changed here.
     //
-    if (!repository.update(*workspace)) {
+    if (!m_applicationServices.workspaces().update(*workspace)) {
         QMessageBox::critical(this,
                               "Edit Workspace",
                               "Unable to save the workspace changes.");
@@ -2025,9 +2027,7 @@ void MainWindow::addWorkspace()
     workspace.setDescription(description);
     workspace.setIsActive(true);
 
-    WorkspaceRepository repository;
-
-    if (!repository.create(workspace)) {
+    if (!m_applicationServices.workspaces().create(workspace)) {
         QMessageBox::critical(this, "BrickSuite", "Unable to create the workspace.");
 
         return;

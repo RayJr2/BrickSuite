@@ -10,12 +10,15 @@ class QLabel;
 class QLineEdit;
 class QPushButton;
 class QTableWidget;
+class CollectionApplicationService;
 
 class MyCollectionWidget : public QWidget
 {
     Q_OBJECT
 public:
-    explicit MyCollectionWidget(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
+    explicit MyCollectionWidget(WorkspaceContext& workspaceContext,
+                                CollectionApplicationService& collectionService,
+                                QWidget* parent = nullptr);
     void refresh();
     void selectCollectionItem(int collectionItemId);
 
@@ -27,6 +30,7 @@ private:
     QString effectiveCriteriaKey() const;
 
     WorkspaceContext& m_workspaceContext;
+    CollectionApplicationService& m_collectionService;
     SetImageService* m_setImages = nullptr;
     MinifigImageService* m_minifigImages = nullptr;
     QLineEdit* m_searchEdit = nullptr;

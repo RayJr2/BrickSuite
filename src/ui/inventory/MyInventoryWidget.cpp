@@ -41,7 +41,6 @@
 #include "../../models/StorageLocation.h"
 
 #include "../../repositories/ColorRepository.h"
-#include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
@@ -49,6 +48,7 @@
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/images/PartImageService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
+#include "../../services/application/ApplicationServices.h"
 
 #include "../helpers/ColorComboHelper.h"
 #include "../helpers/LargeViewLoadingGuard.h"
@@ -78,10 +78,12 @@
 MyInventoryWidget::MyInventoryWidget(
     WorkspaceContext& workspaceContext,
     SessionStorageSelectionService& sessionStorageSelectionService,
+    InventoryApplicationService& inventoryService,
     QWidget* parent)
     : QWidget(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
+    , m_inventoryService(inventoryService)
 {
     auto* mainLayout =
         new QVBoxLayout(this);
@@ -650,10 +652,8 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
 
     criteria.offset = m_currentPage * resultsPerPage;
 
-    InventoryRecordRepository repository;
-
     phaseTimer.restart();
-    m_totalResultCount = repository.count(criteria);
+    m_totalResultCount = m_inventoryService.count(criteria);
     const qint64 countMs = phaseTimer.elapsed();
 
     //
@@ -671,7 +671,7 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
     }
 
     phaseTimer.restart();
-    const QList<InventorySearchResult> results = repository.search(criteria);
+    const QList<InventorySearchResult> results = m_inventoryService.searchRows(criteria);
     const qint64 searchMs = phaseTimer.elapsed();
 
     m_lastResultCount = results.size();
@@ -846,7 +846,8 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                             return;
                         }
                     } else if (action == "history") {
-                        InventoryHistoryDialog dialog(partId, colorId, m_workspaceContext, this);
+                        InventoryHistoryDialog dialog(partId, colorId, m_workspaceContext,
+                                                      m_inventoryService, this);
 
                         dialog.exec();
                     }

@@ -28,9 +28,9 @@
 #include "../../models/StorageLocation.h"
 
 #include "../../repositories/ColorRepository.h"
-#include "../../repositories/InventoryMovementRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
+#include "../../services/application/ApplicationServices.h"
 
 #include <QDateTime>
 #include <QHeaderView>
@@ -42,11 +42,13 @@
 InventoryHistoryDialog::InventoryHistoryDialog(int partId,
                                                int colorId,
                                                WorkspaceContext& workspaceContext,
+                                               InventoryApplicationService& inventoryService,
                                                QWidget* parent)
     : QDialog(parent)
     , m_partId(partId)
     , m_colorId(colorId)
     , m_workspaceContext(workspaceContext)
+    , m_inventoryService(inventoryService)
 {
     setWindowTitle("Inventory History");
     resize(1100, 500);
@@ -166,12 +168,8 @@ void InventoryHistoryDialog::loadHistory()
     if (!m_workspaceContext.hasCurrentWorkspace())
         return;
 
-    InventoryMovementRepository repository;
-
     const QList<InventoryHistoryResult> history
-        = repository.getHistoryForPartColor(m_workspaceContext.currentWorkspaceId(),
-                                            m_partId,
-                                            m_colorId);
+        = m_inventoryService.history(m_workspaceContext.currentWorkspaceId(), m_partId, m_colorId);
 
     int row = 0;
 

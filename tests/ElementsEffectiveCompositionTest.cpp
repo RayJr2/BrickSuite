@@ -31,21 +31,37 @@ int main(int argc,char** argv)
         &&exec(db,"INSERT INTO theme_catalog(name,parent_theme_catalog_id,is_active,created_utc,modified_utc) VALUES('Theme',NULL,1,'n','n'),('Other',NULL,1,'n','n')")
         &&exec(db,"INSERT INTO theme_external_identifier(theme_catalog_id,provider,external_id,source,is_active,created_utc,modified_utc) SELECT id,'Rebrickable','7','test',1,'n','n' FROM theme_catalog WHERE name='Theme'"),"Seed failed."))return 1;
     const int part=scalar(db,"SELECT id FROM part WHERE part_number='p1'"),color=scalar(db,"SELECT id FROM color WHERE rebrickable_id=1"),set=scalar(db,"SELECT id FROM set_catalog WHERE set_number='s1'"),fig=scalar(db,"SELECT id FROM minifig_catalog"),theme=scalar(db,"SELECT id FROM theme_catalog WHERE name='Theme'"),otherTheme=scalar(db,"SELECT id FROM theme_catalog WHERE name='Other'");
-    const QString elements=dir.filePath("elements.csv");write(elements,"element_id,part_num,color_id,design_id\ne1,p1,1,d1\ne2,p1,1,d1\n");
+    const QString elements=dir.filePath("elements.csv");
+    const QByteArray blankDesignSnapshot="element_id,part_num,color_id,design_id\ne1,p1,1,\ne2,p1,1,d1\n";
+    write(elements,blankDesignSnapshot);
     RebrickableElementImporter importer;auto imported=importer.importFile(elements,db);
     PartElementIdentifierRepository elementRepo(db);
-    if(!require(imported.success&&imported.inserted==2&&elementRepo.findByElementId("Rebrickable","e1").partId==part&&elementRepo.findByPartColor(part,color,"Rebrickable").size()==2,"Element import/repository failed."))return 1;
+    if(!require(imported.success&&imported.inserted==2&&elementRepo.findByElementId("Rebrickable","e1").partId==part&&elementRepo.findByElementId("Rebrickable","e1").designId.isEmpty()&&elementRepo.findByPartColor(part,color,"Rebrickable").size()==2,"Blank Element design import/repository failed."))return 1;
+    write(elements,blankDesignSnapshot);imported=importer.importFile(elements,db);
+    if(!require(imported.success&&imported.rowsRead==2&&imported.unchanged==2&&imported.inserted==0&&imported.updated==0&&imported.reactivated==0&&imported.deactivated==0,"Identical Element reimport was not unchanged."))return 1;
+    write(elements,"element_id,part_num,color_id,design_id\ne1,p1,1,d2\ne2,p1,1,d1\n");imported=importer.importFile(elements,db);
+    if(!require(imported.success&&imported.updated==1&&elementRepo.findByElementId("Rebrickable","e1").designId=="d2","Blank-to-populated Element design update failed."))return 1;
+    write(elements,"element_id,part_num,color_id,design_id\ne1,p1,1,d3\ne2,p1,1,d1\n");imported=importer.importFile(elements,db);
+    if(!require(imported.success&&imported.updated==1&&elementRepo.findByElementId("Rebrickable","e1").designId=="d3","Populated-to-populated Element design update failed."))return 1;
+    write(elements,blankDesignSnapshot);imported=importer.importFile(elements,db);
+    if(!require(imported.success&&imported.updated==1&&elementRepo.findByElementId("Rebrickable","e1").designId.isEmpty(),"Populated-to-blank Element design update failed."))return 1;
     if(!require(scalar(db,"SELECT COUNT(*) FROM pragma_index_list('part_element_identifier') WHERE [unique]=1")==1
         &&scalar(db,"SELECT COUNT(*) FROM pragma_index_list('part_element_identifier') WHERE name='idx_part_element_part_color'")==1
         &&scalar(db,"SELECT COUNT(*) FROM pragma_foreign_key_list('part_element_identifier')")==2,"Element constraints/indexes are incomplete."))return 1;
     if(!require(exec(db,QStringLiteral("INSERT INTO part_element_identifier(provider,element_id,part_id,color_id,design_id,is_active,created_utc,modified_utc) VALUES('OtherProvider','other',%1,%2,'d',1,'n','n')").arg(part).arg(color)),"Provider seed failed."))return 1;
-    write(elements,"element_id,part_num,color_id,design_id\ne1,p1,1,d2\n");imported=importer.importFile(elements,db);
-    if(!require(imported.success&&imported.updated==1&&imported.deactivated==1&&scalar(db,"SELECT COUNT(*) FROM part_element_identifier WHERE provider='OtherProvider' AND is_active=1")==1,"Element update/deactivation isolation failed."))return 1;
+    write(elements,"element_id,part_num,color_id,design_id\ne1,p1,1,\n");imported=importer.importFile(elements,db);
+    if(!require(imported.success&&imported.unchanged==1&&imported.deactivated==1&&scalar(db,"SELECT COUNT(*) FROM part_element_identifier WHERE provider='OtherProvider' AND is_active=1")==1,"Element deactivation/provider isolation failed."))return 1;
     write(elements,"element_id,part_num,color_id,design_id\ne1,missing,1,d\n");
-    if(!require(!importer.importFile(elements,db).success&&scalar(db,"SELECT COUNT(*) FROM part_element_identifier WHERE provider='Rebrickable' AND is_active=1")==1,"Invalid Element snapshot deactivated data."))return 1;
+    imported=importer.importFile(elements,db);
+    if(!require(!imported.success&&imported.message.contains("Unresolved Element Part")&&scalar(db,"SELECT COUNT(*) FROM part_element_identifier WHERE provider='Rebrickable' AND is_active=1")==1,"Unresolved Element Part snapshot changed data."))return 1;
     write(elements,"element_id,part_num,color_id,design_id\ne1,p1,999,d\n");
-    if(!require(!importer.importFile(elements,db).success&&scalar(db,"SELECT COUNT(*) FROM part_element_identifier WHERE provider='Rebrickable' AND is_active=1")==1,"Unresolved Element Color changed the snapshot."))return 1;
-    write(elements,"element_id,part_num,color_id,design_id\ne1,p1,1,d2\ne2,p1,1,d1\n");imported=importer.importFile(elements,db);
+    imported=importer.importFile(elements,db);
+    if(!require(!imported.success&&imported.message.contains("Unresolved Element Color")&&scalar(db,"SELECT COUNT(*) FROM part_element_identifier WHERE provider='Rebrickable' AND is_active=1")==1,"Unresolved Element Color changed the snapshot."))return 1;
+    write(elements,"element_id,part_num,color_id,design_id\ne1,p1,invalid,d\n");imported=importer.importFile(elements,db);
+    if(!require(!imported.success&&imported.message.contains("Invalid Element color value")&&scalar(db,"SELECT COUNT(*) FROM part_element_identifier WHERE provider='Rebrickable' AND is_active=1")==1,"Invalid Element Color changed the snapshot."))return 1;
+    write(elements,"element_id,part_num,color_id,design_id\ne1,p1,1,changed\ne1,p2,2,d2\n");imported=importer.importFile(elements,db);
+    if(!require(!imported.success&&imported.message.contains("Duplicate Element ID")&&elementRepo.findByElementId("Rebrickable","e1").designId.isEmpty()&&scalar(db,"SELECT COUNT(*) FROM part_element_identifier WHERE provider='Rebrickable' AND is_active=1")==1,"Duplicate Element snapshot did not roll back."))return 1;
+    write(elements,blankDesignSnapshot);imported=importer.importFile(elements,db);
     if(!require(imported.success&&imported.reactivated==1&&elementRepo.findByElementId("Rebrickable","e2").active,"Element reactivation failed."))return 1;
     RebrickableImportCancellation cancelled;cancelled.requestCancellation();if(!require(!importer.importFile(elements,db,&cancelled).success,"Cancelled Elements import succeeded."))return 1;
 
