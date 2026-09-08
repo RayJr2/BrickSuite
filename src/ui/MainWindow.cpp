@@ -63,6 +63,7 @@
 #include "catalog/MinifigsCatalogWidget.h"
 #include "inventory/AddInventoryDialog.h"
 #include "inventory/MyInventoryWidget.h"
+#include "import/GlobalRebrickableImportDialog.h"
 #include "collection/MyCollectionWidget.h"
 #include "parts/PartResolverTestDialog.h"
 #include "parts/PartReferenceDialog.h"
@@ -637,6 +638,16 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     // Tools menu
     auto* toolsMenu = menuBar()->addMenu("Tools");
+
+    auto* importRebrickableDataAction =
+        toolsMenu->addAction("Import Rebrickable Data Files...");
+    connect(importRebrickableDataAction, &QAction::triggered, this, [this]() {
+        auto* dialog = new GlobalRebrickableImportDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->show();
+    });
+
+    toolsMenu->addSeparator();
 
     auto* referenceDataAction = toolsMenu->addAction("Lists && Reference Data...");
     connect(referenceDataAction, &QAction::triggered, this, [this]() {

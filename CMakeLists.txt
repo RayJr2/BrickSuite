@@ -61,6 +61,19 @@ qt_add_executable(BrickSuite
     src/ui/MainWindow.cpp
     src/import/RebrickableReferenceImporter.cpp
     src/import/RebrickableReferenceImporter.h
+    src/import/global/RebrickableImportTypes.h
+    src/import/global/RebrickableImportTypes.cpp
+    src/import/global/RebrickableDatasetRegistry.h
+    src/import/global/RebrickableDatasetRegistry.cpp
+    src/import/global/RebrickableImportDiscoveryService.h
+    src/import/global/RebrickableImportDiscoveryService.cpp
+    src/import/global/RebrickableImportCancellation.h
+    src/import/global/RebrickableImportPlanController.h
+    src/import/global/RebrickableImportPlanController.cpp
+    src/import/global/RebrickableWorkerDatabaseSession.h
+    src/import/global/RebrickableWorkerDatabaseSession.cpp
+    src/ui/import/GlobalRebrickableImportDialog.h
+    src/ui/import/GlobalRebrickableImportDialog.cpp
     resources/resources.qrc
     src/services/ReferenceDataSeeder.cpp
     src/services/ReferenceDataSeeder.h
@@ -851,6 +864,25 @@ if(BUILD_TESTING)
     target_link_libraries(LargeViewLoadingGuardTest PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
     add_test(NAME LargeViewLoadingGuard COMMAND LargeViewLoadingGuardTest)
     set_tests_properties(LargeViewLoadingGuard PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    qt_add_executable(GlobalRebrickableImporterFoundationTest EXCLUDE_FROM_ALL
+        tests/GlobalRebrickableImporterFoundationTest.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/import/RebrickableCsvInputResolver.h src/import/RebrickableCsvInputResolver.cpp
+        src/import/global/RebrickableImportTypes.h src/import/global/RebrickableImportTypes.cpp
+        src/import/global/RebrickableDatasetRegistry.h src/import/global/RebrickableDatasetRegistry.cpp
+        src/import/global/RebrickableImportDiscoveryService.h
+        src/import/global/RebrickableImportDiscoveryService.cpp
+        src/import/global/RebrickableImportCancellation.h
+        src/import/global/RebrickableImportPlanController.h
+        src/import/global/RebrickableImportPlanController.cpp
+        src/import/global/RebrickableWorkerDatabaseSession.h
+        src/import/global/RebrickableWorkerDatabaseSession.cpp
+    )
+    target_link_libraries(GlobalRebrickableImporterFoundationTest PRIVATE
+        Qt6::Core Qt6::Sql ZLIB::ZLIB)
+    add_test(NAME GlobalRebrickableImporterFoundation
+        COMMAND GlobalRebrickableImporterFoundationTest)
 endif()
 
 if(WIN32)
