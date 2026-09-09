@@ -39,6 +39,7 @@
 #include <QMetaObject>
 #include <QTimer>
 #include <memory>
+#include <utility>
 
 BackgroundPartColorImageCacheService::BackgroundPartColorImageCacheService(
     WorkspaceContext& workspaceContext, QObject* parent)
@@ -56,8 +57,18 @@ BackgroundPartColorImageCacheService::BackgroundPartColorImageCacheService(
     connect(m_timer, &QTimer::timeout, this, &BackgroundPartColorImageCacheService::processNext);
 
     connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged, this, [this](int) {
-        rebuildQueue();
+        if (m_scanLocalInventory)
+            rebuildQueue();
     });
+}
+
+void BackgroundPartColorImageCacheService::startPortableOnly()
+{
+    if (m_started)
+        return;
+    m_scanLocalInventory = false;
+    m_started = true;
+    qInfo() << "Background part-color image cache started for portable requests.";
 }
 
 void BackgroundPartColorImageCacheService::start()
@@ -195,6 +206,37 @@ void BackgroundPartColorImageCacheService::rebuildQueue()
     if (!m_requestInProgress && !m_workItems.isEmpty()) {
         m_timer->start(BackgroundIntervalMs);
     }
+}
+
+void BackgroundPartColorImageCacheService::enqueuePortableItems(
+    const QList<QPair<QString, int>>& items)
+{
+    if (!m_started || UserSettings::instance().rebrickableApiKey().trimmed().isEmpty()
+        || RebrickableApiClient::isSessionBlocked()) {
+        return;
+    }
+
+    QSet<QString> queuedKeys;
+    for (const WorkItem& queued : std::as_const(m_workItems))
+        queuedKeys.insert(workKey(queued.partNumber, queued.rebrickableColorId));
+
+    for (const auto& portable : items) {
+        const QString partNumber = portable.first.trimmed();
+        const int colorId = portable.second;
+        const QString key = workKey(partNumber, colorId);
+        if (partNumber.isEmpty() || colorId < 0 || queuedKeys.contains(key)
+            || m_skippedThisRun.contains(key)
+            || m_partImageService->hasCachedPartColorImage(partNumber, colorId)
+            || m_partImageService->isPartColorImageKnownUnavailable(partNumber, colorId)) {
+            continue;
+        }
+
+        m_workItems.append({partNumber, colorId});
+        queuedKeys.insert(key);
+    }
+
+    if (!m_requestInProgress && !m_workItems.isEmpty() && !m_timer->isActive())
+        m_timer->start(BackgroundIntervalMs);
 }
 
 void BackgroundPartColorImageCacheService::processNext()

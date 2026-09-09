@@ -50,7 +50,7 @@ public:
     void listBuilds(int workspaceId, bool includeArchived, QObject* context,
                     std::function<void(const QList<Build>&)> completion,
                     ErrorCallback failure = {});
-    void getBuild(int buildId, QObject* context,
+    void getBuild(int workspaceId, int buildId, QObject* context,
                   std::function<void(const std::optional<Build>&)> completion,
                   ErrorCallback failure = {});
     void buildRequirements(int buildId, QObject* context,
@@ -59,6 +59,12 @@ public:
     void missingParts(int workspaceId, int buildId, QObject* context,
                       std::function<void(const QList<MissingPartsService::MissingPart>&)> completion,
                       ErrorCallback failure = {});
+    void listBuildsPortable(int workspaceId, bool includeArchived, QObject* context,
+        std::function<void(const QList<RemoteReadDto::BuildSummary>&)> completion,
+        ErrorCallback failure = {});
+    void getBuildPortable(int workspaceId, int buildId, QObject* context,
+        std::function<void(const std::optional<RemoteReadDto::BuildDetail>&)> completion,
+        ErrorCallback failure = {});
     void pullingView(int buildId, QObject* context,
                      std::function<void(const BuildPullingService::PullingView&)> completion,
                      ErrorCallback failure = {});
@@ -83,7 +89,7 @@ public:
         int rebrickableColorId, QObject* context,
         std::function<void(const QList<RemoteReadDto::InventoryHistoryRow>&)> completion,
         ErrorCallback failure = {});
-    void buildRequirementsPortable(int buildId, const RemoteReadDto::PageRequest& page,
+    void buildRequirementsPortable(int workspaceId, int buildId, const RemoteReadDto::PageRequest& page,
         QObject* context,
         std::function<void(const RemoteReadDto::Page<RemoteReadDto::BuildRequirement>&)> completion,
         ErrorCallback failure = {});
@@ -91,7 +97,7 @@ public:
         const RemoteReadDto::PageRequest& page, QObject* context,
         std::function<void(const RemoteReadDto::Page<RemoteReadDto::MissingPart>&)> completion,
         ErrorCallback failure = {});
-    void pullingPortable(int buildId, const RemoteReadDto::PageRequest& page,
+    void pullingPortable(int workspaceId, int buildId, const RemoteReadDto::PageRequest& page,
         QObject* context,
         std::function<void(const RemoteReadDto::Page<RemoteReadDto::PullingRow>&)> completion,
         ErrorCallback failure = {});

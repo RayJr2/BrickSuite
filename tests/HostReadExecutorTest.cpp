@@ -197,9 +197,16 @@ int main(int argc, char** argv)
         }), "Build read completion");
         ok &= check(builds.size() == 1, "Build projection");
         const int buildId = builds.isEmpty() ? 0 : builds.first().id();
+        std::optional<Build> wrongWorkspaceBuild;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.getBuild(999, buildId, &app,
+                [&](const auto& result) { wrongWorkspaceBuild = result; loop.quit(); });
+        }), "cross-Workspace Build detail completion");
+        ok &= check(!wrongWorkspaceBuild,
+                    "Build detail cannot probe another Workspace");
         RemoteReadDto::Page<RemoteReadDto::BuildRequirement> requirements;
         ok &= check(waitFor([&](QEventLoop& loop) {
-            executor.buildRequirementsPortable(buildId, {1, 250}, &app,
+            executor.buildRequirementsPortable(1, buildId, {1, 250}, &app,
                 [&](const auto& result) { requirements = result; loop.quit(); });
         }), "Build requirements completion");
         ok &= check(requirements.rows.size() == 1
@@ -207,22 +214,48 @@ int main(int argc, char** argv)
                         && requirements.rows.first().partNumber == QStringLiteral("3001")
                         && requirements.rows.first().rebrickableColorId == 4,
                     "Build requirements portable identities");
+        RemoteReadDto::Page<RemoteReadDto::BuildRequirement> wrongRequirements;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.buildRequirementsPortable(999, buildId, {1, 250}, &app,
+                [&](const auto& result) { wrongRequirements = result; loop.quit(); });
+        }), "cross-Workspace requirements completion");
+        ok &= check(!wrongRequirements.resourceFound && wrongRequirements.rows.isEmpty(),
+                    "requirements cannot probe another Workspace");
         RemoteReadDto::Page<RemoteReadDto::MissingPart> missing;
         ok &= check(waitFor([&](QEventLoop& loop) {
             executor.missingPartsPortable(1, buildId, {1, 250}, &app,
                 [&](const auto& result) { missing = result; loop.quit(); });
         }), "Missing Parts completion");
         ok &= check(missing.rows.size() == 1 && !missing.rows.isEmpty()
-                        && missing.rows.first().rebrickableColorId == 4,
-                    "Missing Parts portable identity");
+                        && missing.rows.first().rebrickableColorId == 4
+                        && missing.rows.first().remaining == 10
+                        && missing.rows.first().owned == 7
+                        && missing.rows.first().thisBuildAllocated == 3
+                        && missing.rows.first().available == 4
+                        && missing.rows.first().missing == 3,
+                    "Missing Parts preserves Host authoritative quantities");
+        RemoteReadDto::Page<RemoteReadDto::MissingPart> wrongMissing;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.missingPartsPortable(999, buildId, {1, 250}, &app,
+                [&](const auto& result) { wrongMissing = result; loop.quit(); });
+        }), "cross-Workspace Missing Parts completion");
+        ok &= check(!wrongMissing.resourceFound && wrongMissing.rows.isEmpty(),
+                    "Missing Parts cannot probe another Workspace");
         RemoteReadDto::Page<RemoteReadDto::PullingRow> pulling;
         ok &= check(waitFor([&](QEventLoop& loop) {
-            executor.pullingPortable(buildId, {1, 250}, &app,
+            executor.pullingPortable(1, buildId, {1, 250}, &app,
                 [&](const auto& result) { pulling = result; loop.quit(); });
         }), "Pulling completion");
         ok &= check(pulling.rows.size() == 1 && !pulling.rows.isEmpty()
                         && pulling.rows.first().partNumber == QStringLiteral("3001"),
                     "Pulling portable identity");
+        RemoteReadDto::Page<RemoteReadDto::PullingRow> wrongPulling;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.pullingPortable(999, buildId, {1, 250}, &app,
+                [&](const auto& result) { wrongPulling = result; loop.quit(); });
+        }), "cross-Workspace Pulling completion");
+        ok &= check(!wrongPulling.resourceFound && wrongPulling.rows.isEmpty(),
+                    "Pulling cannot probe another Workspace");
 
         CollectionSearchCriteria collectionCriteria;
         collectionCriteria.workspaceId = workspaces.first().id();
@@ -298,10 +331,10 @@ int main(int argc, char** argv)
             {"inventory.get",{{"workspaceId",1},{"inventoryRecordId",1}}},
             {"inventory.history",{{"workspaceId",1},{"partNumber","3001"},{"rebrickableColorId",4}}},
             {"builds.list",{{"workspaceId",1},{"includeArchived",false}}},
-            {"builds.get",{{"buildId",1}}},
-            {"builds.requirements",{{"buildId",1},{"page",1},{"pageSize",250}}},
+            {"builds.get",{{"workspaceId",1},{"buildId",1}}},
+            {"builds.requirements",{{"workspaceId",1},{"buildId",1},{"page",1},{"pageSize",250}}},
             {"builds.missingParts",{{"workspaceId",1},{"buildId",1},{"page",1},{"pageSize",250}}},
-            {"builds.pulling",{{"buildId",1},{"page",1},{"pageSize",250}}},
+            {"builds.pulling",{{"workspaceId",1},{"buildId",1},{"page",1},{"pageSize",250}}},
             {"collection.search",{{"workspaceId",1},{"text",""},{"page",1},{"pageSize",100}}},
             {"collection.get",{{"collectionItemId",1}}},
             {"partReference.customizations",{}}};

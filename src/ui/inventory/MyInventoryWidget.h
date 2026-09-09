@@ -41,6 +41,8 @@ class RebrickableApiClient;
 class AddInventoryDialog;
 class InventoryApplicationService;
 class RemoteReadApplicationServices;
+class BackgroundPartColorImageCacheService;
+class PartExternalIdEnrichmentService;
 
 class MyInventoryWidget : public QWidget
 {
@@ -52,7 +54,11 @@ public:
         SessionStorageSelectionService& sessionStorageSelectionService,
         InventoryApplicationService& inventoryService,
         QWidget* parent = nullptr,
-        RemoteReadApplicationServices* remoteReads = nullptr);
+        RemoteReadApplicationServices* remoteReads = nullptr,
+        PartExternalIdEnrichmentService* enrichmentService = nullptr);
+
+    void setBackgroundPartColorImageCacheService(
+        BackgroundPartColorImageCacheService* service);
 
     void refresh();
     void settingsChanged();
@@ -99,6 +105,8 @@ private:
     SessionStorageSelectionService& m_sessionStorageSelectionService;
     InventoryApplicationService& m_inventoryService;
     RemoteReadApplicationServices* m_remoteReads = nullptr;
+    PartExternalIdEnrichmentService* m_enrichmentService = nullptr;
+    BackgroundPartColorImageCacheService* m_backgroundColorImages = nullptr;
     ReadRequestToken m_inventoryRequestToken = 0;
     ReadRequestToken m_storageRequestToken = 0;
     bool m_remoteResponseReady = false;

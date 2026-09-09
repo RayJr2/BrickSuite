@@ -58,6 +58,19 @@ int main(int argc, char** argv)
 
         service.ensureExternalIds(normal); service.ensureExternalIds(normal); service.ensureExternalIds(loaded); events();
         if (!require(batches.count("normal")==1 && !batches.contains("loaded"),"Deduplication or Loaded skip failed.")) return 1;
+        service.ensureGeneralImageMetadata({loaded});
+        service.ensureGeneralImageMetadata({loaded});
+        events();
+        if (!require(batches.count("loaded") == 1,
+                     "General image metadata did not use the existing batch queue or was duplicated.")) return 1;
+        RebrickableService::PartImageUrlsResult loadedImage;
+        loadedImage.success = true;
+        loadedImage.requestedPartNumbers = {"loaded"};
+        RebrickableService::PartImageUrl loadedItem;
+        loadedItem.partNumber = "loaded";
+        loadedItem.partImageUrl = "https://example/loaded.png";
+        loadedImage.parts = {loadedItem};
+        service.handleBatchResult(loadedImage);
         RebrickableService::PartImageUrlsResult response; response.success=true; response.requestedPartNumbers={"normal"};
         RebrickableService::PartImageUrl item; item.partNumber="normal"; item.partImageUrl="https://example/normal.png";
         item.externalIds={{"BrickLink",{"bl-normal"}},{"BrickOwl",{"bo-1"}},{"LDraw",{"ld-1","ld-2"}},{"LEGO",{"lego-1"}},{"FutureProvider",{"future-1"}}}; response.parts={item};
@@ -131,6 +144,16 @@ int main(int argc, char** argv)
         color.close();
         const int colorBefore=batches.size(); images.requestPartColorImage("coloronly",1,QString()); events();
         if (!require(batches.size()==colorBefore,"Color-specific image triggered external-ID enrichment.")) return 1;
+
+        PartImageService staleIndex;
+        if (!require(staleIndex.cachedImagePath("late-cache").isEmpty(),
+                     "Late cache fixture unexpectedly existed.")) return 1;
+        QFile lateCached(QDir(data).filePath("cache/parts/late-cache.png"));
+        if (!require(lateCached.open(QIODevice::WriteOnly) && lateCached.write("image") == 5,
+                     "Unable to create the cross-service cache fixture.")) return 1;
+        lateCached.close();
+        if (!require(staleIndex.cachedImagePath("late-cache") == lateCached.fileName(),
+                     "An already-indexed image service did not discover another service's cache write.")) return 1;
 
         if (!require(q.exec("CREATE TRIGGER fail_external_id BEFORE INSERT ON external_part_identifier WHEN NEW.provider='Bad' BEGIN SELECT RAISE(ABORT,'forced'); END"),"Failure trigger failed.")) return 1;
         const int failedId=parts.getByPartNumber("failure")->id();

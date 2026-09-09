@@ -48,6 +48,8 @@
 
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/images/PartImageService.h"
+#include "../../services/images/BackgroundPartColorImageCacheService.h"
+#include "../../services/parts/PartExternalIdEnrichmentService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
@@ -83,12 +85,14 @@ MyInventoryWidget::MyInventoryWidget(
     SessionStorageSelectionService& sessionStorageSelectionService,
     InventoryApplicationService& inventoryService,
     QWidget* parent,
-    RemoteReadApplicationServices* remoteReads)
+    RemoteReadApplicationServices* remoteReads,
+    PartExternalIdEnrichmentService* enrichmentService)
     : QWidget(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
     , m_inventoryService(inventoryService)
     , m_remoteReads(remoteReads)
+    , m_enrichmentService(enrichmentService)
 {
     auto* mainLayout =
         new QVBoxLayout(this);
@@ -426,6 +430,13 @@ MyInventoryWidget::MyInventoryWidget(
             this,
             &MyInventoryWidget::updatePartColorImage);
 
+    if (m_enrichmentService) {
+        connect(m_enrichmentService,
+                &PartExternalIdEnrichmentService::generalImageMetadataReady,
+                m_partImageService,
+                &PartImageService::requestPartImage);
+    }
+
     connect(m_rebrickableApiClient,
             &RebrickableApiClient::partDetailsFinished,
             this,
@@ -459,6 +470,12 @@ MyInventoryWidget::MyInventoryWidget(
         m_workspaceContext.currentWorkspaceId());
 
     updatePagingControls();
+}
+
+void MyInventoryWidget::setBackgroundPartColorImageCacheService(
+    BackgroundPartColorImageCacheService* service)
+{
+    m_backgroundColorImages = service;
 }
 
 void MyInventoryWidget::showEvent(QShowEvent* event)
@@ -833,6 +850,7 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
         for (const PartCategory& category : PartCategoryRepository().getAll())
             localCategories.insert(category.id(), category);
         int unknownRows = 0;
+        QList<QPair<QString, int>> colorImageWork;
         for (const auto& remote : m_remotePage.rows) {
             InventorySearchResult row;
             row.inventoryRecordId = int(remote.inventoryRecordId);
@@ -850,6 +868,7 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
             const auto part = localParts.constFind(remote.partNumber);
             if (part != localParts.cend()) {
                 row.partId = part->id();
+                row.partNumber = part->partNumber();
                 row.partName = part->name();
                 row.categoryId = part->partCategoryId();
                 const auto category = localCategories.constFind(row.categoryId);
@@ -862,9 +881,13 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                 row.colorId = color->id();
                 row.colorName = color->name();
                 row.colorRgb = color->rgb();
+                if (row.partId > 0)
+                    colorImageWork.append({row.partNumber, row.rebrickableColorId});
             }
             results.append(row);
         }
+        if (m_backgroundColorImages)
+            m_backgroundColorImages->enqueuePortableItems(colorImageWork);
         if (unknownRows > 0)
             m_resultLabel->setToolTip(QStringLiteral("Some Host Inventory items are not present in this device's local Rebrickable catalog. Consider updating Rebrickable data."));
         else
@@ -890,6 +913,7 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
     qint64 actionCreationNs = 0;
     qint64 tableAttachNs = 0;
     qint64 imageSetupNs = 0;
+    QList<int> missingGeneralImagePartIds;
     const bool tableUpdatesEnabled = m_resultsTable->updatesEnabled();
     m_resultsTable->setUpdatesEnabled(false);
     m_resultsTable->setRowCount(results.size());
@@ -1141,12 +1165,17 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
 
             if (!genericCachedPath.isEmpty()) {
                 m_partImageService->requestPartImage(partNumber, QString());
+            } else if (partId > 0) {
+                missingGeneralImagePartIds.append(partId);
             }
         }
         imageSetupNs += rowPhaseTimer.nsecsElapsed();
 
         ++row;
     }
+
+    if (m_enrichmentService && !missingGeneralImagePartIds.isEmpty())
+        m_enrichmentService->ensureGeneralImageMetadata(missingGeneralImagePartIds);
 
     const qint64 rowAggregateMs = phaseTimer.elapsed();
     QElapsedTimer finalizeTimer;

@@ -55,9 +55,12 @@
 
 #include "../../import/RebrickableMocCsvImporter.h"
 #include "../../services/builds/MissingPartsService.h"
+#include "../../services/images/PartImageService.h"
+#include "../../services/parts/PartExternalIdEnrichmentService.h"
 #include "../../services/procurement/ProcurementDraftService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../services/application/ApplicationServices.h"
+#include "../../services/application/RemoteReadApplicationServices.h"
 #include "../../ui/procurement/ProcurementPreviewDialog.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
@@ -75,6 +78,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QHash>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
@@ -82,6 +86,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QSet>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QShowEvent>
@@ -92,6 +97,7 @@
 #include <QTextEdit>
 #include <QTextStream>
 #include <QVBoxLayout>
+#include <utility>
 
 namespace {
 
@@ -135,11 +141,16 @@ BuildsWidget::BuildsWidget(
     WorkspaceContext& workspaceContext,
     SessionStorageSelectionService& sessionStorageSelectionService,
     BuildApplicationService& buildService,
-    QWidget* parent)
+    QWidget* parent,
+    RemoteReadApplicationServices* remoteReads,
+    PartExternalIdEnrichmentService* enrichmentService)
     : QWidget(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
     , m_buildService(buildService)
+    , m_remoteReads(remoteReads)
+    , m_enrichmentService(enrichmentService)
+    , m_remoteMode(remoteReads != nullptr)
 {
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -485,6 +496,11 @@ void BuildsWidget::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);
 
+    if (m_remoteMode) {
+        loadBuilds();
+        return;
+    }
+
     if (m_workspaceContext.hasCurrentWorkspace() && m_selectedBuildId > 0) {
         loadRequirements();
         updateRequirementUiState();
@@ -494,6 +510,13 @@ void BuildsWidget::showEvent(QShowEvent* event)
 void BuildsWidget::workspaceChanged(int workspaceId)
 {
     Q_UNUSED(workspaceId);
+
+    if (m_remoteMode) {
+        for (QDialog* dialog : findChildren<QDialog*>()) {
+            if (dialog->objectName().startsWith(QStringLiteral("remoteBuild")))
+                dialog->close();
+        }
+    }
 
     m_selectedBuildId = 0;
 
@@ -523,6 +546,11 @@ void BuildsWidget::reloadManufacturers()
 
 void BuildsWidget::loadBuilds()
 {
+    if (m_remoteMode) {
+        loadRemoteBuilds();
+        return;
+    }
+
     const ApplicationServiceStatus serviceStatus = m_buildService.status();
     if (!serviceStatus.isAvailable()) {
         m_selectedBuildId = 0;
@@ -1229,6 +1257,94 @@ void BuildsWidget::loadBuilds()
     }
 }
 
+void BuildsWidget::loadRemoteBuilds()
+{
+    const quint64 generation = ++m_buildListGeneration;
+    ++m_requirementGeneration;
+    m_selectedBuildId = 0;
+    m_remoteRequirements.clear();
+    m_buildsTable->clearContents();
+    m_buildsTable->setRowCount(0);
+    m_requirementsTable->clearContents();
+    m_requirementsTable->setRowCount(0);
+    updateRequirementUiState();
+    m_showArchivedBuildsCheck->setEnabled(false);
+
+    if (!m_workspaceContext.hasCurrentWorkspace()) {
+        m_showArchivedBuildsCheck->setEnabled(true);
+        m_statusLabel->setText("Select a Host workspace to view Builds.");
+        return;
+    }
+    if (!m_remoteReads || !m_remoteReads->isAvailableFor(QStringLiteral("builds.list"))) {
+        m_showArchivedBuildsCheck->setEnabled(true);
+        m_statusLabel->setText("Builds are unavailable from this BrickSuite Host.");
+        return;
+    }
+
+    m_statusLabel->setText("Loading Builds from BrickSuite Host...");
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    const bool archived = m_showArchivedBuildsCheck->isChecked();
+    m_remoteReads->listBuilds(workspaceId, archived, this,
+        [this, generation, workspaceId](AsyncReadResult<QList<RemoteReadDto::BuildSummary>> result) {
+            if (generation != m_buildListGeneration
+                || workspaceId != m_workspaceContext.currentWorkspaceId())
+                return;
+            m_showArchivedBuildsCheck->setEnabled(true);
+            if (!result.succeeded()) {
+                m_statusLabel->setText(result.message.isEmpty()
+                    ? QStringLiteral("Unable to load Builds from BrickSuite Host.")
+                    : result.message);
+                return;
+            }
+            renderRemoteBuilds(*result.value);
+        });
+}
+
+void BuildsWidget::renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& builds)
+{
+    m_buildsTable->setRowCount(builds.size());
+    for (int row = 0; row < builds.size(); ++row) {
+        const auto& build = builds.at(row);
+        const QString reference = build.buildType == QStringLiteral("Minifig")
+            ? build.minifigNumber : build.setNumber;
+        const QString mode = build.inventoryMode == QStringLiteral("CompleteSet")
+            ? QStringLiteral("Complete Set") : QStringLiteral("Build from Stock");
+        auto* nameItem = new QTableWidgetItem(build.name);
+        nameItem->setData(Qt::UserRole, build.buildId);
+        m_buildsTable->setItem(row, 0, new QTableWidgetItem(build.buildType));
+        m_buildsTable->setItem(row, 1, new QTableWidgetItem(reference));
+        m_buildsTable->setItem(row, 2, new QTableWidgetItem(mode));
+        m_buildsTable->setItem(row, 3, new QTableWidgetItem(
+            build.manufacturerDisplay.isEmpty() ? QStringLiteral("From Stock")
+                                                : build.manufacturerDisplay));
+        m_buildsTable->setItem(row, 4, nameItem);
+        m_buildsTable->setItem(row, 5, new QTableWidgetItem(build.status));
+        m_buildsTable->setItem(row, 6, new QTableWidgetItem(build.active
+            ? build.notes : QString("%1%2Archived").arg(build.notes,
+                build.notes.isEmpty() ? QString() : QStringLiteral(" / "))));
+
+        auto* actions = new QComboBox(m_buildsTable);
+        actions->addItem("Actions...", QString());
+        if (m_remoteReads->isAvailableFor(QStringLiteral("builds.get")))
+            actions->addItem("View Details...", "details");
+        if (m_remoteReads->isAvailableFor(QStringLiteral("builds.pulling")))
+            actions->addItem("View Pulling...", "pulling");
+        actions->setToolTip("Remote Builds are read-only. Build changes are not available yet.");
+        connect(actions, &QComboBox::currentIndexChanged, this,
+            [this, actions, id = int(build.buildId)](int index) {
+                if (index <= 0) return;
+                const QString action = actions->itemData(index).toString();
+                actions->setCurrentIndex(0);
+                if (action == "details") showRemoteDetails(id);
+                else if (action == "pulling") showRemotePulling(id);
+            });
+        m_buildsTable->setCellWidget(row, 7, actions);
+    }
+    m_statusLabel->setText(builds.isEmpty()
+        ? QStringLiteral("No Builds were found in this Host workspace.")
+        : QStringLiteral("%1 Host Build(s). Remote Builds are read-only.").arg(builds.size()));
+}
+
 void BuildsWidget::addBuild()
 {
     if (!m_workspaceContext.hasCurrentWorkspace()) {
@@ -1314,7 +1430,7 @@ void BuildsWidget::addBuild()
 void BuildsWidget::updateUiState()
 {
     const bool enabled = m_buildService.status().isAvailable()
-        && m_workspaceContext.hasCurrentWorkspace();
+        && m_workspaceContext.hasCurrentWorkspace() && !m_remoteMode;
 
     m_typeCombo->setEnabled(enabled);
 
@@ -1400,6 +1516,12 @@ void BuildsWidget::loadRequirements()
 
     if (m_selectedBuildId <= 0) {
         m_requirementsLabel->setText("Select a build to view its requirements.");
+        return;
+    }
+
+    if (m_remoteMode) {
+        m_remoteRequirements.clear();
+        loadRemoteRequirements();
         return;
     }
 
@@ -1738,6 +1860,287 @@ void BuildsWidget::loadRequirements()
 
         ++row;
     }
+}
+
+void BuildsWidget::loadRemoteRequirements(int page)
+{
+    if (!m_remoteReads
+        || !m_remoteReads->isAvailableFor(QStringLiteral("builds.requirements"))) {
+        m_requirementsLabel->setText("Build requirements are unavailable from this Host.");
+        return;
+    }
+
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    const int buildId = m_selectedBuildId;
+    const quint64 generation = page == 1 ? ++m_requirementGeneration : m_requirementGeneration;
+    if (page == 1)
+        m_requirementsLabel->setText("Loading Build requirements...");
+
+    m_remoteReads->buildRequirements(workspaceId, buildId,
+        RemoteReadDto::PageRequest{page, RemoteReadDto::MaximumPageSize}, this,
+        [this, workspaceId, buildId, generation](
+            AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::BuildRequirement>> result) {
+            if (generation != m_requirementGeneration || buildId != m_selectedBuildId
+                || workspaceId != m_workspaceContext.currentWorkspaceId())
+                return;
+            if (!result.succeeded()) {
+                m_requirementsLabel->setText(result.message.isEmpty()
+                    ? QStringLiteral("Unable to load Build requirements from the Host.")
+                    : result.message);
+                return;
+            }
+            const auto& value = *result.value;
+            m_remoteRequirements.append(value.rows);
+            if (m_remoteRequirements.size() < value.totalRows) {
+                loadRemoteRequirements(value.page + 1);
+                return;
+            }
+            renderRemoteRequirements();
+        });
+}
+
+void BuildsWidget::renderRemoteRequirements()
+{
+    QHash<QString, QString> partNames;
+    QSet<QString> partNumbers;
+    for (const auto& row : std::as_const(m_remoteRequirements)) {
+        partNumbers.insert(row.partNumber);
+        if (!row.substitutePartNumber.isEmpty()) partNumbers.insert(row.substitutePartNumber);
+    }
+    for (const Part& part : PartRepository().getByPartNumbers(partNumbers))
+        partNames.insert(part.partNumber(), part.name());
+    QHash<int, QString> colorNames;
+    for (const Color& color : ColorRepository().getAll())
+        colorNames.insert(color.rebrickableId(), color.name());
+
+    m_requirementsTable->setRowCount(m_remoteRequirements.size());
+    int staleRows = 0;
+    for (int row = 0; row < m_remoteRequirements.size(); ++row) {
+        const auto& requirement = m_remoteRequirements.at(row);
+        const QString partName = partNames.value(requirement.partNumber,
+                                                  requirement.partNameFallback);
+        const QString colorName = colorNames.value(requirement.rebrickableColorId,
+                                                    requirement.colorNameFallback);
+        if (!partNames.contains(requirement.partNumber)
+            || !colorNames.contains(requirement.rebrickableColorId))
+            ++staleRows;
+        auto* partItem = new QTableWidgetItem(requirement.partNumber);
+        partItem->setData(Qt::UserRole, requirement.requirementId);
+        if (!requirement.substitutePartNumber.isEmpty()) {
+            partItem->setToolTip(QString("Fulfilled from stock as %1 (Rebrickable color %2)")
+                .arg(requirement.substitutePartNumber)
+                .arg(requirement.substituteRebrickableColorId));
+        }
+        const int remaining = qMax(requirement.quantityRequired - requirement.quantityPulled, 0);
+        const QString dash = QStringLiteral("—");
+        m_requirementsTable->setItem(row, 0, partItem);
+        m_requirementsTable->setItem(row, 1, new QTableWidgetItem(
+            partName.isEmpty() ? QStringLiteral("(Host catalog name unavailable)") : partName));
+        m_requirementsTable->setItem(row, 2, new QTableWidgetItem(
+            colorName.isEmpty() ? QString("Rebrickable color %1").arg(requirement.rebrickableColorId)
+                                : colorName));
+        m_requirementsTable->setItem(row, 3, new QTableWidgetItem(QString::number(requirement.quantityRequired)));
+        m_requirementsTable->setItem(row, 4, new QTableWidgetItem(QString::number(requirement.quantityPulled)));
+        m_requirementsTable->setItem(row, 5, new QTableWidgetItem(QString::number(remaining)));
+        for (int column = 6; column <= 10; ++column)
+            m_requirementsTable->setItem(row, column, new QTableWidgetItem(dash));
+        m_requirementsTable->setItem(row, 11,
+            new QTableWidgetItem(requirement.spare ? QStringLiteral("Yes") : QStringLiteral("No")));
+        m_requirementsTable->setItem(row, 12, new QTableWidgetItem(QStringLiteral("Read-only")));
+    }
+    m_requirementsLabel->setText(QString("%1 Host requirement(s). Remote requirements are read-only.%2")
+        .arg(m_remoteRequirements.size())
+        .arg(staleRows > 0 ? QStringLiteral(" Some rows use Host fallback catalog text.") : QString()));
+}
+
+void BuildsWidget::showRemoteDetails(int buildId)
+{
+    if (!m_remoteReads) return;
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    m_remoteReads->getBuild(workspaceId, buildId, this,
+        [this, workspaceId, buildId](AsyncReadResult<RemoteReadDto::BuildDetail> result) {
+            if (workspaceId != m_workspaceContext.currentWorkspaceId() || !result.succeeded()) {
+                if (!result.succeeded()) QMessageBox::warning(this, "Host Build Details", result.message);
+                return;
+            }
+            const auto& build = *result.value;
+            const QString reference = build.buildType == "Minifig"
+                ? build.minifigNumber : build.setNumber;
+            QMessageBox::information(this, "Host Build Details",
+                QString("%1\n\nType: %2\nReference: %3\nInventory Mode: %4\nStatus: %5\nActive: %6\n\nRemote Build details are read-only.")
+                    .arg(build.name, build.buildType,
+                         reference.isEmpty() ? QStringLiteral("(None)") : reference,
+                         build.inventoryMode == "CompleteSet" ? QStringLiteral("Complete Set")
+                                                                : QStringLiteral("Build from Stock"),
+                         build.status, build.active ? QStringLiteral("Yes") : QStringLiteral("No")));
+        });
+}
+
+void BuildsWidget::showRemotePulling(int buildId)
+{
+    if (!m_remoteReads) return;
+    if (QDialog* existing = m_remotePullingDialogs.find(buildId)) {
+        existing->show();
+        existing->raise();
+        existing->activateWindow();
+        return;
+    }
+
+    auto* dialog = new QDialog(this);
+    dialog->setObjectName(QStringLiteral("remoteBuildPullingDialog_%1").arg(buildId));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    m_remotePullingDialogs.track(buildId, dialog);
+    connect(dialog, &QObject::destroyed, this, [this, buildId]() {
+        m_remotePullingDialogs.forget(buildId);
+    });
+    dialog->setWindowTitle("Host Build Pulling (Read-only)");
+    dialog->resize(1150, 650);
+    auto* layout = new QVBoxLayout(dialog);
+    auto* status = new QLabel("Loading Pulling state from BrickSuite Host...", dialog);
+    auto* table = new QTableWidget(dialog);
+    table->setColumnCount(9);
+    table->setHorizontalHeaderLabels({"Image", "Part", "Description", "Color", "Required",
+                                      "Already Pulled", "Allocated Here", "Pulled",
+                                      "Storage Location"});
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setSelectionMode(QAbstractItemView::SingleSelection);
+    table->verticalHeader()->setVisible(false);
+    table->setAlternatingRowColors(true);
+    table->setIconSize(QSize(72, 72));
+    for (int column : {0, 1, 3, 4, 5, 6, 7})
+        table->horizontalHeader()->setSectionResizeMode(column, QHeaderView::ResizeToContents);
+    table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    table->horizontalHeader()->setSectionResizeMode(8, QHeaderView::Stretch);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+    layout->addWidget(status);
+    layout->addWidget(table);
+    layout->addWidget(new QLabel("Remote Pulling updates are not available yet.", dialog));
+    layout->addWidget(buttons);
+    dialog->show();
+
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    auto* images = new PartImageService(dialog);
+    if (m_enrichmentService) {
+        connect(m_enrichmentService,
+                &PartExternalIdEnrichmentService::generalImageMetadataReady,
+                images,
+                &PartImageService::requestPartImage);
+    }
+
+    auto rowsByPart = std::make_shared<QHash<QString, QList<int>>>();
+    connect(images, &PartImageService::imageReady, dialog,
+            [table, rowsByPart](const QString& partNumber, const QString& path) {
+                QPixmap pixmap(path);
+                if (pixmap.isNull()) return;
+                const QIcon icon(pixmap.scaled(72, 72, Qt::KeepAspectRatio,
+                                               Qt::SmoothTransformation));
+                const QString key = partNumber.trimmed().toLower();
+                for (int row : rowsByPart->value(key)) {
+                    auto* item = table->item(row, 0);
+                    if (item && item->data(Qt::UserRole).toString().trimmed().toLower() == key)
+                        item->setIcon(icon);
+                }
+            });
+
+    auto allRows = std::make_shared<QList<RemoteReadDto::PullingRow>>();
+    auto requestPage = std::make_shared<std::function<void(int)>>();
+    *requestPage = [this, dialog, table, status, images, rowsByPart, allRows, requestPage,
+                    workspaceId, buildId](int page) {
+        m_remoteReads->pulling(workspaceId, buildId,
+            {page, RemoteReadDto::MaximumPageSize}, dialog,
+            [this, dialog, table, status, images, rowsByPart, allRows, requestPage,
+             workspaceId, buildId](AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::PullingRow>> result) {
+                if (!result.succeeded()) { status->setText(result.message); return; }
+                allRows->append(result.value->rows);
+                if (allRows->size() < result.value->totalRows) {
+                    (*requestPage)(result.value->page + 1);
+                    return;
+                }
+
+                QSet<QString> numbers;
+                for (const auto& row : std::as_const(*allRows)) numbers.insert(row.partNumber);
+                QHash<QString, Part> localParts;
+                for (const Part& part : PartRepository().getByPartNumbers(numbers)) {
+                    localParts.insert(part.partNumber().trimmed().toLower(), part);
+                }
+                QHash<int, Color> localColors;
+                for (const Color& color : ColorRepository().getAll())
+                    localColors.insert(color.rebrickableId(), color);
+
+                table->setUpdatesEnabled(false);
+                table->setRowCount(allRows->size());
+                rowsByPart->clear();
+                QList<int> missingImagePartIds;
+                QString previousStorage;
+                for (int i = 0; i < allRows->size(); ++i) {
+                    const auto& source = allRows->at(i);
+                    const auto localPart = localParts.constFind(source.partNumber.trimmed().toLower());
+                    const QString partNumber = localPart == localParts.cend()
+                        ? source.partNumber : localPart->partNumber();
+                    const QString description = localPart == localParts.cend()
+                        ? source.partNameFallback : localPart->name();
+                    const auto localColor = localColors.constFind(source.rebrickableColorId);
+                    const QString colorName = localColor == localColors.cend()
+                        ? source.colorNameFallback : localColor->name();
+
+                    table->setRowHeight(i, 82);
+                    auto* imageItem = new QTableWidgetItem;
+                    imageItem->setTextAlignment(Qt::AlignCenter);
+                    imageItem->setData(Qt::UserRole, partNumber);
+                    imageItem->setToolTip(partNumber);
+                    table->setItem(i, 0, imageItem);
+                    table->setItem(i, 1, new QTableWidgetItem(partNumber));
+                    auto* descriptionItem = new QTableWidgetItem(description);
+                    descriptionItem->setToolTip(description);
+                    table->setItem(i, 2, descriptionItem);
+                    table->setItem(i, 3, new QTableWidgetItem(colorName));
+                    for (int column = 4; column <= 7; ++column) {
+                        const int value = column == 4 ? source.quantityRequired
+                            : column == 5 ? source.quantityPulled
+                            : column == 6 ? source.quantityAllocated
+                                          : source.quantityPulled;
+                        auto* quantity = new QTableWidgetItem(QString::number(value));
+                        quantity->setTextAlignment(Qt::AlignCenter);
+                        table->setItem(i, column, quantity);
+                    }
+                    auto* storage = new QTableWidgetItem(source.storagePath);
+                    if (i == 0 || source.storagePath.compare(previousStorage,
+                                                              Qt::CaseInsensitive) != 0) {
+                        QFont font = storage->font();
+                        font.setBold(true);
+                        storage->setFont(font);
+                    }
+                    previousStorage = source.storagePath;
+                    table->setItem(i, 8, storage);
+
+                    if (source.substitution) {
+                        const QString tip = QStringLiteral("Substitution for the original Build requirement.");
+                        table->item(i, 1)->setToolTip(tip);
+                        table->item(i, 2)->setToolTip(description + QStringLiteral("\n") + tip);
+                        table->item(i, 3)->setToolTip(tip);
+                    }
+
+                    const QString key = partNumber.trimmed().toLower();
+                    (*rowsByPart)[key].append(i);
+                    const QString cached = images->cachedImagePath(partNumber);
+                    if (!cached.isEmpty()) images->requestPartImage(partNumber, {});
+                    else {
+                        imageItem->setText(QStringLiteral("Image"));
+                        if (localPart != localParts.cend())
+                            missingImagePartIds.append(localPart->id());
+                    }
+                }
+                table->setUpdatesEnabled(true);
+                if (m_enrichmentService)
+                    m_enrichmentService->ensureGeneralImageMetadata(missingImagePartIds);
+                status->setText(allRows->isEmpty()
+                    ? QStringLiteral("No allocated pulling rows.")
+                    : QStringLiteral("Host Pulling state (read-only). Remote Pulling updates are not available yet."));
+            });
+    };
+    (*requestPage)(1);
 }
 
 void BuildsWidget::addRequirement()
@@ -2241,6 +2644,30 @@ void BuildsWidget::updateRequirementUiState()
 {
     const bool enabled =
         m_workspaceContext.hasCurrentWorkspace() && m_selectedBuildId > 0;
+
+    if (m_remoteMode) {
+        m_partNumberEdit->setEnabled(false);
+        m_colorCombo->setEnabled(false);
+        m_quantitySpin->setEnabled(false);
+        m_spareCheck->setEnabled(false);
+        m_addRequirementButton->setEnabled(false);
+        m_requirementsTable->setEnabled(enabled);
+        m_loadSetFromRebrickableButton->setEnabled(false);
+        m_importMocPartsButton->setEnabled(false);
+        m_allocateAvailableButton->setEnabled(false);
+        m_exportPullListButton->setEnabled(false);
+        m_importPullListButton->setEnabled(false);
+        m_interactivePullButton->setEnabled(enabled && m_remoteReads
+            && m_remoteReads->isAvailableFor(QStringLiteral("builds.pulling")));
+        m_interactivePullButton->setText("View Pulling...");
+        m_exportMissingPartsButton->setEnabled(enabled && m_remoteReads
+            && m_remoteReads->isAvailableFor(QStringLiteral("builds.missingParts")));
+        m_exportMissingPartsButton->setText("Export Missing Parts CSV");
+        m_procureMissingPartsButton->setEnabled(false);
+        for (int column = 4; column < 13; ++column)
+            m_requirementsTable->setColumnHidden(column, false);
+        return;
+    }
 
     bool buildIsActive = false;
     bool completeSet = false;
@@ -2843,6 +3270,11 @@ void BuildsWidget::interactivePulling()
         return;
     }
 
+    if (m_remoteMode) {
+        showRemotePulling(m_selectedBuildId);
+        return;
+    }
+
     BuildRepository repository;
     const std::optional<Build> build = repository.getById(m_selectedBuildId);
 
@@ -2927,6 +3359,85 @@ void BuildsWidget::exportMissingParts()
 {
     if (m_selectedBuildId <= 0) {
         QMessageBox::warning(this, "Export Missing Parts", "Select a Build first.");
+        return;
+    }
+
+    if (m_remoteMode) {
+        const int buildId = m_selectedBuildId;
+        const int workspaceId = m_workspaceContext.currentWorkspaceId();
+        m_exportMissingPartsButton->setEnabled(false);
+        m_remoteReads->getBuild(workspaceId, buildId, this,
+            [this, workspaceId, buildId](AsyncReadResult<RemoteReadDto::BuildDetail> buildResult) {
+                if (!buildResult.succeeded()) {
+                    m_exportMissingPartsButton->setEnabled(true);
+                    QMessageBox::critical(this, "Export Missing Parts", buildResult.message);
+                    return;
+                }
+                const RemoteReadDto::BuildDetail build = *buildResult.value;
+                auto rows = std::make_shared<QList<RemoteReadDto::MissingPart>>();
+                auto requestPage = std::make_shared<std::function<void(int)>>();
+                *requestPage = [this, workspaceId, buildId, build, rows, requestPage](int page) {
+                    m_remoteReads->missingParts(workspaceId, buildId,
+                        {page, RemoteReadDto::MaximumPageSize}, this,
+                        [this, workspaceId, buildId, build, rows, requestPage](
+                            AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::MissingPart>> result) {
+                            if (!result.succeeded()) {
+                                m_exportMissingPartsButton->setEnabled(true);
+                                QMessageBox::critical(this, "Export Missing Parts", result.message);
+                                return;
+                            }
+                            rows->append(result.value->rows);
+                            if (rows->size() < result.value->totalRows) {
+                                (*requestPage)(result.value->page + 1);
+                                return;
+                            }
+                            m_exportMissingPartsButton->setEnabled(true);
+                            if (rows->isEmpty()) {
+                                QMessageBox::information(this, "Export Missing Parts",
+                                                         "This Build currently has no missing non-spare parts.");
+                                return;
+                            }
+
+                            QString safeReference = build.setNumber.trimmed();
+                            if (safeReference.isEmpty()) safeReference = build.name.trimmed();
+                            safeReference.replace(QRegularExpression(R"([^A-Za-z0-9_-]+)"), "_");
+                            const QString fileName = QFileDialog::getSaveFileName(
+                                this, "Export Missing Parts CSV",
+                                QStringLiteral("BrickSuite_Missing_%1.csv").arg(safeReference),
+                                "CSV Files (*.csv)");
+                            if (fileName.isEmpty()) return;
+                            QFile file(fileName);
+                            if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                                QMessageBox::critical(this, "Export Missing Parts",
+                                                       QString("Unable to create:\n\n%1").arg(fileName));
+                                return;
+                            }
+                            QTextStream stream(&file);
+                            stream << QChar(0xFEFF);
+                            const auto csv = [](QString value) {
+                                value.replace('"', "\"\"");
+                                return QString("\"%1\"").arg(value);
+                            };
+                            stream << "Build,Set Number,Part Number,Part Name,Color,Required,"
+                                      "Pulled,Remaining,Available,Missing\n";
+                            int totalMissing = 0;
+                            for (const auto& row : std::as_const(*rows)) {
+                                stream << csv(build.name) << ',' << csv(build.setNumber) << ','
+                                       << csv(row.partNumber) << ',' << csv(row.partNameFallback) << ','
+                                       << csv(row.colorNameFallback) << ',' << row.required << ','
+                                       << row.pulled << ',' << row.remaining << ',' << row.available << ','
+                                       << row.missing << '\n';
+                                totalMissing += row.missing;
+                            }
+                            file.close();
+                            QMessageBox::information(this, "Export Missing Parts",
+                                QString("Missing Parts List exported successfully.\n\n"
+                                        "Part/Color Rows: %1\nPieces Missing: %2\nFile:\n%3")
+                                    .arg(rows->size()).arg(totalMissing).arg(fileName));
+                        });
+                };
+                (*requestPage)(1);
+            });
         return;
     }
 

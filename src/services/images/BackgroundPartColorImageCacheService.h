@@ -21,6 +21,7 @@
 #pragma once
 
 #include <QObject>
+#include <QPair>
 #include <QSet>
 #include <QString>
 
@@ -38,9 +39,15 @@ public:
                                                   QObject* parent = nullptr);
 
     void start();
+    void startPortableOnly();
     void stop();
 
     void rebuildQueue();
+
+    // Adds portable Part/Color identities discovered by a remote Inventory page
+    // to this same application-owned, throttled queue. The caller has already
+    // resolved them against the client-local catalog.
+    void enqueuePortableItems(const QList<QPair<QString, int>>& items);
 
 signals:
     void partColorImageCached(const QString& partNumber,
@@ -71,6 +78,7 @@ private:
     QSet<QString> m_skippedThisRun;
 
     bool m_started = false;
+    bool m_scanLocalInventory = true;
     bool m_requestInProgress = false;
 
     int m_generation = 0;

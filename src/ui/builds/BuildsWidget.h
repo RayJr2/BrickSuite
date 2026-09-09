@@ -20,11 +20,15 @@
 
 #pragma once
 
+#include "../../services/application/dto/RemoteReadDtos.h"
+#include "../common/SingleInstanceWindowRegistry.h"
 #include <QWidget>
 
 class WorkspaceContext;
 class SessionStorageSelectionService;
 class BuildApplicationService;
+class RemoteReadApplicationServices;
+class PartExternalIdEnrichmentService;
 
 class QComboBox;
 class QLabel;
@@ -38,6 +42,7 @@ class QGroupBox;
 class QWidget;
 class QSplitter;
 class QShowEvent;
+class QDialog;
 
 class BuildsWidget : public QWidget
 {
@@ -48,7 +53,9 @@ public:
         WorkspaceContext& workspaceContext,
         SessionStorageSelectionService& sessionStorageSelectionService,
         BuildApplicationService& buildService,
-        QWidget* parent = nullptr);
+        QWidget* parent = nullptr,
+        RemoteReadApplicationServices* remoteReads = nullptr,
+        PartExternalIdEnrichmentService* enrichmentService = nullptr);
 
     void refresh();
     void selectBuild(int buildId);
@@ -71,6 +78,12 @@ private slots:
 
 private:
     void loadBuilds();
+    void loadRemoteBuilds();
+    void renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& builds);
+    void loadRemoteRequirements(int page = 1);
+    void renderRemoteRequirements();
+    void showRemoteDetails(int buildId);
+    void showRemotePulling(int buildId);
     void loadManufacturers();
     void updateUiState();
 
@@ -88,6 +101,13 @@ private:
     WorkspaceContext& m_workspaceContext;
     SessionStorageSelectionService& m_sessionStorageSelectionService;
     BuildApplicationService& m_buildService;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
+    PartExternalIdEnrichmentService* m_enrichmentService = nullptr;
+    QList<RemoteReadDto::BuildRequirement> m_remoteRequirements;
+    quint64 m_buildListGeneration = 0;
+    quint64 m_requirementGeneration = 0;
+    SingleInstanceWindowRegistry<int, QDialog> m_remotePullingDialogs;
+    bool m_remoteMode = false;
 
     QComboBox* m_typeCombo = nullptr;
     QLineEdit* m_setNumberEdit = nullptr;

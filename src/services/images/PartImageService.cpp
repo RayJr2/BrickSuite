@@ -141,7 +141,24 @@ QString PartImageService::cachedImagePath(const QString& partNumber) const
     const QString safe = safePartNumber(partNumber);
     auto* service = const_cast<PartImageService*>(this);
     service->ensureGeneralCacheIndex();
-    return m_cachedPaths.value(safe);
+    const QString indexed = m_cachedPaths.value(safe);
+    if (!indexed.isEmpty() && QFileInfo::exists(indexed))
+        return indexed;
+
+    // PartImageService instances share the on-disk cache. Another view can
+    // populate it after this instance built its index, so resolve a cache miss
+    // against disk without rescanning the entire directory.
+    const QDir directory(cacheDirectory());
+    const QStringList matches = directory.entryList(QStringList() << QStringLiteral("%1.*").arg(safe),
+                                                     QDir::Files, QDir::Name);
+    if (matches.isEmpty()) {
+        service->m_cachedPaths.remove(safe);
+        return {};
+    }
+
+    const QString discovered = directory.filePath(matches.first());
+    service->m_cachedPaths.insert(safe, discovered);
+    return discovered;
 }
 
 void PartImageService::ensureGeneralCacheIndex()

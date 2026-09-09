@@ -278,9 +278,10 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     // My Inventory tab
     m_myInventoryWidget = new MyInventoryWidget(m_workspaceContext,
                                                  m_sessionStorageSelectionService,
-                                                 m_applicationServices.inventory(),
-                                                 m_tabWidget,
-                                                 m_remoteReads);
+                                                  m_applicationServices.inventory(),
+                                                  m_tabWidget,
+                                                  m_remoteReads,
+                                                  m_partExternalIdEnrichmentService);
 
     m_myCollectionWidget = new MyCollectionWidget(m_workspaceContext,
                                                    m_applicationServices.collection(),
@@ -290,7 +291,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     m_buildsWidget = new BuildsWidget(m_workspaceContext,
                                       m_sessionStorageSelectionService,
                                       m_applicationServices.builds(),
-                                      m_tabWidget);
+                                      m_tabWidget,
+                                      m_remoteReads,
+                                      m_partExternalIdEnrichmentService);
 
     connect(m_setsCatalogWidget,
             &SetsCatalogWidget::createStockBuildRequested,
@@ -445,14 +448,18 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     // Slowly populate actual-color images for
     // Part/Color combinations in My Loose Inventory.
     //
-    if (sharedStatus.isAvailable()) {
-        m_backgroundPartColorImageCacheService
-            = new BackgroundPartColorImageCacheService(m_workspaceContext, this);
+    m_backgroundPartColorImageCacheService
+        = new BackgroundPartColorImageCacheService(m_workspaceContext, this);
 
-        connect(m_backgroundPartColorImageCacheService,
-            &BackgroundPartColorImageCacheService::partColorImageCached,
-            m_myInventoryWidget,
-            &MyInventoryWidget::updatePartColorImage);
+    connect(m_backgroundPartColorImageCacheService,
+        &BackgroundPartColorImageCacheService::partColorImageCached,
+        m_myInventoryWidget,
+        &MyInventoryWidget::updatePartColorImage);
+
+    m_myInventoryWidget->setBackgroundPartColorImageCacheService(
+        m_backgroundPartColorImageCacheService);
+
+    if (sharedStatus.isAvailable()) {
 
     //
     // The background queue is a snapshot of inventory. Rebuild it whenever
@@ -465,6 +472,10 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             &BackgroundPartColorImageCacheService::rebuildQueue);
 
         m_backgroundPartColorImageCacheService->start();
+    } else {
+        // Host mode has no local operational Inventory to scan. Remote pages
+        // enqueue portable Part/Rebrickable-Color identities explicitly.
+        m_backgroundPartColorImageCacheService->startPortableOnly();
     }
 
     //

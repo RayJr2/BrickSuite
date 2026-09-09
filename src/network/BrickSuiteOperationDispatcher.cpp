@@ -22,6 +22,7 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
         addCapability(QStringLiteral("inventory.get"), QStringLiteral("inventory.detail.read"));
         addCapability(QStringLiteral("inventory.history"), QStringLiteral("inventory.history.read"));
         addCapability(QStringLiteral("builds.list"), QStringLiteral("builds.read"));
+        addCapability(QStringLiteral("builds.get"), QStringLiteral("builds.detail.read"));
         addCapability(QStringLiteral("builds.requirements"), QStringLiteral("builds.requirements.read"));
         addCapability(QStringLiteral("builds.missingParts"), QStringLiteral("builds.missingParts.read"));
         addCapability(QStringLiteral("builds.pulling"), QStringLiteral("builds.pulling.read"));

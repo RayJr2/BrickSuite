@@ -30,6 +30,9 @@ public:
     void ensureExternalIds(int partId);
     void ensureExternalIds(const QList<int>& partIds);
     void ensureExternalIdsForPartNumber(const QString& partNumber);
+    // Uses the existing batched provider queue to obtain general image metadata
+    // even when external identity enrichment was completed previously.
+    void ensureGeneralImageMetadata(const QList<int>& partIds);
     bool isLookupPending(int partId) const;
     bool persistExternalIds(int partId,
                             const QHash<QString, QStringList>& externalIds);
@@ -52,6 +55,8 @@ private:
     RebrickableApiClient* m_apiClient = nullptr;
     QSet<int> m_queuedPartIds;
     QSet<int> m_activePartIds;
+    QSet<int> m_imageOnlyPartIds;
+    QSet<int> m_generalImageRequestedThisSession;
     QSet<QString> m_directPending;
     QHash<QString, int> m_partIdByRequestedNumber;
     bool m_dispatchScheduled = false;

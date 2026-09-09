@@ -30,14 +30,14 @@ public:
         AsyncReadCompletion<QList<RemoteReadDto::InventoryHistoryRow>> completion);
     ReadRequestToken listBuilds(qint64 workspaceId, bool includeArchived, QObject* context,
         AsyncReadCompletion<QList<RemoteReadDto::BuildSummary>> completion);
-    ReadRequestToken getBuild(qint64 buildId, QObject* context,
+    ReadRequestToken getBuild(qint64 workspaceId, qint64 buildId, QObject* context,
         AsyncReadCompletion<RemoteReadDto::BuildDetail> completion);
-    ReadRequestToken buildRequirements(qint64 buildId, const RemoteReadDto::PageRequest& page,
+    ReadRequestToken buildRequirements(qint64 workspaceId, qint64 buildId, const RemoteReadDto::PageRequest& page,
         QObject* context, AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::BuildRequirement>> completion);
     ReadRequestToken missingParts(qint64 workspaceId, qint64 buildId,
         const RemoteReadDto::PageRequest& page, QObject* context,
         AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::MissingPart>> completion);
-    ReadRequestToken pulling(qint64 buildId, const RemoteReadDto::PageRequest& page,
+    ReadRequestToken pulling(qint64 workspaceId, qint64 buildId, const RemoteReadDto::PageRequest& page,
         QObject* context, AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::PullingRow>> completion);
     ReadRequestToken searchCollection(const RemoteReadDto::CollectionSearchRequest& request,
         QObject* context, AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::CollectionSummary>> completion);

@@ -57,6 +57,26 @@ void PartExternalIdEnrichmentService::ensureExternalIds(const QList<int>& partId
     for (int partId : partIds) ensureExternalIds(partId);
 }
 
+void PartExternalIdEnrichmentService::ensureGeneralImageMetadata(const QList<int>& partIds)
+{
+    for (int partId : partIds) {
+        if (partId <= 0 || m_generalImageRequestedThisSession.contains(partId)
+            || m_queuedPartIds.contains(partId) || m_activePartIds.contains(partId)) {
+            continue;
+        }
+        const auto part = PartRepository().getById(partId);
+        if (!part || !part->isActive() || part->partNumber().trimmed().isEmpty())
+            continue;
+        m_generalImageRequestedThisSession.insert(partId);
+        m_imageOnlyPartIds.insert(partId);
+        m_queuedPartIds.insert(partId);
+    }
+    if (!m_queuedPartIds.isEmpty() && !m_dispatchScheduled) {
+        m_dispatchScheduled = true;
+        QTimer::singleShot(0, this, &PartExternalIdEnrichmentService::dispatchPending);
+    }
+}
+
 bool PartExternalIdEnrichmentService::isLookupPending(int partId) const
 {
     if (m_queuedPartIds.contains(partId) || m_activePartIds.contains(partId))
@@ -148,7 +168,8 @@ void PartExternalIdEnrichmentService::handleBatchResult(
         const QString key = item.partNumber.trimmed().toLower();
         returned.insert(key);
         const int partId = m_partIdByRequestedNumber.value(key);
-        if (result.success && partId > 0) {
+        const bool imageOnly = m_imageOnlyPartIds.remove(partId);
+        if (result.success && partId > 0 && !imageOnly) {
             const bool persisted = persistExternalIds(partId, item.externalIds);
             bool hasBrickLink = false;
             for (auto it = item.externalIds.constBegin(); it != item.externalIds.constEnd(); ++it)
@@ -161,7 +182,7 @@ void PartExternalIdEnrichmentService::handleBatchResult(
                     partId,
                     persisted ? LookupOutcome::Loaded : LookupOutcome::PersistenceFailure);
             }
-        } else if (partId > 0) {
+        } else if (partId > 0 && !imageOnly) {
             emit externalIdsLookupFinished(partId, LookupOutcome::RetryableFailure);
         }
         if (!item.partImageUrl.trimmed().isEmpty()) emit generalImageMetadataReady(item.partNumber, item.partImageUrl);
@@ -173,6 +194,7 @@ void PartExternalIdEnrichmentService::handleBatchResult(
         const int partId = m_partIdByRequestedNumber.take(key);
         m_activePartIds.remove(partId);
         if (partId <= 0) continue;
+        if (m_imageOnlyPartIds.remove(partId)) continue;
         if (!result.success) {
             emit externalIdsLookupFinished(partId, LookupOutcome::RetryableFailure);
             continue;

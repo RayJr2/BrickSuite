@@ -10,7 +10,10 @@ constexpr int MaximumPageSize = 500;
 constexpr int MaximumTextLength = 512;
 
 struct PageRequest { int page = 1; int pageSize = 250; };
-template <typename T> struct Page { QList<T> rows; int page = 1; int pageSize = 250; int totalRows = 0; };
+template <typename T> struct Page {
+    QList<T> rows; int page = 1; int pageSize = 250; int totalRows = 0;
+    bool resourceFound = true; // Host scope result; never serialized as data.
+};
 
 struct WorkspaceSummary { qint64 workspaceId = 0; QString name; };
 struct StorageSummary { qint64 storageId = 0; qint64 parentStorageId = 0; QString name; QString displayPath; bool active = true; };
@@ -38,7 +41,8 @@ struct InventoryHistoryRow {
 struct BuildSummary {
     qint64 buildId = 0; qint64 workspaceId = 0; QString buildType;
     QString name; QString setNumber; QString minifigNumber;
-    QString inventoryMode; QString status; bool active = true;
+    QString inventoryMode; QString manufacturerDisplay; QString status;
+    QString notes; bool active = true;
 };
 using BuildDetail = BuildSummary;
 struct BuildRequirement {
@@ -51,7 +55,8 @@ struct BuildRequirement {
 struct MissingPart {
     QString partNumber; QString partNameFallback; int rebrickableColorId = -1;
     QString colorNameFallback; int required = 0; int pulled = 0;
-    int available = 0; int missing = 0;
+    int remaining = 0; int owned = 0; int thisBuildAllocated = 0;
+    int otherBuildsAllocated = 0; int available = 0; int missing = 0;
 };
 struct PullingRow {
     qint64 requirementId = 0; qint64 allocationId = 0; qint64 inventoryRecordId = 0;

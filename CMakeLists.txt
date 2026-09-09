@@ -454,6 +454,13 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(SingleInstanceWindowRegistryTest EXCLUDE_FROM_ALL
+        tests/SingleInstanceWindowRegistryTest.cpp
+        src/ui/common/SingleInstanceWindowRegistry.h
+    )
+    target_link_libraries(SingleInstanceWindowRegistryTest PRIVATE Qt6::Core)
+    add_test(NAME SingleInstanceWindowRegistry COMMAND SingleInstanceWindowRegistryTest)
+
     qt_add_executable(InventoryRemoveHardeningTest EXCLUDE_FROM_ALL
         tests/InventoryRemoveHardeningTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp
