@@ -74,6 +74,7 @@
 #include "../services/database/AutomaticBackupService.h"
 #include "../services/storage/SessionStorageSelectionService.h"
 #include "../services/application/ApplicationServices.h"
+#include "../services/application/RemoteReadApplicationServices.h"
 #include "../network/BrickSuiteNetworkManager.h"
 #include "../network/BrickSuiteWebSocketClient.h"
 
@@ -138,6 +139,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
     , m_applicationServices(applicationServices)
     , m_networkManager(networkManager)
+    , m_remoteReads(applicationServices.remoteReads())
 {
     setWindowTitle("BrickSuite");
     resize(1200, 800);
@@ -146,6 +148,13 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         if (m_applicationServices.sharedDataSource() == SharedDataSource::BrickSuiteHost) {
             const auto status = m_networkManager.connectionStatus();
             statusBar()->showMessage(QStringLiteral("Host: %1").arg(status.message));
+            if (status.state == BrickSuiteConnectionState::ConnectedAuthenticated)
+                loadRemoteWorkspaces();
+            else {
+                m_workspaceList->setEnabled(false);
+                if (m_workspaceContext.hasCurrentWorkspace())
+                    statusBar()->showMessage(QStringLiteral("Host disconnected; displayed shared data may be stale."));
+            }
         }
     });
 
@@ -270,7 +279,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     m_myInventoryWidget = new MyInventoryWidget(m_workspaceContext,
                                                  m_sessionStorageSelectionService,
                                                  m_applicationServices.inventory(),
-                                                 m_tabWidget);
+                                                 m_tabWidget,
+                                                 m_remoteReads);
 
     m_myCollectionWidget = new MyCollectionWidget(m_workspaceContext,
                                                    m_applicationServices.collection(),
@@ -1933,6 +1943,10 @@ void MainWindow::closeEvent(QCloseEvent* event)
 
 void MainWindow::loadWorkspaces()
 {
+    if (m_remoteReads) {
+        loadRemoteWorkspaces();
+        return;
+    }
     m_workspaceList->clear();
 
     const ApplicationServiceStatus serviceStatus = m_applicationServices.workspaces().status();
@@ -1985,6 +1999,67 @@ void MainWindow::loadWorkspaces()
     }
 }
 
+QString MainWindow::remoteHostIdentity() const
+{
+    return UserSettings::instance().brickSuiteHostEndpoint().trimmed().toLower()
+        + QLatin1Char('|') + UserSettings::instance().brickSuiteTrustedFingerprint().trimmed().toLower();
+}
+
+void MainWindow::loadRemoteWorkspaces()
+{
+    m_workspaceList->clear();
+    m_workspaceList->addItem(QStringLiteral("Loading Workspaces from BrickSuite Host..."));
+    m_workspaceList->setEnabled(false);
+    m_nameEdit->setEnabled(false);
+    m_descriptionEdit->setEnabled(false);
+    m_addButton->setEnabled(false);
+    m_updateButton->setEnabled(false);
+
+    if (!m_remoteReads || !m_remoteReads->isAvailableFor(QStringLiteral("workspace.list"))) {
+        m_workspaceList->clear();
+        const QString remembered = UserSettings::instance().rememberedHostWorkspaceName(remoteHostIdentity());
+        m_workspaceList->addItem(remembered.isEmpty()
+            ? QStringLiteral("BrickSuite Host Workspaces unavailable.")
+            : QStringLiteral("%1 (Host unavailable)").arg(remembered));
+        return;
+    }
+
+    m_workspaceRequestToken = m_remoteReads->listWorkspaces(this,
+        [this](AsyncReadResult<QList<RemoteReadDto::WorkspaceSummary>> result) {
+            if (result.token != m_workspaceRequestToken) return;
+            m_workspaceList->clear();
+            if (!result.succeeded()) {
+                m_workspaceList->addItem(result.message.isEmpty()
+                    ? QStringLiteral("Unable to load Host Workspaces.") : result.message);
+                m_workspaceList->setEnabled(false);
+                return;
+            }
+            const auto rows = *result.value;
+            const QString identity = remoteHostIdentity();
+            const int rememberedId = UserSettings::instance().rememberedHostWorkspaceId(identity);
+            QListWidgetItem* rememberedItem = nullptr;
+            for (const auto& workspace : rows) {
+                auto* item = new QListWidgetItem(workspace.name, m_workspaceList);
+                item->setData(Qt::UserRole, workspace.workspaceId);
+                if (workspace.workspaceId == rememberedId) rememberedItem = item;
+            }
+            if (rows.isEmpty()) {
+                m_workspaceContext.clearCurrentWorkspace();
+                UserSettings::instance().clearRememberedHostWorkspace(identity);
+                m_workspaceList->addItem(QStringLiteral("The BrickSuite Host has no Workspaces."));
+                m_workspaceList->setEnabled(false);
+                return;
+            }
+            m_workspaceList->setEnabled(true);
+            if (rememberedItem) m_workspaceList->setCurrentItem(rememberedItem);
+            else {
+                if (rememberedId > 0) UserSettings::instance().clearRememberedHostWorkspace(identity);
+                m_workspaceContext.clearCurrentWorkspace();
+                if (rows.size() == 1) m_workspaceList->setCurrentRow(0);
+            }
+        });
+}
+
 void MainWindow::workspaceSelected()
 {
     QListWidgetItem* item = m_workspaceList->currentItem();
@@ -1998,6 +2073,17 @@ void MainWindow::workspaceSelected()
     }
 
     const int workspaceId = item->data(Qt::UserRole).toInt();
+    if (m_remoteReads) {
+        if (workspaceId <= 0) return;
+        m_workspaceContext.setCurrentWorkspaceId(workspaceId);
+        m_nameEdit->setText(item->text());
+        m_descriptionEdit->setPlainText(QStringLiteral("This Workspace is managed by the BrickSuite Host."));
+        m_updateButton->setEnabled(false);
+        UserSettings::instance().setRememberedHostWorkspace(remoteHostIdentity(), workspaceId,
+                                                             item->text());
+        statusBar()->showMessage(QStringLiteral("Host Workspace: %1").arg(item->text()));
+        return;
+    }
 
     const std::optional<Workspace> workspace = m_applicationServices.workspaces().get(workspaceId);
 

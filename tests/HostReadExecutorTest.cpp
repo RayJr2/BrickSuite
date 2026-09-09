@@ -88,7 +88,8 @@ bool seedDatabase(const QString& path, const QString& workspaceName)
                 ok = false;
             }
         };
-        execute(QStringLiteral("INSERT INTO part(part_number,name,rebrickable_part_id,is_active,created_utc,modified_utc,material) VALUES('3001','Host Brick','3001',1,'%1','%1','Plastic')").arg(now));
+        execute(QStringLiteral("INSERT INTO part_category(name,rebrickable_id,created_utc,modified_utc) VALUES('Host Bricks',11,'%1','%1')").arg(now));
+        execute(QStringLiteral("INSERT INTO part(part_number,name,part_category_id,rebrickable_part_id,is_active,created_utc,modified_utc,material) SELECT '3001','Host Brick',id,'3001',1,'%1','%1','Plastic' FROM part_category WHERE rebrickable_id=11").arg(now));
         execute(QStringLiteral("INSERT INTO color(name,rgb,is_transparent,rebrickable_id,created_utc,modified_utc) VALUES('Host Red','C91A09',0,4,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) VALUES(1,NULL,1,'Host Bin','',0,1,1,1,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO inventory_record(workspace_id,part_id,color_id,storage_location_id,manufacturer_id,condition,ownership_type,quantity,created_utc,modified_utc) SELECT 1,p.id,c.id,s.id,1,'Used','Owned',7,'%1','%1' FROM part p,color c,storage_location s WHERE p.part_number='3001' AND c.rebrickable_id=4").arg(now));
@@ -149,18 +150,37 @@ int main(int argc, char** argv)
         }), "Inventory read completion");
         ok &= check(inventory.rows.size() == 1 && inventory.total == 1
                         && inventory.rows.first().partNumber == QStringLiteral("3001")
+                        && inventory.rows.first().rebrickableCategoryId == 11
                         && inventory.rows.first().rebrickableColorId == 4,
                     "portable Inventory search projection");
+
+        RemoteReadDto::InventorySearchRequest portableCriteria;
+        portableCriteria.workspaceId = 1;
+        portableCriteria.rebrickableCategoryId = 11;
+        portableCriteria.rebrickableColorId = 4;
+        InventoryApplicationService::Page filteredInventory;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.searchInventoryPortable(portableCriteria, &app,
+                [&](const auto& result) { filteredInventory = result; loop.quit(); });
+        }), "portable Category/Color filter completion");
+        ok &= check(filteredInventory.total == 1 && filteredInventory.rows.size() == 1,
+                    "provider Category/Color identities map to Host internal IDs");
 
         std::optional<RemoteReadDto::InventoryDetail> detail;
         const int inventoryId = inventory.rows.isEmpty() ? 0 : inventory.rows.first().inventoryRecordId;
         ok &= check(waitFor([&](QEventLoop& loop) {
-            executor.getInventoryPortable(inventoryId, &app,
+            executor.getInventoryPortable(1, inventoryId, &app,
                 [&](const auto& result) { detail = result; loop.quit(); });
         }), "Inventory detail completion");
         ok &= check(detail && detail->partNumber == QStringLiteral("3001")
                         && detail->rebrickableColorId == 4,
                     "Inventory detail uses canonical identities");
+        std::optional<RemoteReadDto::InventoryDetail> crossWorkspaceDetail;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.getInventoryPortable(999, inventoryId, &app,
+                [&](const auto& result) { crossWorkspaceDetail = result; loop.quit(); });
+        }), "cross-Workspace Inventory detail completion");
+        ok &= check(!crossWorkspaceDetail, "Inventory detail cannot probe another Workspace");
 
         QList<RemoteReadDto::InventoryHistoryRow> history;
         ok &= check(waitFor([&](QEventLoop& loop) {
@@ -264,7 +284,7 @@ int main(int argc, char** argv)
         RemoteReadApplicationServices remote(client);
         RemoteReadDto::InventoryDetail remoteDetail;
         ok &= check(waitFor([&](QEventLoop& loop) {
-            remote.getInventory(1, &app, [&](const auto& result) {
+            remote.getInventory(1, 1, &app, [&](const auto& result) {
                 if (result.succeeded()) remoteDetail = *result.value;
                 loop.quit();
             });
@@ -274,8 +294,8 @@ int main(int argc, char** argv)
                     "remote typed decode preserves canonical identity");
         const QList<QPair<QString,QJsonObject>> requests{
             {"workspace.list",{}}, {"storage.list",{{"workspaceId",1}}},
-            {"inventory.search",{{"workspaceId",1},{"text",""},{"storageId",0},{"rebrickableColorId",-1},{"page",1},{"pageSize",250}}},
-            {"inventory.get",{{"inventoryRecordId",1}}},
+            {"inventory.search",{{"workspaceId",1},{"text",""},{"storageId",0},{"rebrickableCategoryId",-1},{"rebrickableColorId",-1},{"page",1},{"pageSize",250}}},
+            {"inventory.get",{{"workspaceId",1},{"inventoryRecordId",1}}},
             {"inventory.history",{{"workspaceId",1},{"partNumber","3001"},{"rebrickableColorId",4}}},
             {"builds.list",{{"workspaceId",1},{"includeArchived",false}}},
             {"builds.get",{{"buildId",1}}},

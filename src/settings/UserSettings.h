@@ -53,6 +53,11 @@ public:
     void setBrickSuiteTrustedFingerprint(const QString& fingerprint);
     bool brickSuiteReconnectAutomatically() const;
     void setBrickSuiteReconnectAutomatically(bool enabled);
+    int rememberedHostWorkspaceId(const QString& hostIdentity) const;
+    QString rememberedHostWorkspaceName(const QString& hostIdentity) const;
+    void setRememberedHostWorkspace(const QString& hostIdentity, int workspaceId,
+                                    const QString& displayName);
+    void clearRememberedHostWorkspace(const QString& hostIdentity);
 
     int resultsPerPage() const;
     void setResultsPerPage(int resultsPerPage);

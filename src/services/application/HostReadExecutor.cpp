@@ -3,6 +3,7 @@
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/ColorRepository.h"
+#include "../../repositories/PartCategoryRepository.h"
 #include "../parts/PartReferenceManifest.h"
 
 #include <QElapsedTimer>
@@ -223,23 +224,31 @@ QString locationPath(const QSqlDatabase& db, int id)
         names.prepend(value->name()); id = value->parentLocationId(); }
     return names.join(QStringLiteral(" / "));
 }
+
+QString manufacturerName(const QSqlDatabase& db, int id)
+{
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral("SELECT name FROM manufacturer WHERE id = :id"));
+    query.bindValue(QStringLiteral(":id"), id);
+    return query.exec() && query.next() ? query.value(0).toString() : QString();
+}
 }
 
-void HostReadExecutor::getInventoryPortable(int id, QObject* context,
+void HostReadExecutor::getInventoryPortable(int workspaceId, int id, QObject* context,
     std::function<void(const std::optional<RemoteReadDto::InventoryDetail>&)> completion,
     ErrorCallback failure)
 {
     QPointer<QObject> guard(context);
     enqueue(QStringLiteral("inventory.get"), [=, completion=std::move(completion)](ApplicationServices& services,const QSqlDatabase& db) mutable {
         const auto record=services.inventory().get(id); std::optional<RemoteReadDto::InventoryDetail> result;
-        if(record){RemoteReadDto::InventoryDetail d;d.inventoryRecordId=record->id();d.workspaceId=record->workspaceId();d.quantity=record->quantity();d.storageId=record->storageLocationId();d.storagePath=locationPath(db,d.storageId);d.condition=record->condition();d.ownershipType=record->ownershipType();d.createdUtc=record->createdUtc();d.modifiedUtc=record->modifiedUtc();const auto p=PartRepository(db).getById(record->partId());const auto c=ColorRepository(db).getById(record->colorId());if(p){d.partNumber=p->partNumber();d.partNameFallback=p->name();}if(c){d.rebrickableColorId=c->rebrickableId();d.colorNameFallback=c->name();}result=d;}
+        if(record && record->workspaceId() == workspaceId){RemoteReadDto::InventoryDetail d;d.inventoryRecordId=record->id();d.workspaceId=record->workspaceId();d.quantity=record->quantity();d.storageId=record->storageLocationId();d.storagePath=locationPath(db,d.storageId);d.manufacturerDisplay=manufacturerName(db,record->manufacturerId());d.condition=record->condition();d.ownershipType=record->ownershipType();d.createdUtc=record->createdUtc();d.modifiedUtc=record->modifiedUtc();const auto p=PartRepository(db).getById(record->partId());const auto c=ColorRepository(db).getById(record->colorId());if(p){d.partNumber=p->partNumber();d.partNameFallback=p->name();}if(c){d.rebrickableColorId=c->rebrickableId();d.colorNameFallback=c->name();}result=d;}
         if(guard)QMetaObject::invokeMethod(guard,[guard,completion,result=std::move(result)]()mutable{if(guard)completion(result);},Qt::QueuedConnection);
     },context,std::move(failure));
 }
 
 void HostReadExecutor::searchInventoryPortable(const RemoteReadDto::InventorySearchRequest&r,QObject*context,std::function<void(const InventoryApplicationService::Page&)>completion,ErrorCallback failure)
 {
- QPointer<QObject>guard(context);enqueue(QStringLiteral("inventory.search"),[=,completion=std::move(completion)](ApplicationServices&s,const QSqlDatabase&db)mutable{InventorySearchCriteria c;c.workspaceId=int(r.workspaceId);c.searchText=r.text;c.storageLocationId=int(r.storageId);c.limit=r.paging.pageSize;c.offset=(r.paging.page-1)*r.paging.pageSize;if(r.rebrickableColorId>=0){const auto color=ColorRepository(db).getByRebrickableId(r.rebrickableColorId);if(!color){InventoryApplicationService::Page empty;if(guard)QMetaObject::invokeMethod(guard,[guard,completion,empty]()mutable{if(guard)completion(empty);},Qt::QueuedConnection);return;}c.colorId=color->id();}auto out=s.inventory().search(c);if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out=std::move(out)]()mutable{if(guard)completion(out);},Qt::QueuedConnection);},context,std::move(failure));
+ QPointer<QObject>guard(context);enqueue(QStringLiteral("inventory.search"),[=,completion=std::move(completion)](ApplicationServices&s,const QSqlDatabase&db)mutable{InventorySearchCriteria c;c.workspaceId=int(r.workspaceId);c.searchText=r.text;c.storageLocationId=int(r.storageId);c.limit=r.paging.pageSize;c.offset=(r.paging.page-1)*r.paging.pageSize;if(r.rebrickableCategoryId>=0){const auto category=PartCategoryRepository(db).getByRebrickableId(r.rebrickableCategoryId);if(!category){InventoryApplicationService::Page empty;if(guard)QMetaObject::invokeMethod(guard,[guard,completion,empty]()mutable{if(guard)completion(empty);},Qt::QueuedConnection);return;}c.categoryId=category->id();}if(r.rebrickableColorId>=0){const auto color=ColorRepository(db).getByRebrickableId(r.rebrickableColorId);if(!color){InventoryApplicationService::Page empty;if(guard)QMetaObject::invokeMethod(guard,[guard,completion,empty]()mutable{if(guard)completion(empty);},Qt::QueuedConnection);return;}c.colorId=color->id();}auto out=s.inventory().search(c);if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out=std::move(out)]()mutable{if(guard)completion(out);},Qt::QueuedConnection);},context,std::move(failure));
 }
 
 void HostReadExecutor::inventoryHistoryPortable(int workspaceId,const QString& partNumber,int rbColor,QObject* context,std::function<void(const QList<RemoteReadDto::InventoryHistoryRow>&)> completion,ErrorCallback failure)

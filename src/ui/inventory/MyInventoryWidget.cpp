@@ -43,12 +43,14 @@
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/PartCategoryRepository.h"
+#include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/images/PartImageService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../services/application/ApplicationServices.h"
+#include "../../services/application/RemoteReadApplicationServices.h"
 
 #include "../helpers/ColorComboHelper.h"
 #include "../helpers/LargeViewLoadingGuard.h"
@@ -66,6 +68,7 @@
 #include <QLocale>
 #include <QLineEdit>
 #include <QListView>
+#include <QMessageBox>
 #include <QPalette>
 #include <QPixmap>
 #include <QPushButton>
@@ -79,11 +82,13 @@ MyInventoryWidget::MyInventoryWidget(
     WorkspaceContext& workspaceContext,
     SessionStorageSelectionService& sessionStorageSelectionService,
     InventoryApplicationService& inventoryService,
-    QWidget* parent)
+    QWidget* parent,
+    RemoteReadApplicationServices* remoteReads)
     : QWidget(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
     , m_inventoryService(inventoryService)
+    , m_remoteReads(remoteReads)
 {
     auto* mainLayout =
         new QVBoxLayout(this);
@@ -440,8 +445,15 @@ MyInventoryWidget::MyInventoryWidget(
 
     loadCategories();
     loadColors();
-    if (m_inventoryService.status().isAvailable())
+    if (!m_remoteReads && m_inventoryService.status().isAvailable())
         loadManufacturers();
+    else if (m_remoteReads) {
+        m_manufacturerCombo->addItem(QStringLiteral("All Manufacturers"), 0);
+        m_manufacturerCombo->setEnabled(false);
+        m_addPartButton->setEnabled(false);
+        m_lostInventoryButton->setEnabled(false);
+        m_importButton->setEnabled(false);
+    }
 
     workspaceChanged(
         m_workspaceContext.currentWorkspaceId());
@@ -475,23 +487,24 @@ void MyInventoryWidget::workspaceChanged(int workspaceId)
 
     searchInventory();
 
-    m_addPartButton->setEnabled(m_workspaceContext.hasCurrentWorkspace());
-    m_lostInventoryButton->setEnabled(m_workspaceContext.hasCurrentWorkspace());
-    m_importButton->setEnabled(m_workspaceContext.hasCurrentWorkspace());
+    const bool localWritable = !m_remoteReads && m_workspaceContext.hasCurrentWorkspace();
+    m_addPartButton->setEnabled(localWritable);
+    m_lostInventoryButton->setEnabled(localWritable);
+    m_importButton->setEnabled(localWritable);
 }
 
 void MyInventoryWidget::loadCategories()
 {
     m_categoryCombo->clear();
 
-    m_categoryCombo->addItem("All Categories", 0);
+    m_categoryCombo->addItem("All Categories", m_remoteReads ? -1 : 0);
 
     PartCategoryRepository repository;
 
     const QList<PartCategory> categories = repository.getAll();
 
     for (const PartCategory& category : categories) {
-        m_categoryCombo->addItem(category.name(), category.id());
+        m_categoryCombo->addItem(category.name(), m_remoteReads ? category.rebrickableId() : category.id());
     }
 }
 
@@ -499,14 +512,14 @@ void MyInventoryWidget::loadColors()
 {
     m_colorCombo->clear();
 
-    m_colorCombo->addItem("All Colors", 0);
+    m_colorCombo->addItem("All Colors", m_remoteReads ? -1 : 0);
 
     ColorRepository repository;
 
     const QList<Color> colors = repository.getAll();
 
     for (const Color& color : colors) {
-        m_colorCombo->addItem(color.name(), color.id());
+        m_colorCombo->addItem(color.name(), m_remoteReads ? color.rebrickableId() : color.id());
     }
 }
 
@@ -531,6 +544,10 @@ void MyInventoryWidget::loadManufacturers()
 
 void MyInventoryWidget::loadStorageLocations()
 {
+    if (m_remoteReads) {
+        loadRemoteStorageLocations();
+        return;
+    }
     const QSignalBlocker blocker(m_storageCombo);
 
     const int selectedLocationId = m_storageCombo->currentData().toInt();
@@ -599,8 +616,125 @@ void MyInventoryWidget::loadStorageLocations()
     }
 }
 
+void MyInventoryWidget::loadRemoteStorageLocations()
+{
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    const int selectedLocationId = m_storageCombo->currentData().toInt();
+    const QSignalBlocker blocker(m_storageCombo);
+    m_storageCombo->clear();
+    m_storageCombo->addItem(QStringLiteral("All Locations"), 0);
+    m_storagePathById.clear();
+    if (workspaceId <= 0 || !m_remoteReads->isAvailableFor(QStringLiteral("storage.list"))) return;
+    m_storageCombo->setEnabled(false);
+    m_storageRequestToken = m_remoteReads->listStorage(workspaceId, this,
+        [this, workspaceId, selectedLocationId](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> result) {
+            if (result.token != m_storageRequestToken
+                || workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+            const QSignalBlocker blocker(m_storageCombo);
+            m_storageCombo->clear();
+            m_storageCombo->addItem(QStringLiteral("All Locations"), 0);
+            m_storagePathById.clear();
+            if (!result.succeeded()) {
+                m_storageCombo->setToolTip(result.message);
+                m_storageCombo->setEnabled(false);
+                return;
+            }
+            QSet<qint64> parents;
+            for (const auto& location : *result.value)
+                if (location.active && location.parentStorageId > 0) parents.insert(location.parentStorageId);
+            for (const auto& location : *result.value) {
+                if (!location.active || parents.contains(location.storageId)) continue;
+                m_storagePathById.insert(int(location.storageId), location.displayPath);
+                m_storageCombo->addItem(location.displayPath, location.storageId);
+            }
+            const int restored = m_storageCombo->findData(selectedLocationId);
+            if (restored >= 0) m_storageCombo->setCurrentIndex(restored);
+            m_storageCombo->setToolTip({});
+            m_storageCombo->setEnabled(true);
+        });
+}
+
+void MyInventoryWidget::setRemoteLoading(bool loading, const QString& message)
+{
+    m_refreshInProgress = loading;
+    const QList<QWidget*> controls{m_searchButton, m_searchEdit, m_categoryCombo,
+                                   m_colorCombo, m_storageCombo};
+    for (QWidget* control : controls)
+        control->setEnabled(!loading);
+    if (!loading && !m_remoteReads->isAvailableFor(QStringLiteral("storage.list")))
+        m_storageCombo->setEnabled(false);
+    m_previousButton->setEnabled(!loading && m_currentPage > 0);
+    const int pageSize = UserSettings::instance().resultsPerPage();
+    const int pages = qMax(1, (m_totalResultCount + pageSize - 1) / pageSize);
+    m_nextButton->setEnabled(!loading && m_currentPage + 1 < pages);
+    if (!message.isEmpty()) m_resultLabel->setText(message);
+}
+
+void MyInventoryWidget::requestRemoteInventory(const QString& loadingMessage)
+{
+    if (!m_workspaceContext.hasCurrentWorkspace()) {
+        m_resultLabel->setText(QStringLiteral("Select a Host Workspace to view inventory."));
+        m_totalResultCount = 0;
+        updatePagingControls();
+        return;
+    }
+    if (!m_remoteReads->isAvailableFor(QStringLiteral("inventory.search"))) {
+        m_resultLabel->setText(QStringLiteral("BrickSuite Host Inventory is unavailable. Existing results may be stale."));
+        setRemoteLoading(false);
+        return;
+    }
+    RemoteReadDto::InventorySearchRequest request;
+    request.workspaceId = m_workspaceContext.currentWorkspaceId();
+    request.text = m_searchEdit->text().trimmed();
+    const int category = m_categoryCombo->currentData().toInt();
+    const int color = m_colorCombo->currentData().toInt();
+    request.rebrickableCategoryId = category >= 0 ? category : -1;
+    request.rebrickableColorId = color >= 0 ? color : -1;
+    request.storageId = m_storageCombo->currentData().toLongLong();
+    request.paging.page = m_currentPage + 1;
+    request.paging.pageSize = UserSettings::instance().resultsPerPage();
+    const int requestedWorkspace = int(request.workspaceId);
+    setRemoteLoading(true, loadingMessage.isEmpty()
+        ? QStringLiteral("Loading My Inventory from BrickSuite Host...")
+        : loadingMessage + QStringLiteral(" from BrickSuite Host..."));
+    m_remoteRequestTimer.restart();
+    m_inventoryRequestToken = m_remoteReads->searchInventory(request, this,
+        [this, requestedWorkspace](AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::InventoryRow>> result) {
+            if (result.token != m_inventoryRequestToken
+                || requestedWorkspace != m_workspaceContext.currentWorkspaceId()) return;
+            setRemoteLoading(false);
+            m_remoteRoundTripMs = m_remoteRequestTimer.isValid() ? m_remoteRequestTimer.elapsed() : 0;
+            if (!result.succeeded()) {
+                QString message;
+                switch (result.error) {
+                case AsyncReadError::Timeout: message = QStringLiteral("The BrickSuite Host did not respond in time."); break;
+                case AsyncReadError::ServerBusy: message = QStringLiteral("The BrickSuite Host is temporarily busy."); break;
+                case AsyncReadError::Unsupported: message = QStringLiteral("This BrickSuite Host does not support remote Inventory reads."); break;
+                default: message = QStringLiteral("BrickSuite Host connection unavailable."); break;
+                }
+                m_resultLabel->setText(message + QStringLiteral(" Existing results may be stale."));
+                return;
+            }
+            m_remotePage = std::move(*result.value);
+            m_currentPage = qMax(0, m_remotePage.page - 1);
+            const int totalPages = qMax(1, (m_remotePage.totalRows + m_remotePage.pageSize - 1)
+                                            / m_remotePage.pageSize);
+            if (m_currentPage >= totalPages) {
+                m_currentPage = totalPages - 1;
+                requestRemoteInventory(QStringLiteral("Loading page %1").arg(m_currentPage + 1));
+                return;
+            }
+            m_remoteResponseReady = true;
+            searchInventory();
+        });
+}
+
 void MyInventoryWidget::searchInventory(const QString& loadingMessage)
 {
+    if (m_remoteReads && !m_remoteResponseReady) {
+        requestRemoteInventory(loadingMessage);
+        return;
+    }
     LargeViewLoadingGuard loading(
         this, m_refreshInProgress,
         loadingMessage.isEmpty() ? QStringLiteral("Loading My Inventory...") : loadingMessage,
@@ -623,7 +757,7 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
     const qint64 clearMs = phaseTimer.elapsed();
 
     const ApplicationServiceStatus serviceStatus = m_inventoryService.status();
-    if (!serviceStatus.isAvailable()) {
+    if (!m_remoteReads && !serviceStatus.isAvailable()) {
         m_lastResultCount = 0;
         m_totalResultCount = 0;
         m_resultLabel->setText(serviceStatus.message);
@@ -667,7 +801,7 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
     criteria.offset = m_currentPage * resultsPerPage;
 
     phaseTimer.restart();
-    m_totalResultCount = m_inventoryService.count(criteria);
+    m_totalResultCount = m_remoteReads ? m_remotePage.totalRows : m_inventoryService.count(criteria);
     const qint64 countMs = phaseTimer.elapsed();
 
     //
@@ -685,7 +819,61 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
     }
 
     phaseTimer.restart();
-    const QList<InventorySearchResult> results = m_inventoryService.searchRows(criteria);
+    QList<InventorySearchResult> results;
+    if (m_remoteReads) {
+        QSet<QString> partNumbers;
+        for (const auto& remote : m_remotePage.rows) partNumbers.insert(remote.partNumber);
+        QHash<QString, Part> localParts;
+        for (const Part& part : PartRepository().getByPartNumbers(partNumbers))
+            localParts.insert(part.partNumber(), part);
+        QHash<int, Color> localColors;
+        for (const Color& color : ColorRepository().getAll())
+            localColors.insert(color.rebrickableId(), color);
+        QHash<int, PartCategory> localCategories;
+        for (const PartCategory& category : PartCategoryRepository().getAll())
+            localCategories.insert(category.id(), category);
+        int unknownRows = 0;
+        for (const auto& remote : m_remotePage.rows) {
+            InventorySearchResult row;
+            row.inventoryRecordId = int(remote.inventoryRecordId);
+            row.partNumber = remote.partNumber;
+            row.partName = remote.partNameFallback;
+            row.rebrickableCategoryId = remote.rebrickableCategoryId;
+            row.rebrickableColorId = remote.rebrickableColorId;
+            row.colorName = remote.colorNameFallback;
+            row.storageLocationId = int(remote.storageId);
+            row.storageLocationName = remote.storagePath;
+            row.manufacturerName = remote.manufacturerDisplay;
+            row.condition = remote.condition;
+            row.ownershipType = remote.ownershipType;
+            row.quantity = remote.quantity;
+            const auto part = localParts.constFind(remote.partNumber);
+            if (part != localParts.cend()) {
+                row.partId = part->id();
+                row.partName = part->name();
+                row.categoryId = part->partCategoryId();
+                const auto category = localCategories.constFind(row.categoryId);
+                if (category != localCategories.cend()) row.categoryName = category->name();
+            } else {
+                ++unknownRows;
+            }
+            const auto color = localColors.constFind(remote.rebrickableColorId);
+            if (color != localColors.cend()) {
+                row.colorId = color->id();
+                row.colorName = color->name();
+                row.colorRgb = color->rgb();
+            }
+            results.append(row);
+        }
+        if (unknownRows > 0)
+            m_resultLabel->setToolTip(QStringLiteral("Some Host Inventory items are not present in this device's local Rebrickable catalog. Consider updating Rebrickable data."));
+        else
+            m_resultLabel->setToolTip({});
+        m_remoteUnknownRows = unknownRows;
+        m_remoteResponseReady = false;
+    } else {
+        results = m_inventoryService.searchRows(criteria);
+    }
     const qint64 searchMs = phaseTimer.elapsed();
 
     m_lastResultCount = results.size();
@@ -782,16 +970,26 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
         metadataSetupNs += rowPhaseTimer.nsecsElapsed();
 
         rowPhaseTimer.restart();
+        const int inventoryRecordId = result.inventoryRecordId;
+        const int partId = result.partId;
+        const int colorId = result.colorId;
         auto* actionCombo = new QComboBox(m_resultsTable);
 
         actionCombo->addItem("Actions...");
-        actionCombo->addItem("Details", "details");
-        actionCombo->addItem("Edit", "edit");
-        actionCombo->addItem("Move", "move");
-        actionCombo->addItem("Correct Entry...", "correct");
-        actionCombo->addItem("Remove Entry...", "remove");
-        actionCombo->addItem("Mark Lost...", "lost");
+        if (m_remoteReads)
+            actionCombo->addItem("Inventory Details", "remote-details");
+        if (partId > 0)
+            actionCombo->addItem(m_remoteReads ? "Part Details" : "Details", "details");
+        if (!m_remoteReads) {
+            actionCombo->addItem("Edit", "edit");
+            actionCombo->addItem("Move", "move");
+            actionCombo->addItem("Correct Entry...", "correct");
+            actionCombo->addItem("Remove Entry...", "remove");
+            actionCombo->addItem("Mark Lost...", "lost");
+        }
         actionCombo->addItem("View History", "history");
+        if (m_remoteReads)
+            actionCombo->setToolTip(QStringLiteral("Remote Inventory is read-only. Changes are not available yet."));
 
         // Future actions can be added here:
         //
@@ -799,22 +997,36 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
         //     "Allocate to Build",
         //     "allocate");
 
-        const int inventoryRecordId = result.inventoryRecordId;
-
-        const int partId = result.partId;
-
-        const int colorId = result.colorId;
-
         connect(actionCombo,
                 &QComboBox::currentIndexChanged,
                 this,
-                [this, actionCombo, inventoryRecordId, partId, colorId](int index) {
+                [this, actionCombo, inventoryRecordId, partId, colorId, partNumber,
+                 rebrickableColorId](int index) {
                     if (index <= 0)
                         return;
 
                     const QString action = actionCombo->itemData(index).toString();
 
-                    if (action == "details") {
+                    if (action == "remote-details") {
+                        const int workspaceId = m_workspaceContext.currentWorkspaceId();
+                        m_remoteReads->getInventory(workspaceId, inventoryRecordId, this,
+                            [this, workspaceId](AsyncReadResult<RemoteReadDto::InventoryDetail> result) {
+                                if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+                                if (!result.succeeded()) {
+                                    QMessageBox::information(this, QStringLiteral("Inventory Details"),
+                                        result.error == AsyncReadError::NotFound
+                                            ? QStringLiteral("The Inventory record no longer exists in this Host Workspace.")
+                                            : QStringLiteral("Unable to load Inventory details from BrickSuite Host."));
+                                    return;
+                                }
+                                const auto& item = *result.value;
+                                QMessageBox::information(this, QStringLiteral("Inventory Details"),
+                                    QStringLiteral("Part: %1\nColor: %2\nQuantity: %3\nStorage: %4\nManufacturer: %5\nCondition: %6\nOwnership: %7")
+                                        .arg(item.partNumber, item.colorNameFallback)
+                                        .arg(item.quantity).arg(item.storagePath, item.manufacturerDisplay,
+                                                                 item.condition, item.ownershipType));
+                            });
+                    } else if (action == "details") {
                         PartDetailsDialog dialog(partId, this);
 
                         dialog.exec();
@@ -861,7 +1073,8 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                         }
                     } else if (action == "history") {
                         InventoryHistoryDialog dialog(partId, colorId, m_workspaceContext,
-                                                      m_inventoryService, this);
+                                                      m_inventoryService, this, m_remoteReads,
+                                                      partNumber, rebrickableColorId);
 
                         dialog.exec();
                     }
@@ -972,6 +1185,10 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
     }
 
     updatePagingControls();
+    if (m_remoteReads && m_remoteUnknownRows > 0) {
+        m_resultLabel->setText(m_resultLabel->text()
+            + QStringLiteral(" Some Host items are not in this device's local Rebrickable catalog."));
+    }
     const qint64 statusMs = phaseTimer.elapsed();
     const auto milliseconds = [](qint64 nanoseconds) {
         return QString::number(static_cast<double>(nanoseconds) / 1000000.0, 'f', 1);
@@ -993,6 +1210,13 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                .arg(QString::number(qMax(0.0, static_cast<double>(rowAggregateMs)
                    - static_cast<double>(measuredRowNs) / 1000000.0), 'f', 1))
                .arg(tableFinalizeMs).arg(statusMs);
+    if (m_remoteReads) {
+        qInfo().noquote() << QStringLiteral(
+            "Performance RemoteInventory page=%1 rows=%2 roundtrip=%3ms decorate-and-query=%4ms table=%5ms total=%6ms unknown-local=%7")
+            .arg(m_currentPage + 1).arg(results.size()).arg(m_remoteRoundTripMs)
+            .arg(searchMs).arg(rowAggregateMs + tableFinalizeMs).arg(totalTimer.elapsed())
+            .arg(m_remoteUnknownRows);
+    }
 }
 
 void MyInventoryWidget::previousPage()

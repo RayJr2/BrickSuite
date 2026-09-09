@@ -27,6 +27,7 @@
 #include "../models/PartSearchResult.h"
 
 #include <QList>
+#include <QSet>
 #include <optional>
 
 class QSqlQuery;
@@ -45,6 +46,7 @@ public:
     std::optional<Part> getById(int id) const;
 
     std::optional<Part> getByPartNumber(const QString& partNumber) const;
+    QList<Part> getByPartNumbers(const QSet<QString>& partNumbers) const;
 
     bool update(Part& part);
 

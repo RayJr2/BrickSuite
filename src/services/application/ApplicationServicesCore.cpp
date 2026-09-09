@@ -15,3 +15,6 @@ SharedPartReferenceCustomizationService& ApplicationServices::partReferenceCusto
 { return *m_partReference; }
 SharedDataSource ApplicationServices::sharedDataSource() const { return m_source; }
 ApplicationServiceStatus ApplicationServices::sharedStatus() const { return m_workspaces->status(); }
+void ApplicationServices::setRemoteReads(RemoteReadApplicationServices* remoteReads)
+{ m_remoteReads = remoteReads; }
+RemoteReadApplicationServices* ApplicationServices::remoteReads() const { return m_remoteReads; }

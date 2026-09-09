@@ -209,6 +209,34 @@ std::optional<Part> PartRepository::getByPartNumber(const QString& partNumber) c
     return partFromQuery(query);
 }
 
+QList<Part> PartRepository::getByPartNumbers(const QSet<QString>& partNumbers) const
+{
+    QList<Part> parts;
+    if (partNumbers.isEmpty()) return parts;
+    QSqlDatabase database = repositoryDatabase();
+    QStringList placeholders;
+    int index = 0;
+    for (auto it = partNumbers.cbegin(); it != partNumbers.cend(); ++it)
+        placeholders.append(QStringLiteral(":part%1").arg(index++));
+    QSqlQuery query(database);
+    if (!query.prepare(QStringLiteral(
+            "SELECT id, part_number, name, part_category_id, rebrickable_part_id, "
+            "is_active, material, created_utc, modified_utc FROM part "
+            "WHERE part_number IN (%1)").arg(placeholders.join(QLatin1Char(','))))) {
+        qCritical() << "Unable to prepare batched Part lookup:" << query.lastError().text();
+        return parts;
+    }
+    index = 0;
+    for (auto it = partNumbers.cbegin(); it != partNumbers.cend(); ++it)
+        query.bindValue(QStringLiteral(":part%1").arg(index++), *it);
+    if (!query.exec()) {
+        qCritical() << "Unable to execute batched Part lookup:" << query.lastError().text();
+        return parts;
+    }
+    while (query.next()) parts.append(partFromQuery(query));
+    return parts;
+}
+
 QList<Part> PartRepository::findActiveDecoratedByBasePrefix(
     const QString& basePartNumber,
     int limit) const

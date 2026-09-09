@@ -24,6 +24,7 @@
 #include "../services/database/AutomaticBackupPolicy.h"
 
 #include <QDebug>
+#include <QCryptographicHash>
 #include <QSettings>
 #include <QtGlobal>
 
@@ -48,6 +49,7 @@ constexpr auto kServerPortKey = "ServerPort";
 constexpr auto kHostEndpointKey = "HostEndpoint";
 constexpr auto kTrustedFingerprintKey = "TrustedFingerprint";
 constexpr auto kReconnectAutomaticallyKey = "ReconnectAutomatically";
+constexpr auto kRememberedHostWorkspacesGroup = "RememberedHostWorkspaces";
 
 constexpr auto kRebrickableApiKey = "ApiKey";
 constexpr auto kRebrickableConnectionPreviouslyVerifiedKey = "ConnectionPreviouslyVerified";
@@ -100,6 +102,14 @@ constexpr auto kLastFailureUtcKey = "LastFailureUtc";
 constexpr auto kLastFailureSummaryKey = "LastFailureSummary";
 
 } // namespace
+
+namespace {
+QString hostWorkspaceSettingsKey(const QString& hostIdentity)
+{
+    return QString::fromLatin1(QCryptographicHash::hash(hostIdentity.trimmed().toUtf8(),
+        QCryptographicHash::Sha256).toHex());
+}
+}
 
 UserSettings& UserSettings::instance()
 {
@@ -262,6 +272,47 @@ void UserSettings::setBrickSuiteReconnectAutomatically(bool enabled)
     settings.beginGroup(kGroupBrickSuiteNetwork);
     settings.setValue(kReconnectAutomaticallyKey, enabled);
     settings.endGroup();
+}
+
+int UserSettings::rememberedHostWorkspaceId(const QString& hostIdentity) const
+{
+    if (hostIdentity.trimmed().isEmpty()) return 0;
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.beginGroup(kRememberedHostWorkspacesGroup);
+    settings.beginGroup(hostWorkspaceSettingsKey(hostIdentity));
+    return qMax(0, settings.value(QStringLiteral("WorkspaceId"), 0).toInt());
+}
+
+QString UserSettings::rememberedHostWorkspaceName(const QString& hostIdentity) const
+{
+    if (hostIdentity.trimmed().isEmpty()) return {};
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.beginGroup(kRememberedHostWorkspacesGroup);
+    settings.beginGroup(hostWorkspaceSettingsKey(hostIdentity));
+    return settings.value(QStringLiteral("WorkspaceName")).toString();
+}
+
+void UserSettings::setRememberedHostWorkspace(const QString& hostIdentity, int workspaceId,
+                                               const QString& displayName)
+{
+    if (hostIdentity.trimmed().isEmpty() || workspaceId <= 0) return;
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.beginGroup(kRememberedHostWorkspacesGroup);
+    settings.beginGroup(hostWorkspaceSettingsKey(hostIdentity));
+    settings.setValue(QStringLiteral("WorkspaceId"), workspaceId);
+    settings.setValue(QStringLiteral("WorkspaceName"), displayName);
+}
+
+void UserSettings::clearRememberedHostWorkspace(const QString& hostIdentity)
+{
+    if (hostIdentity.trimmed().isEmpty()) return;
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.beginGroup(kRememberedHostWorkspacesGroup);
+    settings.remove(hostWorkspaceSettingsKey(hostIdentity));
 }
 
 int UserSettings::resultsPerPage() const

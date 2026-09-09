@@ -31,6 +31,7 @@ int main(int argc, char** argv)
     RemoteReadDto::InventoryRow row;
     row.inventoryRecordId = 44; row.workspaceId = 2;
     row.partNumber = QStringLiteral("3001"); row.partNameFallback = QStringLiteral("Brick 2 x 4");
+    row.rebrickableCategoryId = 11;
     row.rebrickableColorId = 4; row.colorNameFallback = QStringLiteral("Red");
     row.quantity = 9; row.storageId = 8; row.storagePath = QStringLiteral("Shelf / Bin");
     row.manufacturerDisplay = QStringLiteral("LEGO"); row.condition = QStringLiteral("Used");
@@ -42,6 +43,7 @@ int main(int argc, char** argv)
     RemoteReadJson::DecodeError decodeError;
     ok &= require(RemoteReadJson::fromJson(json, &decoded, &decodeError)
                   && decoded.partNumber == QStringLiteral("3001")
+                  && decoded.rebrickableCategoryId == 11
                   && decoded.rebrickableColorId == 4, "portable inventory round trip failed");
     QJsonObject invalid = json; invalid.insert(QStringLiteral("partNumber"), QString(513, QLatin1Char('x')));
     ok &= require(!RemoteReadJson::fromJson(invalid, &decoded, &decodeError), "oversized text accepted");

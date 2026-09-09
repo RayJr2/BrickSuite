@@ -48,6 +48,7 @@ class SessionStorageSelectionService;
 class PartExternalIdEnrichmentService;
 class ApplicationServices;
 class BrickSuiteNetworkManager;
+class RemoteReadApplicationServices;
 
 class MainWindow : public QMainWindow
 {
@@ -71,6 +72,8 @@ private slots:
 
 private:
     void loadWorkspaces();
+    void loadRemoteWorkspaces();
+    QString remoteHostIdentity() const;
     QWidget* createWorkspaceTab();
     void initializeProviderStatuses();
     void ensureBrickLinkColorMappings();
@@ -79,6 +82,8 @@ private:
     SessionStorageSelectionService& m_sessionStorageSelectionService;
     ApplicationServices& m_applicationServices;
     BrickSuiteNetworkManager& m_networkManager;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
+    quint64 m_workspaceRequestToken = 0;
 
     QTabWidget* m_tabWidget = nullptr;
 

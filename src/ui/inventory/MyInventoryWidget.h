@@ -21,9 +21,12 @@
 #pragma once
 
 #include <QHash>
+#include <QElapsedTimer>
 #include <QList>
 #include <QSet>
 #include <QWidget>
+#include "../../services/application/dto/RemoteReadDtos.h"
+#include "../../services/application/AsyncReadResult.h"
 
 class WorkspaceContext;
 class SessionStorageSelectionService;
@@ -37,6 +40,7 @@ class PartImageService;
 class RebrickableApiClient;
 class AddInventoryDialog;
 class InventoryApplicationService;
+class RemoteReadApplicationServices;
 
 class MyInventoryWidget : public QWidget
 {
@@ -47,7 +51,8 @@ public:
         WorkspaceContext& workspaceContext,
         SessionStorageSelectionService& sessionStorageSelectionService,
         InventoryApplicationService& inventoryService,
-        QWidget* parent = nullptr);
+        QWidget* parent = nullptr,
+        RemoteReadApplicationServices* remoteReads = nullptr);
 
     void refresh();
     void settingsChanged();
@@ -79,6 +84,9 @@ private:
     void loadColors();
     void loadManufacturers();
     void loadStorageLocations();
+    void loadRemoteStorageLocations();
+    void requestRemoteInventory(const QString& loadingMessage);
+    void setRemoteLoading(bool loading, const QString& message = QString());
     void updatePagingControls();
     void addPart();
     void showLostInventory();
@@ -90,6 +98,14 @@ private:
     WorkspaceContext& m_workspaceContext;
     SessionStorageSelectionService& m_sessionStorageSelectionService;
     InventoryApplicationService& m_inventoryService;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
+    ReadRequestToken m_inventoryRequestToken = 0;
+    ReadRequestToken m_storageRequestToken = 0;
+    bool m_remoteResponseReady = false;
+    RemoteReadDto::Page<RemoteReadDto::InventoryRow> m_remotePage;
+    QElapsedTimer m_remoteRequestTimer;
+    qint64 m_remoteRoundTripMs = 0;
+    int m_remoteUnknownRows = 0;
 
     int m_currentPage = 0;
     int m_lastResultCount = 0;

@@ -23,7 +23,7 @@ public:
         AsyncReadCompletion<QList<RemoteReadDto::StorageSummary>> completion);
     ReadRequestToken searchInventory(const RemoteReadDto::InventorySearchRequest& request,
         QObject* context, AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::InventoryRow>> completion);
-    ReadRequestToken getInventory(qint64 inventoryRecordId, QObject* context,
+    ReadRequestToken getInventory(qint64 workspaceId, qint64 inventoryRecordId, QObject* context,
         AsyncReadCompletion<RemoteReadDto::InventoryDetail> completion);
     ReadRequestToken inventoryHistory(qint64 workspaceId, const QString& partNumber,
         int rebrickableColorId, QObject* context,

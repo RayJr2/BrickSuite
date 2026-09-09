@@ -82,10 +82,13 @@ bool Application::initialize(const StartupProgress& progress)
     phaseTimer.restart();
     m_workspaceContext = std::make_unique<WorkspaceContext>();
     m_sessionStorageSelectionService = std::make_unique<SessionStorageSelectionService>();
+    m_networkManager = std::make_unique<BrickSuiteNetworkManager>();
     const SharedDataSource sharedDataSource = UserSettings::instance().sharedDataSource();
     m_applicationServices = sharedDataSource == SharedDataSource::ThisComputer
         ? std::make_unique<ApplicationServices>()
         : createUnavailableHostApplicationServices();
+    if (sharedDataSource == SharedDataSource::BrickSuiteHost)
+        m_applicationServices->setRemoteReads(m_networkManager->remoteReads());
     qInfo().noquote() << "Shared data source:"
                       << (sharedDataSource == SharedDataSource::ThisComputer
                               ? "This Computer" : "BrickSuite Host");
@@ -93,8 +96,6 @@ bool Application::initialize(const StartupProgress& progress)
         qWarning().noquote() << "BrickSuite Host shared services are unavailable until remote connectivity is configured.";
     qInfo() << "Startup phase application service creation completed in"
             << phaseTimer.elapsed() << "ms.";
-
-    m_networkManager = std::make_unique<BrickSuiteNetworkManager>();
 
     phaseTimer.restart();
     m_mainWindow = std::make_unique<MainWindow>(*m_workspaceContext,

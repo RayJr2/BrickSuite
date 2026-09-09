@@ -27,6 +27,7 @@
 
 class PartReferenceManifest;
 class QSqlDatabase;
+class RemoteReadApplicationServices;
 
 enum class ApplicationServiceAvailability
 {
@@ -135,6 +136,8 @@ public:
     SharedPartReferenceCustomizationService& partReferenceCustomizations() const;
     SharedDataSource sharedDataSource() const;
     ApplicationServiceStatus sharedStatus() const;
+    void setRemoteReads(RemoteReadApplicationServices* remoteReads);
+    RemoteReadApplicationServices* remoteReads() const;
 
 private:
     std::unique_ptr<WorkspaceApplicationService> m_workspaces;
@@ -143,6 +146,7 @@ private:
     std::unique_ptr<CollectionApplicationService> m_collection;
     std::unique_ptr<SharedPartReferenceCustomizationService> m_partReference;
     SharedDataSource m_source = SharedDataSource::ThisComputer;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
 };
 
 std::unique_ptr<ApplicationServices> createUnavailableHostApplicationServices();

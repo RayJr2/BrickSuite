@@ -20,8 +20,6 @@
 
 #include "PartCategoryRepository.h"
 
-#include "../database/DatabaseManager.h"
-
 #include <QDateTime>
 #include <QDebug>
 #include <QSqlError>
@@ -31,7 +29,7 @@ QList<PartCategory> PartCategoryRepository::getAll() const
 {
     QList<PartCategory> categories;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -58,7 +56,7 @@ QList<PartCategory> PartCategoryRepository::getAll() const
 
 std::optional<PartCategory> PartCategoryRepository::getById(int id) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -89,7 +87,7 @@ std::optional<PartCategory> PartCategoryRepository::getById(int id) const
 
 std::optional<PartCategory> PartCategoryRepository::getByRebrickableId(int rebrickableId) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 

@@ -4,6 +4,7 @@
 #include "../../network/BrickSuiteWebSocketClient.h"
 
 #include <QJsonArray>
+#include <QTimer>
 
 RemoteReadApplicationServices::RemoteReadApplicationServices(
     BrickSuiteWebSocketClient& client, QObject* parent)
@@ -32,13 +33,17 @@ ReadRequestToken RemoteReadApplicationServices::request(
     const ReadRequestToken token = nextReadRequestToken();
     if (!context) return token;
     if (m_client.status().state != BrickSuiteConnectionState::ConnectedAuthenticated) {
-        completion(AsyncReadResult<T>::failure(token, AsyncReadError::Unavailable,
-            QStringLiteral("Connect and authenticate to BrickSuite Host first.")));
+        QTimer::singleShot(0, context, [token, completion = std::move(completion)]() mutable {
+            completion(AsyncReadResult<T>::failure(token, AsyncReadError::Unavailable,
+                QStringLiteral("Connect and authenticate to BrickSuite Host first.")));
+        });
         return token;
     }
     if (!m_client.supportsOperation(operation)) {
-        completion(AsyncReadResult<T>::failure(token, AsyncReadError::Unsupported,
-            QStringLiteral("The connected Host does not support this read operation.")));
+        QTimer::singleShot(0, context, [token, completion = std::move(completion)]() mutable {
+            completion(AsyncReadResult<T>::failure(token, AsyncReadError::Unsupported,
+                QStringLiteral("The connected Host does not support this read operation.")));
+        });
         return token;
     }
     const QString requestId = m_client.sendRequest(operation, payload, context,
@@ -54,9 +59,12 @@ ReadRequestToken RemoteReadApplicationServices::request(
         }, [token, completion](const BrickSuiteProtocol::Error& error) mutable {
             completion(AsyncReadResult<T>::failure(token, mapError(error.code), error.message));
         });
-    if (requestId.isEmpty())
-        completion(AsyncReadResult<T>::failure(token, AsyncReadError::ServerBusy,
-            QStringLiteral("Too many Host requests are already pending.")));
+    if (requestId.isEmpty()) {
+        QTimer::singleShot(0, context, [token, completion = std::move(completion)]() mutable {
+            completion(AsyncReadResult<T>::failure(token, AsyncReadError::ServerBusy,
+                QStringLiteral("Too many Host requests are already pending.")));
+        });
+    }
     return token;
 }
 
@@ -91,7 +99,8 @@ ReadRequestToken RemoteReadApplicationServices::searchInventory(
     AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::InventoryRow>> completion)
 {
     QJsonObject payload{{"workspaceId",double(r.workspaceId)},{"text",r.text},{"storageId",double(r.storageId)},
-        {"rebrickableColorId",r.rebrickableColorId},{"page",r.paging.page},{"pageSize",r.paging.pageSize}};
+        {"rebrickableCategoryId",r.rebrickableCategoryId},{"rebrickableColorId",r.rebrickableColorId},
+        {"page",r.paging.page},{"pageSize",r.paging.pageSize}};
     return request<RemoteReadDto::Page<RemoteReadDto::InventoryRow>>(QStringLiteral("inventory.search"),payload,context,std::move(completion),
         [](const QJsonObject& o, auto* out, QString* error){qint64 total=o.value("totalRows").toInteger(-1);int page=o.value("page").toInt();int size=o.value("pageSize").toInt();const auto rows=o.value("rows");if(total<0||page<1||size<1||size>RemoteReadDto::MaximumPageSize||!rows.isArray()||rows.toArray().size()>size)return false;out->page=page;out->pageSize=size;out->totalRows=int(qMin<qint64>(total,INT_MAX));for(const auto& v:rows.toArray()){RemoteReadDto::InventoryRow row;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&row,&e)){if(error)*error=e.message;return false;}out->rows.append(row);}return true;});
 }
@@ -105,8 +114,8 @@ ReadRequestToken RemoteReadApplicationServices::listBuilds(qint64 workspaceId, b
 ReadRequestToken RemoteReadApplicationServices::getBuild(qint64 id,QObject*context,AsyncReadCompletion<RemoteReadDto::BuildDetail> completion)
 {return request<RemoteReadDto::BuildDetail>("builds.get",{{"buildId",double(id)}},context,std::move(completion),[](const QJsonObject&o,auto*out,QString*error){RemoteReadJson::DecodeError e;const auto v=o.value("build");if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),static_cast<RemoteReadDto::BuildSummary*>(out),&e)){if(error)*error=e.message;return false;}return true;});}
 
-ReadRequestToken RemoteReadApplicationServices::getInventory(qint64 id,QObject*context,AsyncReadCompletion<RemoteReadDto::InventoryDetail> completion)
-{return request<RemoteReadDto::InventoryDetail>("inventory.get",{{"inventoryRecordId",double(id)}},context,std::move(completion),[](const QJsonObject&o,auto*out,QString*error){RemoteReadJson::DecodeError e;const auto v=o.value("item");if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),out,&e)){if(error)*error=e.message;return false;}return true;});}
+ReadRequestToken RemoteReadApplicationServices::getInventory(qint64 workspaceId,qint64 id,QObject*context,AsyncReadCompletion<RemoteReadDto::InventoryDetail> completion)
+{return request<RemoteReadDto::InventoryDetail>("inventory.get",{{"workspaceId",double(workspaceId)},{"inventoryRecordId",double(id)}},context,std::move(completion),[](const QJsonObject&o,auto*out,QString*error){RemoteReadJson::DecodeError e;const auto v=o.value("item");if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),out,&e)){if(error)*error=e.message;return false;}return true;});}
 
 ReadRequestToken RemoteReadApplicationServices::inventoryHistory(qint64 workspace,const QString&part,int color,QObject*context,AsyncReadCompletion<QList<RemoteReadDto::InventoryHistoryRow>> completion)
 {return request<QList<RemoteReadDto::InventoryHistoryRow>>("inventory.history",{{"workspaceId",double(workspace)},{"partNumber",part},{"rebrickableColorId",color}},context,std::move(completion),[](const QJsonObject&o,auto*out,QString*error){const auto rows=o.value("rows");if(!rows.isArray()||rows.toArray().size()>RemoteReadDto::MaximumPageSize)return false;for(const auto&v:rows.toArray()){RemoteReadDto::InventoryHistoryRow x;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&x,&e)){if(error)*error=e.message;return false;}out->append(x);}return true;});}

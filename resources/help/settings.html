@@ -42,9 +42,10 @@ device for both local reference catalogs and Workspaces, Storage, Inventory, Bui
 built-in Part Reference while shared workshop data comes from a Host. Changing this setting takes
 effect after restarting BrickSuite; it never copies, merges, or deletes either source's data.</p>
 
-<div class="note"><b>Development status:</b> Secure Host connectivity can be configured and tested,
-but remote shared business-data operations begin in a later M26 phase. Shared workshop views remain
-visibly unavailable while local catalog browsing and Rebrickable file imports remain available.</div>
+<div class="note"><b>Remote data:</b> After authentication, the Client loads Host Workspaces and
+can browse Host My Inventory and Inventory History. The selected Host Workspace is remembered for
+that Host identity and does not change the Workspace selected in the Host computer's UI. Remote
+Inventory is read-only; local catalog browsing and Rebrickable file imports remain available.</div>
 
 <h2>Server</h2>
 <p>The <b>Server</b> page configures the optional BrickSuite WSS Host and remote Client connection.

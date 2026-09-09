@@ -27,6 +27,7 @@ class WorkspaceContext;
 class QTableWidget;
 class QLabel;
 class InventoryApplicationService;
+class RemoteReadApplicationServices;
 
 class InventoryHistoryDialog : public QDialog
 {
@@ -37,7 +38,10 @@ public:
                                     int colorId,
                                     WorkspaceContext& workspaceContext,
                                     InventoryApplicationService& inventoryService,
-                                    QWidget* parent = nullptr);
+                                    QWidget* parent = nullptr,
+                                    RemoteReadApplicationServices* remoteReads = nullptr,
+                                    const QString& partNumber = QString(),
+                                    int rebrickableColorId = -1);
 
 private:
     void loadHeader();
@@ -51,6 +55,9 @@ private:
 
     WorkspaceContext& m_workspaceContext;
     InventoryApplicationService& m_inventoryService;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
+    QString m_partNumber;
+    int m_rebrickableColorId = -1;
 
     QLabel* m_titleLabel = nullptr;
     QTableWidget* m_table = nullptr;

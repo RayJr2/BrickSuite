@@ -59,19 +59,20 @@ bool fromJson(const QJsonObject& o, RemoteReadDto::StorageSummary* v, DecodeErro
     v->active=o.value("active").toBool(); return true;
 }
 QJsonObject toJson(const RemoteReadDto::InventoryRow& v)
-{ return {{"inventoryRecordId",double(v.inventoryRecordId)},{"workspaceId",double(v.workspaceId)},{"partNumber",v.partNumber},{"partNameFallback",v.partNameFallback},{"rebrickableColorId",v.rebrickableColorId},{"colorNameFallback",v.colorNameFallback},{"quantity",v.quantity},{"storageId",double(v.storageId)},{"storagePath",v.storagePath},{"manufacturerDisplay",v.manufacturerDisplay},{"condition",v.condition},{"ownershipType",v.ownershipType}}; }
+{ return {{"inventoryRecordId",double(v.inventoryRecordId)},{"workspaceId",double(v.workspaceId)},{"partNumber",v.partNumber},{"partNameFallback",v.partNameFallback},{"rebrickableCategoryId",v.rebrickableCategoryId},{"rebrickableColorId",v.rebrickableColorId},{"colorNameFallback",v.colorNameFallback},{"quantity",v.quantity},{"storageId",double(v.storageId)},{"storagePath",v.storagePath},{"manufacturerDisplay",v.manufacturerDisplay},{"condition",v.condition},{"ownershipType",v.ownershipType}}; }
 bool fromJson(const QJsonObject& o, RemoteReadDto::InventoryRow* v, DecodeError* e)
 {
-    qint64 color=0, quantity=0;
+    qint64 category=0, color=0, quantity=0;
     if (!integer(o,"inventoryRecordId",1,9007199254740991LL,&v->inventoryRecordId)
         || !integer(o,"workspaceId",1,9007199254740991LL,&v->workspaceId)
         || !textField(o,"partNumber",&v->partNumber) || !textField(o,"partNameFallback",&v->partNameFallback,false)
+        || !integer(o,"rebrickableCategoryId",-1,INT_MAX,&category)
         || !integer(o,"rebrickableColorId",-1,INT_MAX,&color) || !integer(o,"quantity",0,INT_MAX,&quantity)
         || !integer(o,"storageId",0,9007199254740991LL,&v->storageId)
         || !textField(o,"colorNameFallback",&v->colorNameFallback,false) || !textField(o,"storagePath",&v->storagePath,false)
         || !textField(o,"manufacturerDisplay",&v->manufacturerDisplay,false) || !textField(o,"condition",&v->condition)
         || !textField(o,"ownershipType",&v->ownershipType)) return fail(e,QStringLiteral("Invalid Inventory row."));
-    v->rebrickableColorId=int(color); v->quantity=int(quantity); return true;
+    v->rebrickableCategoryId=int(category); v->rebrickableColorId=int(color); v->quantity=int(quantity); return true;
 }
 QJsonObject toJson(const RemoteReadDto::InventoryDetail& v){QJsonObject o=toJson(static_cast<const RemoteReadDto::InventoryRow&>(v));o["createdUtc"]=utc(v.createdUtc);o["modifiedUtc"]=utc(v.modifiedUtc);return o;}
 bool fromJson(const QJsonObject&o,RemoteReadDto::InventoryDetail*v,DecodeError*e){return fromJson(o,static_cast<RemoteReadDto::InventoryRow*>(v),e)&&parseUtc(o.value("createdUtc"),&v->createdUtc)&&parseUtc(o.value("modifiedUtc"),&v->modifiedUtc);}

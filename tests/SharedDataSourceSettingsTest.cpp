@@ -65,6 +65,16 @@ int main(int argc, char** argv)
     settings.setSharedDataSource(SharedDataSource::BrickSuiteHost);
     ok &= check(settings.sharedDataSource() == SharedDataSource::BrickSuiteHost,
                 "Host selection persists");
+    settings.setRememberedHostWorkspace("wss://host-a:47826|fingerprint-a", 7, "Workshop A");
+    settings.setRememberedHostWorkspace("wss://host-b:47826|fingerprint-b", 7, "Workshop B");
+    ok &= check(settings.rememberedHostWorkspaceId("wss://host-a:47826|fingerprint-a") == 7
+                && settings.rememberedHostWorkspaceName("wss://host-a:47826|fingerprint-a") == "Workshop A"
+                && settings.rememberedHostWorkspaceName("wss://host-b:47826|fingerprint-b") == "Workshop B",
+                "remembered Workspace is scoped to exact Host identity");
+    settings.clearRememberedHostWorkspace("wss://host-a:47826|fingerprint-a");
+    ok &= check(settings.rememberedHostWorkspaceId("wss://host-a:47826|fingerprint-a") == 0
+                && settings.rememberedHostWorkspaceId("wss://host-b:47826|fingerprint-b") == 7,
+                "clearing one Host Workspace does not affect another Host");
     {
         QSettings raw;
         raw.beginGroup("General");

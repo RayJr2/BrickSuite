@@ -17,11 +17,11 @@ struct StorageSummary { qint64 storageId = 0; qint64 parentStorageId = 0; QStrin
 
 struct InventorySearchRequest {
     qint64 workspaceId = 0; QString text; qint64 storageId = 0;
-    int rebrickableColorId = -1; PageRequest paging;
+    int rebrickableCategoryId = -1; int rebrickableColorId = -1; PageRequest paging;
 };
 struct InventoryRow {
     qint64 inventoryRecordId = 0; qint64 workspaceId = 0;
-    QString partNumber; QString partNameFallback;
+    QString partNumber; QString partNameFallback; int rebrickableCategoryId = -1;
     int rebrickableColorId = -1; QString colorNameFallback;
     int quantity = 0; qint64 storageId = 0; QString storagePath;
     QString manufacturerDisplay; QString condition; QString ownershipType;

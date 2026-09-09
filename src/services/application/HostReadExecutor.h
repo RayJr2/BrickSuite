@@ -72,7 +72,7 @@ public:
                                 std::function<void(const QList<PartReferenceEntry>&,
                                                    const QString&)> completion,
                                 ErrorCallback failure = {});
-    void getInventoryPortable(int inventoryRecordId, QObject* context,
+    void getInventoryPortable(int workspaceId, int inventoryRecordId, QObject* context,
         std::function<void(const std::optional<RemoteReadDto::InventoryDetail>&)> completion,
         ErrorCallback failure = {});
     void searchInventoryPortable(const RemoteReadDto::InventorySearchRequest& request,

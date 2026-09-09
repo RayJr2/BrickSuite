@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include "RepositoryConnection.h"
 #include "../models/PartCategory.h"
 
 #include <QList>
@@ -27,9 +28,12 @@
 
 class QSqlQuery;
 
-class PartCategoryRepository
+class PartCategoryRepository : protected RepositoryConnection
 {
 public:
+    PartCategoryRepository() = default;
+    explicit PartCategoryRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
     QList<PartCategory> getAll() const;
 
     std::optional<PartCategory> getById(int id) const;

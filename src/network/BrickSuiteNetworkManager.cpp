@@ -5,6 +5,7 @@
 #include "BrickSuiteWebSocketServer.h"
 #include "../database/DatabaseManager.h"
 #include "../services/application/HostReadProtocolService.h"
+#include "../services/application/RemoteReadApplicationServices.h"
 #include "../services/CredentialStore.h"
 #include "../settings/UserSettings.h"
 
@@ -20,6 +21,7 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     , m_server(new BrickSuiteWebSocketServer(this))
     , m_client(new BrickSuiteWebSocketClient(this))
 {
+    m_remoteReads = std::make_unique<RemoteReadApplicationServices>(*m_client, this);
     m_hostReads = std::make_unique<HostReadProtocolService>(
         DatabaseManager::instance().databasePath(), this);
     m_hostReads->registerOperations(m_server->operationDispatcher());
@@ -95,6 +97,8 @@ void BrickSuiteNetworkManager::stop()
 
 BrickSuiteWebSocketServer* BrickSuiteNetworkManager::server() const { return m_server; }
 BrickSuiteWebSocketClient* BrickSuiteNetworkManager::client() const { return m_client; }
+RemoteReadApplicationServices* BrickSuiteNetworkManager::remoteReads() const
+{ return m_remoteReads.get(); }
 BrickSuiteConnectionStatus BrickSuiteNetworkManager::connectionStatus() const { return m_client->status(); }
 
 QString BrickSuiteNetworkManager::serverStatusText() const

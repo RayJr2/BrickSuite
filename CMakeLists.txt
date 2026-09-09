@@ -1059,6 +1059,7 @@ if(BUILD_TESTING)
         src/models/CollectionSearchCriteria.h src/models/CollectionSearchResult.h
         src/models/Part.h src/models/Part.cpp
         src/models/Color.h src/models/Color.cpp
+        src/models/PartCategory.h src/models/PartCategory.cpp
         src/models/UserPartReferenceEntry.h
         src/repositories/RepositoryConnection.h
         src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
@@ -1070,6 +1071,7 @@ if(BUILD_TESTING)
         src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
         src/repositories/PartRepository.h src/repositories/PartRepository.cpp
         src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
+        src/repositories/PartCategoryRepository.h src/repositories/PartCategoryRepository.cpp
         src/repositories/CollectionRepository.h src/repositories/CollectionRepository.cpp
         src/repositories/UserPartReferenceRepository.h src/repositories/UserPartReferenceRepository.cpp
         src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp

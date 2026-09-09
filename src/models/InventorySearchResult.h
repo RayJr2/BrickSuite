@@ -31,6 +31,7 @@ struct InventorySearchResult
     QString partName;
 
     int categoryId = 0;
+    int rebrickableCategoryId = -1;
     QString categoryName;
 
     int colorId = 0;

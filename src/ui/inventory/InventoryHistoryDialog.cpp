@@ -31,6 +31,7 @@
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/application/ApplicationServices.h"
+#include "../../services/application/RemoteReadApplicationServices.h"
 
 #include <QDateTime>
 #include <QHeaderView>
@@ -43,12 +44,18 @@ InventoryHistoryDialog::InventoryHistoryDialog(int partId,
                                                int colorId,
                                                WorkspaceContext& workspaceContext,
                                                InventoryApplicationService& inventoryService,
-                                               QWidget* parent)
+                                               QWidget* parent,
+                                               RemoteReadApplicationServices* remoteReads,
+                                               const QString& partNumber,
+                                               int rebrickableColorId)
     : QDialog(parent)
     , m_partId(partId)
     , m_colorId(colorId)
     , m_workspaceContext(workspaceContext)
     , m_inventoryService(inventoryService)
+    , m_remoteReads(remoteReads)
+    , m_partNumber(partNumber)
+    , m_rebrickableColorId(rebrickableColorId)
 {
     setWindowTitle("Inventory History");
     resize(1100, 500);
@@ -120,6 +127,8 @@ void InventoryHistoryDialog::buildStoragePathCache()
 {
     m_storagePathById.clear();
 
+    if (m_remoteReads) return;
+
     if (!m_workspaceContext.hasCurrentWorkspace())
         return;
 
@@ -167,6 +176,39 @@ void InventoryHistoryDialog::loadHistory()
 
     if (!m_workspaceContext.hasCurrentWorkspace())
         return;
+
+    if (m_remoteReads) {
+        m_titleLabel->setText(QStringLiteral("Loading Inventory History from BrickSuite Host..."));
+        m_remoteReads->inventoryHistory(m_workspaceContext.currentWorkspaceId(), m_partNumber,
+            m_rebrickableColorId, this,
+            [this](AsyncReadResult<QList<RemoteReadDto::InventoryHistoryRow>> result) {
+                if (!result.succeeded()) {
+                    m_titleLabel->setText(result.error == AsyncReadError::Timeout
+                        ? QStringLiteral("The BrickSuite Host did not respond in time.")
+                        : QStringLiteral("Unable to load Inventory History from BrickSuite Host."));
+                    return;
+                }
+                int row = 0;
+                m_table->setRowCount(result.value->size());
+                for (const auto& entry : *result.value) {
+                    const QString reference = QString("%1 %2").arg(entry.referenceType,
+                        entry.referenceId).trimmed();
+                    m_table->setItem(row, 0, new QTableWidgetItem(entry.createdUtc.toLocalTime().toString("yyyy-MM-dd hh:mm:ss")));
+                    m_table->setItem(row, 1, new QTableWidgetItem(entry.movementType));
+                    m_table->setItem(row, 2, new QTableWidgetItem(QString::number(entry.quantityChange)));
+                    m_table->setItem(row, 3, new QTableWidgetItem(entry.fromStoragePath));
+                    m_table->setItem(row, 4, new QTableWidgetItem(entry.toStoragePath));
+                    m_table->setItem(row, 5, new QTableWidgetItem(entry.condition));
+                    m_table->setItem(row, 6, new QTableWidgetItem(entry.ownershipType));
+                    m_table->setItem(row, 7, new QTableWidgetItem(reference));
+                    m_table->setItem(row, 8, new QTableWidgetItem(entry.notes));
+                    ++row;
+                }
+                if (result.value->isEmpty()) m_titleLabel->setText(QStringLiteral("No Inventory History."));
+                else loadHeader();
+            });
+        return;
+    }
 
     const QList<InventoryHistoryResult> history
         = m_inventoryService.history(m_workspaceContext.currentWorkspaceId(), m_partId, m_colorId);
