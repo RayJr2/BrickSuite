@@ -83,6 +83,11 @@ for %%I in ("%QT6_DIR%\..\..\..") do set "QT_ROOT=%%~fI"
 
 set "WINDEPLOYQT=%QT_ROOT%\bin\windeployqt.exe"
 
+set "OPENSSL_ROOT_DIR="
+for /f "tokens=1,* delims==" %%A in ('findstr /B /C:"OPENSSL_ROOT_DIR:" "%BUILD_DIR%\CMakeCache.txt"') do (
+    set "OPENSSL_ROOT_DIR=%%B"
+)
+
 echo Qt installation:
 echo   %QT_ROOT%
 echo.
@@ -93,6 +98,20 @@ echo.
 if not exist "%WINDEPLOYQT%" (
     echo ERROR: windeployqt.exe was not found:
     echo   %WINDEPLOYQT%
+    exit /b 1
+)
+
+if not defined OPENSSL_ROOT_DIR (
+    echo ERROR: OPENSSL_ROOT_DIR could not be found in CMakeCache.txt.
+    exit /b 1
+)
+
+if not exist "%OPENSSL_ROOT_DIR%\bin\libcrypto-3-x64.dll" (
+    echo ERROR: OpenSSL 3 Crypto runtime was not found under OPENSSL_ROOT_DIR.
+    exit /b 1
+)
+if not exist "%OPENSSL_ROOT_DIR%\bin\libssl-3-x64.dll" (
+    echo ERROR: OpenSSL 3 TLS runtime was not found under OPENSSL_ROOT_DIR.
     exit /b 1
 )
 
@@ -144,11 +163,29 @@ echo.
 echo Running windeployqt...
 echo.
 
-"%WINDEPLOYQT%" --release --compiler-runtime --no-translations --dir "%STAGE_DIR%" "%STAGE_DIR%\BrickSuite.exe"
+"%WINDEPLOYQT%" --release --compiler-runtime --no-translations --openssl-root "%OPENSSL_ROOT_DIR%" --dir "%STAGE_DIR%" "%STAGE_DIR%\BrickSuite.exe"
 
 if errorlevel 1 (
     echo.
     echo ERROR: windeployqt failed.
+    exit /b 1
+)
+
+echo Copying OpenSSL 3 runtime libraries...
+copy /Y "%OPENSSL_ROOT_DIR%\bin\libcrypto-3-x64.dll" "%STAGE_DIR%\libcrypto-3-x64.dll" >nul
+copy /Y "%OPENSSL_ROOT_DIR%\bin\libssl-3-x64.dll" "%STAGE_DIR%\libssl-3-x64.dll" >nul
+if errorlevel 1 (
+    echo ERROR: Unable to stage the OpenSSL 3 runtime libraries.
+    exit /b 1
+)
+if not exist "%OPENSSL_ROOT_DIR%\share\licenses\openssl\LICENSE" (
+    echo ERROR: OpenSSL license attribution file was not found under OPENSSL_ROOT_DIR.
+    exit /b 1
+)
+mkdir "%STAGE_DIR%\licenses\OpenSSL" 2>nul
+copy /Y "%OPENSSL_ROOT_DIR%\share\licenses\openssl\LICENSE" "%STAGE_DIR%\licenses\OpenSSL\LICENSE" >nul
+if errorlevel 1 (
+    echo ERROR: Unable to stage the OpenSSL license attribution.
     exit /b 1
 )
 
@@ -165,8 +202,13 @@ call :checkfile "Qt6Gui.dll"
 call :checkfile "Qt6Widgets.dll"
 call :checkfile "Qt6Sql.dll"
 call :checkfile "Qt6Network.dll"
+call :checkfile "Qt6WebSockets.dll"
+call :checkfile "libcrypto-3-x64.dll"
+call :checkfile "libssl-3-x64.dll"
+call :checkfile "licenses\OpenSSL\LICENSE"
 call :checkfile "platforms\qwindows.dll"
 call :checkfile "sqldrivers\qsqlite.dll"
+call :checkfile "tls\qopensslbackend.dll"
 call :checkfile "LICENSE"
 call :checkfile "bricksuite.ico"
 

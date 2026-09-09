@@ -74,6 +74,8 @@
 #include "../services/database/AutomaticBackupService.h"
 #include "../services/storage/SessionStorageSelectionService.h"
 #include "../services/application/ApplicationServices.h"
+#include "../network/BrickSuiteNetworkManager.h"
+#include "../network/BrickSuiteWebSocketClient.h"
 
 #include <QAction>
 #include <QApplication>
@@ -129,14 +131,23 @@ bool windowIsVisibleOnAnyScreen(const QRect& windowGeometry)
 MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                        SessionStorageSelectionService& sessionStorageSelectionService,
                        ApplicationServices& applicationServices,
+                       BrickSuiteNetworkManager& networkManager,
                        QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
     , m_applicationServices(applicationServices)
+    , m_networkManager(networkManager)
 {
     setWindowTitle("BrickSuite");
     resize(1200, 800);
+
+    connect(&m_networkManager, &BrickSuiteNetworkManager::statusChanged, this, [this]() {
+        if (m_applicationServices.sharedDataSource() == SharedDataSource::BrickSuiteHost) {
+            const auto status = m_networkManager.connectionStatus();
+            statusBar()->showMessage(QStringLiteral("Host: %1").arg(status.message));
+        }
+    });
 
     m_tabWidget = new QTabWidget(this);
     m_partExternalIdEnrichmentService = new PartExternalIdEnrichmentService(this);
@@ -646,7 +657,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     connect(settingsAction, &QAction::triggered, this, [this]() {
         SettingsDialog dialog(m_workspaceContext, m_applicationServices.workspaces(),
-                              m_automaticBackupService, this);
+                              m_networkManager, m_automaticBackupService, this);
         const int initialResultsPerPage = UserSettings::instance().resultsPerPage();
 
         connect(&dialog, &SettingsDialog::settingsChanged, this,

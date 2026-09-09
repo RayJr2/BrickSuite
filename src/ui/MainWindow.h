@@ -47,6 +47,7 @@ class AutomaticBackupService;
 class SessionStorageSelectionService;
 class PartExternalIdEnrichmentService;
 class ApplicationServices;
+class BrickSuiteNetworkManager;
 
 class MainWindow : public QMainWindow
 {
@@ -56,6 +57,7 @@ public:
     explicit MainWindow(WorkspaceContext& workspaceContext,
                         SessionStorageSelectionService& sessionStorageSelectionService,
                         ApplicationServices& applicationServices,
+                        BrickSuiteNetworkManager& networkManager,
                         QWidget* parent = nullptr);
     void setAutomaticBackupService(AutomaticBackupService* service);
 
@@ -76,6 +78,7 @@ private:
     WorkspaceContext& m_workspaceContext;
     SessionStorageSelectionService& m_sessionStorageSelectionService;
     ApplicationServices& m_applicationServices;
+    BrickSuiteNetworkManager& m_networkManager;
 
     QTabWidget* m_tabWidget = nullptr;
 

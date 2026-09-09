@@ -40,6 +40,20 @@ public:
     void setSharedDataSource(SharedDataSource source);
     static QString sharedDataSourceToString(SharedDataSource source);
 
+    static constexpr int DefaultBrickSuiteServerPort = 47826;
+    bool brickSuiteServerEnabled() const;
+    void setBrickSuiteServerEnabled(bool enabled);
+    QString brickSuiteServerBindAddress() const;
+    void setBrickSuiteServerBindAddress(const QString& address);
+    int brickSuiteServerPort() const;
+    void setBrickSuiteServerPort(int port);
+    QString brickSuiteHostEndpoint() const;
+    void setBrickSuiteHostEndpoint(const QString& endpoint);
+    QString brickSuiteTrustedFingerprint() const;
+    void setBrickSuiteTrustedFingerprint(const QString& fingerprint);
+    bool brickSuiteReconnectAutomatically() const;
+    void setBrickSuiteReconnectAutomatically(bool enabled);
+
     int resultsPerPage() const;
     void setResultsPerPage(int resultsPerPage);
 

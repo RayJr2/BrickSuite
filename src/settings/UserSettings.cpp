@@ -41,6 +41,13 @@ constexpr auto kResultsPerPageKey = "ResultsPerPage";
 
 constexpr auto kDefaultWorkspaceIdKey = "DefaultWorkspaceId";
 constexpr auto kSharedDataSourceKey = "SharedDataSource";
+constexpr auto kGroupBrickSuiteNetwork = "BrickSuiteNetwork";
+constexpr auto kServerEnabledKey = "ServerEnabled";
+constexpr auto kServerBindAddressKey = "ServerBindAddress";
+constexpr auto kServerPortKey = "ServerPort";
+constexpr auto kHostEndpointKey = "HostEndpoint";
+constexpr auto kTrustedFingerprintKey = "TrustedFingerprint";
+constexpr auto kReconnectAutomaticallyKey = "ReconnectAutomatically";
 
 constexpr auto kRebrickableApiKey = "ApiKey";
 constexpr auto kRebrickableConnectionPreviouslyVerifiedKey = "ConnectionPreviouslyVerified";
@@ -151,6 +158,110 @@ QString UserSettings::sharedDataSourceToString(SharedDataSource source)
 {
     return source == SharedDataSource::BrickSuiteHost
         ? QStringLiteral("bricksuite-host") : QStringLiteral("this-computer");
+}
+
+bool UserSettings::brickSuiteServerEnabled() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    const bool enabled = settings.value(kServerEnabledKey, false).toBool();
+    settings.endGroup();
+    return enabled;
+}
+
+void UserSettings::setBrickSuiteServerEnabled(bool enabled)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.setValue(kServerEnabledKey, enabled);
+    settings.endGroup();
+}
+
+QString UserSettings::brickSuiteServerBindAddress() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    const QString value = settings.value(kServerBindAddressKey, QStringLiteral("127.0.0.1")).toString();
+    settings.endGroup();
+    return value.trimmed().isEmpty() ? QStringLiteral("127.0.0.1") : value.trimmed();
+}
+
+void UserSettings::setBrickSuiteServerBindAddress(const QString& address)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.setValue(kServerBindAddressKey, address.trimmed());
+    settings.endGroup();
+}
+
+int UserSettings::brickSuiteServerPort() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    const int value = settings.value(kServerPortKey, DefaultBrickSuiteServerPort).toInt();
+    settings.endGroup();
+    return value >= 1024 && value <= 65535 ? value : DefaultBrickSuiteServerPort;
+}
+
+void UserSettings::setBrickSuiteServerPort(int port)
+{
+    if (port < 1024 || port > 65535) port = DefaultBrickSuiteServerPort;
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.setValue(kServerPortKey, port);
+    settings.endGroup();
+}
+
+QString UserSettings::brickSuiteHostEndpoint() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    const QString value = settings.value(kHostEndpointKey,
+        QStringLiteral("wss://localhost:%1").arg(DefaultBrickSuiteServerPort)).toString();
+    settings.endGroup();
+    return value.trimmed();
+}
+
+void UserSettings::setBrickSuiteHostEndpoint(const QString& endpoint)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.setValue(kHostEndpointKey, endpoint.trimmed());
+    settings.endGroup();
+}
+
+QString UserSettings::brickSuiteTrustedFingerprint() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    const QString value = settings.value(kTrustedFingerprintKey).toString();
+    settings.endGroup();
+    return value.trimmed();
+}
+
+void UserSettings::setBrickSuiteTrustedFingerprint(const QString& fingerprint)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.setValue(kTrustedFingerprintKey, fingerprint.trimmed());
+    settings.endGroup();
+}
+
+bool UserSettings::brickSuiteReconnectAutomatically() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    const bool value = settings.value(kReconnectAutomaticallyKey, true).toBool();
+    settings.endGroup();
+    return value;
+}
+
+void UserSettings::setBrickSuiteReconnectAutomatically(bool enabled)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.setValue(kReconnectAutomaticallyKey, enabled);
+    settings.endGroup();
 }
 
 int UserSettings::resultsPerPage() const

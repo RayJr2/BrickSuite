@@ -52,6 +52,7 @@ const QList<HelpTopicInfo>& helpTopics()
         {HelpTopic::DatabaseStatus, "Database Status & Integrity", ":/help/database_status.html"},
         {HelpTopic::ReferenceData, "Lists & Reference Data", ":/help/reference_data.html"},
         {HelpTopic::Settings, "Settings", ":/help/settings.html"},
+        {HelpTopic::BrickSuiteServer, "BrickSuite Server", ":/help/bricksuite_server.html"},
         {HelpTopic::Logging, "Application Log", ":/help/logging.html"},
         {HelpTopic::Troubleshooting, "Troubleshooting", ":/help/troubleshooting.html"},
     };

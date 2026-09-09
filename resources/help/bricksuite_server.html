@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><title>BrickSuite Server</title>
+<style>body{font-family:sans-serif;line-height:1.5;margin:22px}h2{margin-top:1.5em}.note{border-left:4px solid #888;padding-left:10px;margin:14px 0}</style></head><body>
+<h1>BrickSuite Server</h1>
+<p>BrickSuite Server lets another BrickSuite installation establish a secure connection to the computer that owns the authoritative workshop database. In M26.3 this provides secure transport, Host verification, authentication, and diagnostics only. Remote Workspaces, Storage, Inventory, Builds, Collection, and custom Part Reference operations are not yet exposed.</p>
+<h2>Security model</h2>
+<p>Connections use <b>WSS/TLS</b>. Each Host generates its own persistent certificate and private key. The Client verifies its SHA-256 fingerprint. A separate access token authorizes the Client through a nonce-based HMAC-SHA-256 challenge response and is stored through the operating-system credential service.</p>
+<div class="note"><b>Verify before trusting.</b> Compare the Client fingerprint with the fingerprint shown directly in Server Settings on the Host computer. First-use acceptance without that comparison can trust the wrong computer.</div>
+<h2>Host setup</h2>
+<ol><li>Keep <b>Shared Data Source = This Computer</b>.</li><li>Open <b>Edit → Settings → Server</b>.</li><li>Select the specific LAN address remote Clients should reach. Loopback is safest for local testing; all-interfaces choices are advanced options.</li><li>Choose a port, generate an access token, and enable BrickSuite Server.</li><li>Record the certificate fingerprint and securely transfer the access token to the Client.</li><li>If needed, permit inbound traffic on that port in the Host operating-system firewall.</li></ol>
+<p>The Server runs only while BrickSuite is running. A listener failure does not prevent local use.</p>
+<h2>Client setup</h2>
+<ol><li>Select <b>Shared Data Source = BrickSuite Host</b>.</li><li>Enter a complete endpoint such as <code>wss://host.example:47826</code>.</li><li>Enter the access token and trusted certificate fingerprint.</li><li>Choose <b>Test Connection</b>. It uses the real TLS, pinning, protocol, authentication, and capabilities workflow.</li><li>Restart after changing Shared Data Source.</li></ol>
+<h2>LAN and Internet addressing</h2>
+<p>On the same LAN, use a private address or hostname reachable there. From outside the home network, use the router's public address or a public/dynamic hostname and manually forward the configured port to the Host's LAN address. Public addresses can change, so dynamic DNS may be useful.</p>
+<div class="note"><b>Port forwarding provides reachability, not security.</b> Security comes from WSS/TLS, the pinned fingerprint, BrickSuite authentication, and bounded protocol validation. BrickSuite does not configure the router, UPnP, NAT traversal, firewall rules, or dynamic DNS. A VPN is compatible but not required.</div>
+<h2>Troubleshooting</h2>
+<p>Confirm that BrickSuite is running on the Host, the hostname/IP and port are correct, the Host firewall permits inbound traffic, and router forwarding is correct for Internet access. A changed fingerprint or token fails closed and must be explicitly updated. Never disable TLS verification.</p>
+<p><a href="settings.html">Settings</a> | <a href="troubleshooting.html">Troubleshooting</a> | <a href="index.html">Help Home</a></p>
+</body></html>

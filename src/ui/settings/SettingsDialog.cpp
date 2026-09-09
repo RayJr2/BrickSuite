@@ -25,6 +25,10 @@
 #include "../../models/Workspace.h"
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/application/ApplicationServices.h"
+#include "../../network/BrickSuiteNetworkManager.h"
+#include "../../network/BrickSuiteWebSocketClient.h"
+#include "../../network/BrickSuiteWebSocketServer.h"
+#include "../../network/BrickSuiteHostIdentity.h"
 #include "../../api/brickset/BricksetService.h"
 #include "../../api/ApiProviderStatusRegistry.h"
 #include "../../settings/ThemeManager.h"
@@ -48,6 +52,7 @@
 #include <QLineEdit>
 #include <QLocale>
 #include <QMessageBox>
+#include <QNetworkInterface>
 #include <QPushButton>
 #include <QHBoxLayout>
 #include <QSpinBox>
@@ -58,11 +63,13 @@
 
 SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
                                WorkspaceApplicationService& workspaceService,
+                               BrickSuiteNetworkManager& networkManager,
                                AutomaticBackupService* automaticBackupService,
                                QWidget* parent)
     : QDialog(parent)
     , m_workspaceContext(workspaceContext)
     , m_workspaceService(workspaceService)
+    , m_networkManager(networkManager)
     , m_automaticBackupService(automaticBackupService)
 {
     setWindowTitle("BrickSuite Settings");
@@ -97,10 +104,37 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
     buildGeneralTab();
     buildAppearanceTab();
     buildDatabaseBackupTab();
+    buildServerTab();
     buildApisTab();
 
     m_rebrickableApiClient = new RebrickableApiClient(this);
     m_bricksetService = new BricksetService(this);
+
+    connect(&m_networkManager, &BrickSuiteNetworkManager::statusChanged,
+            this, &SettingsDialog::updateNetworkPresentation);
+    connect(m_networkManager.client(), &BrickSuiteWebSocketClient::trustRequired,
+            this, [this](const QString& fingerprint) {
+        const auto choice = QMessageBox::question(
+            this, tr("Trust BrickSuite Host"),
+            tr("Before trusting this Host, verify that this fingerprint exactly matches the "
+               "fingerprint shown in BrickSuite Server Settings on the Host computer.\n\n%1\n\n"
+               "Trust this certificate?").arg(fingerprint));
+        if (choice == QMessageBox::Yes) {
+            m_hostFingerprintEdit->setText(fingerprint);
+            UserSettings::instance().setBrickSuiteTrustedFingerprint(fingerprint);
+            m_networkManager.client()->configure(QUrl(m_hostEndpointEdit->text().trimmed()),
+                                                  fingerprint,
+                                                  m_hostTokenEdit->text(), false);
+            m_networkManager.client()->connectToHost();
+        } else {
+            m_hostTestButton->setEnabled(true);
+        }
+    });
+    connect(m_networkManager.client(), &BrickSuiteWebSocketClient::testConnectionCompleted,
+            this, [this](bool, const QString& message) {
+        m_hostConnectionStatusLabel->setText(message);
+        m_hostTestButton->setEnabled(true);
+    });
 
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::saveSettings);
 
@@ -321,6 +355,22 @@ void SettingsDialog::loadSettings()
     m_backupFrequencyCombo->setCurrentIndex(frequencyIndex >= 0 ? frequencyIndex : 4);
     m_backupRetentionSpin->setValue(settings.automaticBackupRetentionCount());
     updateBackupPresentation();
+
+    m_serverEnabledCheck->setChecked(settings.brickSuiteServerEnabled());
+    int bindIndex = m_serverBindCombo->findData(settings.brickSuiteServerBindAddress());
+    if (bindIndex < 0) {
+        m_serverBindCombo->addItem(settings.brickSuiteServerBindAddress(),
+                                   settings.brickSuiteServerBindAddress());
+        bindIndex = m_serverBindCombo->count() - 1;
+    }
+    m_serverBindCombo->setCurrentIndex(bindIndex);
+    m_serverPortSpin->setValue(settings.brickSuiteServerPort());
+    m_hostEndpointEdit->setText(settings.brickSuiteHostEndpoint());
+    m_hostFingerprintEdit->setText(settings.brickSuiteTrustedFingerprint());
+    QString clientCredentialError;
+    m_hostTokenEdit->setText(m_networkManager.clientToken(&clientCredentialError));
+    m_hostReconnectCheck->setChecked(settings.brickSuiteReconnectAutomatically());
+    updateNetworkPresentation();
 }
 
 void SettingsDialog::saveSettings()
@@ -346,6 +396,23 @@ void SettingsDialog::saveSettings()
     const auto sharedDataSource = static_cast<SharedDataSource>(
         m_sharedDataSourceCombo->currentData().toInt());
 
+    if (sharedDataSource == SharedDataSource::BrickSuiteHost
+        && m_serverEnabledCheck->isChecked()) {
+        QMessageBox::warning(this, tr("BrickSuite Server"),
+            tr("A BrickSuite Host client cannot also run BrickSuite Server. Disable the Server "
+               "before selecting BrickSuite Host as the Shared Data Source."));
+        return;
+    }
+    const QUrl hostEndpoint(m_hostEndpointEdit->text().trimmed());
+    if (hostEndpoint.scheme() != QStringLiteral("wss") || hostEndpoint.host().isEmpty()
+        || hostEndpoint.port() < 1 || !hostEndpoint.userInfo().isEmpty()
+        || hostEndpoint.hasQuery() || hostEndpoint.hasFragment()) {
+        QMessageBox::warning(this, tr("BrickSuite Host"),
+            tr("Enter a complete secure endpoint such as wss://host.example:47826. "
+               "Credentials, query strings, and fragments are not allowed in the endpoint."));
+        return;
+    }
+
     const QString apiKey = m_apiKeyEdit->text().trimmed();
     const QString bricksetApiKey = m_bricksetApiKeyEdit->text().trimmed();
 
@@ -356,6 +423,19 @@ void SettingsDialog::saveSettings()
 
     settings.setTheme(theme);
     settings.setSharedDataSource(sharedDataSource);
+    settings.setBrickSuiteServerEnabled(m_serverEnabledCheck->isChecked());
+    settings.setBrickSuiteServerBindAddress(m_serverBindCombo->currentData().toString());
+    settings.setBrickSuiteServerPort(m_serverPortSpin->value());
+    settings.setBrickSuiteHostEndpoint(hostEndpoint.toString(QUrl::FullyEncoded));
+    settings.setBrickSuiteTrustedFingerprint(m_hostFingerprintEdit->text());
+    settings.setBrickSuiteReconnectAutomatically(m_hostReconnectCheck->isChecked());
+    QString networkCredentialError;
+    if (!m_networkManager.saveClientToken(m_hostTokenEdit->text(), &networkCredentialError)) {
+        QMessageBox::critical(this, tr("BrickSuite Host Access Token"),
+            tr("BrickSuite could not save the Host access token securely.\n\n%1")
+                .arg(networkCredentialError));
+        return;
+    }
 
     const bool rebrickableKeyChanged =
         (apiKey != m_originalRebrickableApiKey.trimmed());
@@ -410,6 +490,12 @@ void SettingsDialog::saveSettings()
 
     if (m_automaticBackupService)
         m_automaticBackupService->reloadPolicy();
+
+    if (sharedDataSource == SharedDataSource::ThisComputer) {
+        QString serverError;
+        if (!m_networkManager.restartServer(&serverError) && m_serverEnabledCheck->isChecked())
+            QMessageBox::warning(this, tr("BrickSuite Server"), serverError);
+    }
 
     if (QApplication* application = qobject_cast<QApplication*>(QApplication::instance())) {
         ThemeManager::applyTheme(*application, theme);
@@ -639,6 +725,160 @@ void SettingsDialog::buildGeneralTab()
     layout->addStretch();
 
     m_tabWidget->addTab(tab, "General");
+}
+
+void SettingsDialog::buildServerTab()
+{
+    auto* tab = new QWidget(m_tabWidget);
+    auto* layout = new QVBoxLayout(tab);
+
+    auto* serverGroup = new QGroupBox(tr("BrickSuite Server (This Computer)"), tab);
+    auto* serverForm = new QFormLayout(serverGroup);
+    m_serverEnabledCheck = new QCheckBox(tr("Enable BrickSuite Server"), serverGroup);
+    m_serverBindCombo = new QComboBox(serverGroup);
+    m_serverBindCombo->addItem(tr("Loopback only — 127.0.0.1"), QStringLiteral("127.0.0.1"));
+    m_serverBindCombo->addItem(tr("Loopback only — ::1"), QStringLiteral("::1"));
+    for (const QHostAddress& address : QNetworkInterface::allAddresses()) {
+        if (address.isLoopback() || address.protocol() == QAbstractSocket::UnknownNetworkLayerProtocol)
+            continue;
+        const QString value = address.toString();
+        if (m_serverBindCombo->findData(value) < 0)
+            m_serverBindCombo->addItem(tr("Interface — %1").arg(value), value);
+    }
+    m_serverBindCombo->addItem(tr("All IPv4 interfaces (advanced)"), QStringLiteral("0.0.0.0"));
+    m_serverBindCombo->addItem(tr("All IPv6 interfaces (advanced)"), QStringLiteral("::"));
+    m_serverPortSpin = new QSpinBox(serverGroup);
+    m_serverPortSpin->setRange(1024, 65535);
+    m_serverStatusLabel = new QLabel(serverGroup);
+    m_serverStatusLabel->setWordWrap(true);
+    m_serverFingerprintLabel = new QLabel(tr("Not generated"), serverGroup);
+    m_serverFingerprintLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_serverFingerprintLabel->setWordWrap(true);
+    m_serverTokenButton = new QPushButton(tr("Generate / Rotate Access Token..."), serverGroup);
+    auto* regenerateButton = new QPushButton(tr("Regenerate Host Identity..."), serverGroup);
+    serverForm->addRow(QString(), m_serverEnabledCheck);
+    serverForm->addRow(tr("Bind address:"), m_serverBindCombo);
+    serverForm->addRow(tr("Port:"), m_serverPortSpin);
+    serverForm->addRow(tr("Status:"), m_serverStatusLabel);
+    serverForm->addRow(tr("Certificate fingerprint:"), m_serverFingerprintLabel);
+    serverForm->addRow(QString(), m_serverTokenButton);
+    serverForm->addRow(QString(), regenerateButton);
+    auto* reachability = new QLabel(
+        tr("Listening locally does not confirm that your router or firewall permits remote "
+           "connections. BrickSuite does not configure port forwarding or firewall rules."), serverGroup);
+    reachability->setWordWrap(true);
+    serverForm->addRow(QString(), reachability);
+    layout->addWidget(serverGroup);
+
+    auto* clientGroup = new QGroupBox(tr("BrickSuite Host Client"), tab);
+    auto* clientForm = new QFormLayout(clientGroup);
+    m_hostEndpointEdit = new QLineEdit(clientGroup);
+    m_hostEndpointEdit->setPlaceholderText(QStringLiteral("wss://host.example:47826"));
+    m_hostFingerprintEdit = new QLineEdit(clientGroup);
+    m_hostFingerprintEdit->setPlaceholderText(tr("SHA-256 fingerprint from the Host"));
+    m_hostTokenEdit = new QLineEdit(clientGroup);
+    m_hostTokenEdit->setEchoMode(QLineEdit::Password);
+    m_hostReconnectCheck = new QCheckBox(tr("Reconnect automatically"), clientGroup);
+    m_hostConnectionStatusLabel = new QLabel(tr("Not tested"), clientGroup);
+    m_hostConnectionStatusLabel->setWordWrap(true);
+    m_hostTestButton = new QPushButton(tr("Test Connection"), clientGroup);
+    clientForm->addRow(tr("Secure endpoint:"), m_hostEndpointEdit);
+    clientForm->addRow(tr("Trusted fingerprint:"), m_hostFingerprintEdit);
+    clientForm->addRow(tr("Access token:"), m_hostTokenEdit);
+    clientForm->addRow(QString(), m_hostReconnectCheck);
+    clientForm->addRow(tr("Connection status:"), m_hostConnectionStatusLabel);
+    clientForm->addRow(QString(), m_hostTestButton);
+    layout->addWidget(clientGroup);
+    layout->addStretch();
+    m_tabWidget->addTab(tab, tr("Server"));
+
+    connect(m_serverTokenButton, &QPushButton::clicked,
+            this, &SettingsDialog::generateOrRotateServerToken);
+    connect(regenerateButton, &QPushButton::clicked,
+            this, &SettingsDialog::regenerateHostIdentity);
+    connect(m_hostTestButton, &QPushButton::clicked,
+            this, &SettingsDialog::testBrickSuiteHostConnection);
+    connect(m_sharedDataSourceCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, &SettingsDialog::updateNetworkPresentation);
+    connect(m_serverEnabledCheck, &QCheckBox::toggled,
+            this, &SettingsDialog::updateNetworkPresentation);
+}
+
+void SettingsDialog::updateNetworkPresentation()
+{
+    if (!m_serverEnabledCheck) return;
+    const auto source = static_cast<SharedDataSource>(m_sharedDataSourceCombo->currentData().toInt());
+    const bool local = source == SharedDataSource::ThisComputer;
+    // Keep an already-enabled checkbox interactive so the user can resolve an
+    // invalid Host-client + Server combination by turning the Server off.
+    m_serverEnabledCheck->setEnabled(local || m_serverEnabledCheck->isChecked());
+    m_serverBindCombo->setEnabled(local);
+    m_serverPortSpin->setEnabled(local);
+    m_serverTokenButton->setEnabled(local);
+    m_serverStatusLabel->setText(local ? m_networkManager.serverStatusText()
+                                      : tr("Unavailable in BrickSuite Host client mode."));
+    const QString fingerprint = m_networkManager.server()->fingerprint();
+    m_serverFingerprintLabel->setText(fingerprint.isEmpty() ? tr("Not generated") : fingerprint);
+    m_hostEndpointEdit->setEnabled(!local);
+    m_hostFingerprintEdit->setEnabled(!local);
+    m_hostTokenEdit->setEnabled(!local);
+    m_hostReconnectCheck->setEnabled(!local);
+    m_hostTestButton->setEnabled(!local);
+    if (!local) m_hostConnectionStatusLabel->setText(m_networkManager.connectionStatus().message);
+}
+
+void SettingsDialog::generateOrRotateServerToken()
+{
+    if (QMessageBox::warning(this, tr("Generate / Rotate Access Token"),
+        tr("Generating a new token invalidates the token used by existing clients. Continue?"),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
+    QString error;
+    const QString token = m_networkManager.generateOrRotateHostToken(&error);
+    if (token.isEmpty()) {
+        QMessageBox::critical(this, tr("BrickSuite Server"), error);
+        return;
+    }
+    QMessageBox box(QMessageBox::Information, tr("BrickSuite Server Access Token"),
+        tr("Copy this token now and store it on each trusted Client. It will not remain visible."),
+        QMessageBox::Ok, this);
+    box.setDetailedText(token);
+    box.exec();
+    if (m_networkManager.server()->isListening()) {
+        QString restartError;
+        if (!m_networkManager.restartServer(&restartError))
+            QMessageBox::warning(this, tr("BrickSuite Server"), restartError);
+    }
+    updateNetworkPresentation();
+}
+
+void SettingsDialog::regenerateHostIdentity()
+{
+    if (QMessageBox::warning(this, tr("Regenerate Host Identity"),
+        tr("Previously paired clients will reject this Host until they explicitly trust the new "
+           "certificate fingerprint. Continue?"), QMessageBox::Yes | QMessageBox::Cancel,
+        QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
+    const auto identity = BrickSuiteHostIdentity::regenerate();
+    if (!identity.success) {
+        QMessageBox::critical(this, tr("BrickSuite Server"), identity.error);
+        return;
+    }
+    m_serverFingerprintLabel->setText(identity.fingerprint);
+    QString error;
+    if (m_networkManager.server()->isListening() && !m_networkManager.restartServer(&error))
+        QMessageBox::warning(this, tr("BrickSuite Server"), error);
+}
+
+void SettingsDialog::testBrickSuiteHostConnection()
+{
+    m_hostTestButton->setEnabled(false);
+    m_hostConnectionStatusLabel->setText(tr("Testing secure connection..."));
+    m_networkManager.client()->disconnectFromHost();
+    m_networkManager.client()->configure(QUrl(m_hostEndpointEdit->text().trimmed()),
+                                          m_hostFingerprintEdit->text().trimmed(),
+                                          m_hostTokenEdit->text(), false);
+    m_networkManager.client()->connectToHost();
 }
 
 void SettingsDialog::buildAppearanceTab()

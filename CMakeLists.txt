@@ -16,6 +16,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Widgets
     Sql
     Network
+    WebSockets
 )
 
 if(MINGW)
@@ -35,6 +36,7 @@ if(MINGW)
 endif()
 
 find_package(ZLIB REQUIRED)
+find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
 
 qt_standard_project_setup()
 
@@ -45,6 +47,22 @@ qt_add_executable(BrickSuite
     src/app/Application.cpp
     src/app/WorkspaceContext.h
     src/app/WorkspaceContext.cpp
+
+    src/network/BrickSuiteProtocol.h
+    src/network/BrickSuiteProtocol.cpp
+    src/network/BrickSuiteAuthentication.h
+    src/network/BrickSuiteAuthentication.cpp
+    src/network/BrickSuiteHostIdentity.h
+    src/network/BrickSuiteHostIdentity.cpp
+    src/network/BrickSuiteConnectionState.h
+    src/network/BrickSuiteOperationDispatcher.h
+    src/network/BrickSuiteOperationDispatcher.cpp
+    src/network/BrickSuiteWebSocketServer.h
+    src/network/BrickSuiteWebSocketServer.cpp
+    src/network/BrickSuiteWebSocketClient.h
+    src/network/BrickSuiteWebSocketClient.cpp
+    src/network/BrickSuiteNetworkManager.h
+    src/network/BrickSuiteNetworkManager.cpp
 
     src/database/DatabaseManager.h
     src/database/DatabaseManager.cpp
@@ -416,7 +434,9 @@ target_link_libraries(BrickSuite PRIVATE
     Qt6::Widgets
     Qt6::Sql
     Qt6::Network
+    Qt6::WebSockets
     ZLIB::ZLIB
+    OpenSSL::Crypto
 )
 
 include(CTest)
@@ -985,6 +1005,29 @@ if(BUILD_TESTING)
         target_link_libraries(SharedDataSourceSettingsTest PRIVATE "-framework Security")
     endif()
     add_test(NAME SharedDataSourceSettings COMMAND SharedDataSourceSettingsTest)
+
+    qt_add_executable(SecureHostFoundationTest EXCLUDE_FROM_ALL
+        tests/SecureHostFoundationTest.cpp
+        src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
+        src/network/BrickSuiteAuthentication.h src/network/BrickSuiteAuthentication.cpp
+        src/network/BrickSuiteHostIdentity.h src/network/BrickSuiteHostIdentity.cpp
+        src/network/BrickSuiteConnectionState.h
+        src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
+        src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
+        src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
+        src/services/CredentialStore.h src/services/CredentialStore.cpp
+    )
+    target_compile_definitions(SecureHostFoundationTest PRIVATE
+        BRICKSUITE_VERSION="${PROJECT_VERSION}"
+        BRICKSUITE_TESTING=1)
+    target_link_libraries(SecureHostFoundationTest PRIVATE
+        Qt6::Core Qt6::Network Qt6::WebSockets Qt6::Sql OpenSSL::Crypto)
+    if(WIN32)
+        target_link_libraries(SecureHostFoundationTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(SecureHostFoundationTest PRIVATE "-framework Security")
+    endif()
+    add_test(NAME SecureHostFoundation COMMAND SecureHostFoundationTest)
 endif()
 
 if(WIN32)

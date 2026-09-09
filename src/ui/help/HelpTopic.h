@@ -42,6 +42,7 @@ enum class HelpTopic
     DatabaseStatus,
     ReferenceData,
     Settings,
+    BrickSuiteServer,
     Logging,
     Troubleshooting
 };

@@ -30,6 +30,7 @@
 #include "../services/application/ApplicationServices.h"
 #include "../settings/UserSettings.h"
 #include "../ui/MainWindow.h"
+#include "../network/BrickSuiteNetworkManager.h"
 
 #include <QDebug>
 #include <QElapsedTimer>
@@ -93,10 +94,13 @@ bool Application::initialize(const StartupProgress& progress)
     qInfo() << "Startup phase application service creation completed in"
             << phaseTimer.elapsed() << "ms.";
 
+    m_networkManager = std::make_unique<BrickSuiteNetworkManager>();
+
     phaseTimer.restart();
     m_mainWindow = std::make_unique<MainWindow>(*m_workspaceContext,
                                                 *m_sessionStorageSelectionService,
-                                                *m_applicationServices);
+                                                *m_applicationServices,
+                                                *m_networkManager);
     qInfo() << "Startup phase MainWindow construction completed in"
             << phaseTimer.elapsed() << "ms.";
     report(4, QStringLiteral("Starting background services..."));
@@ -106,6 +110,7 @@ bool Application::initialize(const StartupProgress& progress)
     m_mainWindow->show();
 
     m_automaticBackupService->start();
+    m_networkManager->startConfiguredMode();
     qInfo() << "Startup phase background services and first show completed in"
             << phaseTimer.elapsed() << "ms.";
 

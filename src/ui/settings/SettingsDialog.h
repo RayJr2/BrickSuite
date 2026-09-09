@@ -40,6 +40,7 @@ class QWidget;
 class RebrickableApiClient;
 class BricksetService;
 class AutomaticBackupService;
+class BrickSuiteNetworkManager;
 
 class SettingsDialog : public QDialog
 {
@@ -48,6 +49,7 @@ class SettingsDialog : public QDialog
 public:
     explicit SettingsDialog(WorkspaceContext& workspaceContext,
                             WorkspaceApplicationService& workspaceService,
+                            BrickSuiteNetworkManager& networkManager,
                             AutomaticBackupService* automaticBackupService = nullptr,
                             QWidget* parent = nullptr);
 
@@ -65,12 +67,17 @@ private slots:
     void browseBackupRoot();
     void updateBackupPresentation();
     void backupNow();
+    void testBrickSuiteHostConnection();
+    void generateOrRotateServerToken();
+    void regenerateHostIdentity();
+    void updateNetworkPresentation();
 
 private:
     void buildGeneralTab();
     void buildAppearanceTab();
     void buildApisTab();
     void buildDatabaseBackupTab();
+    void buildServerTab();
     QWidget* buildRebrickableApiPage(QWidget* parent);
     QWidget* buildBricksetApiPage(QWidget* parent);
 
@@ -86,6 +93,7 @@ private:
 
     WorkspaceContext& m_workspaceContext;
     WorkspaceApplicationService& m_workspaceService;
+    BrickSuiteNetworkManager& m_networkManager;
     AutomaticBackupService* m_automaticBackupService = nullptr;
 
     QTabWidget* m_tabWidget = nullptr;
@@ -135,6 +143,19 @@ private:
     QLabel* m_nextBackupDueLabel = nullptr;
     QPushButton* m_backupNowButton = nullptr;
     bool m_explicitBackupRunning = false;
+
+    QCheckBox* m_serverEnabledCheck = nullptr;
+    QComboBox* m_serverBindCombo = nullptr;
+    QSpinBox* m_serverPortSpin = nullptr;
+    QLabel* m_serverStatusLabel = nullptr;
+    QLabel* m_serverFingerprintLabel = nullptr;
+    QPushButton* m_serverTokenButton = nullptr;
+    QLineEdit* m_hostEndpointEdit = nullptr;
+    QLineEdit* m_hostFingerprintEdit = nullptr;
+    QLineEdit* m_hostTokenEdit = nullptr;
+    QCheckBox* m_hostReconnectCheck = nullptr;
+    QLabel* m_hostConnectionStatusLabel = nullptr;
+    QPushButton* m_hostTestButton = nullptr;
 
     QDialogButtonBox* m_buttonBox = nullptr;
 };

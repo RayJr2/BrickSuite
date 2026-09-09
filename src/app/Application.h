@@ -32,6 +32,7 @@ class WorkspaceContext;
 class AutomaticBackupService;
 class SessionStorageSelectionService;
 class ApplicationServices;
+class BrickSuiteNetworkManager;
 
 class Application
 {
@@ -50,4 +51,5 @@ private:
     std::unique_ptr<ApplicationServices> m_applicationServices;
     std::unique_ptr<MainWindow> m_mainWindow;
     std::unique_ptr<AutomaticBackupService> m_automaticBackupService;
+    std::unique_ptr<BrickSuiteNetworkManager> m_networkManager;
 };

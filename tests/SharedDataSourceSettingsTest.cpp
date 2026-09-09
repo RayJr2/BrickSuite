@@ -30,6 +30,38 @@ int main(int argc, char** argv)
     bool ok = true;
     ok &= check(settings.sharedDataSource() == SharedDataSource::ThisComputer,
                 "default is This Computer");
+    ok &= check(!settings.brickSuiteServerEnabled(), "server disabled by default");
+    ok &= check(settings.brickSuiteServerBindAddress() == "127.0.0.1",
+                "safe loopback bind default");
+    ok &= check(settings.brickSuiteServerPort() == UserSettings::DefaultBrickSuiteServerPort,
+                "server port default");
+    ok &= check(settings.brickSuiteHostEndpoint() == "wss://localhost:47826",
+                "secure Host endpoint default");
+    ok &= check(settings.brickSuiteReconnectAutomatically(), "reconnect enabled by default");
+    settings.setBrickSuiteServerEnabled(true);
+    settings.setBrickSuiteServerBindAddress("192.0.2.10");
+    settings.setBrickSuiteServerPort(50001);
+    settings.setBrickSuiteHostEndpoint("wss://example.invalid:50001");
+    settings.setBrickSuiteTrustedFingerprint(QString(64, 'A'));
+    settings.setBrickSuiteReconnectAutomatically(false);
+    ok &= check(settings.brickSuiteServerEnabled()
+                && settings.brickSuiteServerBindAddress() == "192.0.2.10"
+                && settings.brickSuiteServerPort() == 50001
+                && settings.brickSuiteHostEndpoint() == "wss://example.invalid:50001"
+                && settings.brickSuiteTrustedFingerprint() == QString(64, 'A')
+                && !settings.brickSuiteReconnectAutomatically(),
+                "network settings persist without schema changes");
+    settings.setBrickSuiteServerPort(1);
+    ok &= check(settings.brickSuiteServerPort() == UserSettings::DefaultBrickSuiteServerPort,
+                "invalid server port fails safe");
+    {
+        QSettings raw;
+        raw.beginGroup("BrickSuiteNetwork");
+        ok &= check(!raw.contains("HostAccessToken") && !raw.contains("ClientAccessToken")
+                    && !raw.contains("AccessToken"),
+                    "network secrets absent from QSettings");
+        raw.endGroup();
+    }
     settings.setSharedDataSource(SharedDataSource::BrickSuiteHost);
     ok &= check(settings.sharedDataSource() == SharedDataSource::BrickSuiteHost,
                 "Host selection persists");

@@ -261,6 +261,7 @@ void HelpDialog::buildContents()
     addTopicItem(maintenanceGroup, HelpTopic::DatabaseStatus, "Database Status & Integrity");
     addTopicItem(maintenanceGroup, HelpTopic::ReferenceData, "Lists & Reference Data");
     addTopicItem(maintenanceGroup, HelpTopic::Settings, "Settings");
+    addTopicItem(maintenanceGroup, HelpTopic::BrickSuiteServer, "BrickSuite Server");
     addTopicItem(maintenanceGroup, HelpTopic::Logging, "Application Log");
     addTopicItem(maintenanceGroup, HelpTopic::Troubleshooting, "Troubleshooting");
 
