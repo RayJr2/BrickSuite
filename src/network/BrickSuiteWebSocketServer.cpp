@@ -4,6 +4,7 @@
 
 #include <QDateTime>
 #include <QPointer>
+#include <QThread>
 #include <QSslConfiguration>
 #include <QWebSocket>
 #include <QWebSocketServer>
@@ -99,6 +100,36 @@ int BrickSuiteWebSocketServer::authenticatedClientCount() const
     return count;
 }
 
+int BrickSuiteWebSocketServer::broadcastInvalidation(OperationalInvalidation invalidation)
+{
+    if (QThread::currentThread() != thread()) {
+        qWarning() << "Invalidation broadcast must execute on the WebSocket Server thread.";
+        return 0;
+    }
+    if (m_nextInvalidationSequence == 0
+        || m_nextInvalidationSequence > OperationalInvalidation::MaximumJsonInteger)
+        m_nextInvalidationSequence = 1;
+    invalidation.sequence = m_nextInvalidationSequence++;
+    QString error;
+    if (!OperationalInvalidation::validate(invalidation, true, &error)) {
+        qWarning().noquote() << "Invalidation broadcast rejected:" << error;
+        return 0;
+    }
+    const auto message = BrickSuiteProtocol::event(OperationalInvalidation::Operation,
+                                                    invalidation.toPayload());
+    int recipients = 0;
+    for (auto it = m_sessions.constBegin(); it != m_sessions.constEnd(); ++it) {
+        if (!it->authenticated || !it->invalidationsReady || it->protocolMinor < 1 || !it.key())
+            continue;
+        send(it.key(), message);
+        ++recipients;
+    }
+    qDebug() << "Host invalidation" << invalidation.sequence << "domains"
+             << invalidation.domains.size() << "workspace"
+             << invalidation.workspaceId.value_or(0) << "recipients" << recipients;
+    return recipients;
+}
+
 void BrickSuiteWebSocketServer::acceptConnection()
 {
     while (m_server && m_server->hasPendingConnections()) {
@@ -152,6 +183,12 @@ void BrickSuiteWebSocketServer::receiveText(QWebSocket* socket, const QString& t
         return;
     }
     if (parsed.message.type != BrickSuiteProtocol::MessageType::Request) {
+        if (parsed.message.type == BrickSuiteProtocol::MessageType::Event) {
+            qWarning() << "Client-originated protocol event rejected.";
+            socket->close(QWebSocketProtocol::CloseCodePolicyViolated,
+                          QStringLiteral("Client-originated events are not permitted."));
+            return;
+        }
         reject(socket, parsed.message, QStringLiteral("INVALID_REQUEST"),
                QStringLiteral("The Host accepts request messages only."));
         return;
@@ -185,9 +222,10 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
         session.challenge = BrickSuiteAuthentication::secureRandom(32, &randomError);
         session.challengeCreatedMs = QDateTime::currentMSecsSinceEpoch();
         session.challengeConsumed = false;
+        session.protocolMinor = qMin(request.protocolMinor, BrickSuiteProtocol::Minor);
         send(socket, BrickSuiteProtocol::response(request, {
             {QStringLiteral("protocolMajor"), BrickSuiteProtocol::Major},
-            {QStringLiteral("protocolMinor"), qMin(request.protocolMinor, BrickSuiteProtocol::Minor)},
+            {QStringLiteral("protocolMinor"), session.protocolMinor},
             {QStringLiteral("authentication"), QStringLiteral("HMAC-SHA-256")},
             {QStringLiteral("sessionId"), QString::fromLatin1(session.id.toBase64())},
             {QStringLiteral("challenge"), QString::fromLatin1(session.challenge.toBase64())},
@@ -257,12 +295,15 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
     const QByteArray sessionId = session.id;
     QPointer<QWebSocket> guard(socket);
     m_dispatcher.dispatchAsync(request, session.authenticated,
-        [this, guard, sessionId](BrickSuiteProtocol::Message response) {
+        [this, guard, sessionId, operation = request.operation](BrickSuiteProtocol::Message response) {
             if (!guard) return;
-            const auto it = m_sessions.constFind(guard.data());
+            auto it = m_sessions.find(guard.data());
             if (it == m_sessions.constEnd() || !it->authenticated || it->id != sessionId)
                 return;
             send(guard.data(), response);
+            if (operation == QStringLiteral("system.capabilities")
+                && response.type == BrickSuiteProtocol::MessageType::Response)
+                it->invalidationsReady = true;
         });
 }
 

@@ -1,4 +1,5 @@
 #include "BrickSuiteOperationDispatcher.h"
+#include "OperationalInvalidation.h"
 
 #include "../database/DatabaseSchema.h"
 
@@ -12,6 +13,7 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
         QJsonArray names;
         for (const QString& operation : operations()) names.append(operation);
         QJsonArray capabilities;
+        capabilities.append(OperationalInvalidation::Capability);
         const auto addCapability = [this, &capabilities](const QString& operation,
                                                          const QString& capability) {
             if (m_operations.contains(operation)) capabilities.append(capability);

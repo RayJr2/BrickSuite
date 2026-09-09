@@ -15,6 +15,7 @@ BrickSuiteWebSocketClient::BrickSuiteWebSocketClient(QObject* parent)
 {
     qRegisterMetaType<BrickSuiteConnectionStatus>();
     qRegisterMetaType<BrickSuiteProtocol::Error>();
+    qRegisterMetaType<OperationalInvalidation>();
     m_reconnectTimer.setSingleShot(true);
     m_socket.setMaxAllowedIncomingMessageSize(BrickSuiteProtocol::MaximumMessageBytes);
     m_socket.setMaxAllowedIncomingFrameSize(BrickSuiteProtocol::MaximumMessageBytes);
@@ -89,6 +90,7 @@ void BrickSuiteWebSocketClient::disconnectFromHost()
     m_reconnectTimer.stop();
     failPending(QStringLiteral("TIMEOUT"), QStringLiteral("The Host connection closed."), true);
     if (m_authenticated) {
+        ++m_authenticatedSessionGeneration;
         m_authenticated = false;
         m_capabilities = {};
         emit authenticatedSessionLost();
@@ -124,6 +126,28 @@ bool BrickSuiteWebSocketClient::supportsOperation(const QString& operation) cons
         if (value.toString() == operation) return true;
     return false;
 }
+
+bool BrickSuiteWebSocketClient::supportsCapability(const QString& capability) const
+{
+    const QJsonArray values = m_capabilities.value(QStringLiteral("capabilities")).toArray();
+    for (const QJsonValue& value : values)
+        if (value.toString() == capability) return true;
+    return false;
+}
+
+quint64 BrickSuiteWebSocketClient::authenticatedSessionGeneration() const
+{
+    return m_authenticatedSessionGeneration;
+}
+
+#ifdef BRICKSUITE_TESTING
+void BrickSuiteWebSocketClient::sendProtocolEventForTesting(
+    const OperationalInvalidation& invalidation)
+{
+    m_socket.sendTextMessage(QString::fromUtf8(BrickSuiteProtocol::serialize(
+        BrickSuiteProtocol::event(OperationalInvalidation::Operation, invalidation.toPayload()))));
+}
+#endif
 
 QString BrickSuiteWebSocketClient::enqueueRequest(
     const QString& operation, const QJsonObject& payload, QObject* context,
@@ -175,6 +199,7 @@ void BrickSuiteWebSocketClient::handleDisconnected()
 {
     failPending(QStringLiteral("TIMEOUT"), QStringLiteral("The Host connection was interrupted."), true);
     if (m_authenticated) {
+        ++m_authenticatedSessionGeneration;
         m_authenticated = false;
         m_capabilities = {};
         emit authenticatedSessionLost();
@@ -244,6 +269,29 @@ void BrickSuiteWebSocketClient::handleText(const QString& text)
         m_socket.abort();
         return;
     }
+    if (parsed.message.type == BrickSuiteProtocol::MessageType::Event) {
+        if (!m_authenticated || parsed.message.operation != OperationalInvalidation::Operation) {
+            setStatus(BrickSuiteConnectionState::Error,
+                      QStringLiteral("The Host returned an invalid event message."));
+            m_socket.abort();
+            return;
+        }
+        if (!supportsCapability(OperationalInvalidation::Capability)) {
+            qWarning() << "Host invalidation ignored because the capability was not negotiated.";
+            return;
+        }
+        OperationalInvalidation invalidation;
+        QString error;
+        if (!OperationalInvalidation::fromPayload(parsed.message.payload, &invalidation, &error)) {
+            qWarning().noquote() << "Malformed Host invalidation rejected:" << error;
+            setStatus(BrickSuiteConnectionState::Error,
+                      QStringLiteral("The Host returned an invalid event payload."));
+            m_socket.abort();
+            return;
+        }
+        emit invalidationReceived(invalidation, m_authenticatedSessionGeneration);
+        return;
+    }
     handleResponse(parsed.message);
 }
 
@@ -283,6 +331,7 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
         m_reconnectAttempt = 0;
         const QSslCertificate certificate = m_socket.sslConfiguration().peerCertificate();
         m_presentedFingerprint = BrickSuiteHostIdentity::fingerprint(certificate);
+        ++m_authenticatedSessionGeneration;
         m_authenticated = true;
         setStatus(BrickSuiteConnectionState::ConnectedAuthenticated,
                   QStringLiteral("Connected and authenticated to BrickSuite %1 — protocol %2.%3")

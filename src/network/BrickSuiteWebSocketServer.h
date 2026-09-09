@@ -3,6 +3,7 @@
 #include "BrickSuiteHostIdentity.h"
 #include "BrickSuiteProtocol.h"
 #include "BrickSuiteOperationDispatcher.h"
+#include "OperationalInvalidation.h"
 
 #include <QHash>
 #include <QHostAddress>
@@ -31,6 +32,7 @@ public:
     QString fingerprint() const;
     int authenticatedClientCount() const;
     BrickSuiteOperationDispatcher& operationDispatcher();
+    int broadcastInvalidation(OperationalInvalidation invalidation);
 
 signals:
     void statusChanged();
@@ -44,9 +46,11 @@ private:
         qint64 connectedMs = 0;
         bool challengeConsumed = false;
         bool authenticated = false;
+        bool invalidationsReady = false;
         int authenticationFailures = 0;
         qint64 nextAuthenticationAllowedMs = 0;
         QTimer* authenticationTimer = nullptr;
+        int protocolMinor = 0;
     };
 
     void acceptConnection();
@@ -62,4 +66,5 @@ private:
     QString m_accessToken;
     BrickSuiteHostIdentity::Result m_identity;
     BrickSuiteOperationDispatcher m_dispatcher;
+    quint64 m_nextInvalidationSequence = 1;
 };

@@ -6,7 +6,7 @@
 namespace BrickSuiteProtocol {
 
 constexpr int Major = 1;
-constexpr int Minor = 0;
+constexpr int Minor = 1;
 constexpr qsizetype MaximumMessageBytes = 1024 * 1024;
 constexpr int MaximumRequestIdLength = 128;
 constexpr int MaximumOperationLength = 128;
@@ -16,7 +16,7 @@ constexpr int AuthenticationTimeoutMs = 30000;
 constexpr int MaximumClients = 8;
 constexpr int MaximumAuthenticationFailures = 3;
 
-enum class MessageType { Request, Response, Error };
+enum class MessageType { Request, Response, Error, Event };
 
 struct Error
 {
@@ -51,6 +51,7 @@ Message request(const QString& operation, const QJsonObject& payload = {});
 Message response(const Message& request, const QJsonObject& payload = {});
 Message errorResponse(const Message& request, const QString& code,
                       const QString& message, bool retryable = false);
+Message event(const QString& operation, const QJsonObject& payload);
 QString newRequestId();
 
 } // namespace BrickSuiteProtocol

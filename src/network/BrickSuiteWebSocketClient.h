@@ -2,6 +2,7 @@
 
 #include "BrickSuiteConnectionState.h"
 #include "BrickSuiteProtocol.h"
+#include "OperationalInvalidation.h"
 
 #include <QHash>
 #include <QElapsedTimer>
@@ -33,6 +34,11 @@ public:
                         QObject* context, Completion completion, Failure failure = {},
                         int timeoutMs = BrickSuiteProtocol::RequestTimeoutMs);
     bool supportsOperation(const QString& operation) const;
+    bool supportsCapability(const QString& capability) const;
+    quint64 authenticatedSessionGeneration() const;
+#ifdef BRICKSUITE_TESTING
+    void sendProtocolEventForTesting(const OperationalInvalidation& invalidation);
+#endif
 
 signals:
     void statusChanged(const BrickSuiteConnectionStatus& status);
@@ -42,6 +48,8 @@ signals:
     void testConnectionCompleted(bool success, const QString& message);
     void authenticatedSessionEstablished(const QString& verifiedFingerprint);
     void authenticatedSessionLost();
+    void invalidationReceived(const OperationalInvalidation& invalidation,
+                              quint64 authenticatedSessionGeneration);
 
 private:
     struct Pending {
@@ -80,6 +88,7 @@ private:
     int m_reconnectAttempt = 0;
     QElapsedTimer m_connectTimer;
     bool m_authenticated = false;
+    quint64 m_authenticatedSessionGeneration = 0;
 };
 
 Q_DECLARE_METATYPE(BrickSuiteConnectionStatus)

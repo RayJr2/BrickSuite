@@ -37,6 +37,13 @@ bool RemoteSessionState::accepts(const Snapshot& value) const
         && value.workspaceId == m_workspaceId;
 }
 
+bool RemoteSessionState::acceptsEvent(
+    quint64 sessionGeneration, const std::optional<qint64>& workspaceId) const
+{
+    return m_authenticated && sessionGeneration == m_sessionGeneration
+        && (!workspaceId || *workspaceId == m_workspaceId);
+}
+
 void RemoteSessionState::authenticated(const QString& verifiedFingerprint)
 {
     const QString identity = normalizedFingerprint(verifiedFingerprint);

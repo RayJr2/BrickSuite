@@ -55,6 +55,10 @@ qt_add_executable(BrickSuite
     src/network/BrickSuiteHostIdentity.h
     src/network/BrickSuiteHostIdentity.cpp
     src/network/BrickSuiteConnectionState.h
+    src/network/OperationalInvalidation.h
+    src/network/OperationalInvalidation.cpp
+    src/network/OperationalInvalidationPublisher.h
+    src/network/OperationalInvalidationPublisher.cpp
     src/network/BrickSuiteOperationDispatcher.h
     src/network/BrickSuiteOperationDispatcher.cpp
     src/network/BrickSuiteWebSocketServer.h
@@ -1038,6 +1042,8 @@ if(BUILD_TESTING)
     qt_add_executable(SecureHostFoundationTest EXCLUDE_FROM_ALL
         tests/SecureHostFoundationTest.cpp
         src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
+        src/network/OperationalInvalidation.h src/network/OperationalInvalidation.cpp
+        src/network/OperationalInvalidationPublisher.h src/network/OperationalInvalidationPublisher.cpp
         src/network/BrickSuiteAuthentication.h src/network/BrickSuiteAuthentication.cpp
         src/network/BrickSuiteHostIdentity.h src/network/BrickSuiteHostIdentity.cpp
         src/network/BrickSuiteConnectionState.h
@@ -1108,6 +1114,7 @@ if(BUILD_TESTING)
         src/services/application/dto/RemoteReadDtos.h
         src/services/application/dto/RemoteReadJson.h src/services/application/dto/RemoteReadJson.cpp
         src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
+        src/network/OperationalInvalidation.h src/network/OperationalInvalidation.cpp
         src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
         src/network/BrickSuiteAuthentication.h src/network/BrickSuiteAuthentication.cpp
         src/network/BrickSuiteHostIdentity.h src/network/BrickSuiteHostIdentity.cpp
@@ -1135,6 +1142,7 @@ if(BUILD_TESTING)
         src/services/application/dto/RemoteReadJson.h
         src/services/application/dto/RemoteReadJson.cpp
         src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
+        src/network/OperationalInvalidation.h src/network/OperationalInvalidation.cpp
         src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
     )
     target_compile_definitions(RemoteReadFoundationTest PRIVATE

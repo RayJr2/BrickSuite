@@ -10,6 +10,8 @@ class BrickSuiteWebSocketServer;
 class HostReadProtocolService;
 class RemoteReadApplicationServices;
 class RemoteSessionState;
+class OperationalInvalidationPublisher;
+struct OperationalInvalidation;
 
 class BrickSuiteNetworkManager : public QObject
 {
@@ -25,6 +27,7 @@ public:
     BrickSuiteWebSocketClient* client() const;
     RemoteReadApplicationServices* remoteReads() const;
     RemoteSessionState* remoteSession() const;
+    OperationalInvalidationPublisher* invalidationPublisher() const;
     BrickSuiteConnectionStatus connectionStatus() const;
     QString serverStatusText() const;
     QString generateOrRotateHostToken(QString* error = nullptr);
@@ -33,6 +36,7 @@ public:
 
 signals:
     void statusChanged();
+    void invalidationReceived(const OperationalInvalidation& invalidation);
 
 private:
     BrickSuiteWebSocketServer* m_server = nullptr;
@@ -41,4 +45,5 @@ private:
     std::unique_ptr<HostReadProtocolService> m_hostReads;
     std::unique_ptr<RemoteReadApplicationServices> m_remoteReads;
     std::unique_ptr<RemoteSessionState> m_remoteSession;
+    std::unique_ptr<OperationalInvalidationPublisher> m_invalidationPublisher;
 };

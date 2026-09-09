@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <optional>
 
 class RemoteSessionState : public QObject
 {
@@ -27,6 +28,8 @@ public:
     DataState dataState() const;
     Snapshot snapshot() const;
     bool accepts(const Snapshot& snapshot) const;
+    bool acceptsEvent(quint64 sessionGeneration,
+                      const std::optional<qint64>& workspaceId) const;
 
 public slots:
     void authenticated(const QString& verifiedFingerprint);

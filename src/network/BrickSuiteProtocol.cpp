@@ -47,6 +47,7 @@ QString typeName(MessageType type)
     case MessageType::Request: return QStringLiteral("request");
     case MessageType::Response: return QStringLiteral("response");
     case MessageType::Error: return QStringLiteral("error");
+    case MessageType::Event: return QStringLiteral("event");
     }
     return {};
 }
@@ -57,10 +58,11 @@ QByteArray serialize(const Message& message)
                         QJsonObject{{QStringLiteral("major"), message.protocolMajor},
                                     {QStringLiteral("minor"), message.protocolMinor}}},
                        {QStringLiteral("type"), typeName(message.type)},
-                       {QStringLiteral("requestId"), message.requestId},
                        {QStringLiteral("operation"), message.operation},
                        {QStringLiteral("payload"), message.payload}};
-    if (message.type != MessageType::Request)
+    if (message.type != MessageType::Event)
+        object.insert(QStringLiteral("requestId"), message.requestId);
+    if (message.type == MessageType::Response || message.type == MessageType::Error)
         object.insert(QStringLiteral("success"), message.type == MessageType::Response);
     if (message.type == MessageType::Error) {
         object.insert(QStringLiteral("error"),
@@ -123,6 +125,7 @@ ParseResult parse(const QByteArray& utf8)
     if (type == QStringLiteral("request")) message.type = MessageType::Request;
     else if (type == QStringLiteral("response")) message.type = MessageType::Response;
     else if (type == QStringLiteral("error")) message.type = MessageType::Error;
+    else if (type == QStringLiteral("event")) message.type = MessageType::Event;
     else {
         result.error = invalid(QStringLiteral("The protocol message type is unsupported."));
         return result;
@@ -130,7 +133,11 @@ ParseResult parse(const QByteArray& utf8)
     if ((message.type == MessageType::Request
          && (object.contains(QStringLiteral("success")) || object.contains(QStringLiteral("error"))))
         || (message.type == MessageType::Response && object.contains(QStringLiteral("error")))
-        || (message.type == MessageType::Error && !object.contains(QStringLiteral("error")))) {
+        || (message.type == MessageType::Error && !object.contains(QStringLiteral("error")))
+        || (message.type == MessageType::Event
+            && (object.contains(QStringLiteral("requestId"))
+                || object.contains(QStringLiteral("success"))
+                || object.contains(QStringLiteral("error"))))) {
         result.error = invalid(QStringLiteral("The protocol fields do not match the message type."));
         return result;
     }
@@ -138,16 +145,17 @@ ParseResult parse(const QByteArray& utf8)
     message.operation = object.value(QStringLiteral("operation")).toString();
     static const QRegularExpression requestIdPattern(QStringLiteral("^[A-Za-z0-9_-]+$"));
     static const QRegularExpression operationPattern(QStringLiteral("^[a-z][A-Za-z0-9.]*$"));
-    if (message.requestId.isEmpty() || message.requestId.size() > MaximumRequestIdLength
+    if ((message.type != MessageType::Event
+         && (message.requestId.isEmpty() || message.requestId.size() > MaximumRequestIdLength
+             || !requestIdPattern.match(message.requestId).hasMatch()))
         || message.operation.isEmpty() || message.operation.size() > MaximumOperationLength
-        || !requestIdPattern.match(message.requestId).hasMatch()
         || !operationPattern.match(message.operation).hasMatch()
         || !object.value(QStringLiteral("payload")).isObject()) {
         result.error = invalid(QStringLiteral("Required protocol fields are missing or invalid."));
         return result;
     }
     message.payload = object.value(QStringLiteral("payload")).toObject();
-    if (message.type != MessageType::Request) {
+    if (message.type == MessageType::Response || message.type == MessageType::Error) {
         if (!object.value(QStringLiteral("success")).isBool()) {
             result.error = invalid(QStringLiteral("The response success field is invalid."));
             return result;
@@ -214,6 +222,15 @@ Message errorResponse(const Message& requestMessage, const QString& code,
     message.operation = requestMessage.operation;
     message.success = false;
     message.error = {code, messageText, retryable};
+    return message;
+}
+
+Message event(const QString& operation, const QJsonObject& payload)
+{
+    Message message;
+    message.type = MessageType::Event;
+    message.operation = operation;
+    message.payload = payload;
     return message;
 }
 

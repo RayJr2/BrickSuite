@@ -4,19 +4,23 @@
 #include "../src/network/BrickSuiteOperationDispatcher.h"
 #include "../src/network/BrickSuiteWebSocketClient.h"
 #include "../src/network/BrickSuiteWebSocketServer.h"
+#include "../src/network/OperationalInvalidation.h"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QHostAddress>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QTimer>
 #include <QStandardPaths>
 #include <QFile>
+#include <QWebSocket>
 
 #include "../src/services/CredentialStore.h"
 
 #include <iostream>
+#include <functional>
 
 namespace {
 
@@ -44,6 +48,15 @@ bool waitForResult(BrickSuiteWebSocketClient& client, bool* success,
     loop.exec();
     QObject::disconnect(connection);
     return !timeout.isActive() ? false : true;
+}
+
+bool waitUntil(const std::function<bool()>& predicate, int timeoutMs = 5000)
+{
+    QElapsedTimer timer;
+    timer.start();
+    while (!predicate() && timer.elapsed() < timeoutMs)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    return predicate();
 }
 
 } // namespace
@@ -79,6 +92,56 @@ int main(int argc, char** argv)
     const auto parsedError = BrickSuiteProtocol::parse(BrickSuiteProtocol::serialize(error));
     ok &= check(parsedError.valid && parsedError.message.error.code == QStringLiteral("FORBIDDEN"),
                 "error serialization round-trip");
+    OperationalInvalidation codecEvent;
+    codecEvent.sequence = 42;
+    codecEvent.domains = {OperationalInvalidationDomain::Inventory,
+                          OperationalInvalidationDomain::InventoryHistory};
+    codecEvent.workspaceId = 7;
+    codecEvent.inventoryRecordId = 19;
+    const auto wireEvent = BrickSuiteProtocol::event(
+        OperationalInvalidation::Operation, codecEvent.toPayload());
+    const auto parsedWireEvent = BrickSuiteProtocol::parse(
+        BrickSuiteProtocol::serialize(wireEvent));
+    OperationalInvalidation decodedEvent;
+    QString invalidationError;
+    ok &= check(parsedWireEvent.valid
+                && parsedWireEvent.message.type == BrickSuiteProtocol::MessageType::Event
+                && parsedWireEvent.message.requestId.isEmpty()
+                && OperationalInvalidation::fromPayload(parsedWireEvent.message.payload,
+                                                         &decodedEvent, &invalidationError)
+                && decodedEvent.sequence == 42 && decodedEvent.domains == codecEvent.domains
+                && decodedEvent.workspaceId == 7 && decodedEvent.inventoryRecordId == 19,
+                "invalidation event round-trip without request correlation");
+    OperationalInvalidation invalidEvent;
+    invalidEvent.sequence = 1;
+    invalidEvent.domains = {OperationalInvalidationDomain::Inventory};
+    ok &= check(!OperationalInvalidation::validate(invalidEvent, true, &invalidationError),
+                "Workspace-scoped invalidation without Workspace rejected");
+    invalidEvent.domains.clear();
+    ok &= check(!OperationalInvalidation::validate(invalidEvent, true, &invalidationError),
+                "empty invalidation domain list rejected");
+    for (int value = int(OperationalInvalidationDomain::Workspaces);
+         value <= int(OperationalInvalidationDomain::PartReferenceCustomizations); ++value) {
+        const auto domain = static_cast<OperationalInvalidationDomain>(value);
+        const QString name = operationalInvalidationDomainName(domain);
+        ok &= check(!name.isEmpty() && operationalInvalidationDomainFromName(name) == domain,
+                    "supported invalidation domain wire name round-trip");
+    }
+    ok &= check(BrickSuiteProtocol::parse(BrickSuiteProtocol::serialize(
+                    BrickSuiteProtocol::event(QStringLiteral("shared.notSupported"),
+                                              codecEvent.toPayload()))).valid
+                && QStringLiteral("shared.notSupported") != OperationalInvalidation::Operation,
+                "unknown event operation remains distinguishable for client rejection");
+    QJsonObject unknownDomain = codecEvent.toPayload();
+    unknownDomain.insert(QStringLiteral("domains"), QJsonArray{QStringLiteral("unknown")});
+    ok &= check(!OperationalInvalidation::fromPayload(unknownDomain, &decodedEvent,
+                                                       &invalidationError),
+                "unknown invalidation domain rejected");
+    QJsonObject malformedId = codecEvent.toPayload();
+    malformedId.insert(QStringLiteral("workspaceId"), -1);
+    ok &= check(!OperationalInvalidation::fromPayload(malformedId, &decodedEvent,
+                                                       &invalidationError),
+                "malformed invalidation identifier rejected");
     ok &= check(!BrickSuiteProtocol::parse(QByteArrayLiteral("not-json")).valid,
                 "malformed JSON rejected");
     ok &= check(!BrickSuiteProtocol::parse(QByteArrayLiteral("{}")) .valid,
@@ -181,7 +244,75 @@ int main(int argc, char** argv)
                 "client reaches authenticated state");
     ok &= check(!client.capabilities().value(QStringLiteral("sharedBusinessDataAvailable")).toBool(),
                 "M26.3 does not advertise shared business operations");
-    client.disconnectFromHost();
+    ok &= check(client.supportsCapability(OperationalInvalidation::Capability),
+                "Host advertises invalidation capability");
+
+    BrickSuiteWebSocketClient secondClient;
+    secondClient.configure(QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+                           identity.fingerprint, token, false);
+    secondClient.connectToHost();
+    bool secondSuccess = false;
+    ok &= check(waitForResult(secondClient, &secondSuccess, &resultMessage) && secondSuccess,
+                "second authenticated Client connects");
+
+    QWebSocket unauthenticatedSocket;
+    QSslConfiguration unauthenticatedSsl = QSslConfiguration::defaultConfiguration();
+    unauthenticatedSsl.setPeerVerifyMode(QSslSocket::VerifyNone);
+    unauthenticatedSocket.setSslConfiguration(unauthenticatedSsl);
+    unauthenticatedSocket.open(QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())));
+    ok &= check(waitUntil([&]() { return unauthenticatedSocket.state() == QAbstractSocket::ConnectedState; }),
+                "unauthenticated transport connects");
+
+    int firstEvents = 0;
+    int secondEvents = 0;
+    QObject::connect(&client, &BrickSuiteWebSocketClient::invalidationReceived,
+                     [&](const OperationalInvalidation& event, quint64) {
+        if (event.sequence > 0) ++firstEvents;
+    });
+    QObject::connect(&secondClient, &BrickSuiteWebSocketClient::invalidationReceived,
+                     [&](const OperationalInvalidation& event, quint64) {
+        if (event.sequence > 0) ++secondEvents;
+    });
+    OperationalInvalidation broadcast;
+    broadcast.domains = {OperationalInvalidationDomain::Inventory};
+    broadcast.workspaceId = 7;
+    ok &= check(server.broadcastInvalidation(broadcast) == 2,
+                "broadcast targets authenticated compatible Clients only");
+    ok &= check(waitUntil([&]() { return firstEvents == 1 && secondEvents == 1; }),
+                "two authenticated Clients each receive one invalidation");
+
+    bool pingCompleted = false;
+    client.sendRequest(QStringLiteral("system.ping"), {}, &client,
+        [&](const QJsonObject&) { pingCompleted = true; });
+    server.broadcastInvalidation(broadcast);
+    ok &= check(waitUntil([&]() { return pingCompleted && firstEvents == 2; }),
+                "invalidation delivery does not disturb request correlation");
+
+    client.sendProtocolEventForTesting(codecEvent);
+    ok &= check(waitUntil([&]() {
+        return client.status().state != BrickSuiteConnectionState::ConnectedAuthenticated;
+    }), "Client-originated event is rejected by disconnecting the sender");
+
+    const int firstEventsBeforeDisconnectedBroadcast = firstEvents;
+    ok &= check(server.broadcastInvalidation(broadcast) == 1,
+                "disconnected Client is removed from broadcast recipients");
+    ok &= check(waitUntil([&]() { return secondEvents == 3; })
+                && firstEvents == firstEventsBeforeDisconnectedBroadcast,
+                "disconnected Client receives no invalidation");
+
+    client.connectToHost();
+    success = false;
+    ok &= check(waitForResult(client, &success, &resultMessage) && success,
+                "reconnected Client establishes a new authenticated session");
+    ok &= check(server.broadcastInvalidation(broadcast) == 2,
+                "reconnected Client rejoins authenticated broadcasts");
+    ok &= check(waitUntil([&]() {
+        return firstEvents == firstEventsBeforeDisconnectedBroadcast + 1
+            && secondEvents == 4;
+    }), "new-session invalidation is accepted after reconnect");
+
+    secondClient.disconnectFromHost();
+    unauthenticatedSocket.close();
 
     BrickSuiteWebSocketClient wrongTokenClient;
     success = true;

@@ -4,6 +4,7 @@
 #include "BrickSuiteWebSocketClient.h"
 #include "BrickSuiteWebSocketServer.h"
 #include "RemoteSessionState.h"
+#include "OperationalInvalidationPublisher.h"
 #include "../database/DatabaseManager.h"
 #include "../services/application/HostReadProtocolService.h"
 #include "../services/application/RemoteReadApplicationServices.h"
@@ -23,6 +24,7 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     , m_client(new BrickSuiteWebSocketClient(this))
 {
     m_remoteSession = std::make_unique<RemoteSessionState>(this);
+    m_invalidationPublisher = std::make_unique<OperationalInvalidationPublisher>(*m_server, this);
     m_remoteReads = std::make_unique<RemoteReadApplicationServices>(*m_client,
                                                                      m_remoteSession.get(), this);
     m_hostReads = std::make_unique<HostReadProtocolService>(
@@ -36,6 +38,14 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
             m_remoteSession.get(), &RemoteSessionState::authenticated);
     connect(m_client, &BrickSuiteWebSocketClient::authenticatedSessionLost,
             m_remoteSession.get(), &RemoteSessionState::disconnected);
+    connect(m_client, &BrickSuiteWebSocketClient::invalidationReceived, this,
+            [this](const OperationalInvalidation& invalidation, quint64 generation) {
+        if (!m_remoteSession->acceptsEvent(generation, invalidation.workspaceId)) {
+            qDebug() << "Obsolete session or Workspace invalidation ignored.";
+            return;
+        }
+        emit invalidationReceived(invalidation);
+    });
 }
 
 BrickSuiteNetworkManager::~BrickSuiteNetworkManager() { stop(); }
@@ -108,6 +118,8 @@ RemoteReadApplicationServices* BrickSuiteNetworkManager::remoteReads() const
 { return m_remoteReads.get(); }
 RemoteSessionState* BrickSuiteNetworkManager::remoteSession() const
 { return m_remoteSession.get(); }
+OperationalInvalidationPublisher* BrickSuiteNetworkManager::invalidationPublisher() const
+{ return m_invalidationPublisher.get(); }
 BrickSuiteConnectionStatus BrickSuiteNetworkManager::connectionStatus() const { return m_client->status(); }
 
 QString BrickSuiteNetworkManager::serverStatusText() const

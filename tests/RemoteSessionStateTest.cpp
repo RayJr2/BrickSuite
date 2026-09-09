@@ -44,12 +44,17 @@ int main(int argc, char* argv[])
                 "Selecting a Workspace must advance Workspace generation.");
     ok &= check(!state.accepts(first),
                 "A result from the prior Workspace generation must be rejected.");
+    ok &= check(state.acceptsEvent(state.sessionGeneration(), qint64(7))
+                && !state.acceptsEvent(state.sessionGeneration(), qint64(8)),
+                "Only events for the current Workspace may be accepted.");
 
     state.disconnected();
     ok &= check(state.dataState() == RemoteSessionState::DataState::StaleDisconnected,
                 "Disconnect after a successful load must mark Host state stale.");
     ok &= check(!state.accepts(workspaceSeven),
                 "A result from the disconnected session must be rejected.");
+    ok &= check(!state.acceptsEvent(workspaceSeven.sessionGeneration, qint64(7)),
+                "An event from a disconnected session must be rejected.");
 
     state.authenticated(hostA.toLower());
     ok &= check(restored == 1 && refreshes == 1 && clears == 0,
@@ -58,6 +63,8 @@ int main(int argc, char* argv[])
                 "Same-Host reconnect must preserve Workspace identity.");
     ok &= check(state.sessionGeneration() > workspaceSeven.sessionGeneration,
                 "Reconnect must advance session generation.");
+    ok &= check(!state.acceptsEvent(workspaceSeven.sessionGeneration, qint64(7)),
+                "An obsolete-session event must be rejected after reconnect.");
 
     state.authenticated(hostB);
     ok &= check(clears == 1 && state.hostIdentity() == hostB,
