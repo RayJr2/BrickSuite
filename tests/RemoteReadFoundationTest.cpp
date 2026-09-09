@@ -47,6 +47,17 @@ int main(int argc, char** argv)
                   && decoded.rebrickableColorId == 4, "portable inventory round trip failed");
     QJsonObject invalid = json; invalid.insert(QStringLiteral("partNumber"), QString(513, QLatin1Char('x')));
     ok &= require(!RemoteReadJson::fromJson(invalid, &decoded, &decodeError), "oversized text accepted");
+    RemoteReadDto::StorageSummary storage;
+    storage.storageId=8; storage.parentStorageId=2; storage.name="Drawer";
+    storage.displayPath="Room / Cabinet / Drawer"; storage.typeName="Drawer";
+    storage.sortOrder=4; storage.active=false; storage.allowsInventory=true;
+    storage.allowsCollection=true;
+    RemoteReadDto::StorageSummary decodedStorage;
+    ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(storage),
+        &decodedStorage,&decodeError) && decodedStorage.typeName==QStringLiteral("Drawer")
+        && decodedStorage.sortOrder==4 && !decodedStorage.active
+        && decodedStorage.allowsInventory && decodedStorage.allowsCollection,
+        "Storage hierarchy projection round trip failed");
     QList<RemoteReadDto::InventoryRow> decorated{decoded};
     decorated[0] = row;
     LocalReferenceDecoration decoration{{{QStringLiteral("3001"), QStringLiteral("Local Brick")}},

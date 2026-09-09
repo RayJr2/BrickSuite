@@ -21,10 +21,13 @@
 #pragma once
 
 #include <QWidget>
+#include <QElapsedTimer>
 
 class WorkspaceContext;
 class QTreeWidget;
 class QPushButton;
+class QLabel;
+class RemoteReadApplicationServices;
 
 class StorageWidget : public QWidget
 {
@@ -33,6 +36,7 @@ class StorageWidget : public QWidget
 public:
     explicit StorageWidget(
         WorkspaceContext& workspaceContext,
+        RemoteReadApplicationServices* remoteReads = nullptr,
         QWidget* parent = nullptr);
 
 signals:
@@ -47,12 +51,18 @@ private slots:
 
 private:
     void loadStorageTree();
+    void loadRemoteStorageTree();
+    void setMutationControlsEnabled(bool enabled);
 
     WorkspaceContext& m_workspaceContext;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
+    quint64 m_storageRequestToken = 0;
+    QElapsedTimer m_storageRequestTimer;
 
     QTreeWidget* m_tree = nullptr;
     QPushButton* m_addButton = nullptr;
     QPushButton* m_editButton = nullptr;
     QPushButton* m_deactivateButton = nullptr;
     QPushButton* m_reactivateButton = nullptr;
+    QLabel* m_statusLabel = nullptr;
 };

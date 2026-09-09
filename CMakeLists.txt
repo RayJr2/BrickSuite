@@ -454,6 +454,13 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(BuildActionEligibilityTest EXCLUDE_FROM_ALL
+        tests/BuildActionEligibilityTest.cpp
+        src/ui/builds/BuildActionEligibility.h
+    )
+    target_link_libraries(BuildActionEligibilityTest PRIVATE Qt6::Core)
+    add_test(NAME BuildActionEligibility COMMAND BuildActionEligibilityTest)
+
     qt_add_executable(SingleInstanceWindowRegistryTest EXCLUDE_FROM_ALL
         tests/SingleInstanceWindowRegistryTest.cpp
         src/ui/common/SingleInstanceWindowRegistry.h
@@ -1055,6 +1062,7 @@ if(BUILD_TESTING)
         src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
         src/models/Workspace.h src/models/Workspace.cpp
         src/models/StorageLocation.h src/models/StorageLocation.cpp
+        src/models/StorageLocationType.h src/models/StorageLocationType.cpp
         src/models/InventoryRecord.h src/models/InventoryRecord.cpp
         src/models/InventoryMovement.h src/models/InventoryMovement.cpp
         src/models/InventorySearchCriteria.h src/models/InventorySearchResult.h
@@ -1071,6 +1079,7 @@ if(BUILD_TESTING)
         src/repositories/RepositoryConnection.h
         src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
         src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
+        src/repositories/StorageLocationTypeRepository.h src/repositories/StorageLocationTypeRepository.cpp
         src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
         src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
         src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp

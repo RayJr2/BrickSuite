@@ -20,8 +20,6 @@
 
 #include "StorageLocationTypeRepository.h"
 
-#include "../database/DatabaseManager.h"
-
 #include <QDebug>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -30,7 +28,7 @@ QList<StorageLocationType> StorageLocationTypeRepository::getAll() const
 {
     QList<StorageLocationType> types;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -60,7 +58,7 @@ QList<StorageLocationType> StorageLocationTypeRepository::getActive() const
 {
     QList<StorageLocationType> types;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -90,7 +88,7 @@ QList<StorageLocationType> StorageLocationTypeRepository::getActive() const
 
 std::optional<StorageLocationType> StorageLocationTypeRepository::getById(int id) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 

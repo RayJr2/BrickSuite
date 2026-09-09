@@ -25,11 +25,14 @@
 #include "../../models/StorageLocationType.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../repositories/StorageLocationTypeRepository.h"
+#include "../../services/application/RemoteReadApplicationServices.h"
 
 #include <QComboBox>
 #include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDebug>
+#include <QElapsedTimer>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHash>
@@ -44,13 +47,16 @@
 
 StorageWidget::StorageWidget(
     WorkspaceContext& workspaceContext,
+    RemoteReadApplicationServices* remoteReads,
     QWidget* parent)
     : QWidget(parent),
-      m_workspaceContext(workspaceContext)
+      m_workspaceContext(workspaceContext),
+      m_remoteReads(remoteReads)
 {
     auto* layout = new QVBoxLayout(this);
 
     auto* titleLabel = new QLabel("Storage", this);
+    m_statusLabel = new QLabel(this);
 
     m_tree = new QTreeWidget(this);
 
@@ -76,6 +82,7 @@ StorageWidget::StorageWidget(
     buttonLayout->addWidget(m_reactivateButton);
 
     layout->addWidget(titleLabel);
+    layout->addWidget(m_statusLabel);
     layout->addWidget(m_tree);
     layout->addLayout(buttonLayout);
 
@@ -99,15 +106,20 @@ StorageWidget::StorageWidget(
     m_editButton->setEnabled(false);
     m_deactivateButton->setEnabled(false);
     m_reactivateButton->setEnabled(false);
+    if (m_remoteReads) {
+        const QString tooltip = QStringLiteral("Remote Storage changes are not available yet.");
+        for (auto* button : {m_addButton,m_editButton,m_deactivateButton,m_reactivateButton})
+            button->setToolTip(tooltip);
+    }
 
     connect(m_tree, &QTreeWidget::itemSelectionChanged, this, [this]() {
         QTreeWidgetItem* item = m_tree->currentItem();
         const bool selected = item != nullptr;
         const bool isActive = selected && item->data(0, Qt::UserRole + 2).toBool();
 
-        m_editButton->setEnabled(selected);
-        m_deactivateButton->setEnabled(selected && isActive);
-        m_reactivateButton->setEnabled(selected && !isActive);
+        m_editButton->setEnabled(!m_remoteReads && selected);
+        m_deactivateButton->setEnabled(!m_remoteReads && selected && isActive);
+        m_reactivateButton->setEnabled(!m_remoteReads && selected && !isActive);
     });
 }
 
@@ -120,6 +132,7 @@ void StorageWidget::workspaceChanged(int workspaceId)
 
 void StorageWidget::loadStorageTree()
 {
+    if (m_remoteReads) { loadRemoteStorageTree(); return; }
     m_tree->clear();
 
     m_editButton->setEnabled(false);
@@ -227,8 +240,41 @@ void StorageWidget::loadStorageTree()
     m_tree->expandAll();
 }
 
+void StorageWidget::loadRemoteStorageTree()
+{
+    m_tree->clear(); setMutationControlsEnabled(false);
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    if (workspaceId <= 0) { m_statusLabel->setText(QStringLiteral("Select a Host Workspace.")); return; }
+    if (!m_remoteReads->isAvailableFor(QStringLiteral("storage.list"))) {
+        m_statusLabel->setText(QStringLiteral("BrickSuite Host Storage is unavailable.")); return;
+    }
+    m_statusLabel->setText(QStringLiteral("Loading Storage from BrickSuite Host..."));
+    m_storageRequestTimer.restart();
+    m_storageRequestToken = m_remoteReads->listStorage(workspaceId, true, this,
+        [this,workspaceId](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> result) {
+            if(result.token!=m_storageRequestToken||workspaceId!=m_workspaceContext.currentWorkspaceId())return;
+            if(!result.succeeded()){m_statusLabel->setText(result.message.isEmpty()?QStringLiteral("Unable to load Storage from BrickSuite Host."):result.message);return;}
+            const qint64 roundTripMs=m_storageRequestTimer.isValid()?m_storageRequestTimer.elapsed():0;
+            QElapsedTimer constructionTimer;constructionTimer.start();QHash<qint64,QTreeWidgetItem*> items;
+            for(const auto& location:*result.value){auto* item=new QTreeWidgetItem;
+                item->setText(0,location.active?location.name:QStringLiteral("%1 (Inactive)").arg(location.name));
+                item->setText(1,location.typeName);QStringList uses;if(location.allowsInventory)uses<<QStringLiteral("Inventory");if(location.allowsCollection)uses<<QStringLiteral("Collection");item->setText(2,uses.isEmpty()?QStringLiteral("Hierarchy only"):uses.join(QStringLiteral(" + ")));
+                item->setData(0,Qt::UserRole,QVariant::fromValue<qint64>(location.storageId));item->setData(0,Qt::UserRole+1,QVariant::fromValue<qint64>(location.parentStorageId));item->setData(0,Qt::UserRole+2,location.active);items.insert(location.storageId,item);}
+            for(const auto& location:*result.value){auto* item=items.value(location.storageId);auto* parent=items.value(location.parentStorageId);if(parent)parent->addChild(item);else m_tree->addTopLevelItem(item);}
+            m_tree->expandAll();m_statusLabel->setText(result.value->isEmpty()?QStringLiteral("This Host Workspace has no Storage locations."):QStringLiteral("%1 Storage locations from BrickSuite Host.").arg(result.value->size()));
+            qDebug().noquote()<<"Remote Storage rows="<<result.value->size()<<"roundtripMs="<<roundTripMs<<"hierarchyMs="<<constructionTimer.elapsed();
+        });
+}
+
+void StorageWidget::setMutationControlsEnabled(bool enabled)
+{
+    m_addButton->setEnabled(enabled);m_editButton->setEnabled(false);
+    m_deactivateButton->setEnabled(false);m_reactivateButton->setEnabled(false);
+}
+
 void StorageWidget::addLocation()
 {
+    if (m_remoteReads) return;
     if (!m_workspaceContext.hasCurrentWorkspace())
         return;
 
@@ -370,6 +416,7 @@ void StorageWidget::addLocation()
 
 void StorageWidget::editLocation()
 {
+    if (m_remoteReads) return;
     QTreeWidgetItem* selectedItem = m_tree->currentItem();
 
     if (!selectedItem)
@@ -498,6 +545,7 @@ void StorageWidget::editLocation()
 
 void StorageWidget::deactivateLocation()
 {
+    if (m_remoteReads) return;
     QTreeWidgetItem* selectedItem = m_tree->currentItem();
 
     if (!selectedItem)
@@ -554,6 +602,7 @@ void StorageWidget::deactivateLocation()
 
 void StorageWidget::reactivateLocation()
 {
+    if (m_remoteReads) return;
     QTreeWidgetItem* selectedItem = m_tree->currentItem();
 
     if (!selectedItem)

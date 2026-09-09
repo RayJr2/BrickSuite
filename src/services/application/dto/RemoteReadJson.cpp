@@ -49,14 +49,18 @@ bool fromJson(const QJsonObject& o, RemoteReadDto::WorkspaceSummary* v, DecodeEr
         return fail(e,QStringLiteral("Invalid Workspace summary.")); return true;
 }
 QJsonObject toJson(const RemoteReadDto::StorageSummary& v)
-{ return {{"storageId",double(v.storageId)},{"parentStorageId",double(v.parentStorageId)},{"name",v.name},{"displayPath",v.displayPath},{"active",v.active}}; }
+{ return {{"storageId",double(v.storageId)},{"parentStorageId",double(v.parentStorageId)},{"name",v.name},{"displayPath",v.displayPath},{"typeName",v.typeName},{"sortOrder",v.sortOrder},{"active",v.active},{"allowsInventory",v.allowsInventory},{"allowsCollection",v.allowsCollection}}; }
 bool fromJson(const QJsonObject& o, RemoteReadDto::StorageSummary* v, DecodeError* e)
 {
+    qint64 order = 0;
     if (!integer(o,"storageId",1,9007199254740991LL,&v->storageId)
         || !integer(o,"parentStorageId",0,9007199254740991LL,&v->parentStorageId)
         || !textField(o,"name",&v->name) || !textField(o,"displayPath",&v->displayPath,false)
-        || !o.value("active").isBool()) return fail(e,QStringLiteral("Invalid Storage summary."));
-    v->active=o.value("active").toBool(); return true;
+        || !textField(o,"typeName",&v->typeName,false) || !integer(o,"sortOrder",INT_MIN,INT_MAX,&order)
+        || !o.value("active").isBool() || !o.value("allowsInventory").isBool()
+        || !o.value("allowsCollection").isBool()) return fail(e,QStringLiteral("Invalid Storage summary."));
+    v->sortOrder=int(order); v->active=o.value("active").toBool();
+    v->allowsInventory=o.value("allowsInventory").toBool(); v->allowsCollection=o.value("allowsCollection").toBool(); return true;
 }
 QJsonObject toJson(const RemoteReadDto::InventoryRow& v)
 { return {{"inventoryRecordId",double(v.inventoryRecordId)},{"workspaceId",double(v.workspaceId)},{"partNumber",v.partNumber},{"partNameFallback",v.partNameFallback},{"rebrickableCategoryId",v.rebrickableCategoryId},{"rebrickableColorId",v.rebrickableColorId},{"colorNameFallback",v.colorNameFallback},{"quantity",v.quantity},{"storageId",double(v.storageId)},{"storagePath",v.storagePath},{"manufacturerDisplay",v.manufacturerDisplay},{"condition",v.condition},{"ownershipType",v.ownershipType}}; }

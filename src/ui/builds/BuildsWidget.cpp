@@ -19,6 +19,7 @@
  */
 
 #include "BuildsWidget.h"
+#include "BuildActionEligibility.h"
 
 #include "../../settings/UserSettings.h"
 
@@ -1311,6 +1312,9 @@ void BuildsWidget::renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& 
             ? QStringLiteral("Complete Set") : QStringLiteral("Build from Stock");
         auto* nameItem = new QTableWidgetItem(build.name);
         nameItem->setData(Qt::UserRole, build.buildId);
+        nameItem->setData(Qt::UserRole + 1, build.inventoryMode);
+        nameItem->setData(Qt::UserRole + 2, build.status);
+        nameItem->setData(Qt::UserRole + 3, build.active);
         m_buildsTable->setItem(row, 0, new QTableWidgetItem(build.buildType));
         m_buildsTable->setItem(row, 1, new QTableWidgetItem(reference));
         m_buildsTable->setItem(row, 2, new QTableWidgetItem(mode));
@@ -1327,7 +1331,9 @@ void BuildsWidget::renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& 
         actions->addItem("Actions...", QString());
         if (m_remoteReads->isAvailableFor(QStringLiteral("builds.get")))
             actions->addItem("View Details...", "details");
-        if (m_remoteReads->isAvailableFor(QStringLiteral("builds.pulling")))
+        if (BuildActionEligibility::supportsStockFulfillment(
+                build.active, build.inventoryMode, build.status)
+            && m_remoteReads->isAvailableFor(QStringLiteral("builds.pulling")))
             actions->addItem("View Pulling...", "pulling");
         actions->setToolTip("Remote Builds are read-only. Build changes are not available yet.");
         connect(actions, &QComboBox::currentIndexChanged, this,
@@ -2646,6 +2652,21 @@ void BuildsWidget::updateRequirementUiState()
         m_workspaceContext.hasCurrentWorkspace() && m_selectedBuildId > 0;
 
     if (m_remoteMode) {
+        bool supportsStockFulfillment = false;
+        const int selectedRow = m_buildsTable->currentRow();
+
+        if (enabled && selectedRow >= 0) {
+            const QTableWidgetItem* nameItem = m_buildsTable->item(selectedRow, 4);
+
+            if (nameItem) {
+                supportsStockFulfillment =
+                    BuildActionEligibility::supportsStockFulfillment(
+                        nameItem->data(Qt::UserRole + 3).toBool(),
+                        nameItem->data(Qt::UserRole + 1).toString(),
+                        nameItem->data(Qt::UserRole + 2).toString());
+            }
+        }
+
         m_partNumberEdit->setEnabled(false);
         m_colorCombo->setEnabled(false);
         m_quantitySpin->setEnabled(false);
@@ -2657,10 +2678,10 @@ void BuildsWidget::updateRequirementUiState()
         m_allocateAvailableButton->setEnabled(false);
         m_exportPullListButton->setEnabled(false);
         m_importPullListButton->setEnabled(false);
-        m_interactivePullButton->setEnabled(enabled && m_remoteReads
+        m_interactivePullButton->setEnabled(supportsStockFulfillment && m_remoteReads
             && m_remoteReads->isAvailableFor(QStringLiteral("builds.pulling")));
         m_interactivePullButton->setText("View Pulling...");
-        m_exportMissingPartsButton->setEnabled(enabled && m_remoteReads
+        m_exportMissingPartsButton->setEnabled(supportsStockFulfillment && m_remoteReads
             && m_remoteReads->isAvailableFor(QStringLiteral("builds.missingParts")));
         m_exportMissingPartsButton->setText("Export Missing Parts CSV");
         m_procureMissingPartsButton->setEnabled(false);
@@ -2719,6 +2740,7 @@ void BuildsWidget::updateRequirementUiState()
     bool canLoadSet = false;
     bool canAllocateAvailable = false;
     bool canExportPullList = false;
+    bool canViewPulling = false;
     bool canExportMissingParts = false;
     bool canProcureMissingParts = false;
     bool canImportMoc = false;
@@ -2740,8 +2762,12 @@ void BuildsWidget::updateRequirementUiState()
                 && build->inventoryMode() == "Stock";
 
             canAllocateAvailable = build->inventoryMode() == "Stock";
+            const bool supportsStockFulfillment =
+                BuildActionEligibility::supportsStockFulfillment(
+                    build->isActive(), build->inventoryMode(), build->status());
             canExportPullList = build->inventoryMode() == "Stock";
-            canExportMissingParts = build->inventoryMode() == "Stock";
+            canViewPulling = supportsStockFulfillment;
+            canExportMissingParts = supportsStockFulfillment;
             canProcureMissingParts = build->inventoryMode() == "Stock";
         }
     }
@@ -2749,7 +2775,7 @@ void BuildsWidget::updateRequirementUiState()
     m_allocateAvailableButton->setEnabled(canAllocateAvailable);
     m_exportPullListButton->setEnabled(canExportPullList);
     m_importPullListButton->setEnabled(canExportPullList);
-    m_interactivePullButton->setEnabled(canExportPullList);
+    m_interactivePullButton->setEnabled(canViewPulling);
     m_importMocPartsButton->setEnabled(canImportMoc);
     m_exportMissingPartsButton->setEnabled(canExportMissingParts);
     m_procureMissingPartsButton->setEnabled(canProcureMissingParts);
@@ -3369,7 +3395,7 @@ void BuildsWidget::exportMissingParts()
         m_remoteReads->getBuild(workspaceId, buildId, this,
             [this, workspaceId, buildId](AsyncReadResult<RemoteReadDto::BuildDetail> buildResult) {
                 if (!buildResult.succeeded()) {
-                    m_exportMissingPartsButton->setEnabled(true);
+                    updateRequirementUiState();
                     QMessageBox::critical(this, "Export Missing Parts", buildResult.message);
                     return;
                 }
@@ -3382,7 +3408,7 @@ void BuildsWidget::exportMissingParts()
                         [this, workspaceId, buildId, build, rows, requestPage](
                             AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::MissingPart>> result) {
                             if (!result.succeeded()) {
-                                m_exportMissingPartsButton->setEnabled(true);
+                                updateRequirementUiState();
                                 QMessageBox::critical(this, "Export Missing Parts", result.message);
                                 return;
                             }
@@ -3391,7 +3417,7 @@ void BuildsWidget::exportMissingParts()
                                 (*requestPage)(result.value->page + 1);
                                 return;
                             }
-                            m_exportMissingPartsButton->setEnabled(true);
+                            updateRequirementUiState();
                             if (rows->isEmpty()) {
                                 QMessageBox::information(this, "Export Missing Parts",
                                                          "This Build currently has no missing non-spare parts.");

@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include "RepositoryConnection.h"
 #include "../models/StorageLocationType.h"
 
 #include <QList>
@@ -27,9 +28,12 @@
 
 class QSqlQuery;
 
-class StorageLocationTypeRepository
+class StorageLocationTypeRepository : protected RepositoryConnection
 {
 public:
+    StorageLocationTypeRepository() = default;
+    explicit StorageLocationTypeRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
     QList<StorageLocationType> getAll() const;
 
     QList<StorageLocationType> getActive() const;

@@ -1,16 +1,20 @@
 #include "HostReadExecutor.h"
 
 #include "../../repositories/StorageLocationRepository.h"
+#include "../../repositories/StorageLocationTypeRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/PartCategoryRepository.h"
 #include "../parts/PartReferenceManifest.h"
 
 #include <QElapsedTimer>
+#include <QHash>
 #include <QDateTime>
 #include <QPointer>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QSet>
+#include <QStringList>
 #include <QUuid>
 
 class HostReadExecutor::Worker : public QObject
@@ -166,6 +170,28 @@ void HostReadExecutor::getWorkspace(int id, QObject* context,
 void HostReadExecutor::listStorage(int workspaceId, QObject* context,
     std::function<void(const QList<StorageLocation>&)> completion, ErrorCallback failure)
 { HOST_READ_METHOD_BODY("storage.list", StorageLocationRepository(database).getByWorkspace(workspaceId), QList<StorageLocation>); }
+void HostReadExecutor::listStoragePortable(int workspaceId, bool includeInactive, QObject* context,
+    std::function<void(const std::optional<QList<RemoteReadDto::StorageSummary>>&)> completion,
+    ErrorCallback failure)
+{
+    QPointer<QObject> guard(context);
+    enqueue(QStringLiteral("storage.list"), [=, completion=std::move(completion)]
+        (ApplicationServices& services, const QSqlDatabase& database) mutable {
+        if (!services.workspaces().exists(workspaceId)) {
+            if (guard) QMetaObject::invokeMethod(guard, [guard,completion]() { if(guard) completion(std::nullopt); }, Qt::QueuedConnection);
+            return;
+        }
+        StorageLocationRepository locations(database); StorageLocationTypeRepository types(database);
+        const auto rows = includeInactive ? locations.getByWorkspaceIncludingInactive(workspaceId)
+                                          : locations.getByWorkspace(workspaceId);
+        QHash<int,QString> typeNames; for (const auto& type : types.getAll()) typeNames.insert(type.id(),type.name());
+        QHash<int,StorageLocation> byId; for(const auto& row:rows) byId.insert(row.id(),row);
+        QList<RemoteReadDto::StorageSummary> result;
+        for(const auto& row:rows){QStringList names;QSet<int>seen;int id=row.id();while(id>0&&byId.contains(id)&&!seen.contains(id)){seen.insert(id);names.prepend(byId[id].name());id=byId[id].parentLocationId();}
+            result.append({row.id(),row.parentLocationId(),row.name(),names.join(QStringLiteral(" / ")),typeNames.value(row.locationTypeId()),row.sortOrder(),row.isActive(),row.allowsInventory(),row.allowsCollection()});}
+        if(guard)QMetaObject::invokeMethod(guard,[guard,completion,result=std::move(result)]()mutable{if(guard)completion(result);},Qt::QueuedConnection);
+    }, context, std::move(failure));
+}
 void HostReadExecutor::searchInventory(const InventorySearchCriteria& criteria, QObject* context,
     std::function<void(const InventoryApplicationService::Page&)> completion, ErrorCallback failure)
 { HOST_READ_METHOD_BODY("inventory.search", services.inventory().search(criteria), InventoryApplicationService::Page); }

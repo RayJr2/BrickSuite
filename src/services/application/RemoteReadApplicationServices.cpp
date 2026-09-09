@@ -85,11 +85,17 @@ ReadRequestToken RemoteReadApplicationServices::listWorkspaces(QObject* context,
 
 ReadRequestToken RemoteReadApplicationServices::listStorage(qint64 workspaceId, QObject* context,
     AsyncReadCompletion<QList<RemoteReadDto::StorageSummary>> completion)
+{ return listStorage(workspaceId, false, context, std::move(completion)); }
+
+ReadRequestToken RemoteReadApplicationServices::listStorage(qint64 workspaceId, bool includeInactive, QObject* context,
+    AsyncReadCompletion<QList<RemoteReadDto::StorageSummary>> completion)
 {
+    QJsonObject payload{{"workspaceId",double(workspaceId)}};
+    if (includeInactive) payload.insert(QStringLiteral("includeInactive"), true);
     return request<QList<RemoteReadDto::StorageSummary>>(QStringLiteral("storage.list"),
-        {{"workspaceId",double(workspaceId)}}, context, std::move(completion),
+        payload, context, std::move(completion),
         [](const QJsonObject& o, auto* out, QString* error) {
-            const QJsonValue rows=o.value("rows"); if(!rows.isArray() || rows.toArray().size()>RemoteReadDto::MaximumPageSize)return false;
+            const QJsonValue rows=o.value("rows"); if(!rows.isArray() || rows.toArray().size()>RemoteReadDto::MaximumStorageLocations)return false;
             for(const auto& v:rows.toArray()){RemoteReadDto::StorageSummary row;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&row,&e)){if(error)*error=e.message;return false;}out->append(row);}return true;
         });
 }

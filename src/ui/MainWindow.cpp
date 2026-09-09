@@ -165,7 +165,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     QWidget* workspaceTab = createWorkspaceTab();
 
     // Storage tab
-    m_storageWidget = new StorageWidget(m_workspaceContext, m_tabWidget);
+    m_storageWidget = new StorageWidget(m_workspaceContext, m_remoteReads, m_tabWidget);
 
     // Parts Catalog tab
     m_partsCatalogWidget = new PartsCatalogWidget(m_partExternalIdEnrichmentService, m_tabWidget);
@@ -423,13 +423,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     m_tabWidget->addTab(m_buildsWidget, "Builds");
 
     const ApplicationServiceStatus sharedStatus = m_applicationServices.sharedStatus();
-    if (!sharedStatus.isAvailable()) {
-        m_storageWidget->setEnabled(false);
-        m_storageWidget->setToolTip(sharedStatus.message);
-        const int storageIndex = m_tabWidget->indexOf(m_storageWidget);
-        if (storageIndex >= 0)
-            m_tabWidget->setTabText(storageIndex, "Storage (Host unavailable)");
-    }
+    Q_UNUSED(sharedStatus);
 
     connect(m_storageWidget, &StorageWidget::storageLocationsChanged,
             m_myCollectionWidget, &MyCollectionWidget::refresh);

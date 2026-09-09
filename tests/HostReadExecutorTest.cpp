@@ -92,10 +92,13 @@ bool seedDatabase(const QString& path, const QString& workspaceName)
         execute(QStringLiteral("INSERT INTO part(part_number,name,part_category_id,rebrickable_part_id,is_active,created_utc,modified_utc,material) SELECT '3001','Host Brick',id,'3001',1,'%1','%1','Plastic' FROM part_category WHERE rebrickable_id=11").arg(now));
         execute(QStringLiteral("INSERT INTO color(name,rgb,is_transparent,rebrickable_id,created_utc,modified_utc) VALUES('Host Red','C91A09',0,4,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) VALUES(1,NULL,1,'Host Bin','',0,1,1,1,'%1','%1')").arg(now));
-        execute(QStringLiteral("INSERT INTO inventory_record(workspace_id,part_id,color_id,storage_location_id,manufacturer_id,condition,ownership_type,quantity,created_utc,modified_utc) SELECT 1,p.id,c.id,s.id,1,'Used','Owned',7,'%1','%1' FROM part p,color c,storage_location s WHERE p.part_number='3001' AND c.rebrickable_id=4").arg(now));
+        execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) SELECT 1,id,2,'Inactive Child','',5,0,0,1,'%1','%1' FROM storage_location WHERE name='Host Bin'").arg(now));
+        execute(QStringLiteral("INSERT INTO workspace(name,description,created_utc,modified_utc,is_active) VALUES('Other Workspace','','%1','%1',1)").arg(now));
+        execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) SELECT id,NULL,1,'Other Storage','',0,1,1,0,'%1','%1' FROM workspace WHERE name='Other Workspace'").arg(now));
+        execute(QStringLiteral("INSERT INTO inventory_record(workspace_id,part_id,color_id,storage_location_id,manufacturer_id,condition,ownership_type,quantity,created_utc,modified_utc) SELECT 1,p.id,c.id,s.id,1,'Used','Owned',7,'%1','%1' FROM part p,color c,storage_location s WHERE p.part_number='3001' AND c.rebrickable_id=4 AND s.name='Host Bin'").arg(now));
         execute(QStringLiteral("INSERT INTO inventory_movement(workspace_id,inventory_record_id,part_id,color_id,movement_type,quantity_change,to_storage_location_id,condition,ownership_type,reference_type,reference_id,notes,created_utc) SELECT 1,i.id,i.part_id,i.color_id,'Add',7,i.storage_location_id,'Used','Owned','Test','seed','Host history','%1' FROM inventory_record i").arg(now));
         execute(QStringLiteral("INSERT INTO build(workspace_id,build_type,name,set_number,inventory_mode,status,is_active,created_utc,modified_utc) VALUES(1,'MOC','Host Build','MOC-HOST','Stock','Planned',1,'%1','%1')").arg(now));
-        execute(QStringLiteral("INSERT INTO collection_item(workspace_id,item_type,state,condition,completeness,storage_location_id,source_build_id,nickname,notes,allow_parts_source,is_active,created_utc,modified_utc) SELECT 1,'MOC','Assembled','Used','Complete',s.id,b.id,'Host Collection','Host notes',0,1,'%1','%1' FROM storage_location s,build b WHERE b.name='Host Build'").arg(now));
+        execute(QStringLiteral("INSERT INTO collection_item(workspace_id,item_type,state,condition,completeness,storage_location_id,source_build_id,nickname,notes,allow_parts_source,is_active,created_utc,modified_utc) SELECT 1,'MOC','Assembled','Used','Complete',s.id,b.id,'Host Collection','Host notes',0,1,'%1','%1' FROM storage_location s,build b WHERE b.name='Host Build' AND s.name='Host Bin'").arg(now));
         execute(QStringLiteral("INSERT INTO build_requirement(build_id,part_id,color_id,quantity_required,quantity_pulled,quantity_released,is_spare,created_utc,modified_utc) SELECT b.id,p.id,c.id,10,0,0,0,'%1','%1' FROM build b,part p,color c WHERE b.name='Host Build' AND p.part_number='3001' AND c.rebrickable_id=4").arg(now));
         execute(QStringLiteral("INSERT INTO build_allocation(build_id,build_requirement_id,inventory_record_id,part_id,color_id,storage_location_id,quantity_allocated,created_utc,modified_utc) SELECT b.id,r.id,i.id,i.part_id,i.color_id,i.storage_location_id,3,'%1','%1' FROM build b JOIN build_requirement r ON r.build_id=b.id CROSS JOIN inventory_record i WHERE b.name='Host Build'").arg(now));
         database.close();
@@ -136,9 +139,29 @@ int main(int argc, char** argv)
                 workspaces = result; loop.quit();
             }, [&](const QString& error) { failure = error; loop.quit(); });
         }), "Workspace read completion");
-        ok &= check(failure.isEmpty() && workspaces.size() == 1
+        ok &= check(failure.isEmpty() && workspaces.size() == 2
                         && workspaces.first().name() == QStringLiteral("Host Workspace"),
                     "worker uses Host database, never poison default database");
+        std::optional<QList<RemoteReadDto::StorageSummary>> activeStorage;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.listStoragePortable(1, false, &app, [&](const auto& result) { activeStorage=result; loop.quit(); });
+        }), "active Storage read completion");
+        ok &= check(activeStorage && activeStorage->size()==1
+                        && activeStorage->first().name==QStringLiteral("Host Bin")
+                        && activeStorage->first().allowsInventory && activeStorage->first().allowsCollection,
+                    "active Storage portable projection");
+        std::optional<QList<RemoteReadDto::StorageSummary>> fullStorage;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.listStoragePortable(1, true, &app, [&](const auto& result) { fullStorage=result; loop.quit(); });
+        }), "complete Storage read completion");
+        ok &= check(fullStorage && fullStorage->size()==2
+                        && fullStorage->last().parentStorageId==fullStorage->first().storageId
+                        && !fullStorage->last().active && fullStorage->last().typeName.size()>0,
+                    "complete Storage hierarchy fidelity");
+        std::optional<QList<RemoteReadDto::StorageSummary>> missingStorage = QList<RemoteReadDto::StorageSummary>{};
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.listStoragePortable(999, true, &app, [&](const auto& result) { missingStorage=result; loop.quit(); });
+        }) && !missingStorage, "unknown Workspace Storage rejected");
 
         InventorySearchCriteria inventoryCriteria;
         inventoryCriteria.workspaceId = workspaces.first().id();

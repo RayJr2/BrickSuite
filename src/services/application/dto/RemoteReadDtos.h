@@ -7,6 +7,7 @@
 namespace RemoteReadDto {
 
 constexpr int MaximumPageSize = 500;
+constexpr int MaximumStorageLocations = 10000;
 constexpr int MaximumTextLength = 512;
 
 struct PageRequest { int page = 1; int pageSize = 250; };
@@ -16,7 +17,11 @@ template <typename T> struct Page {
 };
 
 struct WorkspaceSummary { qint64 workspaceId = 0; QString name; };
-struct StorageSummary { qint64 storageId = 0; qint64 parentStorageId = 0; QString name; QString displayPath; bool active = true; };
+struct StorageSummary {
+    qint64 storageId = 0; qint64 parentStorageId = 0; QString name;
+    QString displayPath; QString typeName; int sortOrder = 0;
+    bool active = true; bool allowsInventory = true; bool allowsCollection = false;
+};
 
 struct InventorySearchRequest {
     qint64 workspaceId = 0; QString text; qint64 storageId = 0;
