@@ -3,6 +3,7 @@
 #include "BrickSuiteAuthentication.h"
 #include "BrickSuiteWebSocketClient.h"
 #include "BrickSuiteWebSocketServer.h"
+#include "RemoteSessionState.h"
 #include "../database/DatabaseManager.h"
 #include "../services/application/HostReadProtocolService.h"
 #include "../services/application/RemoteReadApplicationServices.h"
@@ -21,7 +22,9 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     , m_server(new BrickSuiteWebSocketServer(this))
     , m_client(new BrickSuiteWebSocketClient(this))
 {
-    m_remoteReads = std::make_unique<RemoteReadApplicationServices>(*m_client, this);
+    m_remoteSession = std::make_unique<RemoteSessionState>(this);
+    m_remoteReads = std::make_unique<RemoteReadApplicationServices>(*m_client,
+                                                                     m_remoteSession.get(), this);
     m_hostReads = std::make_unique<HostReadProtocolService>(
         DatabaseManager::instance().databasePath(), this);
     m_hostReads->registerOperations(m_server->operationDispatcher());
@@ -29,6 +32,10 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
             this, &BrickSuiteNetworkManager::statusChanged);
     connect(m_client, &BrickSuiteWebSocketClient::statusChanged,
             this, [this](const BrickSuiteConnectionStatus&) { emit statusChanged(); });
+    connect(m_client, &BrickSuiteWebSocketClient::authenticatedSessionEstablished,
+            m_remoteSession.get(), &RemoteSessionState::authenticated);
+    connect(m_client, &BrickSuiteWebSocketClient::authenticatedSessionLost,
+            m_remoteSession.get(), &RemoteSessionState::disconnected);
 }
 
 BrickSuiteNetworkManager::~BrickSuiteNetworkManager() { stop(); }
@@ -99,6 +106,8 @@ BrickSuiteWebSocketServer* BrickSuiteNetworkManager::server() const { return m_s
 BrickSuiteWebSocketClient* BrickSuiteNetworkManager::client() const { return m_client; }
 RemoteReadApplicationServices* BrickSuiteNetworkManager::remoteReads() const
 { return m_remoteReads.get(); }
+RemoteSessionState* BrickSuiteNetworkManager::remoteSession() const
+{ return m_remoteSession.get(); }
 BrickSuiteConnectionStatus BrickSuiteNetworkManager::connectionStatus() const { return m_client->status(); }
 
 QString BrickSuiteNetworkManager::serverStatusText() const

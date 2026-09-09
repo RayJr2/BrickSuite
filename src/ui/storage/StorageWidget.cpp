@@ -130,6 +130,23 @@ void StorageWidget::workspaceChanged(int workspaceId)
     loadStorageTree();
 }
 
+void StorageWidget::refresh()
+{
+    loadStorageTree();
+}
+
+void StorageWidget::setRemoteSessionConnected(bool connected)
+{
+    if (!m_remoteReads) return;
+    setMutationControlsEnabled(false);
+    if (!connected) {
+        ++m_storageRequestToken;
+        m_statusLabel->setText(m_tree->topLevelItemCount() > 0
+            ? QStringLiteral("Host disconnected; displayed Storage may be stale.")
+            : QStringLiteral("BrickSuite Host Storage is unavailable."));
+    }
+}
+
 void StorageWidget::loadStorageTree()
 {
     if (m_remoteReads) { loadRemoteStorageTree(); return; }

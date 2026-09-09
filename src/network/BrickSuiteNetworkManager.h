@@ -9,6 +9,7 @@ class BrickSuiteWebSocketClient;
 class BrickSuiteWebSocketServer;
 class HostReadProtocolService;
 class RemoteReadApplicationServices;
+class RemoteSessionState;
 
 class BrickSuiteNetworkManager : public QObject
 {
@@ -23,6 +24,7 @@ public:
     BrickSuiteWebSocketServer* server() const;
     BrickSuiteWebSocketClient* client() const;
     RemoteReadApplicationServices* remoteReads() const;
+    RemoteSessionState* remoteSession() const;
     BrickSuiteConnectionStatus connectionStatus() const;
     QString serverStatusText() const;
     QString generateOrRotateHostToken(QString* error = nullptr);
@@ -38,4 +40,5 @@ private:
     QString m_serverError;
     std::unique_ptr<HostReadProtocolService> m_hostReads;
     std::unique_ptr<RemoteReadApplicationServices> m_remoteReads;
+    std::unique_ptr<RemoteSessionState> m_remoteSession;
 };

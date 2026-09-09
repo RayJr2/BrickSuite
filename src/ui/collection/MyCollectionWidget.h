@@ -24,6 +24,7 @@ public:
                                 QWidget* parent = nullptr);
     void refresh();
     void selectCollectionItem(int collectionItemId);
+    void setRemoteSessionConnected(bool connected);
 
 private:
     void loadLocations();

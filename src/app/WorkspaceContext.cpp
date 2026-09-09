@@ -34,6 +34,11 @@ bool WorkspaceContext::hasCurrentWorkspace() const
     return m_currentWorkspaceId > 0;
 }
 
+quint64 WorkspaceContext::generation() const
+{
+    return m_generation;
+}
+
 void WorkspaceContext::setCurrentWorkspaceId(int workspaceId)
 {
     if (m_currentWorkspaceId == workspaceId)
@@ -41,7 +46,10 @@ void WorkspaceContext::setCurrentWorkspaceId(int workspaceId)
 
     m_currentWorkspaceId = workspaceId;
 
+    ++m_generation;
+
     emit currentWorkspaceChanged(m_currentWorkspaceId);
+    emit generationChanged(m_generation, m_currentWorkspaceId);
 }
 
 void WorkspaceContext::clearCurrentWorkspace()

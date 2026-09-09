@@ -535,6 +535,23 @@ void BuildsWidget::refresh()
     updateRequirementUiState();
 }
 
+void BuildsWidget::setRemoteSessionConnected(bool connected)
+{
+    if (!m_remoteMode) return;
+    if (!connected) {
+        ++m_buildListGeneration;
+        ++m_requirementGeneration;
+        m_statusLabel->setText(m_buildsTable->rowCount() > 0
+            ? QStringLiteral("Host disconnected; displayed Builds may be stale.")
+            : QStringLiteral("BrickSuite Host Builds are unavailable."));
+        m_requirementsLabel->setText(m_requirementsTable->rowCount() > 0
+            ? QStringLiteral("Host disconnected; displayed requirements may be stale.")
+            : QStringLiteral("Build requirements are unavailable from this Host."));
+    }
+    m_showArchivedBuildsCheck->setEnabled(connected);
+    updateUiState();
+}
+
 void BuildsWidget::reloadManufacturers()
 {
     const int selectedId = m_manufacturerCombo->currentData().toInt();

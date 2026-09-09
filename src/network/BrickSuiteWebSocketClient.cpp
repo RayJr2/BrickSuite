@@ -88,6 +88,11 @@ void BrickSuiteWebSocketClient::disconnectFromHost()
     m_explicitDisconnect = true;
     m_reconnectTimer.stop();
     failPending(QStringLiteral("TIMEOUT"), QStringLiteral("The Host connection closed."), true);
+    if (m_authenticated) {
+        m_authenticated = false;
+        m_capabilities = {};
+        emit authenticatedSessionLost();
+    }
     m_socket.close(QWebSocketProtocol::CloseCodeNormal, QStringLiteral("Client disconnect."));
     setStatus(BrickSuiteConnectionState::Disconnected, QStringLiteral("Disconnected."));
 }
@@ -169,6 +174,11 @@ void BrickSuiteWebSocketClient::handleConnected()
 void BrickSuiteWebSocketClient::handleDisconnected()
 {
     failPending(QStringLiteral("TIMEOUT"), QStringLiteral("The Host connection was interrupted."), true);
+    if (m_authenticated) {
+        m_authenticated = false;
+        m_capabilities = {};
+        emit authenticatedSessionLost();
+    }
     if (!m_explicitDisconnect && m_reconnectAutomatically
         && m_status.state != BrickSuiteConnectionState::HostIdentityMismatch
         && m_status.state != BrickSuiteConnectionState::AuthenticationFailed
@@ -271,6 +281,9 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
     } else if (operation == QStringLiteral("system.capabilities")) {
         m_capabilities = message.payload;
         m_reconnectAttempt = 0;
+        const QSslCertificate certificate = m_socket.sslConfiguration().peerCertificate();
+        m_presentedFingerprint = BrickSuiteHostIdentity::fingerprint(certificate);
+        m_authenticated = true;
         setStatus(BrickSuiteConnectionState::ConnectedAuthenticated,
                   QStringLiteral("Connected and authenticated to BrickSuite %1 — protocol %2.%3")
                       .arg(message.payload.value(QStringLiteral("brickSuiteVersion")).toString())
@@ -278,6 +291,7 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
                       .arg(message.payload.value(QStringLiteral("protocolMinor")).toInt()));
         qInfo() << "BrickSuite Host secure connection and authentication completed in"
                 << m_connectTimer.elapsed() << "ms.";
+        emit authenticatedSessionEstablished(m_presentedFingerprint);
         emit testConnectionCompleted(true, m_status.message);
     }
 }

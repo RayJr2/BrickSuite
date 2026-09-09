@@ -38,6 +38,8 @@ public:
         WorkspaceContext& workspaceContext,
         RemoteReadApplicationServices* remoteReads = nullptr,
         QWidget* parent = nullptr);
+    void refresh();
+    void setRemoteSessionConnected(bool connected);
 
 signals:
     void storageLocationsChanged();

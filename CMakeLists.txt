@@ -63,6 +63,8 @@ qt_add_executable(BrickSuite
     src/network/BrickSuiteWebSocketClient.cpp
     src/network/BrickSuiteNetworkManager.h
     src/network/BrickSuiteNetworkManager.cpp
+    src/network/RemoteSessionState.h
+    src/network/RemoteSessionState.cpp
 
     src/database/DatabaseManager.h
     src/database/DatabaseManager.cpp
@@ -1101,6 +1103,7 @@ if(BUILD_TESTING)
         src/services/application/HostReadExecutor.h src/services/application/HostReadExecutor.cpp
         src/services/application/HostReadProtocolService.h src/services/application/HostReadProtocolService.cpp
         src/services/application/RemoteReadApplicationServices.h src/services/application/RemoteReadApplicationServices.cpp
+        src/network/RemoteSessionState.h src/network/RemoteSessionState.cpp
         src/services/application/AsyncReadResult.h
         src/services/application/dto/RemoteReadDtos.h
         src/services/application/dto/RemoteReadJson.h src/services/application/dto/RemoteReadJson.cpp
@@ -1138,6 +1141,16 @@ if(BUILD_TESTING)
         BRICKSUITE_VERSION="${PROJECT_VERSION}")
     target_link_libraries(RemoteReadFoundationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME RemoteReadFoundation COMMAND RemoteReadFoundationTest)
+
+    qt_add_executable(RemoteSessionStateTest EXCLUDE_FROM_ALL
+        tests/RemoteSessionStateTest.cpp
+        src/network/RemoteSessionState.h
+        src/network/RemoteSessionState.cpp
+        src/app/WorkspaceContext.h
+        src/app/WorkspaceContext.cpp
+    )
+    target_link_libraries(RemoteSessionStateTest PRIVATE Qt6::Core)
+    add_test(NAME RemoteSessionState COMMAND RemoteSessionStateTest)
 endif()
 
 if(WIN32)

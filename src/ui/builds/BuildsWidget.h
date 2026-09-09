@@ -60,6 +60,7 @@ public:
     void refresh();
     void selectBuild(int buildId);
     void reloadManufacturers();
+    void setRemoteSessionConnected(bool connected);
 
 signals:
     void collectionItemRequested(int collectionItemId);

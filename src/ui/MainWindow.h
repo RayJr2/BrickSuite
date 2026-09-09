@@ -73,6 +73,8 @@ private slots:
 private:
     void loadWorkspaces();
     void loadRemoteWorkspaces();
+    void setRemoteSurfacesConnected(bool connected);
+    void refreshRemoteSurfaces();
     QString remoteHostIdentity() const;
     QWidget* createWorkspaceTab();
     void initializeProviderStatuses();
@@ -84,6 +86,7 @@ private:
     BrickSuiteNetworkManager& m_networkManager;
     RemoteReadApplicationServices* m_remoteReads = nullptr;
     quint64 m_workspaceRequestToken = 0;
+    bool m_refreshAfterWorkspaceReload = false;
 
     QTabWidget* m_tabWidget = nullptr;
 

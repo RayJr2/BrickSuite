@@ -2,13 +2,14 @@
 
 #include "dto/RemoteReadJson.h"
 #include "../../network/BrickSuiteWebSocketClient.h"
+#include "../../network/RemoteSessionState.h"
 
 #include <QJsonArray>
 #include <QTimer>
 
 RemoteReadApplicationServices::RemoteReadApplicationServices(
-    BrickSuiteWebSocketClient& client, QObject* parent)
-    : QObject(parent), m_client(client) {}
+    BrickSuiteWebSocketClient& client, RemoteSessionState* session, QObject* parent)
+    : QObject(parent), m_client(client), m_session(session) {}
 
 bool RemoteReadApplicationServices::isAvailableFor(const QString& operation) const
 { return m_client.status().state == BrickSuiteConnectionState::ConnectedAuthenticated
@@ -32,6 +33,8 @@ ReadRequestToken RemoteReadApplicationServices::request(
 {
     const ReadRequestToken token = nextReadRequestToken();
     if (!context) return token;
+    const RemoteSessionState::Snapshot sessionSnapshot = m_session
+        ? m_session->snapshot() : RemoteSessionState::Snapshot{};
     if (m_client.status().state != BrickSuiteConnectionState::ConnectedAuthenticated) {
         QTimer::singleShot(0, context, [token, completion = std::move(completion)]() mutable {
             completion(AsyncReadResult<T>::failure(token, AsyncReadError::Unavailable,
@@ -47,7 +50,8 @@ ReadRequestToken RemoteReadApplicationServices::request(
         return token;
     }
     const QString requestId = m_client.sendRequest(operation, payload, context,
-        [token, completion, decoder](const QJsonObject& response) mutable {
+        [this, token, completion, decoder, sessionSnapshot](const QJsonObject& response) mutable {
+            if (m_session && !m_session->accepts(sessionSnapshot)) return;
             T value;
             QString error;
             if (!decoder(response, &value, &error)) {
@@ -56,7 +60,8 @@ ReadRequestToken RemoteReadApplicationServices::request(
                 return;
             }
             completion(AsyncReadResult<T>::success(token, std::move(value)));
-        }, [token, completion](const BrickSuiteProtocol::Error& error) mutable {
+        }, [this, token, completion, sessionSnapshot](const BrickSuiteProtocol::Error& error) mutable {
+            if (m_session && !m_session->accepts(sessionSnapshot)) return;
             completion(AsyncReadResult<T>::failure(token, mapError(error.code), error.message));
         });
     if (requestId.isEmpty()) {

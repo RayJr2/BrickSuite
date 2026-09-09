@@ -63,6 +63,7 @@ public:
     void refresh();
     void settingsChanged();
     void reloadManufacturers();
+    void setRemoteSessionConnected(bool connected);
 
     void updatePartColorImage(const QString& partNumber,
                               int rebrickableColorId,

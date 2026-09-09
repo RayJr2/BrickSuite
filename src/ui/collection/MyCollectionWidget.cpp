@@ -212,6 +212,32 @@ void MyCollectionWidget::refresh()
     loadPage(true);
 }
 
+void MyCollectionWidget::setRemoteSessionConnected(bool connected)
+{
+    if (!m_remoteReads) return;
+    if (!connected) {
+        ++m_collectionRequestToken;
+        ++m_storageRequestToken;
+        ++m_detailRequestToken;
+        m_messageLabel->setText(m_table->rowCount() > 0
+            ? QStringLiteral("Host disconnected; displayed Collection may be stale.")
+            : QStringLiteral("BrickSuite Host Collection is unavailable."));
+    }
+    m_searchButton->setEnabled(connected);
+    m_searchEdit->setEnabled(connected);
+    m_typeCombo->setEnabled(connected);
+    m_stateCombo->setEnabled(connected);
+    m_conditionCombo->setEnabled(connected);
+    m_completenessCombo->setEnabled(connected);
+    m_locationCombo->setEnabled(connected);
+    m_activeCombo->setEnabled(connected);
+    if (connected) updatePaging();
+    else {
+        m_previousButton->setEnabled(false);
+        m_nextButton->setEnabled(false);
+    }
+}
+
 void MyCollectionWidget::selectCollectionItem(int collectionItemId)
 {
     if (m_remoteReads) {

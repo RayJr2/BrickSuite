@@ -7,6 +7,7 @@
 #include <QObject>
 
 class BrickSuiteWebSocketClient;
+class RemoteSessionState;
 
 // Transport-neutral asynchronous contracts used by the remote composition.
 // Widgets are intentionally not converted in M26.4B.
@@ -15,6 +16,7 @@ class RemoteReadApplicationServices : public QObject
     Q_OBJECT
 public:
     explicit RemoteReadApplicationServices(BrickSuiteWebSocketClient& client,
+                                           RemoteSessionState* session = nullptr,
                                            QObject* parent = nullptr);
 
     ReadRequestToken listWorkspaces(QObject* context,
@@ -57,4 +59,5 @@ private:
                              Decoder decoder);
     static AsyncReadError mapError(const QString& code);
     BrickSuiteWebSocketClient& m_client;
+    RemoteSessionState* m_session = nullptr;
 };

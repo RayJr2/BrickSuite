@@ -1315,6 +1315,30 @@ void MyInventoryWidget::refresh()
     searchInventory();
 }
 
+void MyInventoryWidget::setRemoteSessionConnected(bool connected)
+{
+    if (!m_remoteReads) return;
+    if (!connected) {
+        ++m_inventoryRequestToken;
+        ++m_storageRequestToken;
+        setRemoteLoading(false, m_resultsTable->rowCount() > 0
+            ? QStringLiteral("Host disconnected; displayed Inventory may be stale.")
+            : QStringLiteral("BrickSuite Host Inventory is unavailable."));
+        m_searchButton->setEnabled(false);
+        m_searchEdit->setEnabled(false);
+        m_categoryCombo->setEnabled(false);
+        m_colorCombo->setEnabled(false);
+        m_storageCombo->setEnabled(false);
+        m_previousButton->setEnabled(false);
+        m_nextButton->setEnabled(false);
+    } else {
+        m_searchButton->setEnabled(true);
+        m_searchEdit->setEnabled(true);
+        m_categoryCombo->setEnabled(true);
+        m_colorCombo->setEnabled(true);
+    }
+}
+
 void MyInventoryWidget::settingsChanged()
 {
     m_currentPage = 0;

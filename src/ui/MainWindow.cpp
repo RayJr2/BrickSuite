@@ -77,6 +77,8 @@
 #include "../services/application/RemoteReadApplicationServices.h"
 #include "../network/BrickSuiteNetworkManager.h"
 #include "../network/BrickSuiteWebSocketClient.h"
+#include "../network/BrickSuiteHostIdentity.h"
+#include "../network/RemoteSessionState.h"
 
 #include <QAction>
 #include <QApplication>
@@ -148,15 +150,39 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         if (m_applicationServices.sharedDataSource() == SharedDataSource::BrickSuiteHost) {
             const auto status = m_networkManager.connectionStatus();
             statusBar()->showMessage(QStringLiteral("Host: %1").arg(status.message));
-            if (status.state == BrickSuiteConnectionState::ConnectedAuthenticated)
-                loadRemoteWorkspaces();
-            else {
+            if (status.state != BrickSuiteConnectionState::ConnectedAuthenticated) {
                 m_workspaceList->setEnabled(false);
                 if (m_workspaceContext.hasCurrentWorkspace())
                     statusBar()->showMessage(QStringLiteral("Host disconnected; displayed shared data may be stale."));
             }
         }
     });
+
+    if (m_remoteReads) {
+        RemoteSessionState* session = m_networkManager.remoteSession();
+        connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged,
+                session, &RemoteSessionState::setWorkspaceId);
+        connect(session, &RemoteSessionState::authenticatedSessionEstablished,
+                this, [this](bool sameHost) {
+            m_refreshAfterWorkspaceReload = sameHost;
+            if (sameHost && m_partReferenceDialog)
+                m_partReferenceDialog->refreshCustomizations();
+            loadRemoteWorkspaces();
+        });
+        connect(session, &RemoteSessionState::authenticatedSessionLost,
+                this, [this]() { setRemoteSurfacesConnected(false); });
+        connect(session, &RemoteSessionState::operationalStateMustClear,
+                this, [this]() {
+            ++m_workspaceRequestToken;
+            m_refreshAfterWorkspaceReload = false;
+            m_workspaceContext.clearCurrentWorkspace();
+            if (m_partReferenceDialog)
+                m_partReferenceDialog->refreshCustomizations();
+            m_workspaceList->clear();
+            m_workspaceList->addItem(QStringLiteral("Select a Workspace from the new BrickSuite Host."));
+            m_workspaceList->setEnabled(false);
+        });
+    }
 
     m_tabWidget = new QTabWidget(this);
     m_partExternalIdEnrichmentService = new PartExternalIdEnrichmentService(this);
@@ -295,6 +321,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                                       m_tabWidget,
                                       m_remoteReads,
                                       m_partExternalIdEnrichmentService);
+
+    if (m_remoteReads)
+        setRemoteSurfacesConnected(false);
 
     connect(m_setsCatalogWidget,
             &SetsCatalogWidget::createStockBuildRequested,
@@ -2012,8 +2041,28 @@ void MainWindow::loadWorkspaces()
 
 QString MainWindow::remoteHostIdentity() const
 {
-    return UserSettings::instance().brickSuiteHostEndpoint().trimmed().toLower()
-        + QLatin1Char('|') + UserSettings::instance().brickSuiteTrustedFingerprint().trimmed().toLower();
+    if (const RemoteSessionState* session = m_networkManager.remoteSession();
+        session && !session->hostIdentity().isEmpty())
+        return session->hostIdentity();
+    return BrickSuiteHostIdentity::normalizedFingerprint(
+        UserSettings::instance().brickSuiteTrustedFingerprint());
+}
+
+void MainWindow::setRemoteSurfacesConnected(bool connected)
+{
+    if (m_storageWidget) m_storageWidget->setRemoteSessionConnected(connected);
+    if (m_myInventoryWidget) m_myInventoryWidget->setRemoteSessionConnected(connected);
+    if (m_buildsWidget) m_buildsWidget->setRemoteSessionConnected(connected);
+    if (m_myCollectionWidget) m_myCollectionWidget->setRemoteSessionConnected(connected);
+}
+
+void MainWindow::refreshRemoteSurfaces()
+{
+    if (!m_workspaceContext.hasCurrentWorkspace()) return;
+    if (m_storageWidget) m_storageWidget->refresh();
+    if (m_myInventoryWidget) m_myInventoryWidget->refresh();
+    if (m_buildsWidget) m_buildsWidget->refresh();
+    if (m_myCollectionWidget) m_myCollectionWidget->refresh();
 }
 
 void MainWindow::loadRemoteWorkspaces()
@@ -2046,8 +2095,18 @@ void MainWindow::loadRemoteWorkspaces()
                 return;
             }
             const auto rows = *result.value;
+            m_networkManager.remoteSession()->markCurrent();
             const QString identity = remoteHostIdentity();
-            const int rememberedId = UserSettings::instance().rememberedHostWorkspaceId(identity);
+            int rememberedId = UserSettings::instance().rememberedHostWorkspaceId(identity);
+            if (rememberedId <= 0) {
+                const QString legacyIdentity = UserSettings::instance().brickSuiteHostEndpoint().trimmed().toLower()
+                    + QLatin1Char('|') + UserSettings::instance().brickSuiteTrustedFingerprint().trimmed().toLower();
+                rememberedId = UserSettings::instance().rememberedHostWorkspaceId(legacyIdentity);
+                if (rememberedId > 0) {
+                    UserSettings::instance().setRememberedHostWorkspace(identity, rememberedId,
+                        UserSettings::instance().rememberedHostWorkspaceName(legacyIdentity));
+                }
+            }
             QListWidgetItem* rememberedItem = nullptr;
             for (const auto& workspace : rows) {
                 auto* item = new QListWidgetItem(workspace.name, m_workspaceList);
@@ -2061,12 +2120,21 @@ void MainWindow::loadRemoteWorkspaces()
                 m_workspaceList->setEnabled(false);
                 return;
             }
+            setRemoteSurfacesConnected(true);
             m_workspaceList->setEnabled(true);
-            if (rememberedItem) m_workspaceList->setCurrentItem(rememberedItem);
+            if (rememberedItem) {
+                const int previousWorkspaceId = m_workspaceContext.currentWorkspaceId();
+                m_workspaceList->setCurrentItem(rememberedItem);
+                if (m_refreshAfterWorkspaceReload
+                    && previousWorkspaceId == rememberedItem->data(Qt::UserRole).toInt())
+                    refreshRemoteSurfaces();
+                m_refreshAfterWorkspaceReload = false;
+            }
             else {
                 if (rememberedId > 0) UserSettings::instance().clearRememberedHostWorkspace(identity);
                 m_workspaceContext.clearCurrentWorkspace();
                 if (rows.size() == 1) m_workspaceList->setCurrentRow(0);
+                m_refreshAfterWorkspaceReload = false;
             }
         });
 }

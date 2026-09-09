@@ -31,13 +31,16 @@ public:
 
     int currentWorkspaceId() const;
     bool hasCurrentWorkspace() const;
+    quint64 generation() const;
 
     void setCurrentWorkspaceId(int workspaceId);
     void clearCurrentWorkspace();
 
 signals:
     void currentWorkspaceChanged(int workspaceId);
+    void generationChanged(quint64 generation, int workspaceId);
 
 private:
     int m_currentWorkspaceId = 0;
+    quint64 m_generation = 0;
 };

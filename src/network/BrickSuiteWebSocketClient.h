@@ -40,6 +40,8 @@ signals:
     void requestCompleted(const QString& requestId, const QJsonObject& payload);
     void requestFailed(const QString& requestId, const BrickSuiteProtocol::Error& error);
     void testConnectionCompleted(bool success, const QString& message);
+    void authenticatedSessionEstablished(const QString& verifiedFingerprint);
+    void authenticatedSessionLost();
 
 private:
     struct Pending {
@@ -77,6 +79,7 @@ private:
     bool m_explicitDisconnect = true;
     int m_reconnectAttempt = 0;
     QElapsedTimer m_connectTimer;
+    bool m_authenticated = false;
 };
 
 Q_DECLARE_METATYPE(BrickSuiteConnectionStatus)
