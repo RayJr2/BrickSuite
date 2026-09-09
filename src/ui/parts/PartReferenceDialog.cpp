@@ -13,6 +13,8 @@
 #include "../../services/images/PartImageService.h"
 #include "../../services/parts/PartReferenceCustomizationService.h"
 #include "../../services/application/ApplicationServices.h"
+#include "../../services/application/RemoteReadApplicationServices.h"
+#include "../../repositories/PartRepository.h"
 #include "../../settings/UserSettings.h"
 #include "../help/HelpManager.h"
 
@@ -57,8 +59,9 @@ QString viewModeName(bool dimensionGrid)
 } // namespace
 
 PartReferenceDialog::PartReferenceDialog(
-    SharedPartReferenceCustomizationService& customizationService, QWidget* parent)
-    : QDialog(parent), m_customizationService(customizationService)
+    SharedPartReferenceCustomizationService& customizationService,
+    RemoteReadApplicationServices* remoteReads, QWidget* parent)
+    : QDialog(parent), m_customizationService(customizationService), m_remoteReads(remoteReads)
 {
     setWindowTitle(tr("Part Reference"));
     setWindowFlag(Qt::Window, true);
@@ -122,6 +125,37 @@ void PartReferenceDialog::setAddInventoryAvailable(bool available)
 
 void PartReferenceDialog::refreshCustomizations()
 {
+    if (m_remoteReads) {
+        m_effectiveEntries = m_manifest.entries();
+        if (m_contentStack) {
+            m_cardsByPartNumber.clear(); m_pagesByKey.clear(); m_searchPage = nullptr;
+            while (m_contentStack->count() > 0) { QWidget* page=m_contentStack->widget(0); m_contentStack->removeWidget(page); delete page; }
+            showCurrentCatalogPage();
+        }
+        if (!m_remoteReads->isAvailableFor(QStringLiteral("partReference.customizations"))) return;
+        m_customizationRequestToken = m_remoteReads->listPartReferenceCustomizations(this,
+            [this](AsyncReadResult<QList<RemoteReadDto::PartReferenceCustomization>> result) {
+                if (result.token != m_customizationRequestToken || !result.succeeded()) return;
+                QList<PartReferenceEntry> effective = m_manifest.entries();
+                QList<RemoteReadDto::PartReferenceCustomization> rows = *result.value;
+                std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.displayOrder < b.displayOrder; });
+                for (const auto& remote : rows) {
+                    const auto part = PartRepository().getByPartNumber(remote.partNumber);
+                    if (!part || !part->isActive()) continue;
+                    PartReferenceEntry entry; entry.userEntryId = int(remote.customizationId);
+                    entry.partId = part->id(); entry.origin = PartReferenceEntry::Origin::User;
+                    entry.partNumber = part->partNumber(); entry.partName = part->name();
+                    entry.catalog = remote.catalog; entry.section = remote.section;
+                    entry.representativeFor = remote.representativeFor; entry.notes = remote.notes;
+                    effective.insert(qBound(0, remote.displayOrder, effective.size()), entry);
+                }
+                m_effectiveEntries = std::move(effective);
+                m_cardsByPartNumber.clear(); m_pagesByKey.clear(); m_searchPage = nullptr;
+                while (m_contentStack->count() > 0) { QWidget* page=m_contentStack->widget(0); m_contentStack->removeWidget(page); delete page; }
+                showCurrentCatalogPage();
+            });
+        return;
+    }
     QString error;
     m_effectiveEntries = m_customizationService.effectiveEntries(m_manifest, &error);
     if (!error.isEmpty()) qWarning().noquote() << error;
@@ -147,7 +181,7 @@ void PartReferenceDialog::initializeUi()
     auto* mainLayout = new QVBoxLayout(this);
 
     const ApplicationServiceStatus customizationStatus = m_customizationService.status();
-    if (!customizationStatus.isAvailable()) {
+    if (!m_remoteReads && !customizationStatus.isAvailable()) {
         auto* unavailableLabel = new QLabel(
             customizationStatus.message
                 + tr(" Built-in Part Reference entries remain available; shared customizations are unavailable."),
@@ -225,6 +259,12 @@ void PartReferenceDialog::initializeUi()
     m_copyButton->setEnabled(false);
     m_sendButton->setEnabled(false);
     m_removeReferenceButton->setEnabled(false);
+    if (m_remoteReads) {
+        m_addReferenceButton->setEnabled(false);
+        m_removeReferenceButton->setEnabled(false);
+        m_addReferenceButton->setToolTip(tr("Part Reference customizations are read-only when connected to a BrickSuite Host."));
+        m_removeReferenceButton->setToolTip(m_addReferenceButton->toolTip());
+    }
 
     selectedRow->addWidget(m_selectedLabel, 1);
     selectedRow->addWidget(m_copyButton);
@@ -889,7 +929,7 @@ void PartReferenceDialog::selectPart(const QString& partNumber, const QString& p
     const PartReferenceEntry* selected = findEffectiveEntry(m_selectedPartNumber);
     m_selectedUserEntryId = selected ? selected->userEntryId : 0;
     if (m_removeReferenceButton)
-        m_removeReferenceButton->setEnabled(m_selectedUserEntryId > 0);
+        m_removeReferenceButton->setEnabled(!m_remoteReads && m_selectedUserEntryId > 0);
 }
 
 void PartReferenceDialog::setCardSelected(QToolButton* card, bool selected)
@@ -948,6 +988,7 @@ const PartReferenceEntry* PartReferenceDialog::findEffectiveEntry(const QString&
 
 void PartReferenceDialog::addPartToReference()
 {
+    if (m_remoteReads) return;
     const PartReferenceEntry* anchor = findEffectiveEntry(m_selectedPartNumber);
     AddPartReferenceDialog dialog(m_customizationService, 0, anchor, this);
     if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded())
@@ -956,6 +997,7 @@ void PartReferenceDialog::addPartToReference()
 
 void PartReferenceDialog::removeSelectedCustomization()
 {
+    if (m_remoteReads) return;
     if (m_selectedUserEntryId <= 0) return;
     if (QMessageBox::question(this, tr("Remove from Part Reference"),
                               tr("Remove %1 from your Part Reference customizations?\n\n"

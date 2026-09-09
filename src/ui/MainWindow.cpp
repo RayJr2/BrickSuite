@@ -285,6 +285,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     m_myCollectionWidget = new MyCollectionWidget(m_workspaceContext,
                                                    m_applicationServices.collection(),
+                                                   m_remoteReads,
                                                    m_tabWidget);
 
     // Builds tab
@@ -392,6 +393,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             &PartsCatalogWidget::addPartToReferenceRequested,
             this,
             [this](int partId) {
+                if (m_remoteReads) {
+                    QMessageBox::information(this, "Part Reference",
+                        "Part Reference customizations are read-only when connected to a BrickSuite Host.");
+                    return;
+                }
                 AddPartReferenceDialog dialog(
                     m_applicationServices.partReferenceCustomizations(), partId, nullptr, this);
                 if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded()
@@ -772,7 +778,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     connect(partReferenceAction, &QAction::triggered, this, [this]() {
         if (!m_partReferenceDialog) {
             m_partReferenceDialog = new PartReferenceDialog(
-                m_applicationServices.partReferenceCustomizations(), this);
+                m_applicationServices.partReferenceCustomizations(), m_remoteReads, this);
             m_partReferenceDialog->setAddInventoryAvailable(
                 m_myInventoryWidget && m_myInventoryWidget->hasActiveAddInventoryDialog());
 

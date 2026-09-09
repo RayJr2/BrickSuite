@@ -11,6 +11,9 @@
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/collection/CollectionItemService.h"
 #include "../../services/application/ApplicationServices.h"
+#include "../../services/application/RemoteReadApplicationServices.h"
+#include "../../repositories/SetCatalogRepository.h"
+#include "../../repositories/MinifigCatalogRepository.h"
 #include "../../services/images/MinifigImageService.h"
 #include "../../services/images/SetImageService.h"
 #include "../../settings/UserSettings.h"
@@ -53,8 +56,10 @@ QString locationPath(const StorageLocation& location, const QHash<int, StorageLo
 
 MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext,
                                        CollectionApplicationService& collectionService,
+                                       RemoteReadApplicationServices* remoteReads,
                                        QWidget* parent)
-    : QWidget(parent), m_workspaceContext(workspaceContext), m_collectionService(collectionService)
+    : QWidget(parent), m_workspaceContext(workspaceContext), m_collectionService(collectionService),
+      m_remoteReads(remoteReads)
 {
     HelpManager::setContextTopic(this, HelpTopic::MyCollection);
     m_setImages = new SetImageService(this);
@@ -180,6 +185,11 @@ QString MyCollectionWidget::effectiveCriteriaKey() const
 void MyCollectionWidget::refresh()
 {
     m_page = 0;
+    if (m_remoteReads) {
+        loadLocations();
+        loadPage(true);
+        return;
+    }
     const ApplicationServiceStatus serviceStatus = m_collectionService.status();
     if (!serviceStatus.isAvailable()) {
         m_table->setRowCount(0);
@@ -204,6 +214,10 @@ void MyCollectionWidget::refresh()
 
 void MyCollectionWidget::selectCollectionItem(int collectionItemId)
 {
+    if (m_remoteReads) {
+        showRemoteDetails(collectionItemId);
+        return;
+    }
     const auto selected = m_collectionService.getDisplay(collectionItemId);
     if (!selected || selected->item.workspaceId != m_workspaceContext.currentWorkspaceId()) {
         refresh();
@@ -260,6 +274,24 @@ void MyCollectionWidget::loadLocations()
     m_locationCombo->clear();
     m_locationCombo->addItem("All Locations", 0);
     m_locationCombo->addItem("Unassigned", -1);
+    if (m_remoteReads) {
+        const int workspaceId = m_workspaceContext.currentWorkspaceId();
+        m_locationCombo->blockSignals(false);
+        if (workspaceId <= 0 || !m_remoteReads->isAvailableFor(QStringLiteral("storage.list"))) return;
+        m_storageRequestToken = m_remoteReads->listStorage(workspaceId, this,
+            [this, workspaceId, selected](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> result) {
+                if (result.token != m_storageRequestToken
+                    || workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+                const QSignalBlocker blocker(m_locationCombo);
+                m_locationCombo->clear(); m_locationCombo->addItem("All Locations", 0);
+                m_locationCombo->addItem("Unassigned", -1);
+                if (result.succeeded()) for (const auto& location : *result.value)
+                    m_locationCombo->addItem(location.displayPath, QVariant::fromValue<qint64>(location.storageId));
+                const int index = m_locationCombo->findData(selected);
+                if (index >= 0) m_locationCombo->setCurrentIndex(index);
+            });
+        return;
+    }
     const auto locations = StorageLocationRepository().getCollectionHierarchy(
         m_workspaceContext.currentWorkspaceId());
     QHash<int, StorageLocation> byId;
@@ -273,6 +305,13 @@ void MyCollectionWidget::loadLocations()
 
 void MyCollectionWidget::loadPage(bool criteriaChanged, const QString& loadingMessage)
 {
+    if (m_remoteReads) {
+        const QString key = effectiveCriteriaKey();
+        if (criteriaChanged || key != m_loadedCriteriaKey) m_page = 0;
+        m_loadedCriteriaKey = key;
+        requestRemotePage();
+        return;
+    }
     const ApplicationServiceStatus serviceStatus = m_collectionService.status();
     if (!serviceStatus.isAvailable()) {
         m_table->setRowCount(0);
@@ -361,6 +400,10 @@ void MyCollectionWidget::loadPage(bool criteriaChanged, const QString& loadingMe
 
 void MyCollectionWidget::handleAction(int itemId, bool active, const QString& action)
 {
+    if (m_remoteReads) {
+        if (action == "details") showRemoteDetails(itemId);
+        return;
+    }
     if (action == "details") {
         CollectionItemDialog dialog(itemId, this);
         connect(&dialog, &CollectionItemDialog::itemChanged, this, &MyCollectionWidget::refresh);
@@ -377,6 +420,114 @@ void MyCollectionWidget::handleAction(int itemId, bool active, const QString& ac
     if (!result.success) QMessageBox::critical(this, "Update Collection Item", result.message);
     else refresh();
     Q_UNUSED(active);
+}
+
+void MyCollectionWidget::requestRemotePage()
+{
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    if (workspaceId <= 0 || !m_remoteReads->isAvailableFor(QStringLiteral("collection.search"))) {
+        m_messageLabel->setText(QStringLiteral("BrickSuite Host Collection reads are unavailable."));
+        return;
+    }
+    RemoteReadDto::CollectionSearchRequest request;
+    request.workspaceId = workspaceId;
+    request.text = m_searchEdit->text().trimmed();
+    const auto type = static_cast<CollectionItemType>(m_typeCombo->currentData().toInt());
+    const auto state = static_cast<CollectionItemState>(m_stateCombo->currentData().toInt());
+    const auto condition = static_cast<CollectionItemCondition>(m_conditionCombo->currentData().toInt());
+    const auto completeness = static_cast<CollectionItemCompleteness>(m_completenessCombo->currentData().toInt());
+    if (type != CollectionItemType::Invalid) request.type = collectionItemTypeToString(type);
+    if (state != CollectionItemState::Invalid) request.state = collectionItemStateToString(state);
+    if (condition != CollectionItemCondition::Invalid) request.condition = collectionItemConditionToString(condition);
+    if (completeness != CollectionItemCompleteness::Invalid) request.completeness = collectionItemCompletenessToString(completeness);
+    request.storageId = m_locationCombo->currentData().toLongLong();
+    request.activeState = m_activeCombo->currentData().toInt();
+    request.paging = {m_page + 1, UserSettings::instance().resultsPerPage()};
+    m_messageLabel->setText(QStringLiteral("Loading My Collection from BrickSuite Host..."));
+    m_searchButton->setEnabled(false); m_previousButton->setEnabled(false); m_nextButton->setEnabled(false);
+    m_collectionRequestToken = m_remoteReads->searchCollection(request, this,
+        [this, workspaceId](AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::CollectionSummary>> result) {
+            if (result.token != m_collectionRequestToken
+                || workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+            m_searchButton->setEnabled(true);
+            if (!result.succeeded()) {
+                m_messageLabel->setText(result.message.isEmpty()
+                    ? QStringLiteral("BrickSuite Host Collection reads are unavailable. Existing results may be stale.")
+                    : result.message + QStringLiteral(" Existing results may be stale."));
+                updatePaging(); return;
+            }
+            m_page = result.value->page - 1; m_total = result.value->totalRows;
+            const int pages = qMax(1, (m_total + result.value->pageSize - 1) / result.value->pageSize);
+            if (m_page >= pages) {
+                m_page = pages - 1;
+                requestRemotePage();
+                return;
+            }
+            populateRemotePage(result.value->rows); updatePaging();
+        });
+}
+
+void MyCollectionWidget::populateRemotePage(const QList<RemoteReadDto::CollectionSummary>& rows)
+{
+    m_minifigImages->clearQueuedRequests(); m_table->setRowCount(0);
+    for (const auto& value : rows) {
+        QString reference = value.type == QStringLiteral("Set") ? value.setNumber
+            : (value.type == QStringLiteral("Minifig") ? value.minifigNumber : value.referenceFallback);
+        QString name = value.titleFallback; QString imageUrl;
+        if (value.type == QStringLiteral("Set")) {
+            if (const auto local = SetCatalogRepository().getBySetNumber(reference)) {
+                name = local->name(); imageUrl = local->imageUrl();
+            }
+        } else if (value.type == QStringLiteral("Minifig")) {
+            if (const auto local = MinifigCatalogRepository().getByExternalIdentifier(
+                    QStringLiteral("Rebrickable"), reference)) {
+                name = local->name(); imageUrl = local->imageUrl();
+            }
+        }
+        const int row = m_table->rowCount(); m_table->insertRow(row);
+        auto* imageItem = new QTableWidgetItem; imageItem->setData(ItemIdRole, value.collectionItemId);
+        imageItem->setData(ImageKeyRole, value.type + "|" + reference); m_table->setItem(row, 0, imageItem);
+        auto* image = new QLabel("No image", m_table); image->setAlignment(Qt::AlignCenter); m_table->setCellWidget(row, 0, image);
+        const QStringList columns{value.type, reference, name, value.nickname, value.state,
+            value.condition, value.completeness, value.storageId > 0 ? value.storagePath : QStringLiteral("Unassigned"),
+            QStringLiteral("BrickSuite Host")};
+        for (int column = 0; column < columns.size(); ++column)
+            m_table->setItem(row, column + 1, new QTableWidgetItem(columns.at(column)));
+        auto* actions = new QComboBox(m_table); actions->addItem("Actions..."); actions->addItem("Details", "details");
+        m_table->setCellWidget(row, 10, actions);
+        connect(actions, &QComboBox::currentIndexChanged, this, [this, actions, id=int(value.collectionItemId)](int index) {
+            if (index <= 0) return; actions->setCurrentIndex(0); showRemoteDetails(id);
+        });
+        if (value.type == QStringLiteral("Set") && !imageUrl.isEmpty()) m_setImages->requestSetImage(reference, imageUrl);
+        else if (value.type == QStringLiteral("Minifig") && !imageUrl.isEmpty()) m_minifigImages->requestMinifigImage(reference, imageUrl);
+    }
+    m_messageLabel->setText(rows.isEmpty() ? QStringLiteral("No Collection items match the current filters.")
+        : QStringLiteral("Showing %1 - %2 from BrickSuite Host.").arg(m_page * UserSettings::instance().resultsPerPage() + 1).arg(m_page * UserSettings::instance().resultsPerPage() + rows.size()));
+}
+
+void MyCollectionWidget::showRemoteDetails(int itemId)
+{
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    if (!m_remoteReads || workspaceId <= 0) return;
+    m_detailRequestToken = m_remoteReads->getCollection(workspaceId, itemId, this,
+        [this, workspaceId](AsyncReadResult<RemoteReadDto::CollectionDetail> result) {
+            if (result.token != m_detailRequestToken || workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+            if (!result.succeeded()) { QMessageBox::warning(this, "Collection Details", result.message); return; }
+            auto value = *result.value;
+            const QString reference = value.type == QStringLiteral("Set") ? value.setNumber
+                : (value.type == QStringLiteral("Minifig") ? value.minifigNumber : value.referenceFallback);
+            if (value.type == QStringLiteral("Set")) {
+                if (const auto local = SetCatalogRepository().getBySetNumber(reference)) value.titleFallback = local->name();
+            } else if (value.type == QStringLiteral("Minifig")) {
+                if (const auto local = MinifigCatalogRepository().getByExternalIdentifier(
+                        QStringLiteral("Rebrickable"), reference)) value.titleFallback = local->name();
+            }
+            QMessageBox::information(this, "Collection Details",
+                QString("%1\n\nType: %2\nReference: %3\nNickname: %4\nState: %5\nCondition: %6\nCompleteness: %7\nLocation: %8\nStatus: %9\n\nNotes:\n%10")
+                    .arg(value.titleFallback, value.type, reference, value.nickname, value.state,
+                         value.condition, value.completeness, value.storagePath,
+                         value.active ? QStringLiteral("Active") : QStringLiteral("Archived"), value.notes));
+        });
 }
 
 void MyCollectionWidget::updatePaging()

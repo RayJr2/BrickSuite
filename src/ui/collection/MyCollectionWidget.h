@@ -11,6 +11,8 @@ class QLineEdit;
 class QPushButton;
 class QTableWidget;
 class CollectionApplicationService;
+class RemoteReadApplicationServices;
+namespace RemoteReadDto { struct CollectionSummary; struct CollectionDetail; }
 
 class MyCollectionWidget : public QWidget
 {
@@ -18,6 +20,7 @@ class MyCollectionWidget : public QWidget
 public:
     explicit MyCollectionWidget(WorkspaceContext& workspaceContext,
                                 CollectionApplicationService& collectionService,
+                                RemoteReadApplicationServices* remoteReads = nullptr,
                                 QWidget* parent = nullptr);
     void refresh();
     void selectCollectionItem(int collectionItemId);
@@ -26,11 +29,15 @@ private:
     void loadLocations();
     void loadPage(bool criteriaChanged = false, const QString& loadingMessage = QString());
     void updatePaging();
+    void requestRemotePage();
+    void populateRemotePage(const QList<RemoteReadDto::CollectionSummary>& rows);
+    void showRemoteDetails(int itemId);
     void handleAction(int itemId, bool active, const QString& action);
     QString effectiveCriteriaKey() const;
 
     WorkspaceContext& m_workspaceContext;
     CollectionApplicationService& m_collectionService;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
     SetImageService* m_setImages = nullptr;
     MinifigImageService* m_minifigImages = nullptr;
     QLineEdit* m_searchEdit = nullptr;
@@ -51,4 +58,7 @@ private:
     int m_total = 0;
     QString m_loadedCriteriaKey;
     bool m_refreshInProgress = false;
+    quint64 m_collectionRequestToken = 0;
+    quint64 m_storageRequestToken = 0;
+    quint64 m_detailRequestToken = 0;
 };

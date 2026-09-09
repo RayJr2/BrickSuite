@@ -325,6 +325,27 @@ int main(int argc, char** argv)
         ok &= check(remoteDetail.partNumber == QStringLiteral("3001")
                         && remoteDetail.rebrickableColorId == 4,
                     "remote typed decode preserves canonical identity");
+        RemoteReadDto::CollectionSearchRequest collectionRequest;
+        collectionRequest.workspaceId = 1; collectionRequest.type = QStringLiteral("MOC");
+        collectionRequest.state = QStringLiteral("Assembled");
+        collectionRequest.condition = QStringLiteral("Used");
+        collectionRequest.completeness = QStringLiteral("Complete");
+        RemoteReadDto::Page<RemoteReadDto::CollectionSummary> remoteCollection;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            remote.searchCollection(collectionRequest, &app, [&](const auto& result) {
+                if (result.succeeded()) remoteCollection = *result.value;
+                loop.quit();
+            });
+        }), "remote typed Collection search completion");
+        ok &= check(remoteCollection.totalRows == 1 && remoteCollection.rows.size() == 1
+                        && remoteCollection.rows.first().nickname == QStringLiteral("Host Collection"),
+                    "remote Collection filters and portable projection");
+        bool crossWorkspaceRejected = false;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            remote.getCollection(999, remoteCollection.rows.first().collectionItemId, &app,
+                [&](const auto& result) { crossWorkspaceRejected = result.error == AsyncReadError::NotFound; loop.quit(); });
+        }), "cross-Workspace Collection detail completion");
+        ok &= check(crossWorkspaceRejected, "Collection detail cannot probe another Workspace");
         const QList<QPair<QString,QJsonObject>> requests{
             {"workspace.list",{}}, {"storage.list",{{"workspaceId",1}}},
             {"inventory.search",{{"workspaceId",1},{"text",""},{"storageId",0},{"rebrickableCategoryId",-1},{"rebrickableColorId",-1},{"page",1},{"pageSize",250}}},
@@ -335,8 +356,8 @@ int main(int argc, char** argv)
             {"builds.requirements",{{"workspaceId",1},{"buildId",1},{"page",1},{"pageSize",250}}},
             {"builds.missingParts",{{"workspaceId",1},{"buildId",1},{"page",1},{"pageSize",250}}},
             {"builds.pulling",{{"workspaceId",1},{"buildId",1},{"page",1},{"pageSize",250}}},
-            {"collection.search",{{"workspaceId",1},{"text",""},{"page",1},{"pageSize",100}}},
-            {"collection.get",{{"collectionItemId",1}}},
+            {"collection.search",{{"workspaceId",1},{"text",""},{"type",""},{"state",""},{"condition",""},{"completeness",""},{"storageId",0},{"activeState",1},{"page",1},{"pageSize",100}}},
+            {"collection.get",{{"workspaceId",1},{"collectionItemId",1}}},
             {"partReference.customizations",{}}};
         for (const auto& request : requests) {
             QJsonObject response;

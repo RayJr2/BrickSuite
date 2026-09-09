@@ -133,11 +133,11 @@ ReadRequestToken RemoteReadApplicationServices::pulling(qint64 workspace,qint64 
 
 ReadRequestToken RemoteReadApplicationServices::searchCollection(const RemoteReadDto::CollectionSearchRequest& r,QObject* context,AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::CollectionSummary>> completion)
 {
-    return request<RemoteReadDto::Page<RemoteReadDto::CollectionSummary>>(QStringLiteral("collection.search"),{{"workspaceId",double(r.workspaceId)},{"text",r.text},{"page",r.paging.page},{"pageSize",r.paging.pageSize}},context,std::move(completion),
+    return request<RemoteReadDto::Page<RemoteReadDto::CollectionSummary>>(QStringLiteral("collection.search"),{{"workspaceId",double(r.workspaceId)},{"text",r.text},{"type",r.type},{"state",r.state},{"condition",r.condition},{"completeness",r.completeness},{"storageId",double(r.storageId)},{"activeState",r.activeState},{"page",r.paging.page},{"pageSize",r.paging.pageSize}},context,std::move(completion),
         [](const QJsonObject& o,auto* out,QString* error){qint64 total=o.value("totalRows").toInteger(-1);int page=o.value("page").toInt();int size=o.value("pageSize").toInt();const auto rows=o.value("rows");if(total<0||page<1||size<1||size>RemoteReadDto::MaximumPageSize||!rows.isArray()||rows.toArray().size()>size)return false;out->page=page;out->pageSize=size;out->totalRows=int(qMin<qint64>(total,INT_MAX));for(const auto& v:rows.toArray()){RemoteReadDto::CollectionSummary row;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&row,&e)){if(error)*error=e.message;return false;}out->rows.append(row);}return true;});
 }
-ReadRequestToken RemoteReadApplicationServices::getCollection(qint64 id,QObject*context,AsyncReadCompletion<RemoteReadDto::CollectionDetail> completion)
-{return request<RemoteReadDto::CollectionDetail>("collection.get",{{"collectionItemId",double(id)}},context,std::move(completion),[](const QJsonObject&o,auto*out,QString*error){RemoteReadJson::DecodeError e;const auto v=o.value("item");if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),out,&e)){if(error)*error=e.message;return false;}return true;});}
+ReadRequestToken RemoteReadApplicationServices::getCollection(qint64 workspaceId,qint64 id,QObject*context,AsyncReadCompletion<RemoteReadDto::CollectionDetail> completion)
+{return request<RemoteReadDto::CollectionDetail>("collection.get",{{"workspaceId",double(workspaceId)},{"collectionItemId",double(id)}},context,std::move(completion),[](const QJsonObject&o,auto*out,QString*error){RemoteReadJson::DecodeError e;const auto v=o.value("item");if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),out,&e)){if(error)*error=e.message;return false;}return true;});}
 
 ReadRequestToken RemoteReadApplicationServices::listPartReferenceCustomizations(QObject* context,AsyncReadCompletion<QList<RemoteReadDto::PartReferenceCustomization>> completion)
 {

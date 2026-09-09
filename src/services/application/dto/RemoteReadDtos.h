@@ -66,10 +66,14 @@ struct PullingRow {
     bool substitution = false;
 };
 
-struct CollectionSearchRequest { qint64 workspaceId = 0; QString text; PageRequest paging{1, 100}; };
+struct CollectionSearchRequest {
+    qint64 workspaceId = 0; QString text; QString type; QString state;
+    QString condition; QString completeness; qint64 storageId = 0;
+    int activeState = 1; PageRequest paging{1, 100};
+};
 struct CollectionSummary {
     qint64 collectionItemId = 0; qint64 workspaceId = 0; QString type;
-    QString setNumber; QString minifigNumber; QString titleFallback;
+    QString setNumber; QString minifigNumber; QString referenceFallback; QString titleFallback;
     QString state; QString condition; QString completeness; qint64 storageId = 0;
     QString storagePath; QString nickname; bool active = true;
 };

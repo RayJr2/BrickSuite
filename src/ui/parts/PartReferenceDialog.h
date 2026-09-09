@@ -31,6 +31,7 @@ class QWidget;
 class PartImageService;
 class RebrickableApiClient;
 class SharedPartReferenceCustomizationService;
+class RemoteReadApplicationServices;
 
 class PartReferenceDialog : public QDialog
 {
@@ -38,6 +39,7 @@ class PartReferenceDialog : public QDialog
 
 public:
     explicit PartReferenceDialog(SharedPartReferenceCustomizationService& customizationService,
+                                 RemoteReadApplicationServices* remoteReads = nullptr,
                                  QWidget* parent = nullptr);
     ~PartReferenceDialog() override;
 
@@ -151,6 +153,8 @@ private:
     PartImageService* m_partImageService = nullptr;
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
     SharedPartReferenceCustomizationService& m_customizationService;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
+    quint64 m_customizationRequestToken = 0;
 
     static constexpr int ImageBatchSize = 20;
     static constexpr int GalleryColumns = 6;

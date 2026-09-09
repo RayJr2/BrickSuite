@@ -87,9 +87,20 @@ int main(int argc, char** argv)
     RemoteReadDto::MissingPart missing;missing.partNumber="3001";missing.partNameFallback="Brick 2 x 4";missing.rebrickableColorId=4;missing.colorNameFallback="Red";missing.required=10;missing.missing=3;
     QJsonArray missingRows;for(int i=0;i<250;++i)missingRows.append(RemoteReadJson::toJson(missing));
     const qsizetype missingBytes=QJsonDocument({{"rows",missingRows},{"page",1},{"pageSize",250},{"totalRows",250}}).toJson(QJsonDocument::Compact).size();
-    RemoteReadDto::CollectionSummary collection;collection.collectionItemId=1;collection.workspaceId=1;collection.type="Set";collection.setNumber="10300-1";collection.titleFallback="Synthetic Collection Item";collection.state="Assembled";collection.condition="Used";collection.completeness="Complete";collection.active=true;
+    RemoteReadDto::CollectionSummary collection;collection.collectionItemId=1;collection.workspaceId=1;collection.type="Set";collection.setNumber="10300-1";collection.referenceFallback="10300-1";collection.titleFallback="Synthetic Collection Item";collection.state="Assembled";collection.condition="Used";collection.completeness="Complete";collection.active=true;
     QJsonArray collectionRows;for(int i=0;i<250;++i){collection.collectionItemId=i+1;collectionRows.append(RemoteReadJson::toJson(collection));}
     const qsizetype collectionBytes=QJsonDocument({{"rows",collectionRows},{"page",1},{"pageSize",250},{"totalRows",250}}).toJson(QJsonDocument::Compact).size();
+    RemoteReadDto::CollectionSummary decodedCollection;
+    ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(collection),
+        &decodedCollection, &decodeError) && decodedCollection.setNumber == QStringLiteral("10300-1"),
+        "Collection portable identity round trip failed");
+    RemoteReadDto::PartReferenceCustomization customization;
+    customization.customizationId=7; customization.partNumber="3001";
+    customization.catalog="Bricks"; customization.section="Basic"; customization.displayOrder=12;
+    RemoteReadDto::PartReferenceCustomization decodedCustomization;
+    ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(customization),
+        &decodedCustomization, &decodeError) && decodedCustomization.displayOrder==12,
+        "Part Reference customization round trip failed");
     ok &= require(inventoryBytes<BrickSuiteProtocol::MaximumMessageBytes
         && requirementBytes<BrickSuiteProtocol::MaximumMessageBytes
         && pullingBytes<BrickSuiteProtocol::MaximumMessageBytes

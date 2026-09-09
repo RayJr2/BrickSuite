@@ -41,7 +41,7 @@ public:
         QObject* context, AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::PullingRow>> completion);
     ReadRequestToken searchCollection(const RemoteReadDto::CollectionSearchRequest& request,
         QObject* context, AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::CollectionSummary>> completion);
-    ReadRequestToken getCollection(qint64 collectionItemId, QObject* context,
+    ReadRequestToken getCollection(qint64 workspaceId, qint64 collectionItemId, QObject* context,
         AsyncReadCompletion<RemoteReadDto::CollectionDetail> completion);
     ReadRequestToken listPartReferenceCustomizations(QObject* context,
         AsyncReadCompletion<QList<RemoteReadDto::PartReferenceCustomization>> completion);
