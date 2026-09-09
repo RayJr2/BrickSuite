@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "RepositoryConnection.h"
+
 #include "../models/Part.h"
 #include "../models/PartSearchCriteria.h"
 #include "../models/PartSearchResult.h"
@@ -29,9 +31,13 @@
 
 class QSqlQuery;
 
-class PartRepository
+class PartRepository : protected RepositoryConnection
 {
 public:
+    PartRepository() = default;
+    explicit PartRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
+
     bool create(Part& part);
 
     QList<Part> getAll() const;

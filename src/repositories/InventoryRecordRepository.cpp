@@ -62,7 +62,7 @@ bool InventoryRecordRepository::create(InventoryRecord& record)
 
     record.setManufacturerId(manufacturerId);
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -126,7 +126,7 @@ QList<InventoryRecord> InventoryRecordRepository::getByWorkspace(int workspaceId
 {
     QList<InventoryRecord> records;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -167,7 +167,7 @@ QList<InventoryRecord> InventoryRecordRepository::getByStorageLocation(int works
 {
     QList<InventoryRecord> records;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -207,7 +207,7 @@ QList<InventoryRecord> InventoryRecordRepository::getByStorageLocation(int works
 
 std::optional<InventoryRecord> InventoryRecordRepository::getById(int id) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -248,7 +248,7 @@ bool InventoryRecordRepository::updateQuantity(int inventoryRecordId, int quanti
         return false;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 
@@ -288,7 +288,7 @@ bool InventoryRecordRepository::setQuantityWithMovement(
     if (inventoryRecordId <= 0 || newQuantity < 0)
         return false;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     if (manageTransaction) {
         if (!database.transaction()) {
@@ -443,7 +443,7 @@ QList<InventorySearchResult> InventoryRecordRepository::search(
     if (criteria.workspaceId <= 0)
         return results;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QString sql = R"(
         SELECT
@@ -635,7 +635,7 @@ int InventoryRecordRepository::count(const InventorySearchCriteria& criteria) co
     if (criteria.workspaceId <= 0)
         return 0;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QString sql = R"(
         SELECT COUNT(*)
@@ -745,7 +745,7 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
 
     record.setManufacturerId(manufacturerId);
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     if (manageTransaction) {
         if (!database.transaction()) {
@@ -980,7 +980,7 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
 
     record.setManufacturerId(manufacturerId);
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     if (!database.transaction()) {
         qCritical() << "Unable to begin inventory edit transaction:" << database.lastError().text();
@@ -1330,7 +1330,7 @@ bool InventoryRecordRepository::remove(int inventoryRecordId)
     if (inventoryRecordId <= 0)
         return false;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -1374,7 +1374,7 @@ bool InventoryRecordRepository::correctEntry(int inventoryRecordId,
     if (!sourcePart || !replacementPart)
         return false;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     if (!database.transaction()) {
         qCritical() << "Unable to begin inventory correction transaction:"
@@ -1447,7 +1447,7 @@ bool InventoryRecordRepository::removeEntry(int inventoryRecordId,
     if (inventoryRecordId <= 0 || quantityToRemove <= 0)
         return fail(QStringLiteral("The inventory record or removal quantity is invalid."));
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
     if (!database.transaction()) {
         qCritical() << "Unable to begin inventory removal transaction:"
                     << database.lastError().text();
@@ -1521,7 +1521,7 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
         return false;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     if (!database.transaction()) {
         qCritical() << "Unable to begin inventory move transaction:" << database.lastError().text();
@@ -1843,7 +1843,7 @@ int InventoryRecordRepository::totalQuantityForPartColor(int workspaceId,
         return 0;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -1886,7 +1886,7 @@ QList<InventoryRecord> InventoryRecordRepository::getByPartColor(int workspaceId
         return records;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -1946,7 +1946,7 @@ bool InventoryRecordRepository::markLost(int inventoryRecordId,
         return false;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     if (!database.transaction()) {
         qCritical() << "Unable to begin Lost inventory transaction:" << database.lastError().text();
@@ -2116,7 +2116,7 @@ bool InventoryRecordRepository::markFound(int workspaceId,
         return false;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     if (!database.transaction()) {
         qCritical() << "Unable to begin Found inventory transaction:"

@@ -74,6 +74,7 @@ qt_add_executable(BrickSuite
 
     src/repositories/WorkspaceRepository.h
     src/repositories/WorkspaceRepository.cpp
+    src/repositories/RepositoryConnection.h
 
     src/ui/MainWindow.h
     src/ui/MainWindow.cpp
@@ -121,6 +122,8 @@ qt_add_executable(BrickSuite
     src/services/application/ApplicationServices.cpp
     src/services/application/ApplicationServicesCore.cpp
     src/services/application/UnavailableApplicationServices.cpp
+    src/services/application/HostReadExecutor.h
+    src/services/application/HostReadExecutor.cpp
     src/services/application/SharedDataSource.h
     src/services/database/AutomaticBackupRetention.h
     src/services/database/AutomaticBackupRetention.cpp
@@ -1028,6 +1031,49 @@ if(BUILD_TESTING)
         target_link_libraries(SecureHostFoundationTest PRIVATE "-framework Security")
     endif()
     add_test(NAME SecureHostFoundation COMMAND SecureHostFoundationTest)
+
+    qt_add_executable(HostReadExecutorTest EXCLUDE_FROM_ALL
+        tests/HostReadExecutorTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Workspace.h src/models/Workspace.cpp
+        src/models/StorageLocation.h src/models/StorageLocation.cpp
+        src/models/InventoryRecord.h src/models/InventoryRecord.cpp
+        src/models/InventoryMovement.h src/models/InventoryMovement.cpp
+        src/models/InventorySearchCriteria.h src/models/InventorySearchResult.h
+        src/models/InventoryHistoryResult.h
+        src/models/Build.h src/models/Build.cpp
+        src/models/BuildRequirement.h src/models/BuildRequirement.cpp
+        src/models/BuildAllocation.h src/models/BuildAllocation.cpp
+        src/models/CollectionItem.h src/models/CollectionItem.cpp
+        src/models/CollectionSearchCriteria.h src/models/CollectionSearchResult.h
+        src/models/Part.h src/models/Part.cpp
+        src/models/Color.h src/models/Color.cpp
+        src/models/UserPartReferenceEntry.h
+        src/repositories/RepositoryConnection.h
+        src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
+        src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
+        src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
+        src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
+        src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
+        src/repositories/BuildRequirementRepository.h src/repositories/BuildRequirementRepository.cpp
+        src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
+        src/repositories/CollectionRepository.h src/repositories/CollectionRepository.cpp
+        src/repositories/UserPartReferenceRepository.h src/repositories/UserPartReferenceRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/services/builds/MissingPartsService.h src/services/builds/MissingPartsService.cpp
+        src/services/builds/BuildPullingService.h src/services/builds/BuildPullingService.cpp
+        src/services/parts/PartReferenceManifest.h src/services/parts/PartReferenceManifest.cpp
+        src/services/parts/PartReferenceCustomizationService.h src/services/parts/PartReferenceCustomizationService.cpp
+        src/services/application/ApplicationServices.h
+        src/services/application/ApplicationServices.cpp
+        src/services/application/ApplicationServicesCore.cpp
+        src/services/application/HostReadExecutor.h src/services/application/HostReadExecutor.cpp
+    )
+    target_link_libraries(HostReadExecutorTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME HostReadExecutor COMMAND HostReadExecutorTest)
 endif()
 
 if(WIN32)

@@ -6,6 +6,9 @@
 #include "PartReferenceManifest.h"
 #include <QList>
 
+class QSqlDatabase;
+class QThread;
+
 struct PartReferenceDestination
 {
     QString catalog;
@@ -24,6 +27,8 @@ class PartReferenceCustomizationService
 {
 public:
     explicit PartReferenceCustomizationService(const PartReferenceManifest& manifest);
+    PartReferenceCustomizationService(const PartReferenceManifest& manifest,
+                                      const QSqlDatabase& database);
 
     QList<PartReferenceEntry> effectiveEntries(QString* errorMessage = nullptr) const;
     QList<PartReferenceDestination> destinations() const;
@@ -35,5 +40,8 @@ public:
     static bool isStructuredCatalog(const QString& catalog);
 
 private:
+    QSqlDatabase serviceDatabase() const;
     const PartReferenceManifest& m_manifest;
+    QString m_connectionName;
+    QThread* m_ownerThread = nullptr;
 };

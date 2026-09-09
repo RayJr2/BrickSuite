@@ -41,7 +41,7 @@ bool InventoryMovementRepository::create(InventoryMovement& movement)
         return false;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -138,7 +138,7 @@ QList<InventoryMovement> InventoryMovementRepository::getByInventoryRecord(int i
 {
     QList<InventoryMovement> movements;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -183,7 +183,7 @@ QList<InventoryMovement> InventoryMovementRepository::getByPart(int workspaceId,
 {
     QList<InventoryMovement> movements;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -275,7 +275,7 @@ QList<InventoryHistoryResult> InventoryMovementRepository::getHistoryForPartColo
 {
     QList<InventoryHistoryResult> results;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 

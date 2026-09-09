@@ -72,7 +72,7 @@ void bindCriteria(QSqlQuery& query, const CollectionSearchCriteria& criteria)
 bool CollectionRepository::create(CollectionItem& item)
 {
     const QDateTime now = QDateTime::currentDateTimeUtc();
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(INSERT INTO collection_item
         (workspace_id,item_type,set_catalog_id,minifig_catalog_id,state,condition,completeness,storage_location_id,
          source_build_id,nickname,notes,allow_parts_source,is_active,created_utc,modified_utc)
@@ -107,7 +107,7 @@ bool CollectionRepository::create(CollectionItem& item)
 std::optional<CollectionItem> CollectionRepository::getById(int id) const
 {
     if (id <= 0) return std::nullopt;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(QString("SELECT %1 FROM collection_item ci WHERE ci.id=:id").arg(itemColumns()));
     query.bindValue(":id", id);
     if (!query.exec()) {
@@ -128,7 +128,7 @@ bool CollectionRepository::tryGetBySourceBuild(
 {
     item.reset();
     if (buildId <= 0) return true;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(QString("SELECT %1 FROM collection_item ci WHERE ci.source_build_id=:id")
                       .arg(itemColumns()));
     query.bindValue(":id", buildId);
@@ -167,7 +167,7 @@ QList<CollectionSearchResult> CollectionRepository::search(
         WHERE ci.workspace_id=:workspace_id)").arg(itemColumns());
     appendCriteria(sql, criteria);
     sql += " ORDER BY ci.is_active DESC, display_name COLLATE NOCASE, ci.id LIMIT :limit OFFSET :offset";
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(sql);
     bindCriteria(query, criteria);
     query.bindValue(":limit", qBound(1, criteria.limit, 500));
@@ -208,7 +208,7 @@ std::optional<CollectionSearchResult> CollectionRepository::displayById(int id) 
         LEFT JOIN build b ON b.id=ci.source_build_id
         LEFT JOIN storage_location sl ON sl.id=ci.storage_location_id
         WHERE ci.id=:id)").arg(itemColumns());
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(sql);
     query.bindValue(":id", id);
     if (!query.exec() || !query.next()) return std::nullopt;
@@ -232,7 +232,7 @@ int CollectionRepository::count(const CollectionSearchCriteria& criteria) const
         LEFT JOIN build b ON b.id=ci.source_build_id
         WHERE ci.workspace_id=:workspace_id)";
     appendCriteria(sql, criteria);
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(sql);
     bindCriteria(query, criteria);
     if (!query.exec() || !query.next()) {
@@ -245,7 +245,7 @@ int CollectionRepository::count(const CollectionSearchCriteria& criteria) const
 bool CollectionRepository::update(CollectionItem& item)
 {
     const QDateTime now = QDateTime::currentDateTimeUtc();
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(UPDATE collection_item SET state=:state,condition=:condition,
         completeness=:completeness,
         storage_location_id=:storage_location_id,nickname=:nickname,notes=:notes,
@@ -271,7 +271,7 @@ bool CollectionRepository::update(CollectionItem& item)
 
 bool CollectionRepository::updateStateForSourceBuild(int buildId, CollectionItemState state)
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare("UPDATE collection_item SET state=:state,modified_utc=:modified "
                   "WHERE source_build_id=:build_id");
     query.bindValue(":state", collectionItemStateToString(state));
@@ -287,7 +287,7 @@ bool CollectionRepository::updateStateForSourceBuild(int buildId, CollectionItem
 
 bool CollectionRepository::setActive(int itemId, bool active)
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare("UPDATE collection_item SET is_active=:active,modified_utc=:modified WHERE id=:id");
     query.bindValue(":active", active ? 1 : 0);
     query.bindValue(":modified", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));

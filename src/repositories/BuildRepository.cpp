@@ -93,7 +93,7 @@ bool BuildRepository::create(Build& build)
 
     build.setManufacturerId(manufacturerId);
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -189,7 +189,7 @@ std::optional<Build> BuildRepository::getById(int id) const
     if (id <= 0)
         return std::nullopt;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -240,7 +240,7 @@ QList<Build> BuildRepository::getByWorkspace(int workspaceId, bool includeArchiv
     if (workspaceId <= 0)
         return builds;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QString sql = R"(
         SELECT
@@ -300,7 +300,7 @@ bool BuildRepository::setActive(int buildId, bool active)
         return false;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
     QSqlQuery query(database);
@@ -389,7 +389,7 @@ bool BuildRepository::update(Build& build)
 
     build.setManufacturerId(manufacturerId);
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -469,7 +469,7 @@ bool BuildRepository::update(Build& build)
 bool BuildRepository::linkSetCatalog(int buildId, int setCatalogId)
 {
     if (buildId <= 0 || setCatalogId <= 0) return false;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(UPDATE build SET set_catalog_id=:set_catalog_id,
         modified_utc=:modified_utc WHERE id=:id AND build_type='Set'
         AND set_catalog_id IS NULL)");

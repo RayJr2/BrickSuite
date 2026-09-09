@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "RepositoryConnection.h"
+
 #include "../models/InventoryRecord.h"
 #include "../models/InventorySearchCriteria.h"
 #include "../models/InventorySearchResult.h"
@@ -29,9 +31,13 @@
 
 class QSqlQuery;
 
-class InventoryRecordRepository
+class InventoryRecordRepository : protected RepositoryConnection
 {
 public:
+    InventoryRecordRepository() = default;
+    explicit InventoryRecordRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
+
     bool create(InventoryRecord& record);
 
     QList<InventoryRecord> getByWorkspace(int workspaceId) const;

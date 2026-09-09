@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "RepositoryConnection.h"
+
 #include "../models/StorageLocation.h"
 
 #include <QList>
@@ -27,9 +29,13 @@
 
 class QSqlQuery;
 
-class StorageLocationRepository
+class StorageLocationRepository : protected RepositoryConnection
 {
 public:
+    StorageLocationRepository() = default;
+    explicit StorageLocationRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
+
     bool create(StorageLocation& location);
 
     QList<StorageLocation> getByWorkspace(int workspaceId) const;

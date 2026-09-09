@@ -1,0 +1,214 @@
+#include "HostReadExecutor.h"
+
+#include "../../repositories/StorageLocationRepository.h"
+#include "../parts/PartReferenceManifest.h"
+
+#include <QElapsedTimer>
+#include <QDateTime>
+#include <QPointer>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QUuid>
+
+class HostReadExecutor::Worker : public QObject
+{
+public:
+    Worker(QString path, QString name, std::atomic_int& queued)
+        : m_path(std::move(path)), m_name(std::move(name)), m_queued(queued) {}
+
+    void initialize()
+    {
+        Q_ASSERT(QThread::currentThread() == thread());
+        m_database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_name);
+        m_database.setDatabaseName(m_path);
+        m_database.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY;QSQLITE_BUSY_TIMEOUT=5000"));
+        if (!m_database.open()) {
+            m_error = QStringLiteral("Unable to open the Host read database: %1")
+                          .arg(m_database.lastError().text());
+            return;
+        }
+        QSqlQuery pragma(m_database);
+        if (!pragma.exec(QStringLiteral("PRAGMA foreign_keys = ON"))
+            || !pragma.exec(QStringLiteral("PRAGMA busy_timeout = 5000"))
+            || !pragma.exec(QStringLiteral("PRAGMA query_only = ON"))) {
+            m_error = QStringLiteral("Unable to configure the Host read database connection.");
+            return;
+        }
+        m_services = createConnectionBoundReadApplicationServices(m_database);
+    }
+
+    void execute(const QString& label, const Task& task,
+                 QObject* context, const ErrorCallback& failure, qint64 queuedAt)
+    {
+        Q_ASSERT(QThread::currentThread() == thread());
+        const int remaining = --m_queued;
+        if (!m_services) {
+            deliverFailure(context, failure, m_error.isEmpty()
+                ? QStringLiteral("The Host read executor is unavailable.") : m_error);
+            return;
+        }
+        QElapsedTimer timer;
+        timer.start();
+        task(*m_services, m_database);
+        qDebug().noquote() << "Host read" << label
+                           << "queueWaitMs=" << qMax<qint64>(0, timerReference() - queuedAt)
+                           << "executionMs=" << timer.elapsed()
+                           << "queued=" << remaining;
+    }
+
+    void close()
+    {
+        Q_ASSERT(QThread::currentThread() == thread());
+        m_services.reset();
+        if (m_database.isValid()) m_database.close();
+        m_database = QSqlDatabase();
+        QSqlDatabase::removeDatabase(m_name);
+    }
+
+    static qint64 timerReference()
+    {
+        return QDateTime::currentMSecsSinceEpoch();
+    }
+
+private:
+    QString m_path;
+    QString m_name;
+    QString m_error;
+    QSqlDatabase m_database;
+    std::unique_ptr<ApplicationServices> m_services;
+    std::atomic_int& m_queued;
+};
+
+HostReadExecutor::HostReadExecutor(const QString& databasePath, QObject* parent)
+    : QObject(parent)
+    , m_connectionName(QStringLiteral("BrickSuite_HostRead_%1")
+          .arg(QUuid::createUuid().toString(QUuid::WithoutBraces)))
+{
+    m_thread.setObjectName(QStringLiteral("BrickSuite Host Read Worker"));
+    m_worker = new Worker(databasePath, m_connectionName, m_queued);
+    m_worker->moveToThread(&m_thread);
+    connect(&m_thread, &QThread::started, m_worker, [worker = m_worker]() {
+        worker->initialize();
+    });
+    m_thread.start();
+}
+
+HostReadExecutor::~HostReadExecutor() { shutdown(); }
+
+QString HostReadExecutor::connectionName() const { return m_connectionName; }
+bool HostReadExecutor::isAccepting() const { return m_accepting && m_thread.isRunning(); }
+int HostReadExecutor::queuedReadCount() const { return m_queued.load(); }
+
+void HostReadExecutor::deliverFailure(QObject* context, const ErrorCallback& failure,
+                                      const QString& message)
+{
+    if (!failure || !context) return;
+    QPointer<QObject> guard(context);
+    QMetaObject::invokeMethod(context, [guard, failure, message]() {
+        if (guard) failure(message);
+    }, Qt::QueuedConnection);
+}
+
+void HostReadExecutor::enqueue(const QString& label, Task task, QObject* context,
+                               ErrorCallback failure)
+{
+    if (!context || !isAccepting()) {
+        deliverFailure(context, failure, QStringLiteral("The Host read executor is shutting down."));
+        return;
+    }
+    int expected = m_queued.load();
+    do {
+        if (expected >= MaximumQueuedReads) {
+            deliverFailure(context, failure, QStringLiteral("The Host read queue is full."));
+            return;
+        }
+    } while (!m_queued.compare_exchange_weak(expected, expected + 1));
+    QPointer<QObject> guard(context);
+    const qint64 queuedAt = QDateTime::currentMSecsSinceEpoch();
+    QMetaObject::invokeMethod(m_worker,
+        [worker = m_worker, label, task = std::move(task), guard,
+         failure = std::move(failure), queuedAt]() {
+            worker->execute(label, task, guard.data(), failure, queuedAt);
+        }, Qt::QueuedConnection);
+}
+
+void HostReadExecutor::shutdown()
+{
+    if (!m_accepting.exchange(false)) return;
+    if (m_thread.isRunning()) {
+        QMetaObject::invokeMethod(m_worker, [worker = m_worker]() { worker->close(); },
+                                  Qt::BlockingQueuedConnection);
+        m_thread.quit();
+        m_thread.wait();
+    }
+    delete m_worker;
+    m_worker = nullptr;
+}
+
+#define HOST_READ_METHOD_BODY(label, expression, completionType) \
+    QPointer<QObject> guard(context); \
+    enqueue(QStringLiteral(label), [=, completion = std::move(completion)] \
+        (ApplicationServices& services, const QSqlDatabase& database) mutable { \
+        Q_UNUSED(database); auto result = (expression); \
+        if (guard) QMetaObject::invokeMethod(guard, [guard, completion, result = std::move(result)]() mutable { \
+            if (guard) completion(result); }, Qt::QueuedConnection); \
+    }, context, std::move(failure))
+
+void HostReadExecutor::listWorkspaces(QObject* context,
+    std::function<void(const QList<Workspace>&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("workspace.list", services.workspaces().list(), QList<Workspace>); }
+void HostReadExecutor::getWorkspace(int id, QObject* context,
+    std::function<void(const std::optional<Workspace>&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("workspace.get", services.workspaces().get(id), std::optional<Workspace>); }
+void HostReadExecutor::listStorage(int workspaceId, QObject* context,
+    std::function<void(const QList<StorageLocation>&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("storage.list", StorageLocationRepository(database).getByWorkspace(workspaceId), QList<StorageLocation>); }
+void HostReadExecutor::searchInventory(const InventorySearchCriteria& criteria, QObject* context,
+    std::function<void(const InventoryApplicationService::Page&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("inventory.search", services.inventory().search(criteria), InventoryApplicationService::Page); }
+void HostReadExecutor::getInventory(int id, QObject* context,
+    std::function<void(const std::optional<InventoryRecord>&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("inventory.get", services.inventory().get(id), std::optional<InventoryRecord>); }
+void HostReadExecutor::inventoryHistory(int workspaceId, int partId, int colorId, QObject* context,
+    std::function<void(const QList<InventoryHistoryResult>&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("inventory.history", services.inventory().history(workspaceId, partId, colorId), QList<InventoryHistoryResult>); }
+void HostReadExecutor::listBuilds(int workspaceId, bool archived, QObject* context,
+    std::function<void(const QList<Build>&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("builds.list", services.builds().list(workspaceId, archived), QList<Build>); }
+void HostReadExecutor::getBuild(int id, QObject* context,
+    std::function<void(const std::optional<Build>&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("builds.get", services.builds().get(id), std::optional<Build>); }
+void HostReadExecutor::buildRequirements(int id, QObject* context,
+    std::function<void(const QList<BuildRequirement>&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("builds.requirements", services.builds().requirements(id), QList<BuildRequirement>); }
+void HostReadExecutor::missingParts(int workspaceId, int buildId, QObject* context,
+    std::function<void(const QList<MissingPartsService::MissingPart>&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("builds.missingParts", services.builds().missingParts(workspaceId, buildId), QList<MissingPartsService::MissingPart>); }
+void HostReadExecutor::pullingView(int buildId, QObject* context,
+    std::function<void(const BuildPullingService::PullingView&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("builds.pulling", services.builds().pullingView(buildId), BuildPullingService::PullingView); }
+void HostReadExecutor::searchCollection(const CollectionSearchCriteria& criteria, QObject* context,
+    std::function<void(const CollectionApplicationService::Page&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("collection.search", services.collection().search(criteria), CollectionApplicationService::Page); }
+void HostReadExecutor::getCollection(int id, QObject* context,
+    std::function<void(const std::optional<CollectionSearchResult>&)> completion, ErrorCallback failure)
+{ HOST_READ_METHOD_BODY("collection.get", services.collection().getDisplay(id), std::optional<CollectionSearchResult>); }
+
+void HostReadExecutor::effectivePartReference(const PartReferenceManifest& manifest, QObject* context,
+    std::function<void(const QList<PartReferenceEntry>&, const QString&)> completion,
+    ErrorCallback failure)
+{
+    QPointer<QObject> guard(context);
+    enqueue(QStringLiteral("partReference.customizations"),
+        [guard, completion = std::move(completion), manifest]
+        (ApplicationServices& services, const QSqlDatabase&) mutable {
+            QString error;
+            auto result = services.partReferenceCustomizations().effectiveEntries(manifest, &error);
+            if (guard) QMetaObject::invokeMethod(guard,
+                [guard, completion, result = std::move(result), error]() mutable {
+                    if (guard) completion(result, error);
+                }, Qt::QueuedConnection);
+        }, context, std::move(failure));
+}
+
+#undef HOST_READ_METHOD_BODY

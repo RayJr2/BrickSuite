@@ -1,5 +1,7 @@
 #pragma once
 
+#include "RepositoryConnection.h"
+
 #include "../models/CollectionItem.h"
 #include "../models/CollectionSearchCriteria.h"
 #include "../models/CollectionSearchResult.h"
@@ -9,9 +11,13 @@
 
 class QSqlQuery;
 
-class CollectionRepository
+class CollectionRepository : protected RepositoryConnection
 {
 public:
+    CollectionRepository() = default;
+    explicit CollectionRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
+
     bool create(CollectionItem& item);
     std::optional<CollectionItem> getById(int id) const;
     std::optional<CollectionItem> getBySourceBuild(int buildId) const;

@@ -38,7 +38,7 @@ bool PartRepository::create(Part& part)
         return false;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -109,7 +109,7 @@ QList<Part> PartRepository::getAll() const
 {
     QList<Part> parts;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -141,7 +141,7 @@ QList<Part> PartRepository::getAll() const
 
 std::optional<Part> PartRepository::getById(int id) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -176,7 +176,7 @@ std::optional<Part> PartRepository::getById(int id) const
 
 std::optional<Part> PartRepository::getByPartNumber(const QString& partNumber) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -224,7 +224,7 @@ QList<Part> PartRepository::findActiveDecoratedByBasePrefix(
     base.replace(QStringLiteral("%"), QStringLiteral("\\%"));
     base.replace(QStringLiteral("_"), QStringLiteral("\\_"));
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT
             id, part_number, name, part_category_id, rebrickable_part_id,
@@ -265,7 +265,7 @@ bool PartRepository::update(Part& part)
         return false;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -329,7 +329,7 @@ QList<Part> PartRepository::getReferencePartsByCategoryIds(const QList<int>& cat
     if (categoryIds.isEmpty() || limit <= 0)
         return parts;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
     QSqlQuery query(database);
 
     QStringList placeholders;
@@ -415,7 +415,7 @@ QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteri
 {
     QList<PartSearchResult> results;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     const QString searchText = criteria.searchText.trimmed();
 
@@ -610,7 +610,7 @@ QList<PartSearchResult> PartRepository::search(const PartSearchCriteria& criteri
 
 int PartRepository::count(const PartSearchCriteria& criteria) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QString sql = R"(
         SELECT COUNT(*)
@@ -680,7 +680,7 @@ QList<Part> PartRepository::searchForInventoryEntry(const QString& searchText, i
     if (trimmed.isEmpty())
         return parts;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 

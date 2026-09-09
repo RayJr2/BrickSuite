@@ -23,9 +23,15 @@
 #include <QList>
 #include <QString>
 
+class QSqlDatabase;
+class QThread;
+
 class MissingPartsService
 {
 public:
+    MissingPartsService();
+    explicit MissingPartsService(const QSqlDatabase& database);
+
     struct MissingPart
     {
         int partId = 0;
@@ -50,4 +56,9 @@ public:
     QList<MissingPart> getMissingParts(
         int workspaceId,
         int buildId) const;
+
+private:
+    QSqlDatabase serviceDatabase() const;
+    QString m_connectionName;
+    QThread* m_ownerThread = nullptr;
 };

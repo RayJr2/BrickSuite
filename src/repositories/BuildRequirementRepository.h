@@ -1,5 +1,7 @@
 #pragma once
 
+#include "RepositoryConnection.h"
+
 #include "../models/BuildRequirement.h"
 
 #include <QList>
@@ -7,9 +9,13 @@
 
 class QSqlQuery;
 
-class BuildRequirementRepository
+class BuildRequirementRepository : protected RepositoryConnection
 {
 public:
+    BuildRequirementRepository() = default;
+    explicit BuildRequirementRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
+
     bool create(BuildRequirement& requirement);
     std::optional<BuildRequirement> getById(int id) const;
     QList<BuildRequirement> getByBuild(int buildId) const;

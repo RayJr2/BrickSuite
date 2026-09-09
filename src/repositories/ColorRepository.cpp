@@ -32,7 +32,7 @@ QList<Color> ColorRepository::getAll() const
 {
     QList<Color> colors;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -62,7 +62,7 @@ QList<Color> ColorRepository::getAll() const
 
 std::optional<Color> ColorRepository::getById(int id) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -95,7 +95,7 @@ std::optional<Color> ColorRepository::getById(int id) const
 
 std::optional<Color> ColorRepository::getByRebrickableId(int rebrickableId) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 

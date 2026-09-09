@@ -35,6 +35,22 @@
 #include <QDebug>
 #include <QSet>
 #include <QSqlDatabase>
+#include <QThread>
+
+BuildPullingService::BuildPullingService()
+    : BuildPullingService(DatabaseManager::instance().database()) {}
+
+BuildPullingService::BuildPullingService(const QSqlDatabase& database)
+    : m_connectionName(database.connectionName()), m_ownerThread(QThread::currentThread())
+{
+    Q_ASSERT(database.isValid());
+}
+
+QSqlDatabase BuildPullingService::serviceDatabase() const
+{
+    Q_ASSERT(QThread::currentThread() == m_ownerThread);
+    return QSqlDatabase::database(m_connectionName, false);
+}
 #include <QSqlError>
 
 #include <algorithm>
@@ -49,12 +65,12 @@ BuildPullingService::PullingView BuildPullingService::getPullingView(int buildId
         return view;
     }
 
-    BuildRepository buildRepository;
-    BuildRequirementRepository requirementRepository;
-    BuildAllocationRepository allocationRepository;
-    InventoryRecordRepository inventoryRepository;
-    PartRepository partRepository;
-    ColorRepository colorRepository;
+    BuildRepository buildRepository(serviceDatabase());
+    BuildRequirementRepository requirementRepository(serviceDatabase());
+    BuildAllocationRepository allocationRepository(serviceDatabase());
+    InventoryRecordRepository inventoryRepository(serviceDatabase());
+    PartRepository partRepository(serviceDatabase());
+    ColorRepository colorRepository(serviceDatabase());
 
     const std::optional<Build> build = buildRepository.getById(buildId);
 
@@ -190,7 +206,7 @@ BuildPullingService::recordPulls(const QList<PullRequest>& requests) const
         }
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = serviceDatabase();
 
     if (!database.transaction()) {
         qCritical() << "Unable to start Build pulling transaction:"
@@ -262,11 +278,11 @@ bool BuildPullingService::applyPull(const PullRequest& request,
     buildId = 0;
     piecesPulled = 0;
 
-    BuildAllocationRepository allocationRepository;
-    BuildRequirementRepository requirementRepository;
-    InventoryRecordRepository inventoryRepository;
-    InventoryMovementRepository movementRepository;
-    BuildRepository buildRepository;
+    BuildAllocationRepository allocationRepository(serviceDatabase());
+    BuildRequirementRepository requirementRepository(serviceDatabase());
+    InventoryRecordRepository inventoryRepository(serviceDatabase());
+    InventoryMovementRepository movementRepository(serviceDatabase());
+    BuildRepository buildRepository(serviceDatabase());
 
     const std::optional<BuildAllocation> allocation =
         allocationRepository.getById(request.allocationId);
@@ -408,7 +424,7 @@ bool BuildPullingService::applyPull(const PullRequest& request,
 
 QString BuildPullingService::storagePath(int storageLocationId) const
 {
-    StorageLocationRepository repository;
+    StorageLocationRepository repository(serviceDatabase());
 
     QStringList parts;
     int currentId = storageLocationId;

@@ -15,9 +15,15 @@
 #include <QList>
 #include <QString>
 
+class QSqlDatabase;
+class QThread;
+
 class BuildPullingService
 {
 public:
+    BuildPullingService();
+    explicit BuildPullingService(const QSqlDatabase& database);
+
     struct PullingItem
     {
         int buildId = 0;
@@ -85,10 +91,13 @@ public:
     PullResult recordPulls(const QList<PullRequest>& requests) const;
 
 private:
+    QSqlDatabase serviceDatabase() const;
     bool applyPull(const PullRequest& request,
                    int& buildId,
                    int& piecesPulled,
                    QString& errorMessage) const;
 
     QString storagePath(int storageLocationId) const;
+    QString m_connectionName;
+    QThread* m_ownerThread = nullptr;
 };

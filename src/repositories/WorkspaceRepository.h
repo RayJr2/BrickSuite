@@ -20,14 +20,20 @@
 
 #pragma once
 
+#include "RepositoryConnection.h"
+
 #include "../models/Workspace.h"
 
 #include <QList>
 #include <optional>
 
-class WorkspaceRepository
+class WorkspaceRepository : protected RepositoryConnection
 {
 public:
+    WorkspaceRepository() = default;
+    explicit WorkspaceRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
+
     bool create(Workspace& workspace);
 
     QList<Workspace> getAll() const;

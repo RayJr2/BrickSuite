@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "RepositoryConnection.h"
+
 #include "../models/InventoryHistoryResult.h"
 #include "../models/InventoryMovement.h"
 
@@ -27,9 +29,13 @@
 
 class QSqlQuery;
 
-class InventoryMovementRepository
+class InventoryMovementRepository : protected RepositoryConnection
 {
 public:
+    InventoryMovementRepository() = default;
+    explicit InventoryMovementRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
+
     bool create(InventoryMovement& movement);
 
     QList<InventoryMovement> getByInventoryRecord(int inventoryRecordId) const;

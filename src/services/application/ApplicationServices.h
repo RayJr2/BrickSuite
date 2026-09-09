@@ -26,6 +26,7 @@
 #include <optional>
 
 class PartReferenceManifest;
+class QSqlDatabase;
 
 enum class ApplicationServiceAvailability
 {
@@ -145,3 +146,5 @@ private:
 };
 
 std::unique_ptr<ApplicationServices> createUnavailableHostApplicationServices();
+std::unique_ptr<ApplicationServices> createConnectionBoundReadApplicationServices(
+    const QSqlDatabase& database);

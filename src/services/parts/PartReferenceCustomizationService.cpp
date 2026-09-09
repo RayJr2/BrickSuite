@@ -1,11 +1,14 @@
 /* BrickSuite - The Digital Twin Platform for Your Brick Workshop */
 #include "PartReferenceCustomizationService.h"
+#include "../../database/DatabaseManager.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/UserPartReferenceRepository.h"
 #include <QHash>
 #include <QSet>
 #include <algorithm>
 #include <functional>
+#include <QSqlDatabase>
+#include <QThread>
 
 namespace {
 QString key(const QString& value) { return value.trimmed().toLower(); }
@@ -14,7 +17,21 @@ QString destinationKey(const QString& catalog, const QString& section)
 }
 
 PartReferenceCustomizationService::PartReferenceCustomizationService(const PartReferenceManifest& manifest)
-    : m_manifest(manifest) {}
+    : PartReferenceCustomizationService(manifest, DatabaseManager::instance().database()) {}
+
+PartReferenceCustomizationService::PartReferenceCustomizationService(
+    const PartReferenceManifest& manifest, const QSqlDatabase& database)
+    : m_manifest(manifest), m_connectionName(database.connectionName()),
+      m_ownerThread(QThread::currentThread())
+{
+    Q_ASSERT(database.isValid());
+}
+
+QSqlDatabase PartReferenceCustomizationService::serviceDatabase() const
+{
+    Q_ASSERT(QThread::currentThread() == m_ownerThread);
+    return QSqlDatabase::database(m_connectionName, false);
+}
 
 bool PartReferenceCustomizationService::isStructuredCatalog(const QString& catalog)
 {
@@ -49,7 +66,8 @@ QList<PartReferenceEntry> PartReferenceCustomizationService::effectiveEntries(QS
     }
 
     bool loaded = false;
-    const QList<UserPartReferenceEntry> stored = UserPartReferenceRepository().getAll(&loaded);
+    const QList<UserPartReferenceEntry> stored =
+        UserPartReferenceRepository(serviceDatabase()).getAll(&loaded);
     if (!loaded) {
         if (errorMessage) *errorMessage = QStringLiteral("Unable to load Part Reference customizations.");
         return builtIns;
@@ -57,7 +75,7 @@ QList<PartReferenceEntry> PartReferenceCustomizationService::effectiveEntries(QS
 
     QHash<QString, QList<PartReferenceEntry>> usersByDestination;
     QHash<QString, UserPartReferenceEntry> placementByPart;
-    PartRepository parts;
+    PartRepository parts(serviceDatabase());
     for (const UserPartReferenceEntry& storedEntry : stored) {
         if (!validDestinations.contains(destinationKey(storedEntry.catalog, storedEntry.section))) {
             qWarning() << "Suppressing user Part Reference entry with invalid destination:" << storedEntry.id;
@@ -136,7 +154,7 @@ PartReferenceCustomizationResult PartReferenceCustomizationService::add(
     int partId, const QString& catalog, const QString& section,
     PartReferencePlacement placement, const QString& anchorPartNumber) const
 {
-    const auto part = PartRepository().getById(partId);
+    const auto part = PartRepository(serviceDatabase()).getById(partId);
     if (!part || !part->isActive())
         return {false, QStringLiteral("Select an active local catalog Part."), 0};
 
@@ -172,7 +190,7 @@ PartReferenceCustomizationResult PartReferenceCustomizationService::add(
     entry.partId = partId; entry.catalog = catalog; entry.section = section;
     entry.placement = placement; entry.anchorPartNumber = anchorPartNumber;
     QString error;
-    if (!UserPartReferenceRepository().create(entry, &error))
+    if (!UserPartReferenceRepository(serviceDatabase()).create(entry, &error))
         return {false, QStringLiteral("Unable to save the Part Reference customization: %1").arg(error), 0};
     return {true, QStringLiteral("Part %1 was added to Part Reference.").arg(part->partNumber()), entry.id};
 }
@@ -182,7 +200,7 @@ PartReferenceCustomizationResult PartReferenceCustomizationService::remove(int u
     if (userEntryId <= 0)
         return {false, QStringLiteral("Built-in Part Reference entries cannot be removed."), 0};
     QString error;
-    if (!UserPartReferenceRepository().remove(userEntryId, &error))
+    if (!UserPartReferenceRepository(serviceDatabase()).remove(userEntryId, &error))
         return {false, QStringLiteral("Unable to remove the customization: %1").arg(error), 0};
     return {true, QStringLiteral("The user Part Reference entry was removed."), userEntryId};
 }

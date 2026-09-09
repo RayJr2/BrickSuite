@@ -31,7 +31,7 @@
 bool WorkspaceRepository::create(Workspace& workspace)
 {
     QSqlDatabase database =
-        DatabaseManager::instance().database();
+        repositoryDatabase();
 
     if (!database.isOpen())
     {
@@ -101,7 +101,7 @@ QList<Workspace> WorkspaceRepository::getAll() const
     QList<Workspace> workspaces;
 
     QSqlDatabase database =
-        DatabaseManager::instance().database();
+        repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -137,7 +137,7 @@ std::optional<Workspace>
 WorkspaceRepository::getById(int id) const
 {
     QSqlDatabase database =
-        DatabaseManager::instance().database();
+        repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -174,7 +174,7 @@ bool WorkspaceRepository::update(
     const Workspace& workspace)
 {
     QSqlDatabase database =
-        DatabaseManager::instance().database();
+        repositoryDatabase();
 
     if (!database.isOpen()) {
         qCritical() << "Workspace update failed: database is not open."

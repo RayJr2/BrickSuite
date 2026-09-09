@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "RepositoryConnection.h"
+
 #include "../models/Build.h"
 
 #include <QList>
@@ -27,9 +29,13 @@
 
 class QSqlQuery;
 
-class BuildRepository
+class BuildRepository : protected RepositoryConnection
 {
 public:
+    BuildRepository() = default;
+    explicit BuildRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
+
     bool create(Build& build);
 
     std::optional<Build> getById(int id) const;

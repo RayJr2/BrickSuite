@@ -20,6 +20,8 @@
 
 #include "MissingPartsService.h"
 
+#include "../../database/DatabaseManager.h"
+
 #include "../../models/BuildRequirement.h"
 #include "../../models/Color.h"
 #include "../../models/Part.h"
@@ -29,6 +31,24 @@
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/PartRepository.h"
+
+#include <QSqlDatabase>
+#include <QThread>
+
+MissingPartsService::MissingPartsService()
+    : MissingPartsService(DatabaseManager::instance().database()) {}
+
+MissingPartsService::MissingPartsService(const QSqlDatabase& database)
+    : m_connectionName(database.connectionName()), m_ownerThread(QThread::currentThread())
+{
+    Q_ASSERT(database.isValid());
+}
+
+QSqlDatabase MissingPartsService::serviceDatabase() const
+{
+    Q_ASSERT(QThread::currentThread() == m_ownerThread);
+    return QSqlDatabase::database(m_connectionName, false);
+}
 
 #include <QtGlobal>
 
@@ -45,21 +65,18 @@ MissingPartsService::getMissingParts(
         return results;
     }
 
-    BuildRequirementRepository
-        requirementRepository;
+    BuildRequirementRepository requirementRepository(serviceDatabase());
 
     const QList<BuildRequirement> requirements =
         requirementRepository.getByBuild(
             buildId);
 
-    PartRepository partRepository;
-    ColorRepository colorRepository;
+    PartRepository partRepository(serviceDatabase());
+    ColorRepository colorRepository(serviceDatabase());
 
-    InventoryRecordRepository
-        inventoryRepository;
+    InventoryRecordRepository inventoryRepository(serviceDatabase());
 
-    BuildAllocationRepository
-        allocationRepository;
+    BuildAllocationRepository allocationRepository(serviceDatabase());
 
     for (const BuildRequirement& requirement :
          requirements)

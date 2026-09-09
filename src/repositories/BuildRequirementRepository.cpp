@@ -16,7 +16,7 @@ bool BuildRequirementRepository::create(BuildRequirement& requirement)
         return false;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
     const QDateTime now = QDateTime::currentDateTimeUtc();
     QSqlQuery query(database);
 
@@ -81,7 +81,7 @@ std::optional<BuildRequirement> BuildRequirementRepository::getById(int id) cons
     if (id <= 0)
         return std::nullopt;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT id, build_id, part_id, color_id,
                substitute_part_id, substitute_color_id,
@@ -107,7 +107,7 @@ QList<BuildRequirement> BuildRequirementRepository::getByBuild(int buildId) cons
     if (buildId <= 0)
         return requirements;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT id, build_id, part_id, color_id,
                substitute_part_id, substitute_color_id,
@@ -137,7 +137,7 @@ bool BuildRequirementRepository::update(BuildRequirement& requirement)
     }
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         UPDATE build_requirement
         SET build_id = :build_id,
@@ -180,7 +180,7 @@ bool BuildRequirementRepository::remove(int requirementId)
 {
     if (requirementId <= 0)
         return false;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare("DELETE FROM build_requirement WHERE id = :id");
     query.bindValue(":id", requirementId);
     if (!query.exec()) {
@@ -194,7 +194,7 @@ bool BuildRequirementRepository::removeAllForBuild(int buildId)
 {
     if (buildId <= 0)
         return false;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare("DELETE FROM build_requirement WHERE build_id = :build_id");
     query.bindValue(":build_id", buildId);
     if (!query.exec()) {
@@ -213,7 +213,7 @@ std::optional<BuildRequirement> BuildRequirementRepository::getByBuildPartColor(
         return std::nullopt;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 

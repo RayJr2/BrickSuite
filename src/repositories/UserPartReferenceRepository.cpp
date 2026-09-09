@@ -24,7 +24,7 @@ QList<UserPartReferenceEntry> UserPartReferenceRepository::getAll(bool* ok) cons
 {
     if (ok) *ok = false;
     QList<UserPartReferenceEntry> result;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     if (!query.exec("SELECT id,part_id,catalog,section,anchor_part_number,placement_mode,"
                     "created_utc,modified_utc FROM user_part_reference_entry ORDER BY id")) {
         qCritical() << "Unable to load user Part Reference entries:" << query.lastError().text();
@@ -47,7 +47,7 @@ QList<UserPartReferenceEntry> UserPartReferenceRepository::getAll(bool* ok) cons
 bool UserPartReferenceRepository::create(UserPartReferenceEntry& entry, QString* errorMessage) const
 {
     const QDateTime now = QDateTime::currentDateTimeUtc();
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare("INSERT INTO user_part_reference_entry(part_id,catalog,section,anchor_part_number,"
                   "placement_mode,created_utc,modified_utc) VALUES(?,?,?,?,?,?,?)");
     query.addBindValue(entry.partId); query.addBindValue(entry.catalog.trimmed());
@@ -66,7 +66,7 @@ bool UserPartReferenceRepository::create(UserPartReferenceEntry& entry, QString*
 
 bool UserPartReferenceRepository::remove(int id, QString* errorMessage) const
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare("DELETE FROM user_part_reference_entry WHERE id=?"); query.addBindValue(id);
     if (!query.exec() || query.numRowsAffected() != 1) {
         if (errorMessage) *errorMessage = query.lastError().text().isEmpty()

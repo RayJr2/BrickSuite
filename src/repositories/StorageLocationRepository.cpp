@@ -37,7 +37,7 @@ bool StorageLocationRepository::create(StorageLocation& location)
         return false;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     if (!database.isOpen()) {
         qCritical() << "Storage location create failed: database is not open.";
@@ -149,7 +149,7 @@ QList<StorageLocation> StorageLocationRepository::getCapabilityHierarchy(
             && capabilityColumn != QStringLiteral("allows_collection")))
         return locations;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -199,7 +199,7 @@ QList<StorageLocation> StorageLocationRepository::getByWorkspaceIncludingInactiv
 {
     QList<StorageLocation> locations;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -242,7 +242,7 @@ QList<StorageLocation> StorageLocationRepository::getChildren(int workspaceId,
 {
     QList<StorageLocation> locations;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -308,7 +308,7 @@ QList<StorageLocation> StorageLocationRepository::getChildren(int workspaceId,
 
 std::optional<StorageLocation> StorageLocationRepository::getById(int id) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -351,7 +351,7 @@ bool StorageLocationRepository::update(StorageLocation& location)
         return false;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -446,7 +446,7 @@ StorageLocation StorageLocationRepository::locationFromQuery(const QSqlQuery& qu
 
 bool StorageLocationRepository::hasChildren(int locationId) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -503,7 +503,7 @@ bool StorageLocationRepository::isValidCapabilityDestination(
         && capabilityColumn != QStringLiteral("allows_collection"))
         return false;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(QString(R"(
         SELECT 1
         FROM storage_location location
@@ -534,7 +534,7 @@ bool StorageLocationRepository::hasInventory(int locationId) const
     if (locationId <= 0)
         return false;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -568,7 +568,7 @@ bool StorageLocationRepository::isDescendant(int locationId, int possibleDescend
     if (locationId == possibleDescendantId)
         return true;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -610,7 +610,7 @@ bool StorageLocationRepository::deactivate(int locationId)
     if (locationId <= 0)
         return false;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 
@@ -652,7 +652,7 @@ bool StorageLocationRepository::reactivate(int locationId)
     if (locationId <= 0)
         return false;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 

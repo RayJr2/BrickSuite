@@ -1,5 +1,7 @@
 #pragma once
 
+#include "RepositoryConnection.h"
+
 #include "../models/BuildAllocation.h"
 
 #include <QList>
@@ -13,9 +15,13 @@ struct BuildPartManufacturerProvenance
     int quantityPulled = 0;
 };
 
-class BuildAllocationRepository
+class BuildAllocationRepository : protected RepositoryConnection
 {
 public:
+    BuildAllocationRepository() = default;
+    explicit BuildAllocationRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
+
     bool create(BuildAllocation& allocation);
     std::optional<BuildAllocation> getById(int id) const;
     QList<BuildAllocation> getByBuild(int buildId) const;

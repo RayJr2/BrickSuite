@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "RepositoryConnection.h"
+
 #include "../models/Color.h"
 
 #include <QList>
@@ -27,9 +29,13 @@
 
 class QSqlQuery;
 
-class ColorRepository
+class ColorRepository : protected RepositoryConnection
 {
 public:
+    ColorRepository() = default;
+    explicit ColorRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
+
     QList<Color> getAll() const;
 
     std::optional<Color> getById(int id) const;

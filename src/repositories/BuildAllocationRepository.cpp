@@ -27,7 +27,7 @@ bool BuildAllocationRepository::create(BuildAllocation& allocation)
     }
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         INSERT INTO build_allocation
         (build_id, build_requirement_id, inventory_record_id, part_id, color_id,
@@ -61,7 +61,7 @@ std::optional<BuildAllocation> BuildAllocationRepository::getById(int id) const
 {
     if (id <= 0)
         return std::nullopt;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(QStringLiteral("SELECT %1 FROM build_allocation WHERE id = :id").arg(allocationSelectColumns()));
     query.bindValue(":id", id);
     if (!query.exec()) {
@@ -78,7 +78,7 @@ QList<BuildAllocation> BuildAllocationRepository::getByBuild(int buildId) const
     QList<BuildAllocation> allocations;
     if (buildId <= 0)
         return allocations;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(QStringLiteral("SELECT %1 FROM build_allocation WHERE build_id = :build_id "
                                  "ORDER BY part_id, color_id, storage_location_id")
                       .arg(allocationSelectColumns()));
@@ -97,7 +97,7 @@ QList<BuildAllocation> BuildAllocationRepository::getByRequirement(int buildRequ
     QList<BuildAllocation> allocations;
     if (buildRequirementId <= 0)
         return allocations;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(QStringLiteral("SELECT %1 FROM build_allocation WHERE build_requirement_id = :id "
                                  "ORDER BY storage_location_id, inventory_record_id")
                       .arg(allocationSelectColumns()));
@@ -116,7 +116,7 @@ QList<BuildAllocation> BuildAllocationRepository::getByInventoryRecord(int inven
     QList<BuildAllocation> allocations;
     if (inventoryRecordId <= 0)
         return allocations;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(QStringLiteral("SELECT %1 FROM build_allocation WHERE inventory_record_id = :id ORDER BY build_id")
                       .arg(allocationSelectColumns()));
     query.bindValue(":id", inventoryRecordId);
@@ -137,7 +137,7 @@ bool BuildAllocationRepository::update(BuildAllocation& allocation)
         return false;
     }
     const QDateTime now = QDateTime::currentDateTimeUtc();
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         UPDATE build_allocation
         SET build_id = :build_id,
@@ -174,7 +174,7 @@ bool BuildAllocationRepository::remove(int allocationId)
 {
     if (allocationId <= 0)
         return false;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare("DELETE FROM build_allocation WHERE id = :id");
     query.bindValue(":id", allocationId);
     if (!query.exec()) {
@@ -188,7 +188,7 @@ bool BuildAllocationRepository::removeAllForBuild(int buildId)
 {
     if (buildId <= 0)
         return false;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare("DELETE FROM build_allocation WHERE build_id = :id");
     query.bindValue(":id", buildId);
     if (!query.exec()) {
@@ -202,7 +202,7 @@ bool BuildAllocationRepository::removeAllForRequirement(int buildRequirementId)
 {
     if (buildRequirementId <= 0)
         return false;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare("DELETE FROM build_allocation WHERE build_requirement_id = :id");
     query.bindValue(":id", buildRequirementId);
     if (!query.exec()) {
@@ -216,7 +216,7 @@ int BuildAllocationRepository::totalAllocatedForRequirement(int buildRequirement
 {
     if (buildRequirementId <= 0)
         return 0;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare("SELECT COALESCE(SUM(quantity_allocated), 0) FROM build_allocation WHERE build_requirement_id = :id");
     query.bindValue(":id", buildRequirementId);
     if (!query.exec() || !query.next()) {
@@ -231,7 +231,7 @@ int BuildAllocationRepository::totalAllocatedForPartColor(int workspaceId, int p
 {
     if (workspaceId <= 0 || partId <= 0 || colorId <= 0)
         return 0;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT COALESCE(SUM(ba.quantity_allocated), 0)
         FROM build_allocation ba
@@ -255,7 +255,7 @@ int BuildAllocationRepository::totalAllocatedForPartColorForBuild(int buildId, i
 {
     if (buildId <= 0 || partId <= 0 || colorId <= 0)
         return 0;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT COALESCE(SUM(quantity_allocated), 0)
         FROM build_allocation
@@ -284,7 +284,7 @@ std::optional<int> BuildAllocationRepository::tryTotalAllocatedForInventoryRecor
     if (inventoryRecordId <= 0)
         return std::nullopt;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT COALESCE(SUM(quantity_allocated), 0)
         FROM build_allocation
@@ -310,7 +310,7 @@ int BuildAllocationRepository::totalAllocatedForInventoryRecordForBuild(int inve
     if (inventoryRecordId <= 0 || buildId <= 0)
         return 0;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT COALESCE(SUM(quantity_allocated), 0)
         FROM build_allocation
@@ -352,7 +352,7 @@ bool BuildAllocationRepository::recordPulledManufacturer(int buildId,
     const QString now =
         QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         INSERT INTO build_part_provenance
         (
@@ -410,7 +410,7 @@ BuildAllocationRepository::pulledManufacturerProvenance(
     if (buildId <= 0 || partId <= 0 || colorId <= 0)
         return values;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT
             manufacturer_id,
@@ -456,7 +456,7 @@ bool BuildAllocationRepository::reducePulledManufacturer(int buildId,
         return false;
     }
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         UPDATE build_part_provenance
         SET
@@ -486,7 +486,7 @@ bool BuildAllocationRepository::reducePulledManufacturer(int buildId,
     if (query.numRowsAffected() <= 0)
         return false;
 
-    QSqlQuery cleanup(DatabaseManager::instance().database());
+    QSqlQuery cleanup(repositoryDatabase());
     cleanup.prepare(R"(
         DELETE FROM build_part_provenance
         WHERE build_id = :build_id
