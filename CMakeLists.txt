@@ -124,6 +124,15 @@ qt_add_executable(BrickSuite
     src/services/application/UnavailableApplicationServices.cpp
     src/services/application/HostReadExecutor.h
     src/services/application/HostReadExecutor.cpp
+    src/services/application/AsyncReadResult.h
+    src/services/application/dto/RemoteReadDtos.h
+    src/services/application/dto/RemoteReadJson.h
+    src/services/application/dto/RemoteReadJson.cpp
+    src/services/application/RemoteReadApplicationServices.h
+    src/services/application/RemoteReadApplicationServices.cpp
+    src/services/application/HostReadProtocolService.h
+    src/services/application/HostReadProtocolService.cpp
+    src/services/application/LocalReferenceDecoration.h
     src/services/application/SharedDataSource.h
     src/services/database/AutomaticBackupRetention.h
     src/services/database/AutomaticBackupRetention.cpp
@@ -498,6 +507,7 @@ if(BUILD_TESTING)
         src/api/ApiNetworkService.h src/api/ApiNetworkService.cpp
         src/settings/UserSettings.h src/settings/UserSettings.cpp
         src/services/CredentialStore.h src/services/CredentialStore.cpp
+        resources/resources.qrc
         src/models/Color.h src/models/Color.cpp
         src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
         src/models/ExternalColorMapping.h
@@ -1071,9 +1081,45 @@ if(BUILD_TESTING)
         src/services/application/ApplicationServices.cpp
         src/services/application/ApplicationServicesCore.cpp
         src/services/application/HostReadExecutor.h src/services/application/HostReadExecutor.cpp
+        src/services/application/HostReadProtocolService.h src/services/application/HostReadProtocolService.cpp
+        src/services/application/RemoteReadApplicationServices.h src/services/application/RemoteReadApplicationServices.cpp
+        src/services/application/AsyncReadResult.h
+        src/services/application/dto/RemoteReadDtos.h
+        src/services/application/dto/RemoteReadJson.h src/services/application/dto/RemoteReadJson.cpp
+        src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
+        src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
+        src/network/BrickSuiteAuthentication.h src/network/BrickSuiteAuthentication.cpp
+        src/network/BrickSuiteHostIdentity.h src/network/BrickSuiteHostIdentity.cpp
+        src/network/BrickSuiteConnectionState.h
+        src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
+        src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
+        src/services/CredentialStore.h src/services/CredentialStore.cpp
+        resources/resources.qrc
     )
-    target_link_libraries(HostReadExecutorTest PRIVATE Qt6::Core Qt6::Sql)
+    target_compile_definitions(HostReadExecutorTest PRIVATE
+        BRICKSUITE_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(HostReadExecutorTest PRIVATE
+        Qt6::Core Qt6::Sql Qt6::Network Qt6::WebSockets OpenSSL::Crypto)
+    if(WIN32)
+        target_link_libraries(HostReadExecutorTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(HostReadExecutorTest PRIVATE "-framework Security")
+    endif()
     add_test(NAME HostReadExecutor COMMAND HostReadExecutorTest)
+
+    qt_add_executable(RemoteReadFoundationTest EXCLUDE_FROM_ALL
+        tests/RemoteReadFoundationTest.cpp
+        src/services/application/AsyncReadResult.h
+        src/services/application/dto/RemoteReadDtos.h
+        src/services/application/dto/RemoteReadJson.h
+        src/services/application/dto/RemoteReadJson.cpp
+        src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
+        src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
+    )
+    target_compile_definitions(RemoteReadFoundationTest PRIVATE
+        BRICKSUITE_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(RemoteReadFoundationTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME RemoteReadFoundation COMMAND RemoteReadFoundationTest)
 endif()
 
 if(WIN32)

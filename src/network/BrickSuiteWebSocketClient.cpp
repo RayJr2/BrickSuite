@@ -4,6 +4,7 @@
 #include "BrickSuiteHostIdentity.h"
 
 #include <QDateTime>
+#include <QJsonArray>
 #include <QRandomGenerator>
 #include <QSslCertificate>
 #include <QSslConfiguration>
@@ -98,24 +99,54 @@ QJsonObject BrickSuiteWebSocketClient::capabilities() const { return m_capabilit
 QString BrickSuiteWebSocketClient::sendRequest(const QString& operation,
                                                 const QJsonObject& payload)
 {
+    return enqueueRequest(operation, payload, nullptr, {}, {},
+                          BrickSuiteProtocol::RequestTimeoutMs);
+}
+
+QString BrickSuiteWebSocketClient::sendRequest(
+    const QString& operation, const QJsonObject& payload, QObject* context,
+    Completion completion, Failure failure, int timeoutMs)
+{
+    if (!context) return {};
+    return enqueueRequest(operation, payload, context, std::move(completion),
+                          std::move(failure), timeoutMs);
+}
+
+bool BrickSuiteWebSocketClient::supportsOperation(const QString& operation) const
+{
+    const QJsonArray operations = m_capabilities.value(QStringLiteral("operations")).toArray();
+    for (const QJsonValue& value : operations)
+        if (value.toString() == operation) return true;
+    return false;
+}
+
+QString BrickSuiteWebSocketClient::enqueueRequest(
+    const QString& operation, const QJsonObject& payload, QObject* context,
+    Completion completion, Failure failure, int timeoutMs)
+{
     if (m_pending.size() >= BrickSuiteProtocol::MaximumOutstandingRequests)
         return {};
     const auto message = BrickSuiteProtocol::request(operation, payload);
     Pending pending;
     pending.operation = operation;
+    pending.context = context;
+    pending.completion = std::move(completion);
+    pending.failure = std::move(failure);
     pending.timer = new QTimer(this);
     pending.timer->setSingleShot(true);
     connect(pending.timer, &QTimer::timeout, this, [this, id = message.requestId]() {
         auto it = m_pending.find(id);
         if (it == m_pending.end()) return;
-        it->timer->deleteLater();
+        Pending pending = std::move(it.value());
+        pending.timer->deleteLater();
         m_pending.erase(it);
         const BrickSuiteProtocol::Error error{QStringLiteral("TIMEOUT"),
             QStringLiteral("The Host request timed out."), true};
         emit requestFailed(id, error);
+        if (pending.context && pending.failure) pending.failure(error);
         emit testConnectionCompleted(false, error.message);
     });
-    pending.timer->start(BrickSuiteProtocol::RequestTimeoutMs);
+    pending.timer->start(qBound(1, timeoutMs, BrickSuiteProtocol::RequestTimeoutMs));
     m_pending.insert(message.requestId, pending);
     m_socket.sendTextMessage(QString::fromUtf8(BrickSuiteProtocol::serialize(message)));
     return message.requestId;
@@ -210,9 +241,10 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
 {
     auto it = m_pending.find(message.requestId);
     if (it == m_pending.end()) return; // Unsolicited/stale response.
-    const QString operation = it->operation;
-    it->timer->stop();
-    it->timer->deleteLater();
+    Pending pending = std::move(it.value());
+    const QString operation = pending.operation;
+    pending.timer->stop();
+    pending.timer->deleteLater();
     m_pending.erase(it);
     if (message.type == BrickSuiteProtocol::MessageType::Error) {
         if (message.error.code == QStringLiteral("AUTH_FAILED")) {
@@ -224,10 +256,12 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
             m_explicitDisconnect = true;
         }
         emit requestFailed(message.requestId, message.error);
+        if (pending.context && pending.failure) pending.failure(message.error);
         emit testConnectionCompleted(false, message.error.message);
         return;
     }
     emit requestCompleted(message.requestId, message.payload);
+    if (pending.context && pending.completion) pending.completion(message.payload);
     if (operation == QStringLiteral("system.hello")) {
         sendAuthentication(message);
     } else if (operation == QStringLiteral("system.authenticate")) {
@@ -295,7 +329,9 @@ void BrickSuiteWebSocketClient::failPending(const QString& code,
         Pending pending = m_pending.take(id);
         pending.timer->stop();
         pending.timer->deleteLater();
-        emit requestFailed(id, {code, message, retryable});
+        const BrickSuiteProtocol::Error error{code, message, retryable};
+        emit requestFailed(id, error);
+        if (pending.context && pending.failure) pending.failure(error);
     }
 }
 

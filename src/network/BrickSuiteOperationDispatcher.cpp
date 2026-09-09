@@ -11,14 +11,33 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
         [this](const QJsonObject&) {
         QJsonArray names;
         for (const QString& operation : operations()) names.append(operation);
+        QJsonArray capabilities;
+        const auto addCapability = [this, &capabilities](const QString& operation,
+                                                         const QString& capability) {
+            if (m_operations.contains(operation)) capabilities.append(capability);
+        };
+        addCapability(QStringLiteral("workspace.list"), QStringLiteral("workspace.read"));
+        addCapability(QStringLiteral("storage.list"), QStringLiteral("storage.read"));
+        addCapability(QStringLiteral("inventory.search"), QStringLiteral("inventory.read"));
+        addCapability(QStringLiteral("inventory.get"), QStringLiteral("inventory.detail.read"));
+        addCapability(QStringLiteral("inventory.history"), QStringLiteral("inventory.history.read"));
+        addCapability(QStringLiteral("builds.list"), QStringLiteral("builds.read"));
+        addCapability(QStringLiteral("builds.requirements"), QStringLiteral("builds.requirements.read"));
+        addCapability(QStringLiteral("builds.missingParts"), QStringLiteral("builds.missingParts.read"));
+        addCapability(QStringLiteral("builds.pulling"), QStringLiteral("builds.pulling.read"));
+        addCapability(QStringLiteral("collection.search"), QStringLiteral("collection.read"));
+        addCapability(QStringLiteral("partReference.customizations"),
+                      QStringLiteral("partReference.customizations.read"));
+        const bool sharedReads = m_operations.contains(QStringLiteral("workspace.list"));
         return QJsonObject{
             {QStringLiteral("brickSuiteVersion"), QStringLiteral(BRICKSUITE_VERSION)},
             {QStringLiteral("protocolMajor"), BrickSuiteProtocol::Major},
             {QStringLiteral("protocolMinor"), BrickSuiteProtocol::Minor},
             {QStringLiteral("schemaVersion"), DatabaseSchema::CurrentSchemaVersion},
             {QStringLiteral("maintenance"), false},
-            {QStringLiteral("sharedBusinessDataAvailable"), false},
+            {QStringLiteral("sharedBusinessDataAvailable"), sharedReads},
             {QStringLiteral("catalogStatusAvailable"), false},
+            {QStringLiteral("capabilities"), capabilities},
             {QStringLiteral("operations"), names}};
     });
     registerOperation(QStringLiteral("system.ping"), true,
@@ -38,6 +57,12 @@ void BrickSuiteOperationDispatcher::registerOperation(
     m_operations.insert(name, {authenticationRequired, std::move(handler)});
 }
 
+void BrickSuiteOperationDispatcher::registerAsyncOperation(
+    const QString& name, bool authenticationRequired, AsyncHandler handler)
+{
+    m_operations.insert(name, {authenticationRequired, {}, std::move(handler)});
+}
+
 BrickSuiteProtocol::Message BrickSuiteOperationDispatcher::dispatch(
     const BrickSuiteProtocol::Message& request, bool authenticated) const
 {
@@ -48,7 +73,32 @@ BrickSuiteProtocol::Message BrickSuiteOperationDispatcher::dispatch(
     if (it->authenticationRequired && !authenticated)
         return BrickSuiteProtocol::errorResponse(request, QStringLiteral("AUTH_REQUIRED"),
             QStringLiteral("Authenticate before requesting this operation."));
+    if (!it->handler)
+        return BrickSuiteProtocol::errorResponse(request, QStringLiteral("ASYNC_REQUIRED"),
+            QStringLiteral("This operation completes asynchronously."), true);
     return BrickSuiteProtocol::response(request, it->handler(request.payload));
+}
+
+void BrickSuiteOperationDispatcher::dispatchAsync(
+    const BrickSuiteProtocol::Message& request, bool authenticated,
+    Completion completion) const
+{
+    const auto it = m_operations.constFind(request.operation);
+    if (it == m_operations.constEnd()) {
+        completion(BrickSuiteProtocol::errorResponse(request, QStringLiteral("UNKNOWN_OPERATION"),
+            QStringLiteral("The requested operation is not supported.")));
+        return;
+    }
+    if (it->authenticationRequired && !authenticated) {
+        completion(BrickSuiteProtocol::errorResponse(request, QStringLiteral("AUTH_REQUIRED"),
+            QStringLiteral("Authenticate before requesting this operation.")));
+        return;
+    }
+    if (it->asyncHandler) {
+        it->asyncHandler(request, std::move(completion));
+        return;
+    }
+    completion(BrickSuiteProtocol::response(request, it->handler(request.payload)));
 }
 
 QStringList BrickSuiteOperationDispatcher::operations() const

@@ -1,6 +1,8 @@
 #include "HostReadExecutor.h"
 
 #include "../../repositories/StorageLocationRepository.h"
+#include "../../repositories/PartRepository.h"
+#include "../../repositories/ColorRepository.h"
 #include "../parts/PartReferenceManifest.h"
 
 #include <QElapsedTimer>
@@ -212,3 +214,50 @@ void HostReadExecutor::effectivePartReference(const PartReferenceManifest& manif
 }
 
 #undef HOST_READ_METHOD_BODY
+
+namespace {
+QString locationPath(const QSqlDatabase& db, int id)
+{
+    StorageLocationRepository locations(db); QStringList names; int guard = 0;
+    while (id > 0 && guard++ < 100) { const auto value = locations.getById(id); if (!value) break;
+        names.prepend(value->name()); id = value->parentLocationId(); }
+    return names.join(QStringLiteral(" / "));
+}
+}
+
+void HostReadExecutor::getInventoryPortable(int id, QObject* context,
+    std::function<void(const std::optional<RemoteReadDto::InventoryDetail>&)> completion,
+    ErrorCallback failure)
+{
+    QPointer<QObject> guard(context);
+    enqueue(QStringLiteral("inventory.get"), [=, completion=std::move(completion)](ApplicationServices& services,const QSqlDatabase& db) mutable {
+        const auto record=services.inventory().get(id); std::optional<RemoteReadDto::InventoryDetail> result;
+        if(record){RemoteReadDto::InventoryDetail d;d.inventoryRecordId=record->id();d.workspaceId=record->workspaceId();d.quantity=record->quantity();d.storageId=record->storageLocationId();d.storagePath=locationPath(db,d.storageId);d.condition=record->condition();d.ownershipType=record->ownershipType();d.createdUtc=record->createdUtc();d.modifiedUtc=record->modifiedUtc();const auto p=PartRepository(db).getById(record->partId());const auto c=ColorRepository(db).getById(record->colorId());if(p){d.partNumber=p->partNumber();d.partNameFallback=p->name();}if(c){d.rebrickableColorId=c->rebrickableId();d.colorNameFallback=c->name();}result=d;}
+        if(guard)QMetaObject::invokeMethod(guard,[guard,completion,result=std::move(result)]()mutable{if(guard)completion(result);},Qt::QueuedConnection);
+    },context,std::move(failure));
+}
+
+void HostReadExecutor::searchInventoryPortable(const RemoteReadDto::InventorySearchRequest&r,QObject*context,std::function<void(const InventoryApplicationService::Page&)>completion,ErrorCallback failure)
+{
+ QPointer<QObject>guard(context);enqueue(QStringLiteral("inventory.search"),[=,completion=std::move(completion)](ApplicationServices&s,const QSqlDatabase&db)mutable{InventorySearchCriteria c;c.workspaceId=int(r.workspaceId);c.searchText=r.text;c.storageLocationId=int(r.storageId);c.limit=r.paging.pageSize;c.offset=(r.paging.page-1)*r.paging.pageSize;if(r.rebrickableColorId>=0){const auto color=ColorRepository(db).getByRebrickableId(r.rebrickableColorId);if(!color){InventoryApplicationService::Page empty;if(guard)QMetaObject::invokeMethod(guard,[guard,completion,empty]()mutable{if(guard)completion(empty);},Qt::QueuedConnection);return;}c.colorId=color->id();}auto out=s.inventory().search(c);if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out=std::move(out)]()mutable{if(guard)completion(out);},Qt::QueuedConnection);},context,std::move(failure));
+}
+
+void HostReadExecutor::inventoryHistoryPortable(int workspaceId,const QString& partNumber,int rbColor,QObject* context,std::function<void(const QList<RemoteReadDto::InventoryHistoryRow>&)> completion,ErrorCallback failure)
+{
+    QPointer<QObject> guard(context); enqueue(QStringLiteral("inventory.history"),[=,completion=std::move(completion)](ApplicationServices& services,const QSqlDatabase& db)mutable{QList<RemoteReadDto::InventoryHistoryRow> out;const auto p=PartRepository(db).getByPartNumber(partNumber);const auto c=ColorRepository(db).getByRebrickableId(rbColor);if(p&&c){for(const auto&x:services.inventory().history(workspaceId,p->id(),c->id()))out.append({x.movementId,x.movementType,x.quantityChange,x.fromStorageLocationId,x.fromStoragePath,x.toStorageLocationId,x.toStoragePath,x.condition,x.ownershipType,x.referenceType,x.referenceId,x.notes,x.createdUtc});}if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out=std::move(out)]()mutable{if(guard)completion(out);},Qt::QueuedConnection);},context,std::move(failure));
+}
+
+void HostReadExecutor::buildRequirementsPortable(int buildId,const RemoteReadDto::PageRequest&page,QObject*context,std::function<void(const RemoteReadDto::Page<RemoteReadDto::BuildRequirement>&)>completion,ErrorCallback failure)
+{
+ QPointer<QObject>guard(context);enqueue(QStringLiteral("builds.requirements"),[=,completion=std::move(completion)](ApplicationServices&s,const QSqlDatabase&db)mutable{const auto all=s.builds().requirements(buildId);RemoteReadDto::Page<RemoteReadDto::BuildRequirement> out;out.page=page.page;out.pageSize=page.pageSize;out.totalRows=all.size();const int begin=(page.page-1)*page.pageSize;for(int i=begin;i<qMin(begin+page.pageSize,all.size());++i){const auto&x=all[i];RemoteReadDto::BuildRequirement d;d.requirementId=x.id();d.buildId=x.buildId();d.quantityRequired=x.quantityRequired();d.quantityPulled=x.quantityPulled();d.spare=x.isSpare();const auto p=PartRepository(db).getById(x.partId());const auto c=ColorRepository(db).getById(x.colorId());const auto sp=PartRepository(db).getById(x.substitutePartId());const auto sc=ColorRepository(db).getById(x.substituteColorId());if(p){d.partNumber=p->partNumber();d.partNameFallback=p->name();}if(c){d.rebrickableColorId=c->rebrickableId();d.colorNameFallback=c->name();}if(sp)d.substitutePartNumber=sp->partNumber();if(sc)d.substituteRebrickableColorId=sc->rebrickableId();out.rows.append(d);}if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out=std::move(out)]()mutable{if(guard)completion(out);},Qt::QueuedConnection);},context,std::move(failure));
+}
+
+void HostReadExecutor::missingPartsPortable(int workspaceId,int buildId,const RemoteReadDto::PageRequest&page,QObject*context,std::function<void(const RemoteReadDto::Page<RemoteReadDto::MissingPart>&)>completion,ErrorCallback failure)
+{
+ QPointer<QObject>guard(context);enqueue(QStringLiteral("builds.missingParts"),[=,completion=std::move(completion)](ApplicationServices&s,const QSqlDatabase&db)mutable{const auto all=s.builds().missingParts(workspaceId,buildId);RemoteReadDto::Page<RemoteReadDto::MissingPart>out;out.page=page.page;out.pageSize=page.pageSize;out.totalRows=all.size();const int begin=(page.page-1)*page.pageSize;for(int i=begin;i<qMin(begin+page.pageSize,all.size());++i){const auto&x=all[i];RemoteReadDto::MissingPart d;d.partNumber=x.partNumber;d.partNameFallback=x.partName;d.colorNameFallback=x.colorName;d.required=x.required;d.pulled=x.pulled;d.available=x.available;d.missing=x.missing;const auto color=ColorRepository(db).getById(x.colorId);if(color)d.rebrickableColorId=color->rebrickableId();out.rows.append(d);}if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out=std::move(out)]()mutable{if(guard)completion(out);},Qt::QueuedConnection);},context,std::move(failure));
+}
+
+void HostReadExecutor::pullingPortable(int buildId,const RemoteReadDto::PageRequest&page,QObject*context,std::function<void(const RemoteReadDto::Page<RemoteReadDto::PullingRow>&)>completion,ErrorCallback failure)
+{
+ QPointer<QObject>guard(context);enqueue(QStringLiteral("builds.pulling"),[=,completion=std::move(completion)](ApplicationServices&s,const QSqlDatabase&db)mutable{const auto view=s.builds().pullingView(buildId);RemoteReadDto::Page<RemoteReadDto::PullingRow>out;out.page=page.page;out.pageSize=page.pageSize;out.totalRows=view.items.size();const int begin=(page.page-1)*page.pageSize;for(int i=begin;i<qMin(begin+page.pageSize,view.items.size());++i){const auto&x=view.items[i];RemoteReadDto::PullingRow d;d.requirementId=x.buildRequirementId;d.allocationId=x.allocationId;d.inventoryRecordId=x.inventoryRecordId;d.storageId=x.storageLocationId;d.storagePath=x.storagePath;d.partNumber=x.partNumber;d.partNameFallback=x.partName;d.colorNameFallback=x.colorName;d.quantityRequired=x.quantityRequired;d.quantityPulled=x.quantityPulledForRequirement;d.quantityAllocated=x.quantityAllocatedHere;d.substitution=x.isSubstitution;const auto color=ColorRepository(db).getById(x.colorId);if(color)d.rebrickableColorId=color->rebrickableId();out.rows.append(d);}if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out=std::move(out)]()mutable{if(guard)completion(out);},Qt::QueuedConnection);},context,std::move(failure));
+}

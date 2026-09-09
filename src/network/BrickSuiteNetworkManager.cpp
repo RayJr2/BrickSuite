@@ -3,6 +3,8 @@
 #include "BrickSuiteAuthentication.h"
 #include "BrickSuiteWebSocketClient.h"
 #include "BrickSuiteWebSocketServer.h"
+#include "../database/DatabaseManager.h"
+#include "../services/application/HostReadProtocolService.h"
 #include "../services/CredentialStore.h"
 #include "../settings/UserSettings.h"
 
@@ -18,6 +20,9 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     , m_server(new BrickSuiteWebSocketServer(this))
     , m_client(new BrickSuiteWebSocketClient(this))
 {
+    m_hostReads = std::make_unique<HostReadProtocolService>(
+        DatabaseManager::instance().databasePath(), this);
+    m_hostReads->registerOperations(m_server->operationDispatcher());
     connect(m_server, &BrickSuiteWebSocketServer::statusChanged,
             this, &BrickSuiteNetworkManager::statusChanged);
     connect(m_client, &BrickSuiteWebSocketClient::statusChanged,

@@ -3,9 +3,11 @@
 #include "BrickSuiteConnectionState.h"
 
 #include <QObject>
+#include <memory>
 
 class BrickSuiteWebSocketClient;
 class BrickSuiteWebSocketServer;
+class HostReadProtocolService;
 
 class BrickSuiteNetworkManager : public QObject
 {
@@ -32,4 +34,5 @@ private:
     BrickSuiteWebSocketServer* m_server = nullptr;
     BrickSuiteWebSocketClient* m_client = nullptr;
     QString m_serverError;
+    std::unique_ptr<HostReadProtocolService> m_hostReads;
 };

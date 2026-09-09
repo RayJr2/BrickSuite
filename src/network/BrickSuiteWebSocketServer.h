@@ -30,6 +30,7 @@ public:
     quint16 serverPort() const;
     QString fingerprint() const;
     int authenticatedClientCount() const;
+    BrickSuiteOperationDispatcher& operationDispatcher();
 
 signals:
     void statusChanged();

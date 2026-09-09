@@ -1,0 +1,127 @@
+#include "../src/services/application/AsyncReadResult.h"
+#include "../src/services/application/dto/RemoteReadJson.h"
+#include "../src/services/application/LocalReferenceDecoration.h"
+#include "../src/network/BrickSuiteOperationDispatcher.h"
+
+#include <QCoreApplication>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QElapsedTimer>
+#include <QTimer>
+#include <iostream>
+
+namespace {
+bool require(bool condition, const char* message)
+{ if (!condition) std::cerr << message << '\n'; return condition; }
+}
+
+int main(int argc, char** argv)
+{
+    QCoreApplication app(argc, argv);
+    bool ok = true;
+
+    const auto first = nextReadRequestToken();
+    const auto second = nextReadRequestToken();
+    ok &= require(second > first, "request tokens are not monotonic");
+    const auto success = AsyncReadResult<int>::success(second, 7);
+    ok &= require(success.succeeded() && *success.value == 7, "typed success failed");
+    ok &= require(!AsyncReadResult<int>::failure(second, AsyncReadError::Timeout,
+        QStringLiteral("timeout")).succeeded(), "typed failure failed");
+
+    RemoteReadDto::InventoryRow row;
+    row.inventoryRecordId = 44; row.workspaceId = 2;
+    row.partNumber = QStringLiteral("3001"); row.partNameFallback = QStringLiteral("Brick 2 x 4");
+    row.rebrickableColorId = 4; row.colorNameFallback = QStringLiteral("Red");
+    row.quantity = 9; row.storageId = 8; row.storagePath = QStringLiteral("Shelf / Bin");
+    row.manufacturerDisplay = QStringLiteral("LEGO"); row.condition = QStringLiteral("Used");
+    row.ownershipType = QStringLiteral("Owned");
+    const QJsonObject json = RemoteReadJson::toJson(row);
+    ok &= require(!json.contains(QStringLiteral("partId")) && !json.contains(QStringLiteral("colorId")),
+                  "local catalog primary key leaked");
+    RemoteReadDto::InventoryRow decoded;
+    RemoteReadJson::DecodeError decodeError;
+    ok &= require(RemoteReadJson::fromJson(json, &decoded, &decodeError)
+                  && decoded.partNumber == QStringLiteral("3001")
+                  && decoded.rebrickableColorId == 4, "portable inventory round trip failed");
+    QJsonObject invalid = json; invalid.insert(QStringLiteral("partNumber"), QString(513, QLatin1Char('x')));
+    ok &= require(!RemoteReadJson::fromJson(invalid, &decoded, &decodeError), "oversized text accepted");
+    QList<RemoteReadDto::InventoryRow> decorated{decoded};
+    decorated[0] = row;
+    LocalReferenceDecoration decoration{{{QStringLiteral("3001"), QStringLiteral("Local Brick")}},
+                                        {{4, QStringLiteral("Local Red")}}};
+    decoration.decorate(decorated);
+    ok &= require(decorated[0].partNameFallback == QStringLiteral("Local Brick")
+                  && decorated[0].inventoryRecordId == 44,
+                  "batched local decoration changed identity or missed local data");
+    RemoteReadDto::PageRequest paging;
+    ok &= require(RemoteReadJson::pageRequest({{"page",1},{"pageSize",500}}, &paging), "valid paging rejected");
+    ok &= require(!RemoteReadJson::pageRequest({{"page",0},{"pageSize",501}}, &paging), "invalid paging accepted");
+
+    RemoteReadDto::BuildRequirement requirement;
+    requirement.requirementId=70; requirement.buildId=9; requirement.partNumber="3001";
+    requirement.partNameFallback="Brick 2 x 4"; requirement.rebrickableColorId=4;
+    requirement.colorNameFallback="Red"; requirement.quantityRequired=12;
+    RemoteReadDto::BuildRequirement decodedRequirement;
+    ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(requirement),
+        &decodedRequirement, &decodeError) && decodedRequirement.partNumber=="3001",
+        "Build requirement DTO round trip failed");
+    RemoteReadDto::PullingRow pulling; pulling.requirementId=70;pulling.allocationId=71;
+    pulling.inventoryRecordId=44;pulling.storageId=8;pulling.partNumber="3001";
+    pulling.rebrickableColorId=4;pulling.quantityRequired=12;pulling.quantityAllocated=3;
+    RemoteReadDto::PullingRow decodedPulling;
+    ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(pulling),
+        &decodedPulling,&decodeError),"Pulling DTO round trip failed");
+
+    QElapsedTimer serializationTimer; serializationTimer.start();
+    QJsonArray inventoryRows; for(int i=0;i<250;++i){row.inventoryRecordId=i+1;inventoryRows.append(RemoteReadJson::toJson(row));}
+    const qsizetype inventoryBytes=QJsonDocument({{"rows",inventoryRows},{"page",1},{"pageSize",250},{"totalRows",250}}).toJson(QJsonDocument::Compact).size();
+    QJsonArray requirementRows;for(int i=0;i<500;++i){requirement.requirementId=i+1;requirementRows.append(RemoteReadJson::toJson(requirement));}
+    const qsizetype requirementBytes=QJsonDocument({{"rows",requirementRows},{"page",1},{"pageSize",500},{"totalRows",500}}).toJson(QJsonDocument::Compact).size();
+    QJsonArray pullingRows;for(int i=0;i<500;++i){pulling.requirementId=i+1;pulling.allocationId=i+1;pullingRows.append(RemoteReadJson::toJson(pulling));}
+    const qsizetype pullingBytes=QJsonDocument({{"rows",pullingRows},{"page",1},{"pageSize",500},{"totalRows",500}}).toJson(QJsonDocument::Compact).size();
+    RemoteReadDto::InventoryHistoryRow history;history.movementId=1;history.movementType="Move";history.quantityChange=2;history.notes="Synthetic history";history.createdUtc=QDateTime::currentDateTimeUtc();
+    QJsonArray historyRows;for(int i=0;i<250;++i){history.movementId=i+1;historyRows.append(RemoteReadJson::toJson(history));}
+    const qsizetype historyBytes=QJsonDocument(QJsonObject{{"rows",historyRows}}).toJson(QJsonDocument::Compact).size();
+    RemoteReadDto::MissingPart missing;missing.partNumber="3001";missing.partNameFallback="Brick 2 x 4";missing.rebrickableColorId=4;missing.colorNameFallback="Red";missing.required=10;missing.missing=3;
+    QJsonArray missingRows;for(int i=0;i<250;++i)missingRows.append(RemoteReadJson::toJson(missing));
+    const qsizetype missingBytes=QJsonDocument({{"rows",missingRows},{"page",1},{"pageSize",250},{"totalRows",250}}).toJson(QJsonDocument::Compact).size();
+    RemoteReadDto::CollectionSummary collection;collection.collectionItemId=1;collection.workspaceId=1;collection.type="Set";collection.setNumber="10300-1";collection.titleFallback="Synthetic Collection Item";collection.state="Assembled";collection.condition="Used";collection.completeness="Complete";collection.active=true;
+    QJsonArray collectionRows;for(int i=0;i<250;++i){collection.collectionItemId=i+1;collectionRows.append(RemoteReadJson::toJson(collection));}
+    const qsizetype collectionBytes=QJsonDocument({{"rows",collectionRows},{"page",1},{"pageSize",250},{"totalRows",250}}).toJson(QJsonDocument::Compact).size();
+    ok &= require(inventoryBytes<BrickSuiteProtocol::MaximumMessageBytes
+        && requirementBytes<BrickSuiteProtocol::MaximumMessageBytes
+        && pullingBytes<BrickSuiteProtocol::MaximumMessageBytes
+        && historyBytes<BrickSuiteProtocol::MaximumMessageBytes
+        && missingBytes<BrickSuiteProtocol::MaximumMessageBytes
+        && collectionBytes<BrickSuiteProtocol::MaximumMessageBytes,
+        "bounded pages exceed protocol message limit");
+    std::cout << "Payload bytes inventory250=" << inventoryBytes
+              << " requirements500=" << requirementBytes
+              << " pulling500=" << pullingBytes
+              << " history250=" << historyBytes
+              << " missing250=" << missingBytes
+              << " collection250=" << collectionBytes
+              << " serializationMs=" << serializationTimer.elapsed() << '\n';
+
+    BrickSuiteOperationDispatcher dispatcher;
+    bool completed = false;
+    dispatcher.registerAsyncOperation(QStringLiteral("workspace.list"), true,
+        [](const BrickSuiteProtocol::Message& request, BrickSuiteOperationDispatcher::Completion completion) {
+            QTimer::singleShot(0, [request, completion = std::move(completion)]() mutable {
+                completion(BrickSuiteProtocol::response(request, {{"rows", QJsonArray{}}}));
+            });
+        });
+    const auto request = BrickSuiteProtocol::request(QStringLiteral("workspace.list"));
+    dispatcher.dispatchAsync(request, false, [&](BrickSuiteProtocol::Message response) {
+        ok &= require(response.error.code == QStringLiteral("AUTH_REQUIRED"), "unauthenticated read allowed");
+    });
+    dispatcher.dispatchAsync(request, true, [&](BrickSuiteProtocol::Message response) {
+        ok &= require(response.requestId == request.requestId && response.success,
+                      "async correlation failed");
+        completed = true; app.quit();
+    });
+    QTimer::singleShot(1000, &app, &QCoreApplication::quit);
+    app.exec();
+    ok &= require(completed, "async handler did not complete");
+    return ok ? 0 : 1;
+}

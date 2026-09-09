@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ApplicationServices.h"
+#include "dto/RemoteReadDtos.h"
 #include "../../models/StorageLocation.h"
 
 #include <QObject>
@@ -71,6 +72,29 @@ public:
                                 std::function<void(const QList<PartReferenceEntry>&,
                                                    const QString&)> completion,
                                 ErrorCallback failure = {});
+    void getInventoryPortable(int inventoryRecordId, QObject* context,
+        std::function<void(const std::optional<RemoteReadDto::InventoryDetail>&)> completion,
+        ErrorCallback failure = {});
+    void searchInventoryPortable(const RemoteReadDto::InventorySearchRequest& request,
+        QObject* context,
+        std::function<void(const InventoryApplicationService::Page&)> completion,
+        ErrorCallback failure = {});
+    void inventoryHistoryPortable(int workspaceId, const QString& partNumber,
+        int rebrickableColorId, QObject* context,
+        std::function<void(const QList<RemoteReadDto::InventoryHistoryRow>&)> completion,
+        ErrorCallback failure = {});
+    void buildRequirementsPortable(int buildId, const RemoteReadDto::PageRequest& page,
+        QObject* context,
+        std::function<void(const RemoteReadDto::Page<RemoteReadDto::BuildRequirement>&)> completion,
+        ErrorCallback failure = {});
+    void missingPartsPortable(int workspaceId, int buildId,
+        const RemoteReadDto::PageRequest& page, QObject* context,
+        std::function<void(const RemoteReadDto::Page<RemoteReadDto::MissingPart>&)> completion,
+        ErrorCallback failure = {});
+    void pullingPortable(int buildId, const RemoteReadDto::PageRequest& page,
+        QObject* context,
+        std::function<void(const RemoteReadDto::Page<RemoteReadDto::PullingRow>&)> completion,
+        ErrorCallback failure = {});
 
 private:
     class Worker;

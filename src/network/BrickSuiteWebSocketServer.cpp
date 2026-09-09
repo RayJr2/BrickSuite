@@ -3,6 +3,7 @@
 #include "BrickSuiteAuthentication.h"
 
 #include <QDateTime>
+#include <QPointer>
 #include <QSslConfiguration>
 #include <QWebSocket>
 #include <QWebSocketServer>
@@ -16,6 +17,9 @@ BrickSuiteWebSocketServer::~BrickSuiteWebSocketServer()
 {
     stop();
 }
+
+BrickSuiteOperationDispatcher& BrickSuiteWebSocketServer::operationDispatcher()
+{ return m_dispatcher; }
 
 bool BrickSuiteWebSocketServer::start(const QHostAddress& address, quint16 port,
                                       const QString& accessToken, QString* error)
@@ -250,7 +254,16 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
         emit statusChanged();
         return;
     }
-    send(socket, m_dispatcher.dispatch(request, session.authenticated));
+    const QByteArray sessionId = session.id;
+    QPointer<QWebSocket> guard(socket);
+    m_dispatcher.dispatchAsync(request, session.authenticated,
+        [this, guard, sessionId](BrickSuiteProtocol::Message response) {
+            if (!guard) return;
+            const auto it = m_sessions.constFind(guard.data());
+            if (it == m_sessions.constEnd() || !it->authenticated || it->id != sessionId)
+                return;
+            send(guard.data(), response);
+        });
 }
 
 void BrickSuiteWebSocketServer::send(QWebSocket* socket,

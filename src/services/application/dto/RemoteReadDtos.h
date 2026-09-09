@@ -1,0 +1,79 @@
+#pragma once
+
+#include <QDateTime>
+#include <QList>
+#include <QString>
+
+namespace RemoteReadDto {
+
+constexpr int MaximumPageSize = 500;
+constexpr int MaximumTextLength = 512;
+
+struct PageRequest { int page = 1; int pageSize = 250; };
+template <typename T> struct Page { QList<T> rows; int page = 1; int pageSize = 250; int totalRows = 0; };
+
+struct WorkspaceSummary { qint64 workspaceId = 0; QString name; };
+struct StorageSummary { qint64 storageId = 0; qint64 parentStorageId = 0; QString name; QString displayPath; bool active = true; };
+
+struct InventorySearchRequest {
+    qint64 workspaceId = 0; QString text; qint64 storageId = 0;
+    int rebrickableColorId = -1; PageRequest paging;
+};
+struct InventoryRow {
+    qint64 inventoryRecordId = 0; qint64 workspaceId = 0;
+    QString partNumber; QString partNameFallback;
+    int rebrickableColorId = -1; QString colorNameFallback;
+    int quantity = 0; qint64 storageId = 0; QString storagePath;
+    QString manufacturerDisplay; QString condition; QString ownershipType;
+};
+struct InventoryDetail : InventoryRow { QDateTime createdUtc; QDateTime modifiedUtc; };
+struct InventoryHistoryRow {
+    qint64 movementId = 0; QString movementType; int quantityChange = 0;
+    qint64 fromStorageId = 0; QString fromStoragePath;
+    qint64 toStorageId = 0; QString toStoragePath;
+    QString condition; QString ownershipType; QString referenceType;
+    QString referenceId; QString notes; QDateTime createdUtc;
+};
+
+struct BuildSummary {
+    qint64 buildId = 0; qint64 workspaceId = 0; QString buildType;
+    QString name; QString setNumber; QString minifigNumber;
+    QString inventoryMode; QString status; bool active = true;
+};
+using BuildDetail = BuildSummary;
+struct BuildRequirement {
+    qint64 requirementId = 0; qint64 buildId = 0;
+    QString partNumber; QString partNameFallback;
+    int rebrickableColorId = -1; QString colorNameFallback;
+    QString substitutePartNumber; int substituteRebrickableColorId = -1;
+    int quantityRequired = 0; int quantityPulled = 0; bool spare = false;
+};
+struct MissingPart {
+    QString partNumber; QString partNameFallback; int rebrickableColorId = -1;
+    QString colorNameFallback; int required = 0; int pulled = 0;
+    int available = 0; int missing = 0;
+};
+struct PullingRow {
+    qint64 requirementId = 0; qint64 allocationId = 0; qint64 inventoryRecordId = 0;
+    qint64 storageId = 0; QString storagePath; QString partNumber;
+    QString partNameFallback; int rebrickableColorId = -1; QString colorNameFallback;
+    int quantityRequired = 0; int quantityPulled = 0; int quantityAllocated = 0;
+    bool substitution = false;
+};
+
+struct CollectionSearchRequest { qint64 workspaceId = 0; QString text; PageRequest paging{1, 100}; };
+struct CollectionSummary {
+    qint64 collectionItemId = 0; qint64 workspaceId = 0; QString type;
+    QString setNumber; QString minifigNumber; QString titleFallback;
+    QString state; QString condition; QString completeness; qint64 storageId = 0;
+    QString storagePath; QString nickname; bool active = true;
+};
+struct CollectionDetail : CollectionSummary { QString notes; QDateTime createdUtc; QDateTime modifiedUtc; };
+
+struct PartReferenceCustomization {
+    qint64 customizationId = 0; QString partNumber; QString partNameFallback;
+    QString catalog; QString section; int displayOrder = 0;
+    QString representativeFor; QString notes;
+};
+
+} // namespace RemoteReadDto
