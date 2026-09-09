@@ -49,6 +49,7 @@ class PartExternalIdEnrichmentService;
 class ApplicationServices;
 class BrickSuiteNetworkManager;
 class RemoteReadApplicationServices;
+class RemoteRefreshCoordinator;
 
 class MainWindow : public QMainWindow
 {
@@ -61,6 +62,9 @@ public:
                         BrickSuiteNetworkManager& networkManager,
                         QWidget* parent = nullptr);
     void setAutomaticBackupService(AutomaticBackupService* service);
+
+signals:
+    void remoteWorkspacesRefreshFinished(bool succeeded);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -75,6 +79,7 @@ private:
     void loadRemoteWorkspaces();
     void setRemoteSurfacesConnected(bool connected);
     void refreshRemoteSurfaces();
+    void configureRemoteRefreshCoordinator();
     QString remoteHostIdentity() const;
     QWidget* createWorkspaceTab();
     void initializeProviderStatuses();
@@ -87,8 +92,10 @@ private:
     RemoteReadApplicationServices* m_remoteReads = nullptr;
     quint64 m_workspaceRequestToken = 0;
     bool m_refreshAfterWorkspaceReload = false;
+    RemoteRefreshCoordinator* m_remoteRefreshCoordinator = nullptr;
 
     QTabWidget* m_tabWidget = nullptr;
+    QWidget* m_workspaceTab = nullptr;
 
     QListWidget* m_workspaceList = nullptr;
     QLineEdit* m_nameEdit = nullptr;

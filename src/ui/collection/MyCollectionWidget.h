@@ -23,8 +23,14 @@ public:
                                 RemoteReadApplicationServices* remoteReads = nullptr,
                                 QWidget* parent = nullptr);
     void refresh();
+    void refreshRemoteCurrentPage(bool refreshLocations = false);
+    void refreshRemoteLocations();
     void selectCollectionItem(int collectionItemId);
     void setRemoteSessionConnected(bool connected);
+
+signals:
+    void remoteCollectionRefreshFinished(bool succeeded);
+    void remoteLocationsRefreshFinished(bool succeeded);
 
 private:
     void loadLocations();

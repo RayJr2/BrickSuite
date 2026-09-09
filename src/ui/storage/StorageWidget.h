@@ -43,6 +43,7 @@ public:
 
 signals:
     void storageLocationsChanged();
+    void remoteRefreshFinished(bool succeeded);
 
 private slots:
     void workspaceChanged(int workspaceId);

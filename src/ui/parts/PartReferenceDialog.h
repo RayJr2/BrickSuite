@@ -48,6 +48,7 @@ public:
 
 signals:
     void sendToAddInventoryRequested(const QString& partNumber);
+    void remoteCustomizationsRefreshFinished(bool succeeded);
 
 protected:
     void closeEvent(QCloseEvent* event) override;

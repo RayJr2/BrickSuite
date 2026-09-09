@@ -132,10 +132,17 @@ void PartReferenceDialog::refreshCustomizations()
             while (m_contentStack->count() > 0) { QWidget* page=m_contentStack->widget(0); m_contentStack->removeWidget(page); delete page; }
             showCurrentCatalogPage();
         }
-        if (!m_remoteReads->isAvailableFor(QStringLiteral("partReference.customizations"))) return;
+        if (!m_remoteReads->isAvailableFor(QStringLiteral("partReference.customizations"))) {
+            emit remoteCustomizationsRefreshFinished(false);
+            return;
+        }
         m_customizationRequestToken = m_remoteReads->listPartReferenceCustomizations(this,
             [this](AsyncReadResult<QList<RemoteReadDto::PartReferenceCustomization>> result) {
-                if (result.token != m_customizationRequestToken || !result.succeeded()) return;
+                if (result.token != m_customizationRequestToken) return;
+                if (!result.succeeded()) {
+                    emit remoteCustomizationsRefreshFinished(false);
+                    return;
+                }
                 QList<PartReferenceEntry> effective = m_manifest.entries();
                 QList<RemoteReadDto::PartReferenceCustomization> rows = *result.value;
                 std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.displayOrder < b.displayOrder; });
@@ -153,6 +160,7 @@ void PartReferenceDialog::refreshCustomizations()
                 m_cardsByPartNumber.clear(); m_pagesByKey.clear(); m_searchPage = nullptr;
                 while (m_contentStack->count() > 0) { QWidget* page=m_contentStack->widget(0); m_contentStack->removeWidget(page); delete page; }
                 showCurrentCatalogPage();
+                emit remoteCustomizationsRefreshFinished(true);
             });
         return;
     }

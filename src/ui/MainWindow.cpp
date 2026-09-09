@@ -79,6 +79,7 @@
 #include "../network/BrickSuiteWebSocketClient.h"
 #include "../network/BrickSuiteHostIdentity.h"
 #include "../network/RemoteSessionState.h"
+#include "../services/application/RemoteRefreshCoordinator.h"
 
 #include <QAction>
 #include <QApplication>
@@ -101,6 +102,7 @@
 #include <QPushButton>
 #include <QUrl>
 #include <QScreen>
+#include <QSet>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -108,6 +110,8 @@
 #include <QVBoxLayout>
 #include <QWidget>
 #include <optional>
+#include <algorithm>
+#include <memory>
 
 namespace {
 
@@ -188,7 +192,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     m_partExternalIdEnrichmentService = new PartExternalIdEnrichmentService(this);
 
     // Workspace tab
-    QWidget* workspaceTab = createWorkspaceTab();
+    m_workspaceTab = createWorkspaceTab();
 
     // Storage tab
     m_storageWidget = new StorageWidget(m_workspaceContext, m_remoteReads, m_tabWidget);
@@ -435,7 +439,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                 }
             });
 
-    m_tabWidget->addTab(workspaceTab, "Workspace");
+    m_tabWidget->addTab(m_workspaceTab, "Workspace");
 
     m_tabWidget->addTab(m_storageWidget, "Storage");
 
@@ -468,6 +472,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             this, showCollectionItem);
     connect(m_buildsWidget, &BuildsWidget::collectionItemRequested,
             this, showCollectionItem);
+
+    if (m_remoteReads)
+        configureRemoteRefreshCoordinator();
 
     setCentralWidget(m_tabWidget);
 
@@ -824,6 +831,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         m_partReferenceDialog->show();
         m_partReferenceDialog->raise();
         m_partReferenceDialog->activateWindow();
+        if (m_remoteRefreshCoordinator)
+            m_remoteRefreshCoordinator->surfaceBecameRelevant(
+                RemoteRefreshCoordinator::Projection::PartReferenceCustomizations);
     });
 
     // Help menu
@@ -2063,6 +2073,172 @@ void MainWindow::refreshRemoteSurfaces()
     if (m_myInventoryWidget) m_myInventoryWidget->refresh();
     if (m_buildsWidget) m_buildsWidget->refresh();
     if (m_myCollectionWidget) m_myCollectionWidget->refresh();
+    if (m_myInventoryWidget) m_myInventoryWidget->refreshOpenRemoteHistory();
+    if (m_buildsWidget) m_buildsWidget->refreshOpenRemotePulling();
+}
+
+void MainWindow::configureRemoteRefreshCoordinator()
+{
+    using P = RemoteRefreshCoordinator::Projection;
+    m_remoteRefreshCoordinator = new RemoteRefreshCoordinator(this);
+    RemoteSessionState* session = m_networkManager.remoteSession();
+
+    const auto completeOn = [this](auto* source, auto signal, auto start,
+                                   RemoteRefreshCoordinator::Completion completion) {
+        auto connection = std::make_shared<QMetaObject::Connection>();
+        *connection = connect(source, signal, this,
+            [connection, completion = std::move(completion)](bool succeeded) mutable {
+                QObject::disconnect(*connection);
+                completion(succeeded);
+            });
+        start();
+    };
+
+    m_remoteRefreshCoordinator->registerProjection(P::Workspaces, [] { return true; },
+        [this, completeOn](const OperationalInvalidation&, auto done) {
+            completeOn(this, &MainWindow::remoteWorkspacesRefreshFinished,
+                       [this] { loadRemoteWorkspaces(); }, std::move(done));
+        });
+    m_remoteRefreshCoordinator->registerProjection(P::Storage,
+        [this] { return m_tabWidget->currentWidget() == m_storageWidget; },
+        [this, completeOn](const OperationalInvalidation&, auto done) {
+            completeOn(m_storageWidget, &StorageWidget::remoteRefreshFinished,
+                       [this] { m_storageWidget->refresh(); }, std::move(done));
+        });
+    m_remoteRefreshCoordinator->registerProjection(P::Inventory,
+        [this] { return m_tabWidget->currentWidget() == m_myInventoryWidget; },
+        [this, completeOn](const OperationalInvalidation&, auto done) {
+            completeOn(m_myInventoryWidget, &MyInventoryWidget::remoteInventoryRefreshFinished,
+                       [this] { m_myInventoryWidget->refreshRemoteCurrentPage(); },
+                       std::move(done));
+        });
+    m_remoteRefreshCoordinator->registerProjection(P::InventoryLocations,
+        [this] { return m_tabWidget->currentWidget() == m_myInventoryWidget; },
+        [this, completeOn](const OperationalInvalidation&, auto done) {
+            completeOn(m_myInventoryWidget, &MyInventoryWidget::remoteLocationsRefreshFinished,
+                       [this] { m_myInventoryWidget->refreshRemoteLocations(); },
+                       std::move(done));
+        });
+    m_remoteRefreshCoordinator->registerProjection(P::Builds,
+        [this] { return m_tabWidget->currentWidget() == m_buildsWidget; },
+        [this, completeOn](const OperationalInvalidation&, auto done) {
+            completeOn(m_buildsWidget, &BuildsWidget::remoteBuildsRefreshFinished,
+                       [this] { m_buildsWidget->refreshRemoteBuildsPreservingSelection(); },
+                       std::move(done));
+        });
+    m_remoteRefreshCoordinator->registerProjection(P::BuildRequirements,
+        [this] { return m_tabWidget->currentWidget() == m_buildsWidget; },
+        [this, completeOn](const OperationalInvalidation& cause, auto done) {
+            if (cause.buildId && *cause.buildId != m_buildsWidget->selectedBuildId()) {
+                done(true);
+                return;
+            }
+            completeOn(m_buildsWidget, &BuildsWidget::remoteRequirementsRefreshFinished,
+                       [this] { m_buildsWidget->refreshRemoteRequirements(); },
+                       std::move(done));
+        });
+    m_remoteRefreshCoordinator->registerProjection(P::Pulling,
+        [this] { return m_buildsWidget->hasOpenRemotePulling(); },
+        [this](const OperationalInvalidation& cause, auto done) {
+            QList<int> buildIds = m_buildsWidget->openRemotePullingBuildIds();
+            if (cause.buildId) {
+                buildIds.erase(std::remove_if(buildIds.begin(), buildIds.end(),
+                    [&cause](int id) { return id != *cause.buildId; }), buildIds.end());
+            }
+            if (buildIds.isEmpty()) {
+                done(true);
+                return;
+            }
+            auto pending = std::make_shared<QSet<int>>(buildIds.cbegin(), buildIds.cend());
+            auto succeeded = std::make_shared<bool>(true);
+            auto connection = std::make_shared<QMetaObject::Connection>();
+            *connection = connect(m_buildsWidget, &BuildsWidget::remotePullingRefreshFinished,
+                this, [connection, pending, succeeded, done = std::move(done)](
+                          int buildId, bool result) mutable {
+                    if (!pending->remove(buildId)) return;
+                    *succeeded = *succeeded && result;
+                    if (!pending->isEmpty()) return;
+                    QObject::disconnect(*connection);
+                    done(*succeeded);
+                });
+            for (int buildId : buildIds)
+                m_buildsWidget->refreshOpenRemotePulling(qint64(buildId));
+        });
+    m_remoteRefreshCoordinator->registerProjection(P::InventoryHistory,
+        [this] { return m_myInventoryWidget->hasOpenRemoteHistory(); },
+        [this, completeOn](const OperationalInvalidation& cause, auto done) {
+            if (!m_myInventoryWidget->hasOpenRemoteHistory(cause.inventoryRecordId)) {
+                done(true);
+                return;
+            }
+            completeOn(m_myInventoryWidget, &MyInventoryWidget::remoteHistoryRefreshFinished,
+                       [this, cause] {
+                           m_myInventoryWidget->refreshOpenRemoteHistory(cause.inventoryRecordId);
+                       }, std::move(done));
+        });
+    m_remoteRefreshCoordinator->registerProjection(P::Collection,
+        [this] { return m_tabWidget->currentWidget() == m_myCollectionWidget; },
+        [this, completeOn](const OperationalInvalidation&, auto done) {
+            completeOn(m_myCollectionWidget, &MyCollectionWidget::remoteCollectionRefreshFinished,
+                       [this] { m_myCollectionWidget->refreshRemoteCurrentPage(); },
+                       std::move(done));
+        });
+    m_remoteRefreshCoordinator->registerProjection(P::CollectionLocations,
+        [this] { return m_tabWidget->currentWidget() == m_myCollectionWidget; },
+        [this, completeOn](const OperationalInvalidation&, auto done) {
+            completeOn(m_myCollectionWidget, &MyCollectionWidget::remoteLocationsRefreshFinished,
+                       [this] { m_myCollectionWidget->refreshRemoteLocations(); },
+                       std::move(done));
+        });
+    m_remoteRefreshCoordinator->registerProjection(P::PartReferenceCustomizations,
+        [this] { return m_partReferenceDialog && m_partReferenceDialog->isVisible(); },
+        [this, completeOn](const OperationalInvalidation&, auto done) {
+            if (!m_partReferenceDialog) {
+                done(true);
+                return;
+            }
+            completeOn(m_partReferenceDialog,
+                       &PartReferenceDialog::remoteCustomizationsRefreshFinished,
+                       [this] { m_partReferenceDialog->refreshCustomizations(); },
+                       std::move(done));
+        });
+
+    connect(&m_networkManager, &BrickSuiteNetworkManager::invalidationReceived,
+            m_remoteRefreshCoordinator, &RemoteRefreshCoordinator::receiveInvalidation);
+    connect(session, &RemoteSessionState::authenticatedSessionEstablished, this,
+            [this, session](bool) {
+        m_remoteRefreshCoordinator->resetContext(true, session->sessionGeneration(),
+                                                 session->workspaceGeneration());
+    });
+    connect(session, &RemoteSessionState::authenticatedSessionLost,
+            m_remoteRefreshCoordinator, [this] { m_remoteRefreshCoordinator->setConnected(false); });
+    connect(session, &RemoteSessionState::workspaceGenerationChanged, this,
+            [this, session](quint64 generation, int) {
+        m_remoteRefreshCoordinator->resetContext(session->isAuthenticated(),
+                                                 session->sessionGeneration(), generation);
+    });
+    connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int) {
+        using P = RemoteRefreshCoordinator::Projection;
+        QWidget* current = m_tabWidget->currentWidget();
+        if (current == m_workspaceTab) m_remoteRefreshCoordinator->surfaceBecameRelevant(P::Workspaces);
+        else if (current == m_storageWidget) m_remoteRefreshCoordinator->surfaceBecameRelevant(P::Storage);
+        else if (current == m_myInventoryWidget) {
+            m_remoteRefreshCoordinator->surfaceBecameRelevant(P::InventoryLocations);
+            m_remoteRefreshCoordinator->surfaceBecameRelevant(P::Inventory);
+        } else if (current == m_buildsWidget) {
+            m_remoteRefreshCoordinator->surfaceBecameRelevant(P::Builds);
+            m_remoteRefreshCoordinator->surfaceBecameRelevant(P::BuildRequirements);
+        } else if (current == m_myCollectionWidget) {
+            m_remoteRefreshCoordinator->surfaceBecameRelevant(P::CollectionLocations);
+            m_remoteRefreshCoordinator->surfaceBecameRelevant(P::Collection);
+        }
+    });
+    connect(m_buildsWidget, &BuildsWidget::remotePullingDialogOpened, this, [this] {
+        m_remoteRefreshCoordinator->surfaceBecameRelevant(P::Pulling);
+    });
+    m_remoteRefreshCoordinator->resetContext(session->isAuthenticated(),
+                                             session->sessionGeneration(),
+                                             session->workspaceGeneration());
 }
 
 void MainWindow::loadRemoteWorkspaces()
@@ -2081,6 +2257,7 @@ void MainWindow::loadRemoteWorkspaces()
         m_workspaceList->addItem(remembered.isEmpty()
             ? QStringLiteral("BrickSuite Host Workspaces unavailable.")
             : QStringLiteral("%1 (Host unavailable)").arg(remembered));
+        emit remoteWorkspacesRefreshFinished(false);
         return;
     }
 
@@ -2092,6 +2269,7 @@ void MainWindow::loadRemoteWorkspaces()
                 m_workspaceList->addItem(result.message.isEmpty()
                     ? QStringLiteral("Unable to load Host Workspaces.") : result.message);
                 m_workspaceList->setEnabled(false);
+                emit remoteWorkspacesRefreshFinished(false);
                 return;
             }
             const auto rows = *result.value;
@@ -2118,6 +2296,7 @@ void MainWindow::loadRemoteWorkspaces()
                 UserSettings::instance().clearRememberedHostWorkspace(identity);
                 m_workspaceList->addItem(QStringLiteral("The BrickSuite Host has no Workspaces."));
                 m_workspaceList->setEnabled(false);
+                emit remoteWorkspacesRefreshFinished(true);
                 return;
             }
             setRemoteSurfacesConnected(true);
@@ -2136,6 +2315,7 @@ void MainWindow::loadRemoteWorkspaces()
                 if (rows.size() == 1) m_workspaceList->setCurrentRow(0);
                 m_refreshAfterWorkspaceReload = false;
             }
+            emit remoteWorkspacesRefreshFinished(true);
         });
 }
 

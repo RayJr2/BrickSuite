@@ -42,6 +42,11 @@ public:
                                     RemoteReadApplicationServices* remoteReads = nullptr,
                                     const QString& partNumber = QString(),
                                     int rebrickableColorId = -1);
+    void refreshRemoteHistory();
+    void setRemoteSessionConnected(bool connected);
+
+signals:
+    void remoteRefreshFinished(bool succeeded);
 
 private:
     void loadHeader();
@@ -63,4 +68,5 @@ private:
     QTableWidget* m_table = nullptr;
 
     QHash<int, QString> m_storagePathById;
+    quint64 m_remoteRequestToken = 0;
 };

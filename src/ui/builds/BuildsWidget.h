@@ -23,6 +23,7 @@
 #include "../../services/application/dto/RemoteReadDtos.h"
 #include "../common/SingleInstanceWindowRegistry.h"
 #include <QWidget>
+#include <optional>
 
 class WorkspaceContext;
 class SessionStorageSelectionService;
@@ -58,12 +59,23 @@ public:
         PartExternalIdEnrichmentService* enrichmentService = nullptr);
 
     void refresh();
+    void refreshRemoteBuildsPreservingSelection();
+    void refreshRemoteRequirements();
+    void refreshOpenRemotePulling(const std::optional<qint64>& buildId = std::nullopt);
+    bool hasOpenRemotePulling(const std::optional<qint64>& buildId = std::nullopt) const;
+    QList<int> openRemotePullingBuildIds() const;
+    int selectedBuildId() const;
     void selectBuild(int buildId);
     void reloadManufacturers();
     void setRemoteSessionConnected(bool connected);
 
 signals:
     void collectionItemRequested(int collectionItemId);
+    void remoteBuildsRefreshFinished(bool succeeded);
+    void remoteRequirementsRefreshFinished(bool succeeded);
+    void remotePullingRefreshRequested(int buildId);
+    void remotePullingDialogOpened();
+    void remotePullingRefreshFinished(int buildId, bool succeeded);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -109,6 +121,7 @@ private:
     quint64 m_requirementGeneration = 0;
     SingleInstanceWindowRegistry<int, QDialog> m_remotePullingDialogs;
     bool m_remoteMode = false;
+    int m_restoreSelectedBuildId = 0;
 
     QComboBox* m_typeCombo = nullptr;
     QLineEdit* m_setNumberEdit = nullptr;

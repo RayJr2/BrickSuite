@@ -641,7 +641,7 @@ void MyInventoryWidget::loadRemoteStorageLocations()
     m_storageCombo->clear();
     m_storageCombo->addItem(QStringLiteral("All Locations"), 0);
     m_storagePathById.clear();
-    if (workspaceId <= 0 || !m_remoteReads->isAvailableFor(QStringLiteral("storage.list"))) return;
+    if (workspaceId <= 0 || !m_remoteReads->isAvailableFor(QStringLiteral("storage.list"))) { emit remoteLocationsRefreshFinished(false); return; }
     m_storageCombo->setEnabled(false);
     m_storageRequestToken = m_remoteReads->listStorage(workspaceId, this,
         [this, workspaceId, selectedLocationId](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> result) {
@@ -654,6 +654,7 @@ void MyInventoryWidget::loadRemoteStorageLocations()
             if (!result.succeeded()) {
                 m_storageCombo->setToolTip(result.message);
                 m_storageCombo->setEnabled(false);
+                emit remoteLocationsRefreshFinished(false);
                 return;
             }
             QSet<qint64> parents;
@@ -668,6 +669,7 @@ void MyInventoryWidget::loadRemoteStorageLocations()
             if (restored >= 0) m_storageCombo->setCurrentIndex(restored);
             m_storageCombo->setToolTip({});
             m_storageCombo->setEnabled(true);
+            emit remoteLocationsRefreshFinished(true);
         });
 }
 
@@ -693,11 +695,13 @@ void MyInventoryWidget::requestRemoteInventory(const QString& loadingMessage)
         m_resultLabel->setText(QStringLiteral("Select a Host Workspace to view inventory."));
         m_totalResultCount = 0;
         updatePagingControls();
+        emit remoteInventoryRefreshFinished(false);
         return;
     }
     if (!m_remoteReads->isAvailableFor(QStringLiteral("inventory.search"))) {
         m_resultLabel->setText(QStringLiteral("BrickSuite Host Inventory is unavailable. Existing results may be stale."));
         setRemoteLoading(false);
+        emit remoteInventoryRefreshFinished(false);
         return;
     }
     RemoteReadDto::InventorySearchRequest request;
@@ -730,6 +734,7 @@ void MyInventoryWidget::requestRemoteInventory(const QString& loadingMessage)
                 default: message = QStringLiteral("BrickSuite Host connection unavailable."); break;
                 }
                 m_resultLabel->setText(message + QStringLiteral(" Existing results may be stale."));
+                emit remoteInventoryRefreshFinished(false);
                 return;
             }
             m_remotePage = std::move(*result.value);
@@ -743,6 +748,7 @@ void MyInventoryWidget::requestRemoteInventory(const QString& loadingMessage)
             }
             m_remoteResponseReady = true;
             searchInventory();
+            emit remoteInventoryRefreshFinished(true);
         });
 }
 
@@ -1099,8 +1105,13 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                         InventoryHistoryDialog dialog(partId, colorId, m_workspaceContext,
                                                       m_inventoryService, this, m_remoteReads,
                                                       partNumber, rebrickableColorId);
-
+                        m_activeHistoryDialog = &dialog;
+                        m_activeHistoryInventoryRecordId = inventoryRecordId;
+                        connect(&dialog, &InventoryHistoryDialog::remoteRefreshFinished,
+                                this, &MyInventoryWidget::remoteHistoryRefreshFinished);
                         dialog.exec();
+                        m_activeHistoryDialog = nullptr;
+                        m_activeHistoryInventoryRecordId = 0;
                     }
 
                     // Return the action control
@@ -1315,9 +1326,40 @@ void MyInventoryWidget::refresh()
     searchInventory();
 }
 
+void MyInventoryWidget::refreshRemoteCurrentPage(bool refreshLocations)
+{
+    if (!m_remoteReads) {
+        refresh();
+        return;
+    }
+    if (refreshLocations) loadRemoteStorageLocations();
+    m_remoteResponseReady = false;
+    requestRemoteInventory(QStringLiteral("Refreshing My Inventory"));
+}
+
+void MyInventoryWidget::refreshRemoteLocations()
+{
+    if (m_remoteReads) loadRemoteStorageLocations();
+}
+
+bool MyInventoryWidget::hasOpenRemoteHistory(
+    const std::optional<qint64>& inventoryRecordId) const
+{
+    return m_activeHistoryDialog
+        && (!inventoryRecordId || *inventoryRecordId == m_activeHistoryInventoryRecordId);
+}
+
+void MyInventoryWidget::refreshOpenRemoteHistory(
+    const std::optional<qint64>& inventoryRecordId)
+{
+    if (hasOpenRemoteHistory(inventoryRecordId))
+        m_activeHistoryDialog->refreshRemoteHistory();
+}
+
 void MyInventoryWidget::setRemoteSessionConnected(bool connected)
 {
     if (!m_remoteReads) return;
+    if (m_activeHistoryDialog) m_activeHistoryDialog->setRemoteSessionConnected(connected);
     if (!connected) {
         ++m_inventoryRequestToken;
         ++m_storageRequestToken;

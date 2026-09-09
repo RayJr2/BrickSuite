@@ -170,22 +170,43 @@ QString InventoryHistoryDialog::storagePathForId(int storageLocationId) const
     return m_storagePathById.value(storageLocationId);
 }
 
+void InventoryHistoryDialog::refreshRemoteHistory()
+{
+    loadHistory();
+}
+
+void InventoryHistoryDialog::setRemoteSessionConnected(bool connected)
+{
+    if (!m_remoteReads) return;
+    if (!connected) {
+        ++m_remoteRequestToken;
+        m_titleLabel->setText(m_table->rowCount() > 0
+            ? QStringLiteral("Host disconnected; displayed Inventory History may be stale.")
+            : QStringLiteral("BrickSuite Host Inventory History is unavailable."));
+    }
+}
+
 void InventoryHistoryDialog::loadHistory()
 {
     m_table->setRowCount(0);
 
-    if (!m_workspaceContext.hasCurrentWorkspace())
+    if (!m_workspaceContext.hasCurrentWorkspace()) {
+        if (m_remoteReads) emit remoteRefreshFinished(false);
         return;
+    }
 
     if (m_remoteReads) {
         m_titleLabel->setText(QStringLiteral("Loading Inventory History from BrickSuite Host..."));
-        m_remoteReads->inventoryHistory(m_workspaceContext.currentWorkspaceId(), m_partNumber,
+        m_remoteRequestToken = m_remoteReads->inventoryHistory(
+            m_workspaceContext.currentWorkspaceId(), m_partNumber,
             m_rebrickableColorId, this,
             [this](AsyncReadResult<QList<RemoteReadDto::InventoryHistoryRow>> result) {
+                if (result.token != m_remoteRequestToken) return;
                 if (!result.succeeded()) {
                     m_titleLabel->setText(result.error == AsyncReadError::Timeout
                         ? QStringLiteral("The BrickSuite Host did not respond in time.")
                         : QStringLiteral("Unable to load Inventory History from BrickSuite Host."));
+                    emit remoteRefreshFinished(false);
                     return;
                 }
                 int row = 0;
@@ -206,6 +227,7 @@ void InventoryHistoryDialog::loadHistory()
                 }
                 if (result.value->isEmpty()) m_titleLabel->setText(QStringLiteral("No Inventory History."));
                 else loadHeader();
+                emit remoteRefreshFinished(true);
             });
         return;
     }

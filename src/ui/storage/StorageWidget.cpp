@@ -261,16 +261,16 @@ void StorageWidget::loadRemoteStorageTree()
 {
     m_tree->clear(); setMutationControlsEnabled(false);
     const int workspaceId = m_workspaceContext.currentWorkspaceId();
-    if (workspaceId <= 0) { m_statusLabel->setText(QStringLiteral("Select a Host Workspace.")); return; }
+    if (workspaceId <= 0) { m_statusLabel->setText(QStringLiteral("Select a Host Workspace.")); emit remoteRefreshFinished(false); return; }
     if (!m_remoteReads->isAvailableFor(QStringLiteral("storage.list"))) {
-        m_statusLabel->setText(QStringLiteral("BrickSuite Host Storage is unavailable.")); return;
+        m_statusLabel->setText(QStringLiteral("BrickSuite Host Storage is unavailable.")); emit remoteRefreshFinished(false); return;
     }
     m_statusLabel->setText(QStringLiteral("Loading Storage from BrickSuite Host..."));
     m_storageRequestTimer.restart();
     m_storageRequestToken = m_remoteReads->listStorage(workspaceId, true, this,
         [this,workspaceId](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> result) {
             if(result.token!=m_storageRequestToken||workspaceId!=m_workspaceContext.currentWorkspaceId())return;
-            if(!result.succeeded()){m_statusLabel->setText(result.message.isEmpty()?QStringLiteral("Unable to load Storage from BrickSuite Host."):result.message);return;}
+            if(!result.succeeded()){m_statusLabel->setText(result.message.isEmpty()?QStringLiteral("Unable to load Storage from BrickSuite Host."):result.message);emit remoteRefreshFinished(false);return;}
             const qint64 roundTripMs=m_storageRequestTimer.isValid()?m_storageRequestTimer.elapsed():0;
             QElapsedTimer constructionTimer;constructionTimer.start();QHash<qint64,QTreeWidgetItem*> items;
             for(const auto& location:*result.value){auto* item=new QTreeWidgetItem;
@@ -280,6 +280,7 @@ void StorageWidget::loadRemoteStorageTree()
             for(const auto& location:*result.value){auto* item=items.value(location.storageId);auto* parent=items.value(location.parentStorageId);if(parent)parent->addChild(item);else m_tree->addTopLevelItem(item);}
             m_tree->expandAll();m_statusLabel->setText(result.value->isEmpty()?QStringLiteral("This Host Workspace has no Storage locations."):QStringLiteral("%1 Storage locations from BrickSuite Host.").arg(result.value->size()));
             qDebug().noquote()<<"Remote Storage rows="<<result.value->size()<<"roundtripMs="<<roundTripMs<<"hierarchyMs="<<constructionTimer.elapsed();
+            emit remoteRefreshFinished(true);
         });
 }
 

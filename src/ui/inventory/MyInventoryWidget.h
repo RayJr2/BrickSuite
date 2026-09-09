@@ -25,6 +25,8 @@
 #include <QList>
 #include <QSet>
 #include <QWidget>
+#include <QPointer>
+#include <optional>
 #include "../../services/application/dto/RemoteReadDtos.h"
 #include "../../services/application/AsyncReadResult.h"
 
@@ -43,6 +45,7 @@ class InventoryApplicationService;
 class RemoteReadApplicationServices;
 class BackgroundPartColorImageCacheService;
 class PartExternalIdEnrichmentService;
+class InventoryHistoryDialog;
 
 class MyInventoryWidget : public QWidget
 {
@@ -61,6 +64,10 @@ public:
         BackgroundPartColorImageCacheService* service);
 
     void refresh();
+    void refreshRemoteCurrentPage(bool refreshLocations = false);
+    void refreshRemoteLocations();
+    bool hasOpenRemoteHistory(const std::optional<qint64>& inventoryRecordId = std::nullopt) const;
+    void refreshOpenRemoteHistory(const std::optional<qint64>& inventoryRecordId = std::nullopt);
     void settingsChanged();
     void reloadManufacturers();
     void setRemoteSessionConnected(bool connected);
@@ -75,6 +82,9 @@ public:
 signals:
     void inventoryChanged();
     void addInventoryDialogAvailabilityChanged(bool available);
+    void remoteInventoryRefreshFinished(bool succeeded);
+    void remoteLocationsRefreshFinished(bool succeeded);
+    void remoteHistoryRefreshFinished(bool succeeded);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -146,6 +156,8 @@ private:
     PartImageService* m_partImageService = nullptr;
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
     AddInventoryDialog* m_activeAddInventoryDialog = nullptr;
+    QPointer<InventoryHistoryDialog> m_activeHistoryDialog;
+    int m_activeHistoryInventoryRecordId = 0;
 
     QHash<QString, QList<int>> m_rowsByPartNumber;
     QSet<QString> m_partDetailsRequested;

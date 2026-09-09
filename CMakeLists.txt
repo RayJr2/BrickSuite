@@ -69,6 +69,8 @@ qt_add_executable(BrickSuite
     src/network/BrickSuiteNetworkManager.cpp
     src/network/RemoteSessionState.h
     src/network/RemoteSessionState.cpp
+    src/services/application/RemoteRefreshCoordinator.h
+    src/services/application/RemoteRefreshCoordinator.cpp
 
     src/database/DatabaseManager.h
     src/database/DatabaseManager.cpp
@@ -1159,6 +1161,14 @@ if(BUILD_TESTING)
     )
     target_link_libraries(RemoteSessionStateTest PRIVATE Qt6::Core)
     add_test(NAME RemoteSessionState COMMAND RemoteSessionStateTest)
+
+    qt_add_executable(RemoteRefreshCoordinatorTest EXCLUDE_FROM_ALL
+        tests/RemoteRefreshCoordinatorTest.cpp
+        src/network/OperationalInvalidation.h src/network/OperationalInvalidation.cpp
+        src/services/application/RemoteRefreshCoordinator.h src/services/application/RemoteRefreshCoordinator.cpp
+    )
+    target_link_libraries(RemoteRefreshCoordinatorTest PRIVATE Qt6::Core)
+    add_test(NAME RemoteRefreshCoordinator COMMAND RemoteRefreshCoordinatorTest)
 endif()
 
 if(WIN32)

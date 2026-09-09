@@ -535,9 +535,84 @@ void BuildsWidget::refresh()
     updateRequirementUiState();
 }
 
+void BuildsWidget::refreshRemoteBuildsPreservingSelection()
+{
+    if (!m_remoteMode) {
+        refresh();
+        return;
+    }
+    m_restoreSelectedBuildId = m_selectedBuildId;
+    loadRemoteBuilds();
+}
+
+void BuildsWidget::refreshRemoteRequirements()
+{
+    if (!m_remoteMode) {
+        loadRequirements();
+        return;
+    }
+    if (m_selectedBuildId <= 0) {
+        emit remoteRequirementsRefreshFinished(true);
+        return;
+    }
+    m_remoteRequirements.clear();
+    loadRemoteRequirements();
+}
+
+void BuildsWidget::refreshOpenRemotePulling(const std::optional<qint64>& buildId)
+{
+    if (buildId && *buildId > 0) {
+        if (m_remotePullingDialogs.find(int(*buildId)))
+            emit remotePullingRefreshRequested(int(*buildId));
+        return;
+    }
+    const QString prefix = QStringLiteral("remoteBuildPullingDialog_");
+    for (QDialog* dialog : findChildren<QDialog*>()) {
+        if (!dialog->objectName().startsWith(prefix)) continue;
+        bool valid = false;
+        const int id = dialog->objectName().mid(prefix.size()).toInt(&valid);
+        if (valid) emit remotePullingRefreshRequested(id);
+    }
+}
+
+bool BuildsWidget::hasOpenRemotePulling(const std::optional<qint64>& buildId) const
+{
+    if (buildId && *buildId > 0)
+        return m_remotePullingDialogs.find(int(*buildId)) != nullptr;
+    for (QDialog* dialog : findChildren<QDialog*>())
+        if (dialog->objectName().startsWith(QStringLiteral("remoteBuildPullingDialog_")))
+            return true;
+    return false;
+}
+
+QList<int> BuildsWidget::openRemotePullingBuildIds() const
+{
+    QList<int> result;
+    const QString prefix = QStringLiteral("remoteBuildPullingDialog_");
+    for (QDialog* dialog : findChildren<QDialog*>()) {
+        if (!dialog->objectName().startsWith(prefix)) continue;
+        bool valid = false;
+        const int id = dialog->objectName().mid(prefix.size()).toInt(&valid);
+        if (valid) result.append(id);
+    }
+    return result;
+}
+
+int BuildsWidget::selectedBuildId() const
+{
+    return m_selectedBuildId;
+}
+
 void BuildsWidget::setRemoteSessionConnected(bool connected)
 {
     if (!m_remoteMode) return;
+    for (QDialog* dialog : findChildren<QDialog*>()) {
+        if (!dialog->objectName().startsWith(QStringLiteral("remoteBuildPullingDialog_"))) continue;
+        if (QLabel* status = dialog->findChild<QLabel*>(QStringLiteral("remotePullingStatus"))) {
+            if (!connected)
+                status->setText(QStringLiteral("Host disconnected; displayed Pulling state may be stale."));
+        }
+    }
     if (!connected) {
         ++m_buildListGeneration;
         ++m_requirementGeneration;
@@ -1291,11 +1366,13 @@ void BuildsWidget::loadRemoteBuilds()
     if (!m_workspaceContext.hasCurrentWorkspace()) {
         m_showArchivedBuildsCheck->setEnabled(true);
         m_statusLabel->setText("Select a Host workspace to view Builds.");
+        emit remoteBuildsRefreshFinished(false);
         return;
     }
     if (!m_remoteReads || !m_remoteReads->isAvailableFor(QStringLiteral("builds.list"))) {
         m_showArchivedBuildsCheck->setEnabled(true);
         m_statusLabel->setText("Builds are unavailable from this BrickSuite Host.");
+        emit remoteBuildsRefreshFinished(false);
         return;
     }
 
@@ -1312,9 +1389,11 @@ void BuildsWidget::loadRemoteBuilds()
                 m_statusLabel->setText(result.message.isEmpty()
                     ? QStringLiteral("Unable to load Builds from BrickSuite Host.")
                     : result.message);
+                emit remoteBuildsRefreshFinished(false);
                 return;
             }
             renderRemoteBuilds(*result.value);
+            emit remoteBuildsRefreshFinished(true);
         });
 }
 
@@ -1366,6 +1445,18 @@ void BuildsWidget::renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& 
     m_statusLabel->setText(builds.isEmpty()
         ? QStringLiteral("No Builds were found in this Host workspace.")
         : QStringLiteral("%1 Host Build(s). Remote Builds are read-only.").arg(builds.size()));
+    if (m_restoreSelectedBuildId > 0) {
+        const int wanted = m_restoreSelectedBuildId;
+        m_restoreSelectedBuildId = 0;
+        for (int row = 0; row < m_buildsTable->rowCount(); ++row) {
+            QTableWidgetItem* item = m_buildsTable->item(row, 4);
+            if (item && item->data(Qt::UserRole).toInt() == wanted) {
+                m_buildsTable->setCurrentCell(row, 4);
+                m_buildsTable->selectRow(row);
+                break;
+            }
+        }
+    }
 }
 
 void BuildsWidget::addBuild()
@@ -1890,6 +1981,7 @@ void BuildsWidget::loadRemoteRequirements(int page)
     if (!m_remoteReads
         || !m_remoteReads->isAvailableFor(QStringLiteral("builds.requirements"))) {
         m_requirementsLabel->setText("Build requirements are unavailable from this Host.");
+        emit remoteRequirementsRefreshFinished(false);
         return;
     }
 
@@ -1910,6 +2002,7 @@ void BuildsWidget::loadRemoteRequirements(int page)
                 m_requirementsLabel->setText(result.message.isEmpty()
                     ? QStringLiteral("Unable to load Build requirements from the Host.")
                     : result.message);
+                emit remoteRequirementsRefreshFinished(false);
                 return;
             }
             const auto& value = *result.value;
@@ -1919,6 +2012,7 @@ void BuildsWidget::loadRemoteRequirements(int page)
                 return;
             }
             renderRemoteRequirements();
+            emit remoteRequirementsRefreshFinished(true);
         });
 }
 
@@ -2020,6 +2114,7 @@ void BuildsWidget::showRemotePulling(int buildId)
     dialog->resize(1150, 650);
     auto* layout = new QVBoxLayout(dialog);
     auto* status = new QLabel("Loading Pulling state from BrickSuite Host...", dialog);
+    status->setObjectName(QStringLiteral("remotePullingStatus"));
     auto* table = new QTableWidget(dialog);
     table->setColumnCount(9);
     table->setHorizontalHeaderLabels({"Image", "Part", "Description", "Color", "Required",
@@ -2042,6 +2137,7 @@ void BuildsWidget::showRemotePulling(int buildId)
     layout->addWidget(new QLabel("Remote Pulling updates are not available yet.", dialog));
     layout->addWidget(buttons);
     dialog->show();
+    emit remotePullingDialogOpened();
 
     const int workspaceId = m_workspaceContext.currentWorkspaceId();
     auto* images = new PartImageService(dialog);
@@ -2068,17 +2164,23 @@ void BuildsWidget::showRemotePulling(int buildId)
             });
 
     auto allRows = std::make_shared<QList<RemoteReadDto::PullingRow>>();
-    auto requestPage = std::make_shared<std::function<void(int)>>();
+    auto refreshGeneration = std::make_shared<quint64>(1);
+    auto requestPage = std::make_shared<std::function<void(int, quint64)>>();
     *requestPage = [this, dialog, table, status, images, rowsByPart, allRows, requestPage,
-                    workspaceId, buildId](int page) {
+                    refreshGeneration, workspaceId, buildId](int page, quint64 generation) {
         m_remoteReads->pulling(workspaceId, buildId,
             {page, RemoteReadDto::MaximumPageSize}, dialog,
             [this, dialog, table, status, images, rowsByPart, allRows, requestPage,
-             workspaceId, buildId](AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::PullingRow>> result) {
-                if (!result.succeeded()) { status->setText(result.message); return; }
+             refreshGeneration, workspaceId, buildId, generation](AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::PullingRow>> result) {
+                if (generation != *refreshGeneration) return;
+                if (!result.succeeded()) {
+                    status->setText(result.message);
+                    emit remotePullingRefreshFinished(buildId, false);
+                    return;
+                }
                 allRows->append(result.value->rows);
                 if (allRows->size() < result.value->totalRows) {
-                    (*requestPage)(result.value->page + 1);
+                    (*requestPage)(result.value->page + 1, generation);
                     return;
                 }
 
@@ -2160,10 +2262,19 @@ void BuildsWidget::showRemotePulling(int buildId)
                     m_enrichmentService->ensureGeneralImageMetadata(missingImagePartIds);
                 status->setText(allRows->isEmpty()
                     ? QStringLiteral("No allocated pulling rows.")
-                    : QStringLiteral("Host Pulling state (read-only). Remote Pulling updates are not available yet."));
+                    : QStringLiteral("Host Pulling state (read-only)."));
+                emit remotePullingRefreshFinished(buildId, true);
             });
     };
-    (*requestPage)(1);
+    connect(this, &BuildsWidget::remotePullingRefreshRequested, dialog,
+            [allRows, requestPage, refreshGeneration, status, buildId](int requestedBuildId) {
+        if (requestedBuildId != buildId) return;
+        ++*refreshGeneration;
+        allRows->clear();
+        status->setText(QStringLiteral("Refreshing Pulling state from BrickSuite Host..."));
+        (*requestPage)(1, *refreshGeneration);
+    });
+    (*requestPage)(1, *refreshGeneration);
 }
 
 void BuildsWidget::addRequirement()

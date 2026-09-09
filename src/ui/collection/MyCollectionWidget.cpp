@@ -212,6 +212,21 @@ void MyCollectionWidget::refresh()
     loadPage(true);
 }
 
+void MyCollectionWidget::refreshRemoteCurrentPage(bool refreshLocations)
+{
+    if (!m_remoteReads) {
+        refresh();
+        return;
+    }
+    if (refreshLocations) loadLocations();
+    loadPage(false, QStringLiteral("Refreshing My Collection..."));
+}
+
+void MyCollectionWidget::refreshRemoteLocations()
+{
+    if (m_remoteReads) loadLocations();
+}
+
 void MyCollectionWidget::setRemoteSessionConnected(bool connected)
 {
     if (!m_remoteReads) return;
@@ -303,7 +318,7 @@ void MyCollectionWidget::loadLocations()
     if (m_remoteReads) {
         const int workspaceId = m_workspaceContext.currentWorkspaceId();
         m_locationCombo->blockSignals(false);
-        if (workspaceId <= 0 || !m_remoteReads->isAvailableFor(QStringLiteral("storage.list"))) return;
+        if (workspaceId <= 0 || !m_remoteReads->isAvailableFor(QStringLiteral("storage.list"))) { emit remoteLocationsRefreshFinished(false); return; }
         m_storageRequestToken = m_remoteReads->listStorage(workspaceId, this,
             [this, workspaceId, selected](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> result) {
                 if (result.token != m_storageRequestToken
@@ -315,6 +330,7 @@ void MyCollectionWidget::loadLocations()
                     m_locationCombo->addItem(location.displayPath, QVariant::fromValue<qint64>(location.storageId));
                 const int index = m_locationCombo->findData(selected);
                 if (index >= 0) m_locationCombo->setCurrentIndex(index);
+                emit remoteLocationsRefreshFinished(result.succeeded());
             });
         return;
     }
@@ -453,6 +469,7 @@ void MyCollectionWidget::requestRemotePage()
     const int workspaceId = m_workspaceContext.currentWorkspaceId();
     if (workspaceId <= 0 || !m_remoteReads->isAvailableFor(QStringLiteral("collection.search"))) {
         m_messageLabel->setText(QStringLiteral("BrickSuite Host Collection reads are unavailable."));
+        emit remoteCollectionRefreshFinished(false);
         return;
     }
     RemoteReadDto::CollectionSearchRequest request;
@@ -480,7 +497,7 @@ void MyCollectionWidget::requestRemotePage()
                 m_messageLabel->setText(result.message.isEmpty()
                     ? QStringLiteral("BrickSuite Host Collection reads are unavailable. Existing results may be stale.")
                     : result.message + QStringLiteral(" Existing results may be stale."));
-                updatePaging(); return;
+                updatePaging(); emit remoteCollectionRefreshFinished(false); return;
             }
             m_page = result.value->page - 1; m_total = result.value->totalRows;
             const int pages = qMax(1, (m_total + result.value->pageSize - 1) / result.value->pageSize);
@@ -490,6 +507,7 @@ void MyCollectionWidget::requestRemotePage()
                 return;
             }
             populateRemotePage(result.value->rows); updatePaging();
+            emit remoteCollectionRefreshFinished(true);
         });
 }
 
