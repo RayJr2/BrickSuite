@@ -54,8 +54,10 @@ struct BuildRequirement {
     qint64 requirementId = 0; qint64 buildId = 0;
     QString partNumber; QString partNameFallback;
     int rebrickableColorId = -1; QString colorNameFallback;
-    QString substitutePartNumber; int substituteRebrickableColorId = -1;
-    int quantityRequired = 0; int quantityPulled = 0; bool spare = false;
+      QString substitutePartNumber; int substituteRebrickableColorId = -1;
+      int quantityRequired = 0; int quantityPulled = 0; bool spare = false;
+      int owned = -1; int thisRequirementAllocated = -1; int otherAllocated = -1;
+      int available = -1; int missing = -1;
 };
 struct MissingPart {
     QString partNumber; QString partNameFallback; int rebrickableColorId = -1;
@@ -67,7 +69,8 @@ struct PullingRow {
     qint64 requirementId = 0; qint64 allocationId = 0; qint64 inventoryRecordId = 0;
     qint64 storageId = 0; QString storagePath; QString partNumber;
     QString partNameFallback; int rebrickableColorId = -1; QString colorNameFallback;
-    int quantityRequired = 0; int quantityPulled = 0; int quantityAllocated = 0;
+      int quantityRequired = 0; int quantityPulled = 0; int quantityAllocated = 0;
+      int inventoryQuantity = 0;
     bool substitution = false;
 };
 

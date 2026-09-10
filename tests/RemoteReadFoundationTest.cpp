@@ -74,10 +74,27 @@ int main(int argc, char** argv)
     requirement.requirementId=70; requirement.buildId=9; requirement.partNumber="3001";
     requirement.partNameFallback="Brick 2 x 4"; requirement.rebrickableColorId=4;
     requirement.colorNameFallback="Red"; requirement.quantityRequired=12;
+    requirement.owned=7; requirement.thisRequirementAllocated=3;
+    requirement.otherAllocated=2; requirement.available=2; requirement.missing=7;
     RemoteReadDto::BuildRequirement decodedRequirement;
     ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(requirement),
-        &decodedRequirement, &decodeError) && decodedRequirement.partNumber=="3001",
+        &decodedRequirement, &decodeError) && decodedRequirement.partNumber=="3001"
+        && decodedRequirement.owned==7 && decodedRequirement.thisRequirementAllocated==3
+        && decodedRequirement.otherAllocated==2 && decodedRequirement.available==2
+        && decodedRequirement.missing==7,
         "Build requirement DTO round trip failed");
+    QJsonObject legacyRequirementJson=RemoteReadJson::toJson(requirement);
+    legacyRequirementJson.remove(QStringLiteral("owned"));
+    legacyRequirementJson.remove(QStringLiteral("thisRequirementAllocated"));
+    legacyRequirementJson.remove(QStringLiteral("otherAllocated"));
+    legacyRequirementJson.remove(QStringLiteral("available"));
+    legacyRequirementJson.remove(QStringLiteral("missing"));
+    RemoteReadDto::BuildRequirement legacyRequirement;
+    ok &= require(RemoteReadJson::fromJson(legacyRequirementJson, &legacyRequirement, &decodeError)
+        && legacyRequirement.owned==-1 && legacyRequirement.thisRequirementAllocated==-1
+        && legacyRequirement.otherAllocated==-1 && legacyRequirement.available==-1
+        && legacyRequirement.missing==-1,
+        "Build requirement DTO rejected protocol-compatible missing availability fields");
     RemoteReadDto::PullingRow pulling; pulling.requirementId=70;pulling.allocationId=71;
     pulling.inventoryRecordId=44;pulling.storageId=8;pulling.partNumber="3001";
     pulling.rebrickableColorId=4;pulling.quantityRequired=12;pulling.quantityAllocated=3;

@@ -43,6 +43,7 @@ public:
         int quantityRequired = 0;
         int quantityPulledForRequirement = 0;
         int quantityAllocatedHere = 0;
+        int inventoryQuantity = 0;
 
         bool isSubstitution = false;
         int originalPartId = 0;
@@ -89,6 +90,9 @@ public:
 
     PullResult recordPull(int allocationId, int quantity) const;
     PullResult recordPulls(const QList<PullRequest>& requests) const;
+    // The caller owns the active transaction. Used by Host-authoritative remote
+    // mutations so domain changes and the durable receipt commit atomically.
+    PullResult recordPullsInCurrentTransaction(const QList<PullRequest>& requests) const;
 
 private:
     QSqlDatabase serviceDatabase() const;
@@ -96,6 +100,7 @@ private:
                    int& buildId,
                    int& piecesPulled,
                    QString& errorMessage) const;
+    PullResult applyPulls(const QList<PullRequest>& requests) const;
 
     QString storagePath(int storageLocationId) const;
     QString m_connectionName;

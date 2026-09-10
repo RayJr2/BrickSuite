@@ -127,6 +127,7 @@ BuildPullingService::PullingView BuildPullingService::getPullingView(int buildId
             item.quantityRequired = requirement.quantityRequired();
             item.quantityPulledForRequirement = requirement.quantityPulled();
             item.quantityAllocatedHere = allocation.quantityAllocated();
+            item.inventoryQuantity = inventoryRecord->quantity();
 
             item.originalPartId = requirement.partId();
             item.originalColorId = requirement.colorId();
@@ -193,19 +194,6 @@ BuildPullingService::PullResult
 BuildPullingService::recordPulls(const QList<PullRequest>& requests) const
 {
     PullResult result;
-
-    if (requests.isEmpty()) {
-        result.message = "No pull quantities were supplied.";
-        return result;
-    }
-
-    for (const PullRequest& request : requests) {
-        if (request.allocationId <= 0 || request.quantity < 0) {
-            result.message = "A pull request contains an invalid allocation or quantity.";
-            return result;
-        }
-    }
-
     QSqlDatabase database = serviceDatabase();
 
     if (!database.transaction()) {
@@ -213,6 +201,44 @@ BuildPullingService::recordPulls(const QList<PullRequest>& requests) const
                     << database.lastError().text();
         result.message = "Unable to start the Build pulling transaction.";
         return result;
+    }
+
+    result = applyPulls(requests);
+    if (!result.success) {
+        database.rollback();
+        return result;
+    }
+
+    if (!database.commit()) {
+        qCritical() << "Unable to commit Build pulling transaction:"
+                    << database.lastError().text();
+        database.rollback();
+        result.success = false;
+        result.message = "Unable to commit the Build pulling transaction.";
+        return result;
+    }
+    return result;
+}
+
+BuildPullingService::PullResult
+BuildPullingService::recordPullsInCurrentTransaction(const QList<PullRequest>& requests) const
+{
+    return applyPulls(requests);
+}
+
+BuildPullingService::PullResult
+BuildPullingService::applyPulls(const QList<PullRequest>& requests) const
+{
+    PullResult result;
+    if (requests.isEmpty()) {
+        result.message = "No pull quantities were supplied.";
+        return result;
+    }
+    for (const PullRequest& request : requests) {
+        if (request.allocationId <= 0 || request.quantity < 0) {
+            result.message = "A pull request contains an invalid allocation or quantity.";
+            return result;
+        }
     }
 
     int expectedBuildId = 0;
@@ -228,7 +254,6 @@ BuildPullingService::recordPulls(const QList<PullRequest>& requests) const
         QString errorMessage;
 
         if (!applyPull(request, rowBuildId, rowPieces, errorMessage)) {
-            database.rollback();
             result.message = errorMessage;
             return result;
         }
@@ -236,21 +261,12 @@ BuildPullingService::recordPulls(const QList<PullRequest>& requests) const
         if (expectedBuildId == 0) {
             expectedBuildId = rowBuildId;
         } else if (rowBuildId != expectedBuildId) {
-            database.rollback();
             result.message = "Pull requests from different Builds cannot be committed together.";
             return result;
         }
 
         ++rowsPulled;
         piecesPulled += rowPieces;
-    }
-
-    if (!database.commit()) {
-        qCritical() << "Unable to commit Build pulling transaction:"
-                    << database.lastError().text();
-        database.rollback();
-        result.message = "Unable to commit the Build pulling transaction.";
-        return result;
     }
 
     result.success = true;

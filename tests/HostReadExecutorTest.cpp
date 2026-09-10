@@ -235,8 +235,13 @@ int main(int argc, char** argv)
         ok &= check(requirements.rows.size() == 1
                         && !requirements.rows.isEmpty()
                         && requirements.rows.first().partNumber == QStringLiteral("3001")
-                        && requirements.rows.first().rebrickableColorId == 4,
-                    "Build requirements portable identities");
+                        && requirements.rows.first().rebrickableColorId == 4
+                        && requirements.rows.first().owned == 7
+                        && requirements.rows.first().thisRequirementAllocated == 3
+                        && requirements.rows.first().otherAllocated == 0
+                        && requirements.rows.first().available == 4
+                        && requirements.rows.first().missing == 3,
+                    "Build requirements preserve Host authoritative availability");
         RemoteReadDto::Page<RemoteReadDto::BuildRequirement> wrongRequirements;
         ok &= check(waitFor([&](QEventLoop& loop) {
             executor.buildRequirementsPortable(999, buildId, {1, 250}, &app,

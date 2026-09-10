@@ -133,8 +133,41 @@ An authenticated `FullBrickSuiteClient` may invoke only an explicitly registered
 operation supported by its negotiated protocol. A broad write marker, if ever added,
 must not authorize an operation by itself.
 
-M26.6A registers no production mutation operation or capability. Remote Pulling,
-Inventory, Storage, Builds, Collection, and Part Reference remain read-only.
+M26.6B registers one production mutation operation: `builds.pulling.record`, advertised
+as capability `builds.pulling.write`. Inventory, Storage, general Builds, Collection,
+and Part Reference remain read-only.
+
+## Interactive Pulling mutation
+
+`builds.pulling.record` is available only to an authenticated protocol 1.2
+`FullBrickSuiteClient`. Its common metadata carries the Workspace and durable mutation
+ID. `mutation` carries a positive Build ID and 1–500 rows. Each row contains an
+allocation ID, a positive pull delta, and expected allocated, Inventory, and requirement
+pulled quantities. `expected.buildStatus` may carry the state observed by the Client.
+
+The Host validates the complete batch before changing state. The active Build must be a
+Stock Build in Planned or Pulling status; every allocation, requirement, Inventory row,
+Part/Color, Storage, and Workspace relationship must still agree. Duplicate allocation
+IDs, non-positive or overflowing quantities, over-allocation, insufficient Inventory,
+and collective requirement over-pulls are rejected. Multiple allocations for one
+requirement are compared to the same pre-mutation pulled total before execution.
+
+The authoritative result contains the Build ID, submitted row and piece totals, affected
+allocation IDs, resulting requirement pulled totals, and Build status. A stale expected
+value returns `CONFLICT` without partial effects. The mutation uses positive deltas; it
+never replaces an absolute pulled total.
+
+The Pulling domain updates, movement/provenance records, and receipt share the Host write
+transaction. A same-ID/same-payload replay returns the stored result with `replayed=true`
+without consuming Inventory, adding history, or publishing again. A changed payload with
+the same ID returns `IDEMPOTENCY_CONFLICT`. Timeout or disconnect after submission is an
+unknown outcome; the Client retains the exact payload and mutation ID for an explicit
+safe replay.
+
+After a new commit, the Host publishes the existing Pulling compound invalidation for the
+Workspace and Build: Inventory, Inventory History, Builds, Build Requirements, Missing
+Parts, and Pulling. Protocol 1.1 and 1.2 Hosts that do not advertise
+`builds.pulling.write` remain read-only.
 
 Each future operation must validate its Workspace and target ownership, entity state,
 payload bounds, expected-state conflict inputs, and domain rules on the Host. Client

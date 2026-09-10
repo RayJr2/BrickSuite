@@ -86,6 +86,13 @@ InteractiveBuildPullingDialog::InteractiveBuildPullingDialog(int buildId,
     refreshView();
 }
 
+int InteractiveBuildPullingDialog::buildId() const { return m_buildId; }
+
+void InteractiveBuildPullingDialog::refreshAfterExternalCommit()
+{
+    refreshView();
+}
+
 void InteractiveBuildPullingDialog::initializeUi()
 {
     auto* mainLayout = new QVBoxLayout(this);

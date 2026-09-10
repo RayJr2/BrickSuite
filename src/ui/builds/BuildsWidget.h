@@ -29,6 +29,7 @@ class WorkspaceContext;
 class SessionStorageSelectionService;
 class BuildApplicationService;
 class RemoteReadApplicationServices;
+class RemotePullingApplicationService;
 class PartExternalIdEnrichmentService;
 
 class QComboBox;
@@ -56,7 +57,8 @@ public:
         BuildApplicationService& buildService,
         QWidget* parent = nullptr,
         RemoteReadApplicationServices* remoteReads = nullptr,
-        PartExternalIdEnrichmentService* enrichmentService = nullptr);
+        PartExternalIdEnrichmentService* enrichmentService = nullptr,
+        RemotePullingApplicationService* remotePulling = nullptr);
 
     void refresh();
     void refreshRemoteBuildsPreservingSelection();
@@ -68,6 +70,7 @@ public:
     void selectBuild(int buildId);
     void reloadManufacturers();
     void setRemoteSessionConnected(bool connected);
+    void refreshOpenLocalPulling(int buildId);
 
 signals:
     void collectionItemRequested(int collectionItemId);
@@ -119,12 +122,14 @@ private:
     BuildApplicationService& m_buildService;
     RemoteReadApplicationServices* m_remoteReads = nullptr;
     PartExternalIdEnrichmentService* m_enrichmentService = nullptr;
+    RemotePullingApplicationService* m_remotePulling = nullptr;
     QList<RemoteReadDto::BuildRequirement> m_remoteRequirements;
     quint64 m_buildListGeneration = 0;
     quint64 m_requirementGeneration = 0;
     SingleInstanceWindowRegistry<int, QDialog> m_remotePullingDialogs;
     bool m_remoteMode = false;
     int m_restoreSelectedBuildId = 0;
+    bool m_restoreNewBuildExpanded = false;
 
     QComboBox* m_typeCombo = nullptr;
     QLineEdit* m_setNumberEdit = nullptr;

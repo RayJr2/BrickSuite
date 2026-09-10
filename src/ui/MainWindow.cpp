@@ -337,7 +337,15 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                                       m_applicationServices.builds(),
                                       m_tabWidget,
                                       m_remoteReads,
-                                      m_partExternalIdEnrichmentService);
+                                      m_partExternalIdEnrichmentService,
+                                      m_networkManager.remotePulling());
+    connect(&m_networkManager, &BrickSuiteNetworkManager::remotePullingMutationCommitted,
+            this, [this](int workspaceId, int buildId) {
+        if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+        m_buildsWidget->refresh();
+        m_myInventoryWidget->refresh();
+        m_buildsWidget->refreshOpenLocalPulling(buildId);
+    });
 
     if (m_remoteReads)
         setRemoteSurfacesConnected(false);

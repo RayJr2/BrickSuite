@@ -56,12 +56,14 @@
 
 #include "../../import/RebrickableMocCsvImporter.h"
 #include "../../services/builds/MissingPartsService.h"
+#include "../../services/builds/BuildRequirementAvailabilityService.h"
 #include "../../services/images/PartImageService.h"
 #include "../../services/parts/PartExternalIdEnrichmentService.h"
 #include "../../services/procurement/ProcurementDraftService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
+#include "../../services/application/RemotePullingApplicationService.h"
 #include "../../ui/procurement/ProcurementPreviewDialog.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
@@ -144,13 +146,15 @@ BuildsWidget::BuildsWidget(
     BuildApplicationService& buildService,
     QWidget* parent,
     RemoteReadApplicationServices* remoteReads,
-    PartExternalIdEnrichmentService* enrichmentService)
+    PartExternalIdEnrichmentService* enrichmentService,
+    RemotePullingApplicationService* remotePulling)
     : QWidget(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
     , m_buildService(buildService)
     , m_remoteReads(remoteReads)
     , m_enrichmentService(enrichmentService)
+    , m_remotePulling(remotePulling)
     , m_remoteMode(remoteReads != nullptr)
 {
     auto* mainLayout = new QVBoxLayout(this);
@@ -545,6 +549,7 @@ void BuildsWidget::refreshRemoteBuildsPreservingSelection()
         return;
     }
     m_restoreSelectedBuildId = m_selectedBuildId;
+    m_restoreNewBuildExpanded = m_newBuildGroup->isChecked();
     loadRemoteBuilds();
 }
 
@@ -1468,6 +1473,7 @@ void BuildsWidget::renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& 
         : QStringLiteral("%1 Host Build(s). Remote Builds are read-only.").arg(builds.size()));
     if (m_restoreSelectedBuildId > 0) {
         const int wanted = m_restoreSelectedBuildId;
+        const bool restoreNewBuildExpanded = m_restoreNewBuildExpanded;
         m_restoreSelectedBuildId = 0;
         for (int row = 0; row < m_buildsTable->rowCount(); ++row) {
             QTableWidgetItem* item = m_buildsTable->item(row, 4);
@@ -1477,6 +1483,7 @@ void BuildsWidget::renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& 
                 break;
             }
         }
+        m_newBuildGroup->setChecked(restoreNewBuildExpanded);
     }
 }
 
@@ -1594,7 +1601,8 @@ void BuildsWidget::updateUiState()
     m_statusCombo->setEnabled(enabled);
     m_notesEdit->setEnabled(enabled);
     m_addButton->setEnabled(enabled);
-    m_newBuildGroup->setEnabled(enabled);
+    m_newBuildGroup->setEnabled(true);
+    m_newBuildContent->setEnabled(enabled);
 }
 
 void BuildsWidget::loadManufacturers()
@@ -1706,8 +1714,7 @@ void BuildsWidget::loadRequirements()
 
     PartRepository partRepository;
     ColorRepository colorRepository;
-    InventoryRecordRepository inventoryRepository;
-    BuildAllocationRepository allocationRepository;
+    BuildRequirementAvailabilityService availabilityService;
 
     int row = 0;
 
@@ -1788,11 +1795,6 @@ void BuildsWidget::loadRequirements()
 
         const int workspaceId = m_workspaceContext.currentWorkspaceId();
 
-        const int owned =
-            inventoryRepository.totalQuantityForPartColor(workspaceId,
-                                                           effectivePartId,
-                                                           effectiveColorId);
-
         const int quantityPulled = requirement.quantityPulled();
 
         const int remainingRequired =
@@ -1803,30 +1805,7 @@ void BuildsWidget::loadRequirements()
         // identity because all requirements and Builds compete for the
         // same loose stock.
         //
-        const int totalAllocated =
-            allocationRepository.totalAllocatedForPartColor(workspaceId,
-                                                             effectivePartId,
-                                                             effectiveColorId);
-
-        //
-        // Only reservations explicitly tied to this requirement satisfy it.
-        //
-        const int thisRequirementAllocated =
-            allocationRepository.totalAllocatedForRequirement(requirement.id());
-
-        const int otherAllocated =
-            qMax(totalAllocated - thisRequirementAllocated, 0);
-
-        const int available =
-            qMax(owned - totalAllocated, 0);
-
-        const int missing =
-            requirement.isSpare()
-                ? 0
-                : qMax(remainingRequired
-                           - thisRequirementAllocated
-                           - available,
-                       0);
+        const auto availability = availabilityService.project(workspaceId, requirement);
 
         auto* requiredItem =
             new QTableWidgetItem(QString::number(requirement.quantityRequired()));
@@ -1838,19 +1817,19 @@ void BuildsWidget::loadRequirements()
             new QTableWidgetItem(QString::number(remainingRequired));
 
         auto* ownedItem =
-            new QTableWidgetItem(QString::number(owned));
+            new QTableWidgetItem(QString::number(availability.owned));
 
         auto* thisBuildItem =
-            new QTableWidgetItem(QString::number(thisRequirementAllocated));
+            new QTableWidgetItem(QString::number(availability.thisRequirementAllocated));
 
         auto* otherBuildsItem =
-            new QTableWidgetItem(QString::number(otherAllocated));
+            new QTableWidgetItem(QString::number(availability.otherAllocated));
 
         auto* availableItem =
-            new QTableWidgetItem(QString::number(available));
+            new QTableWidgetItem(QString::number(availability.available));
 
         auto* missingItem =
-            new QTableWidgetItem(QString::number(missing));
+            new QTableWidgetItem(QString::number(availability.missing));
 
         auto* spareItem =
             new QTableWidgetItem(requirement.isSpare() ? "Yes" : "No");
@@ -2097,8 +2076,15 @@ void BuildsWidget::renderRemoteRequirements()
         m_requirementsTable->setItem(row, 3, new QTableWidgetItem(QString::number(requirement.quantityRequired)));
         m_requirementsTable->setItem(row, 4, new QTableWidgetItem(QString::number(requirement.quantityPulled)));
         m_requirementsTable->setItem(row, 5, new QTableWidgetItem(QString::number(remaining)));
-        for (int column = 6; column <= 10; ++column)
-            m_requirementsTable->setItem(row, column, new QTableWidgetItem(dash));
+        const int availability[] = {requirement.owned, requirement.thisRequirementAllocated,
+                                    requirement.otherAllocated, requirement.available,
+                                    requirement.missing};
+        for (int column = 6; column <= 10; ++column) {
+            const int value = availability[column - 6];
+            auto* item = new QTableWidgetItem(value >= 0 ? QString::number(value) : dash);
+            item->setTextAlignment(Qt::AlignCenter);
+            m_requirementsTable->setItem(row, column, item);
+        }
         m_requirementsTable->setItem(row, 11,
             new QTableWidgetItem(requirement.spare ? QStringLiteral("Yes") : QStringLiteral("No")));
         m_requirementsTable->setItem(row, 12, new QTableWidgetItem(QStringLiteral("Read-only")));
@@ -2148,7 +2134,9 @@ void BuildsWidget::showRemotePulling(int buildId)
     connect(dialog, &QObject::destroyed, this, [this, buildId]() {
         m_remotePullingDialogs.forget(buildId);
     });
-    dialog->setWindowTitle("Host Build Pulling (Read-only)");
+    const bool writable = m_remotePulling && m_remotePulling->isAvailable();
+    dialog->setWindowTitle(writable ? QStringLiteral("Host Build Pulling")
+                                    : QStringLiteral("Host Build Pulling (Read-only)"));
     dialog->resize(1150, 650);
     auto* layout = new QVBoxLayout(dialog);
     auto* status = new QLabel("Loading Pulling state from BrickSuite Host...", dialog);
@@ -2169,10 +2157,18 @@ void BuildsWidget::showRemotePulling(int buildId)
     table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     table->horizontalHeader()->setSectionResizeMode(8, QHeaderView::Stretch);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    auto* recordButton = buttons->addButton(QStringLiteral("Record Pulls"),
+                                             QDialogButtonBox::ActionRole);
+    recordButton->setVisible(writable);
+    recordButton->setEnabled(false);
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
     layout->addWidget(status);
     layout->addWidget(table);
-    layout->addWidget(new QLabel("Remote Pulling updates are not available yet.", dialog));
+    auto* capabilityNotice = new QLabel(writable
+        ? QStringLiteral("Enter positive quantities as pieces physically pulled, then choose Record Pulls.")
+        : QStringLiteral("This Host provides Pulling as read-only. Protocol 1.2 and Pulling write permission are required."), dialog);
+    capabilityNotice->setWordWrap(true);
+    layout->addWidget(capabilityNotice);
     layout->addWidget(buttons);
     dialog->show();
     emit remotePullingDialogOpened();
@@ -2202,14 +2198,19 @@ void BuildsWidget::showRemotePulling(int buildId)
             });
 
     auto allRows = std::make_shared<QList<RemoteReadDto::PullingRow>>();
+    auto editors = std::make_shared<QHash<qint64, QSpinBox*>>();
+    auto pending = std::make_shared<std::optional<RemotePullingMutationDto::Request>>();
+    auto mutationPending = std::make_shared<bool>(false);
     auto refreshGeneration = std::make_shared<quint64>(1);
     auto requestPage = std::make_shared<std::function<void(int, quint64)>>();
-    *requestPage = [this, dialog, table, status, images, rowsByPart, allRows, requestPage,
-                    refreshGeneration, workspaceId, buildId](int page, quint64 generation) {
+    *requestPage = [this, dialog, table, status, images, rowsByPart, allRows, editors,
+                    recordButton, writable, requestPage, refreshGeneration, workspaceId,
+                    buildId](int page, quint64 generation) {
         m_remoteReads->pulling(workspaceId, buildId,
             {page, RemoteReadDto::MaximumPageSize}, dialog,
-            [this, dialog, table, status, images, rowsByPart, allRows, requestPage,
-             refreshGeneration, workspaceId, buildId, generation](AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::PullingRow>> result) {
+            [this, dialog, table, status, images, rowsByPart, allRows, editors,
+             recordButton, writable, requestPage, refreshGeneration, workspaceId,
+             buildId, generation](AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::PullingRow>> result) {
                 if (generation != *refreshGeneration) return;
                 if (!result.succeeded()) {
                     status->setText(result.message);
@@ -2235,6 +2236,7 @@ void BuildsWidget::showRemotePulling(int buildId)
                 table->setUpdatesEnabled(false);
                 table->setRowCount(allRows->size());
                 rowsByPart->clear();
+                editors->clear();
                 QList<int> missingImagePartIds;
                 QString previousStorage;
                 for (int i = 0; i < allRows->size(); ++i) {
@@ -2259,14 +2261,32 @@ void BuildsWidget::showRemotePulling(int buildId)
                     descriptionItem->setToolTip(description);
                     table->setItem(i, 2, descriptionItem);
                     table->setItem(i, 3, new QTableWidgetItem(colorName));
-                    for (int column = 4; column <= 7; ++column) {
+                    for (int column = 4; column <= 6; ++column) {
                         const int value = column == 4 ? source.quantityRequired
                             : column == 5 ? source.quantityPulled
-                            : column == 6 ? source.quantityAllocated
-                                          : source.quantityPulled;
+                            : source.quantityAllocated;
                         auto* quantity = new QTableWidgetItem(QString::number(value));
                         quantity->setTextAlignment(Qt::AlignCenter);
                         table->setItem(i, column, quantity);
+                    }
+                    if (writable) {
+                        auto* pulled = new QSpinBox(table);
+                        pulled->setRange(0, qMin(source.quantityAllocated,
+                            qMax(source.quantityRequired - source.quantityPulled, 0)));
+                        pulled->setAlignment(Qt::AlignCenter);
+                        table->setCellWidget(i, 7, pulled);
+                        editors->insert(source.allocationId, pulled);
+                        connect(pulled, qOverload<int>(&QSpinBox::valueChanged), dialog,
+                            [editors, recordButton](int) {
+                                bool any = false;
+                                for (auto* editor : std::as_const(*editors))
+                                    any = any || (editor && editor->value() > 0);
+                                recordButton->setEnabled(any);
+                            });
+                    } else {
+                        auto* quantity = new QTableWidgetItem(QString::number(source.quantityPulled));
+                        quantity->setTextAlignment(Qt::AlignCenter);
+                        table->setItem(i, 7, quantity);
                     }
                     auto* storage = new QTableWidgetItem(source.storagePath);
                     if (i == 0 || source.storagePath.compare(previousStorage,
@@ -2300,10 +2320,73 @@ void BuildsWidget::showRemotePulling(int buildId)
                     m_enrichmentService->ensureGeneralImageMetadata(missingImagePartIds);
                 status->setText(allRows->isEmpty()
                     ? QStringLiteral("No allocated pulling rows.")
-                    : QStringLiteral("Host Pulling state (read-only)."));
+                    : writable ? QStringLiteral("Host Pulling state is ready.")
+                               : QStringLiteral("Host Pulling state (read-only)."));
                 emit remotePullingRefreshFinished(buildId, true);
             });
     };
+    connect(recordButton, &QPushButton::clicked, dialog,
+        [this, dialog, status, recordButton, editors, allRows, pending, mutationPending,
+         workspaceId, buildId]() {
+            if (!m_remotePulling || *mutationPending) return;
+            if (!m_remotePulling->isAvailable()) {
+                status->setText(QStringLiteral("Reconnect to the current BrickSuite Host before recording or confirming this pull."));
+                return;
+            }
+            RemotePullingMutationDto::Request request;
+            if (*pending) {
+                request = **pending;
+            } else {
+                request.workspaceId = workspaceId;
+                request.buildId = buildId;
+                request.mutationId = RemoteMutationDto::newMutationId();
+                for (const auto& source : std::as_const(*allRows)) {
+                    QSpinBox* editor = editors->value(source.allocationId);
+                    if (!editor || editor->value() <= 0) continue;
+                    request.rows.append({source.allocationId, editor->value(),
+                        source.quantityAllocated, source.inventoryQuantity, source.quantityPulled});
+                }
+                if (request.rows.isEmpty()) return;
+                *pending = request;
+            }
+            *mutationPending = true;
+            recordButton->setEnabled(false);
+            for (auto* editor : std::as_const(*editors)) if (editor) editor->setEnabled(false);
+            status->setText(QStringLiteral("Recording Pulling changes on BrickSuite Host..."));
+            m_remotePulling->record(request, dialog,
+                [this, status, recordButton, pending, mutationPending, editors, buildId](
+                    const RemotePullingMutationDto::Result& result) {
+                    *mutationPending = false;
+                    pending->reset();
+                    recordButton->setText(QStringLiteral("Record Pulls"));
+                    status->setText(QStringLiteral("Recorded %1 piece(s) from %2 row(s)%3.")
+                        .arg(result.piecesRecorded).arg(result.submittedRows)
+                        .arg(result.replayed ? QStringLiteral(" (confirmed replay)") : QString()));
+                    emit remotePullingRefreshRequested(buildId);
+                },
+                [this, status, recordButton, pending, mutationPending, editors, buildId](
+                    const RemoteMutationDto::Error& error) {
+                    *mutationPending = false;
+                    if (error.outcome == RemoteMutationDto::Outcome::Unknown) {
+                        recordButton->setText(QStringLiteral("Retry Same Submission"));
+                        recordButton->setEnabled(true);
+                        status->setText(QStringLiteral("The Host response was lost. The pull may have been recorded. Reconnect and retry the same submission to confirm the result."));
+                        return;
+                    }
+                    if (error.code == QStringLiteral("BUSY")) {
+                        recordButton->setText(QStringLiteral("Retry Same Submission"));
+                        recordButton->setEnabled(true);
+                        status->setText(error.message);
+                        return;
+                    }
+                    pending->reset();
+                    recordButton->setText(QStringLiteral("Record Pulls"));
+                    status->setText(error.code == QStringLiteral("CONFLICT")
+                        ? QStringLiteral("Pulling data changed on the Host. The pull was not applied; refreshing authoritative state.")
+                        : error.message);
+                    emit remotePullingRefreshRequested(buildId);
+                });
+        });
     connect(this, &BuildsWidget::remotePullingRefreshRequested, dialog,
             [allRows, requestPage, refreshGeneration, status, buildId](int requestedBuildId) {
         if (requestedBuildId != buildId) return;
@@ -2313,6 +2396,15 @@ void BuildsWidget::showRemotePulling(int buildId)
         (*requestPage)(1, *refreshGeneration);
     });
     (*requestPage)(1, *refreshGeneration);
+}
+
+void BuildsWidget::refreshOpenLocalPulling(int buildId)
+{
+    for (InteractiveBuildPullingDialog* dialog
+         : findChildren<InteractiveBuildPullingDialog*>()) {
+        if (dialog && dialog->buildId() == buildId)
+            dialog->refreshAfterExternalCommit();
+    }
 }
 
 void BuildsWidget::addRequirement()

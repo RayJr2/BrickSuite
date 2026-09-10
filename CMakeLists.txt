@@ -81,6 +81,12 @@ qt_add_executable(BrickSuite
     src/services/application/RemoteMutationApplicationServices.cpp
     src/services/application/dto/RemoteMutationDtos.h
     src/services/application/dto/RemoteMutationDtos.cpp
+    src/services/application/dto/RemotePullingMutationDtos.h
+    src/services/application/dto/RemotePullingMutationDtos.cpp
+    src/services/application/HostPullingMutationService.h
+    src/services/application/HostPullingMutationService.cpp
+    src/services/application/RemotePullingApplicationService.h
+    src/services/application/RemotePullingApplicationService.cpp
 
     src/database/DatabaseManager.h
     src/database/DatabaseManager.cpp
@@ -434,6 +440,8 @@ qt_add_executable(BrickSuite
     src/ui/inventory/LostInventoryDialog.cpp
     src/services/builds/BuildPullingService.h
     src/services/builds/BuildPullingService.cpp
+    src/services/builds/BuildRequirementAvailabilityService.h
+    src/services/builds/BuildRequirementAvailabilityService.cpp
     src/services/builds/MinifigBuildCreationService.h
     src/services/builds/MinifigBuildCreationService.cpp
     src/services/builds/SetBuildCreationService.h
@@ -460,6 +468,7 @@ qt_add_executable(BrickSuite
     SECURITY.md
     deployment/update/update.json
     docs/BRICKSUITE_PROTOCOL_1_1.md
+    docs/BRICKSUITE_PROTOCOL_1_2.md
 
 )
 target_link_libraries(BrickSuite PRIVATE
@@ -1116,7 +1125,9 @@ if(BUILD_TESTING)
         src/repositories/UserPartReferenceRepository.h src/repositories/UserPartReferenceRepository.cpp
         src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
         src/services/builds/MissingPartsService.h src/services/builds/MissingPartsService.cpp
-        src/services/builds/BuildPullingService.h src/services/builds/BuildPullingService.cpp
+    src/services/builds/BuildPullingService.h src/services/builds/BuildPullingService.cpp
+    src/services/builds/BuildRequirementAvailabilityService.h
+    src/services/builds/BuildRequirementAvailabilityService.cpp
         src/services/parts/PartReferenceManifest.h src/services/parts/PartReferenceManifest.cpp
         src/services/parts/PartReferenceCustomizationService.h src/services/parts/PartReferenceCustomizationService.cpp
         src/services/application/ApplicationServices.h
@@ -1216,6 +1227,40 @@ if(BUILD_TESTING)
         BRICKSUITE_VERSION="${PROJECT_VERSION}")
     target_link_libraries(RemoteMutationFoundationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME RemoteMutationFoundation COMMAND RemoteMutationFoundationTest)
+
+    qt_add_executable(RemotePullingMutationTest EXCLUDE_FROM_ALL
+        tests/RemotePullingMutationTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Build.h src/models/Build.cpp
+        src/models/BuildAllocation.h src/models/BuildAllocation.cpp
+        src/models/BuildRequirement.h src/models/BuildRequirement.cpp
+        src/models/InventoryRecord.h src/models/InventoryRecord.cpp
+        src/models/InventoryMovement.h src/models/InventoryMovement.cpp
+        src/models/Part.h src/models/Part.cpp
+        src/models/Color.h src/models/Color.cpp
+        src/models/StorageLocation.h src/models/StorageLocation.cpp
+        src/models/Manufacturer.h
+        src/repositories/RepositoryConnection.h
+        src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
+        src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
+        src/repositories/BuildRequirementRepository.h src/repositories/BuildRequirementRepository.cpp
+        src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
+        src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
+        src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/RemoteMutationReceiptRepository.h src/repositories/RemoteMutationReceiptRepository.cpp
+        src/services/builds/BuildPullingService.h src/services/builds/BuildPullingService.cpp
+        src/services/application/HostWriteExecutor.h src/services/application/HostWriteExecutor.cpp
+        src/services/application/HostPullingMutationService.h src/services/application/HostPullingMutationService.cpp
+        src/services/application/HostMutationPublicationService.h
+        src/services/application/dto/RemoteMutationDtos.h src/services/application/dto/RemoteMutationDtos.cpp
+        src/services/application/dto/RemotePullingMutationDtos.h src/services/application/dto/RemotePullingMutationDtos.cpp
+    )
+    target_link_libraries(RemotePullingMutationTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME RemotePullingMutation COMMAND RemotePullingMutationTest)
 endif()
 
 if(WIN32)

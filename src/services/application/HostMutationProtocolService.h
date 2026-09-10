@@ -3,6 +3,7 @@
 #include "HostWriteExecutor.h"
 
 #include <QObject>
+#include <functional>
 
 class BrickSuiteOperationDispatcher;
 
@@ -19,6 +20,10 @@ public:
     void registerInternalOperation(BrickSuiteOperationDispatcher& dispatcher,
         const QString& operation, const QString& capability,
         HostWriteExecutor::Mutation mutation);
+    using MutationFactory = std::function<HostWriteExecutor::Mutation(
+        const RemoteMutationDto::Metadata&, RemoteMutationDto::Error*)>;
+    void registerOperation(BrickSuiteOperationDispatcher& dispatcher,
+        const QString& operation, const QString& capability, MutationFactory factory);
 
 private:
     HostWriteExecutor m_executor;
