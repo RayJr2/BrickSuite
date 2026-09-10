@@ -41,7 +41,7 @@ int main(int argc, char** argv)
             || !check(q.exec("CREATE TABLE migration_sentinel(kind TEXT PRIMARY KEY,value TEXT)"),"legacy sentinels")
             || !check(q.exec("INSERT INTO migration_sentinel VALUES('inventory','kept'),('build','kept'),('collection','kept'),('catalog','kept')"),"legacy sentinel rows")
             || !check(DatabaseSchema::initialize(legacy),"31 to 32 migration")
-            || !check(scalar(legacy,"SELECT version FROM schema_version").toInt()==34,"schema migrated to 34")
+            || !check(scalar(legacy,"SELECT version FROM schema_version").toInt()==35,"schema migrated to 35")
             || !check(scalar(legacy,"SELECT count(*) FROM migration_sentinel WHERE value='kept'").toInt()==4,"existing data retained")
             || !check(scalar(legacy,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='user_part_reference_entry'").toInt()==1,"new table exists")
             || !check(scalar(legacy,"SELECT count(*) FROM sqlite_master WHERE type='index' AND name='idx_user_part_reference_destination'").toInt()==1,"new index exists")
@@ -53,7 +53,7 @@ int main(int argc, char** argv)
 
     if(!check(DatabaseManager::instance().initialize(),"fresh database initialization"))return 1;
     QSqlDatabase db=DatabaseManager::instance().database();
-    if(!check(scalar(db,"SELECT version FROM schema_version").toInt()==34,"fresh schema is 34"))return 1;
+    if(!check(scalar(db,"SELECT version FROM schema_version").toInt()==35,"fresh schema is 35"))return 1;
     PartReferenceManifest manifest; QString manifestError;
     if(!check(manifest.load(&manifestError),"built-in manifest loads: "+manifestError)
        || !check(manifest.entryCount()==PartReferenceManifest::ExpectedEntryCount,"built-in count unchanged"))return 1;

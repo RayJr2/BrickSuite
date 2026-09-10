@@ -51,8 +51,8 @@ int main(int argc, char** argv)
     const QString connection="inventory-composition-test";
     QSqlDatabase db=QSqlDatabase::addDatabase("QSQLITE",connection);
     db.setDatabaseName(directory.filePath("test.db"));
-    if(!require(db.open()&&DatabaseSchema::initialize(db),"Fresh schema 34 failed."))return 1;
-    if(!require(scalar(db,"SELECT version FROM schema_version")==34,"Schema is not 34."))return 1;
+    if(!require(db.open()&&DatabaseSchema::initialize(db),"Fresh schema 35 failed."))return 1;
+    if(!require(scalar(db,"SELECT version FROM schema_version")==35,"Schema is not 35."))return 1;
     const QStringList tables={"set_inventory_revision","set_inventory_part","set_inventory_minifig","set_inventory_contained_set"};
     for(const QString& table:tables)if(!require(db.tables().contains(table),"Missing table "+table))return 1;
     if(!require(exec(db,"INSERT INTO set_catalog(set_number,name,year,theme_id,num_parts,image_url,created_utc,modified_utc) VALUES('s1','One',2026,1,2,'','n','n'),('s2','Two',2026,1,1,'','n','n')")
@@ -209,12 +209,13 @@ int main(int argc, char** argv)
         "Final inventory revision/composition integrity validation failed."))return 1;
 
     // Simulate an existing schema-32 database and verify its data survives the sequential migration.
+    if(!require(exec(db,"DROP TABLE remote_mutation_receipt"),"Unable to stage schema 32 receipt table."))return 1;
     if(!require(exec(db,"UPDATE schema_version SET version=32"),"Unable to stage schema 32."))return 1;
     for(const QString& table:QStringList{"set_inventory_part","set_inventory_minifig","set_inventory_contained_set","set_inventory_revision"})
         if(!require(exec(db,"DROP TABLE "+table),"Unable to stage schema 32 tables."))return 1;
-    if(!require(DatabaseSchema::initialize(db)&&scalar(db,"SELECT version FROM schema_version")==34
-        &&scalar(db,"SELECT COUNT(*) FROM set_catalog")==2,"Schema 32 to 34 migration failed or lost data."))return 1;
-    if(!require(DatabaseSchema::initialize(db),"Schema 34 reinitialization was not idempotent."))return 1;
+    if(!require(DatabaseSchema::initialize(db)&&scalar(db,"SELECT version FROM schema_version")==35
+        &&scalar(db,"SELECT COUNT(*) FROM set_catalog")==2,"Schema 32 to 35 migration failed or lost data."))return 1;
+    if(!require(DatabaseSchema::initialize(db),"Schema 35 reinitialization was not idempotent."))return 1;
     db.close(); db=QSqlDatabase(); QSqlDatabase::removeDatabase(connection);
     qInfo()<<"Inventory composition persistence tests passed.";return 0;
 }

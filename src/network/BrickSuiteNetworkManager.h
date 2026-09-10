@@ -9,6 +9,8 @@ class BrickSuiteWebSocketClient;
 class BrickSuiteWebSocketServer;
 class HostReadProtocolService;
 class RemoteReadApplicationServices;
+class RemoteMutationApplicationServices;
+class HostMutationProtocolService;
 class RemoteSessionState;
 class OperationalInvalidationPublisher;
 struct OperationalInvalidation;
@@ -26,6 +28,7 @@ public:
     BrickSuiteWebSocketServer* server() const;
     BrickSuiteWebSocketClient* client() const;
     RemoteReadApplicationServices* remoteReads() const;
+    RemoteMutationApplicationServices* remoteMutations() const;
     RemoteSessionState* remoteSession() const;
     OperationalInvalidationPublisher* invalidationPublisher() const;
     BrickSuiteConnectionStatus connectionStatus() const;
@@ -43,7 +46,9 @@ private:
     BrickSuiteWebSocketClient* m_client = nullptr;
     QString m_serverError;
     std::unique_ptr<HostReadProtocolService> m_hostReads;
+    std::unique_ptr<HostMutationProtocolService> m_hostMutations;
     std::unique_ptr<RemoteReadApplicationServices> m_remoteReads;
+    std::unique_ptr<RemoteMutationApplicationServices> m_remoteMutations;
     std::unique_ptr<RemoteSessionState> m_remoteSession;
     std::unique_ptr<OperationalInvalidationPublisher> m_invalidationPublisher;
 };

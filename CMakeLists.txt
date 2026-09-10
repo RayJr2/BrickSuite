@@ -73,6 +73,14 @@ qt_add_executable(BrickSuite
     src/services/application/RemoteRefreshCoordinator.cpp
     src/services/application/HostMutationPublicationService.h
     src/services/application/HostMutationPublicationService.cpp
+    src/services/application/HostWriteExecutor.h
+    src/services/application/HostWriteExecutor.cpp
+    src/services/application/HostMutationProtocolService.h
+    src/services/application/HostMutationProtocolService.cpp
+    src/services/application/RemoteMutationApplicationServices.h
+    src/services/application/RemoteMutationApplicationServices.cpp
+    src/services/application/dto/RemoteMutationDtos.h
+    src/services/application/dto/RemoteMutationDtos.cpp
 
     src/database/DatabaseManager.h
     src/database/DatabaseManager.cpp
@@ -85,6 +93,9 @@ qt_add_executable(BrickSuite
     src/repositories/WorkspaceRepository.h
     src/repositories/WorkspaceRepository.cpp
     src/repositories/RepositoryConnection.h
+    src/models/RemoteMutationReceipt.h
+    src/repositories/RemoteMutationReceiptRepository.h
+    src/repositories/RemoteMutationReceiptRepository.cpp
 
     src/ui/MainWindow.h
     src/ui/MainWindow.cpp
@@ -1181,6 +1192,30 @@ if(BUILD_TESTING)
     )
     target_link_libraries(HostMutationPublicationTest PRIVATE Qt6::Core)
     add_test(NAME HostMutationPublication COMMAND HostMutationPublicationTest)
+
+    qt_add_executable(RemoteMutationFoundationTest EXCLUDE_FROM_ALL
+        tests/RemoteMutationFoundationTest.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/RemoteMutationReceipt.h
+        src/repositories/RepositoryConnection.h
+        src/repositories/RemoteMutationReceiptRepository.h
+        src/repositories/RemoteMutationReceiptRepository.cpp
+        src/services/application/dto/RemoteMutationDtos.h
+        src/services/application/dto/RemoteMutationDtos.cpp
+        src/services/application/HostWriteExecutor.h
+        src/services/application/HostWriteExecutor.cpp
+        src/services/application/HostMutationProtocolService.h
+        src/services/application/HostMutationProtocolService.cpp
+        src/services/application/HostMutationPublicationService.h
+        src/services/application/HostMutationPublicationService.cpp
+        src/network/OperationalInvalidation.h src/network/OperationalInvalidation.cpp
+        src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
+        src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
+    )
+    target_compile_definitions(RemoteMutationFoundationTest PRIVATE
+        BRICKSUITE_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(RemoteMutationFoundationTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME RemoteMutationFoundation COMMAND RemoteMutationFoundationTest)
 endif()
 
 if(WIN32)

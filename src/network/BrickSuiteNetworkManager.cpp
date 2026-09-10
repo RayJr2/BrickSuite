@@ -8,6 +8,9 @@
 #include "../database/DatabaseManager.h"
 #include "../services/application/HostReadProtocolService.h"
 #include "../services/application/RemoteReadApplicationServices.h"
+#include "../services/application/RemoteMutationApplicationServices.h"
+#include "../services/application/HostMutationProtocolService.h"
+#include "../services/application/HostMutationPublicationService.h"
 #include "../services/CredentialStore.h"
 #include "../settings/UserSettings.h"
 
@@ -27,9 +30,23 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     m_invalidationPublisher = std::make_unique<OperationalInvalidationPublisher>(*m_server, this);
     m_remoteReads = std::make_unique<RemoteReadApplicationServices>(*m_client,
                                                                      m_remoteSession.get(), this);
+    m_remoteMutations = std::make_unique<RemoteMutationApplicationServices>(*m_client, this);
     m_hostReads = std::make_unique<HostReadProtocolService>(
         DatabaseManager::instance().databasePath(), this);
     m_hostReads->registerOperations(m_server->operationDispatcher());
+    m_hostMutations = std::make_unique<HostMutationProtocolService>(
+        DatabaseManager::instance().databasePath(),
+        [this](HostMutationPublicationService::Workflow workflow,
+               const HostMutationPublicationService::Scope& scope) {
+            QMetaObject::invokeMethod(this, [this, workflow, scope] {
+                HostMutationPublicationService service([this](const OperationalInvalidation& value) {
+                    m_invalidationPublisher->publish(value);
+                });
+                QString error;
+                if (!service.publish(workflow, scope, &error))
+                    qWarning().noquote() << "Committed remote mutation invalidation failed:" << error;
+            }, Qt::QueuedConnection);
+        }, this);
     connect(m_server, &BrickSuiteWebSocketServer::statusChanged,
             this, &BrickSuiteNetworkManager::statusChanged);
     connect(m_client, &BrickSuiteWebSocketClient::statusChanged,
@@ -116,6 +133,8 @@ BrickSuiteWebSocketServer* BrickSuiteNetworkManager::server() const { return m_s
 BrickSuiteWebSocketClient* BrickSuiteNetworkManager::client() const { return m_client; }
 RemoteReadApplicationServices* BrickSuiteNetworkManager::remoteReads() const
 { return m_remoteReads.get(); }
+RemoteMutationApplicationServices* BrickSuiteNetworkManager::remoteMutations() const
+{ return m_remoteMutations.get(); }
 RemoteSessionState* BrickSuiteNetworkManager::remoteSession() const
 { return m_remoteSession.get(); }
 OperationalInvalidationPublisher* BrickSuiteNetworkManager::invalidationPublisher() const

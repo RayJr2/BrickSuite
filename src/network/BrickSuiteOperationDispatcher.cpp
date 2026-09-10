@@ -57,13 +57,15 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
 void BrickSuiteOperationDispatcher::registerOperation(
     const QString& name, bool authenticationRequired, Handler handler)
 {
-    m_operations.insert(name, {authenticationRequired, std::move(handler)});
+    m_operations.insert(name, {authenticationRequired, std::move(handler), {}, 0, {}});
 }
 
 void BrickSuiteOperationDispatcher::registerAsyncOperation(
-    const QString& name, bool authenticationRequired, AsyncHandler handler)
+    const QString& name, bool authenticationRequired, AsyncHandler handler,
+    int minimumMinor, const QString& capability)
 {
-    m_operations.insert(name, {authenticationRequired, {}, std::move(handler)});
+    m_operations.insert(name, {authenticationRequired, {}, std::move(handler),
+                               minimumMinor, capability});
 }
 
 BrickSuiteProtocol::Message BrickSuiteOperationDispatcher::dispatch(
@@ -97,6 +99,11 @@ void BrickSuiteOperationDispatcher::dispatchAsync(
             QStringLiteral("Authenticate before requesting this operation.")));
         return;
     }
+    if (request.protocolMinor < it->minimumMinor) {
+        completion(BrickSuiteProtocol::errorResponse(request, QStringLiteral("FORBIDDEN"),
+            QStringLiteral("The negotiated protocol does not support this operation.")));
+        return;
+    }
     if (it->asyncHandler) {
         it->asyncHandler(request, std::move(completion));
         return;
@@ -111,4 +118,26 @@ QStringList BrickSuiteOperationDispatcher::operations() const
     names.append(QStringLiteral("system.authenticate"));
     names.sort();
     return names;
+}
+
+QStringList BrickSuiteOperationDispatcher::operations(int negotiatedMinor) const
+{
+    QStringList names;
+    for (auto it = m_operations.cbegin(); it != m_operations.cend(); ++it)
+        if (it->minimumMinor <= negotiatedMinor) names.append(it.key());
+    names.append(QStringLiteral("system.hello"));
+    names.append(QStringLiteral("system.authenticate"));
+    names.sort();
+    return names;
+}
+
+QStringList BrickSuiteOperationDispatcher::capabilities(int negotiatedMinor) const
+{
+    QStringList result;
+    for (auto it = m_operations.cbegin(); it != m_operations.cend(); ++it)
+        if (it->minimumMinor <= negotiatedMinor && !it->capability.isEmpty())
+            result.append(it->capability);
+    result.removeDuplicates();
+    result.sort();
+    return result;
 }

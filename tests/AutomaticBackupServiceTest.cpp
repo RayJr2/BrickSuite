@@ -109,7 +109,7 @@ int main(int argc, char** argv)
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, temporary.path());
     QSettings().clear();
     bool ok = require(temporary.isValid(), "temporary directory");
-    ok &= require(DatabaseSchema::CurrentSchemaVersion == 34, "schema is version 34");
+    ok &= require(DatabaseSchema::CurrentSchemaVersion == 35, "schema is version 35");
 
     UserSettings& settings = UserSettings::instance();
     ok &= require(!settings.automaticBackupEnabled(), "default disabled");
@@ -129,7 +129,7 @@ int main(int argc, char** argv)
     ok &= require(settings.automaticBackupRetentionCount() == 365, "stored retention normalized");
 
     const QString source = QDir(temporary.path()).filePath("source.db");
-    ok &= require(createDatabase(source, 34), "create current-schema source database");
+    ok &= require(createDatabase(source, 35), "create current-schema source database");
     const QString root = QDir(temporary.path()).filePath("configured root with spaces");
     settings.setAutomaticBackupEnabled(true);
     settings.setAutomaticBackupRoot(root);
@@ -144,18 +144,18 @@ int main(int argc, char** argv)
     const QString successfulPath = settings.automaticBackupLastSuccessfulPath();
     ok &= require(QFileInfo::exists(successfulPath), "successful backup exists");
     ok &= require(successfulPath.startsWith(root), "configured root retained");
-    ok &= require(successfulPath.contains("/v34/") || successfulPath.contains("\\v34\\"),
-                  "v34 derived from root");
+    ok &= require(successfulPath.contains("/v35/") || successfulPath.contains("\\v35\\"),
+                  "v35 derived from root");
     ok &= require(settings.automaticBackupLastSuccessfulUtc().isValid(), "success timestamp stored");
     ok &= require(settings.automaticBackupLastFailureSummary().isEmpty(), "failure cleared");
     ok &= require(QFileInfo::exists(manualMarker), "automatic pipeline does not delete manual backup");
 
     const QDateTime healthGatePriorSuccess = settings.automaticBackupLastSuccessfulUtc();
     const QString healthGateRoot = QDir(temporary.path()).filePath("health gate root");
-    const QString healthGateDirectory = AutomaticBackupPolicy::versionDirectory(healthGateRoot, 34);
+    const QString healthGateDirectory = AutomaticBackupPolicy::versionDirectory(healthGateRoot, 35);
     ok &= require(QDir().mkpath(healthGateDirectory), "create health-gate fixture directory");
     const QString existingBackup = QDir(healthGateDirectory).filePath(
-        "BrickSuite_AutoBackup_v34_2020-01-01_000000.db");
+        "BrickSuite_AutoBackup_v35_2020-01-01_000000.db");
     QFile existingBackupFile(existingBackup);
     ok &= require(existingBackupFile.open(QIODevice::WriteOnly), "create existing backup fixture");
     existingBackupFile.write("existing backup must remain untouched");
@@ -307,12 +307,12 @@ int main(int argc, char** argv)
     settings.setAutomaticBackupEnabled(true);
 
     const QString retentionRoot = QDir(temporary.path()).filePath("retention root");
-    const QString retentionDirectory = AutomaticBackupPolicy::versionDirectory(retentionRoot, 34);
+    const QString retentionDirectory = AutomaticBackupPolicy::versionDirectory(retentionRoot, 35);
     ok &= require(QDir().mkpath(retentionDirectory), "create retention directory");
     const QString oldOne = QDir(retentionDirectory).filePath(
-        "BrickSuite_AutoBackup_v34_2020-01-01_000000.db");
+        "BrickSuite_AutoBackup_v35_2020-01-01_000000.db");
     const QString oldTwo = QDir(retentionDirectory).filePath(
-        "BrickSuite_AutoBackup_v34_2020-01-02_000000.db");
+        "BrickSuite_AutoBackup_v35_2020-01-02_000000.db");
     QFile oldOneFile(oldOne); QFile oldTwoFile(oldTwo);
     ok &= require(oldOneFile.open(QIODevice::WriteOnly) && oldTwoFile.open(QIODevice::WriteOnly),
                   "create service retention fixtures");
@@ -328,16 +328,16 @@ int main(int argc, char** argv)
     retentionLoop.exec();
     retentionService.stop();
     const QStringList retained = QDir(retentionDirectory).entryList(
-        {"BrickSuite_AutoBackup_v34_*.db"}, QDir::Files, QDir::Name);
+        {"BrickSuite_AutoBackup_v35_*.db"}, QDir::Files, QDir::Name);
     ok &= require(retentionCompleted && retained.size() == 2 && !QFileInfo::exists(oldOne)
                       && QFileInfo::exists(oldTwo),
                   "verified service backup runs retention and protects new file");
 
     const QString warningRoot = QDir(temporary.path()).filePath("retention warning root");
-    const QString warningDirectory = AutomaticBackupPolicy::versionDirectory(warningRoot, 34);
+    const QString warningDirectory = AutomaticBackupPolicy::versionDirectory(warningRoot, 35);
     ok &= require(QDir().mkpath(warningDirectory), "create warning directory");
     const QString warningOld = QDir(warningDirectory).filePath(
-        "BrickSuite_AutoBackup_v34_2020-01-01_000000.db");
+        "BrickSuite_AutoBackup_v35_2020-01-01_000000.db");
     QFile warningOldFile(warningOld);
     ok &= require(warningOldFile.open(QIODevice::WriteOnly), "create warning fixture");
     warningOldFile.close();
@@ -377,7 +377,7 @@ int main(int argc, char** argv)
                   "failure does not advance success");
     ok &= require(!settings.automaticBackupLastFailureSummary().isEmpty(), "failure persisted");
 
-    QDir versionDir(AutomaticBackupPolicy::versionDirectory(root, 34));
+    QDir versionDir(AutomaticBackupPolicy::versionDirectory(root, 35));
     const QStringList candidates = versionDir.entryList(
         {"BrickSuite_AutoBackup_v*.db"}, QDir::Files);
     ok &= require(candidates.size() == 2, "unverified output cannot masquerade as backup");

@@ -6,7 +6,7 @@
 namespace BrickSuiteProtocol {
 
 constexpr int Major = 1;
-constexpr int Minor = 1;
+constexpr int Minor = 2;
 constexpr qsizetype MaximumMessageBytes = 1024 * 1024;
 constexpr int MaximumRequestIdLength = 128;
 constexpr int MaximumOperationLength = 128;

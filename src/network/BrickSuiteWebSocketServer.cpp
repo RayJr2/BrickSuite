@@ -3,6 +3,7 @@
 #include "BrickSuiteAuthentication.h"
 
 #include <QDateTime>
+#include <QJsonArray>
 #include <QPointer>
 #include <QThread>
 #include <QSslConfiguration>
@@ -292,6 +293,11 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
         emit statusChanged();
         return;
     }
+    if (request.protocolMinor > session.protocolMinor) {
+        reject(socket, request, QStringLiteral("FORBIDDEN"),
+               QStringLiteral("The request exceeds the negotiated protocol version."));
+        return;
+    }
     const QByteArray sessionId = session.id;
     QPointer<QWebSocket> guard(socket);
     m_dispatcher.dispatchAsync(request, session.authenticated,
@@ -300,10 +306,20 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
             auto it = m_sessions.find(guard.data());
             if (it == m_sessions.constEnd() || !it->authenticated || it->id != sessionId)
                 return;
-            send(guard.data(), response);
             if (operation == QStringLiteral("system.capabilities")
-                && response.type == BrickSuiteProtocol::MessageType::Response)
+                && response.type == BrickSuiteProtocol::MessageType::Response) {
+                QJsonArray operations;
+                for (const QString& name : m_dispatcher.operations(it->protocolMinor))
+                    operations.append(name);
+                QJsonArray capabilities = response.payload.value(
+                    QStringLiteral("capabilities")).toArray();
+                for (const QString& name : m_dispatcher.capabilities(it->protocolMinor))
+                    if (!capabilities.contains(name)) capabilities.append(name);
+                response.payload.insert(QStringLiteral("operations"), operations);
+                response.payload.insert(QStringLiteral("capabilities"), capabilities);
                 it->invalidationsReady = true;
+            }
+            send(guard.data(), response);
         });
 }
 

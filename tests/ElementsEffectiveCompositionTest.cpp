@@ -22,7 +22,7 @@ int main(int argc,char** argv)
 {
     QCoreApplication app(argc,argv);QTemporaryDir dir;if(!require(dir.isValid(),"Temporary directory failed."))return 1;
     const QString connection="m25-elements";QSqlDatabase db=QSqlDatabase::addDatabase("QSQLITE",connection);db.setDatabaseName(dir.filePath("test.db"));
-    if(!require(db.open()&&DatabaseSchema::initialize(db)&&scalar(db,"SELECT version FROM schema_version")==34,"Fresh schema 34 failed."))return 1;
+    if(!require(db.open()&&DatabaseSchema::initialize(db)&&scalar(db,"SELECT version FROM schema_version")==35,"Fresh schema 35 failed."))return 1;
     const QString now="2026-01-01T00:00:00.000Z";
     if(!require(exec(db,"INSERT INTO part(part_number,name,rebrickable_part_id,is_active,created_utc,modified_utc,material) VALUES('p1','One','p1',1,'n','n','Plastic'),('p2','Two','p2',1,'n','n','Plastic')")
         &&exec(db,"INSERT INTO color(name,rebrickable_id,created_utc,modified_utc) VALUES('Red',1,'n','n'),('Blue',2,'n','n')")
@@ -82,6 +82,6 @@ int main(int argc,char** argv)
     derived=RebrickableMinifigThemeDerivationService().rebuild(db);
     if(!require(derived.success&&derived.associations==1&&scalar(db,QStringLiteral("SELECT COUNT(*) FROM minifig_theme WHERE minifig_catalog_id=%1 AND theme_catalog_id=%2 AND provider='Rebrickable'").arg(fig).arg(theme))==1&&scalar(db,"SELECT COUNT(*) FROM minifig_theme WHERE provider='OtherProvider'")==1,"Theme derivation/provider isolation failed."))return 1;
 
-    if(!require(exec(db,"UPDATE schema_version SET version=33")&&exec(db,"DROP TABLE part_element_identifier")&&DatabaseSchema::initialize(db)&&scalar(db,"SELECT version FROM schema_version")==34&&scalar(db,"SELECT COUNT(*) FROM set_inventory_revision")==1,"Schema 33 to 34 migration lost composition."))return 1;
+    if(!require(exec(db,"DROP TABLE remote_mutation_receipt")&&exec(db,"UPDATE schema_version SET version=33")&&exec(db,"DROP TABLE part_element_identifier")&&DatabaseSchema::initialize(db)&&scalar(db,"SELECT version FROM schema_version")==35&&scalar(db,"SELECT COUNT(*) FROM set_inventory_revision")==1,"Schema 33 to 35 migration lost composition."))return 1;
     db.close();db=QSqlDatabase();QSqlDatabase::removeDatabase(connection);return 0;
 }

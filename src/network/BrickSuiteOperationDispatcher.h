@@ -16,18 +16,23 @@ public:
     void registerOperation(const QString& name, bool authenticationRequired,
                            Handler handler);
     void registerAsyncOperation(const QString& name, bool authenticationRequired,
-                                AsyncHandler handler);
+                                AsyncHandler handler, int minimumMinor = 0,
+                                const QString& capability = {});
     BrickSuiteProtocol::Message dispatch(
         const BrickSuiteProtocol::Message& request, bool authenticated) const;
     void dispatchAsync(const BrickSuiteProtocol::Message& request, bool authenticated,
                        Completion completion) const;
     QStringList operations() const;
+    QStringList operations(int negotiatedMinor) const;
+    QStringList capabilities(int negotiatedMinor) const;
 
 private:
     struct Registration {
         bool authenticationRequired = true;
         Handler handler;
         AsyncHandler asyncHandler;
+        int minimumMinor = 0;
+        QString capability;
     };
     QHash<QString, Registration> m_operations;
 };

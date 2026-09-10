@@ -588,6 +588,18 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         version = 34;
     }
 
+    if (version == 34) {
+        if (!migrateVersion34ToVersion35(database)) {
+            database.rollback();
+            return false;
+        }
+        if (!setSchemaVersion(database, 35)) {
+            database.rollback();
+            return false;
+        }
+        version = 35;
+    }
+
     if (version != CurrentSchemaVersion) {
         qCritical() << "Unsupported BrickSuite database schema version:" << version;
 
@@ -3847,6 +3859,35 @@ bool DatabaseSchema::migrateVersion33ToVersion34(QSqlDatabase& database)
     if (!check.exec("PRAGMA foreign_key_check") || check.next()) {
         qCritical() << "Foreign-key validation failed after Version 34 migration.";
         return false;
+    }
+    return true;
+}
+
+bool DatabaseSchema::migrateVersion34ToVersion35(QSqlDatabase& database)
+{
+    QSqlQuery query(database);
+    const QStringList statements = {
+        QStringLiteral(R"(CREATE TABLE remote_mutation_receipt (
+            mutation_id TEXT PRIMARY KEY NOT NULL,
+            operation TEXT NOT NULL,
+            workspace_id INTEGER NOT NULL CHECK(workspace_id > 0),
+            request_hash TEXT NOT NULL,
+            result_code TEXT NOT NULL,
+            result_json TEXT NOT NULL,
+            committed_utc TEXT NOT NULL,
+            client_identity TEXT NOT NULL DEFAULT ''
+        ))"),
+        QStringLiteral("CREATE INDEX idx_remote_mutation_receipt_committed_utc "
+                       "ON remote_mutation_receipt(committed_utc)"),
+        QStringLiteral("CREATE INDEX idx_remote_mutation_receipt_workspace "
+                       "ON remote_mutation_receipt(workspace_id)")
+    };
+    for (const QString& statement : statements) {
+        if (!query.exec(statement)) {
+            qCritical() << "Unable to create remote mutation receipt schema:"
+                        << query.lastError().text();
+            return false;
+        }
     }
     return true;
 }
