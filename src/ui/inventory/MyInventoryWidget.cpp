@@ -23,6 +23,7 @@
 #include "EditInventoryDialog.h"
 #include "CorrectInventoryDialog.h"
 #include "RemoveInventoryDialog.h"
+#include "RemoteInventoryMutationDialog.h"
 #include "ImportInventoryDialog.h"
 #include "InventoryHistoryDialog.h"
 #include "LostInventoryDialog.h"
@@ -53,6 +54,7 @@
 #include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
+#include "../../services/application/RemoteInventoryMutationApplicationService.h"
 
 #include "../helpers/ColorComboHelper.h"
 #include "../helpers/LargeViewLoadingGuard.h"
@@ -86,12 +88,14 @@ MyInventoryWidget::MyInventoryWidget(
     InventoryApplicationService& inventoryService,
     QWidget* parent,
     RemoteReadApplicationServices* remoteReads,
-    PartExternalIdEnrichmentService* enrichmentService)
+    PartExternalIdEnrichmentService* enrichmentService,
+    RemoteInventoryMutationApplicationService* remoteMutations)
     : QWidget(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
     , m_inventoryService(inventoryService)
     , m_remoteReads(remoteReads)
+    , m_remoteMutations(remoteMutations)
     , m_enrichmentService(enrichmentService)
 {
     auto* mainLayout =
@@ -461,8 +465,11 @@ MyInventoryWidget::MyInventoryWidget(
     else if (m_remoteReads) {
         m_manufacturerCombo->addItem(QStringLiteral("All Manufacturers"), 0);
         m_manufacturerCombo->setEnabled(false);
-        m_addPartButton->setEnabled(false);
-        m_lostInventoryButton->setEnabled(false);
+        m_addPartButton->setEnabled(m_remoteMutations
+            && m_remoteMutations->isAvailableFor(QStringLiteral("inventory.add")));
+        m_lostInventoryButton->setEnabled(m_remoteMutations
+            && m_remoteMutations->isAvailableFor(QStringLiteral("inventory.markFound"))
+            && m_remoteReads->isAvailableFor(QStringLiteral("inventory.lost.list")));
         m_importButton->setEnabled(false);
     }
 
@@ -505,8 +512,11 @@ void MyInventoryWidget::workspaceChanged(int workspaceId)
     searchInventory();
 
     const bool localWritable = !m_remoteReads && m_workspaceContext.hasCurrentWorkspace();
-    m_addPartButton->setEnabled(localWritable);
-    m_lostInventoryButton->setEnabled(localWritable);
+    m_addPartButton->setEnabled(localWritable || (m_remoteMutations
+        && m_remoteMutations->isAvailableFor(QStringLiteral("inventory.add"))));
+    m_lostInventoryButton->setEnabled(localWritable || (m_remoteMutations
+        && m_remoteMutations->isAvailableFor(QStringLiteral("inventory.markFound"))
+        && m_remoteReads && m_remoteReads->isAvailableFor(QStringLiteral("inventory.lost.list"))));
     m_importButton->setEnabled(localWritable);
 }
 
@@ -1016,10 +1026,18 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
             actionCombo->addItem("Correct Entry...", "correct");
             actionCombo->addItem("Remove Entry...", "remove");
             actionCombo->addItem("Mark Lost...", "lost");
+        } else if (m_remoteMutations) {
+            const QStringList operations={"edit","move","correct","remove","markLost"};
+            const QStringList labels={"Edit","Move","Correct Entry...","Remove Entry...","Mark Lost..."};
+            for(int i=0;i<operations.size();++i) {
+                const QString operation=QStringLiteral("inventory.")+operations.at(i);
+                if(m_remoteMutations->isAvailableFor(operation))
+                    actionCombo->addItem(labels.at(i),QStringLiteral("remote-")+operations.at(i));
+            }
         }
         actionCombo->addItem("View History", "history");
-        if (m_remoteReads)
-            actionCombo->setToolTip(QStringLiteral("Remote Inventory is read-only. Changes are not available yet."));
+        if (m_remoteReads && actionCombo->count() <= 3)
+            actionCombo->setToolTip(QStringLiteral("The connected Host has not granted Inventory write capabilities."));
 
         // Future actions can be added here:
         //
@@ -1056,6 +1074,14 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                                         .arg(item.quantity).arg(item.storagePath, item.manufacturerDisplay,
                                                                  item.condition, item.ownershipType));
                             });
+                    } else if (action.startsWith(QStringLiteral("remote-"))) {
+                        const QString operation=QStringLiteral("inventory.")+action.mid(7);
+                        const int workspaceId=m_workspaceContext.currentWorkspaceId();
+                        m_remoteReads->getInventory(workspaceId,inventoryRecordId,this,
+                            [this,workspaceId,operation](AsyncReadResult<RemoteReadDto::InventoryDetail> result){
+                            if(workspaceId!=m_workspaceContext.currentWorkspaceId()||!result.succeeded())return;
+                            openRemoteMutationDialog(operation, *result.value);
+                        });
                     } else if (action == "details") {
                         PartDetailsDialog dialog(partId, this);
 
@@ -1478,6 +1504,26 @@ void MyInventoryWidget::updatePartColorImage(const QString& partNumber,
 
 void MyInventoryWidget::addPart()
 {
+    if (m_remoteReads) {
+        if (!m_remoteMutations
+            || !m_remoteMutations->isAvailableFor(QStringLiteral("inventory.add"))) return;
+        if (m_activeRemoteMutationDialog) {
+            m_activeRemoteMutationDialog->raise();
+            m_activeRemoteMutationDialog->activateWindow();
+            return;
+        }
+        const int filteredStorage=m_storageCombo->currentData().toInt();
+        auto* dialog = new AddInventoryDialog(m_workspaceContext,m_sessionStorageSelectionService,
+            *m_remoteMutations,m_storagePathById,filteredStorage,this);
+        m_activeRemoteMutationDialog = dialog;
+        connect(dialog, &QDialog::finished, this, [this, dialog](int result) {
+            if (m_activeRemoteMutationDialog == dialog) m_activeRemoteMutationDialog = nullptr;
+            if (result == QDialog::Accepted) refreshRemoteCurrentPage();
+            dialog->deleteLater();
+        });
+        dialog->open();
+        return;
+    }
     if (!m_workspaceContext.hasCurrentWorkspace())
         return;
 
@@ -1565,6 +1611,26 @@ void MyInventoryWidget::showLostInventory()
         return;
     }
 
+    if (m_remoteReads) {
+        if (!m_remoteMutations
+            || !m_remoteMutations->isAvailableFor(QStringLiteral("inventory.markFound"))) return;
+        if (m_activeRemoteMutationDialog) {
+            m_activeRemoteMutationDialog->raise();
+            m_activeRemoteMutationDialog->activateWindow();
+            return;
+        }
+        auto* dialog = new LostInventoryDialog(m_workspaceContext, m_sessionStorageSelectionService,
+            *m_remoteReads, *m_remoteMutations, m_storagePathById, this);
+        m_activeRemoteMutationDialog = dialog;
+        connect(dialog, &QDialog::finished, this, [this, dialog](int result) {
+            if (m_activeRemoteMutationDialog == dialog) m_activeRemoteMutationDialog = nullptr;
+            if (result == QDialog::Accepted) refreshRemoteCurrentPage();
+            dialog->deleteLater();
+        });
+        dialog->open();
+        return;
+    }
+
     LostInventoryDialog dialog(m_workspaceContext, m_sessionStorageSelectionService, this);
 
     dialog.exec();
@@ -1574,4 +1640,28 @@ void MyInventoryWidget::showLostInventory()
     // to loose inventory.
     //
     searchInventory();
+}
+
+void MyInventoryWidget::openRemoteMutationDialog(
+    const QString& operation, const RemoteReadDto::InventoryDetail& detail)
+{
+    if (!m_remoteMutations || detail.inventoryRecordId <= 0) return;
+    if (m_activeRemoteMutationDialog) {
+        m_activeRemoteMutationDialog->raise();
+        m_activeRemoteMutationDialog->activateWindow();
+        return;
+    }
+    auto* dialog = new RemoteInventoryMutationDialog(operation,
+        m_workspaceContext.currentWorkspaceId(), *m_remoteMutations,
+        m_storagePathById, detail, this);
+    m_activeRemoteMutationDialog = dialog;
+    connect(dialog, &QDialog::finished, this, [this, dialog](int result) {
+        if (m_activeRemoteMutationDialog == dialog) m_activeRemoteMutationDialog = nullptr;
+        if (result == QDialog::Accepted) refreshRemoteCurrentPage();
+        dialog->deleteLater();
+    });
+    // QDialog::open() keeps application event dispatch in the outer event loop.
+    // In particular, the Windows WebSocket notifier must remain able to deliver
+    // the authoritative mutation response while this modal dialog is visible.
+    dialog->open();
 }

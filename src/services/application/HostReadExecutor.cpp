@@ -5,6 +5,7 @@
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/PartCategoryRepository.h"
+#include "../../repositories/LostInventoryRepository.h"
 #include "../parts/PartReferenceManifest.h"
 #include "../builds/BuildRequirementAvailabilityService.h"
 
@@ -280,7 +281,7 @@ void HostReadExecutor::getInventoryPortable(int workspaceId, int id, QObject* co
     QPointer<QObject> guard(context);
     enqueue(QStringLiteral("inventory.get"), [=, completion=std::move(completion)](ApplicationServices& services,const QSqlDatabase& db) mutable {
         const auto record=services.inventory().get(id); std::optional<RemoteReadDto::InventoryDetail> result;
-        if(record && record->workspaceId() == workspaceId){RemoteReadDto::InventoryDetail d;d.inventoryRecordId=record->id();d.workspaceId=record->workspaceId();d.quantity=record->quantity();d.storageId=record->storageLocationId();d.storagePath=locationPath(db,d.storageId);d.manufacturerDisplay=manufacturerName(db,record->manufacturerId());d.condition=record->condition();d.ownershipType=record->ownershipType();d.createdUtc=record->createdUtc();d.modifiedUtc=record->modifiedUtc();const auto p=PartRepository(db).getById(record->partId());const auto c=ColorRepository(db).getById(record->colorId());if(p){d.partNumber=p->partNumber();d.partNameFallback=p->name();}if(c){d.rebrickableColorId=c->rebrickableId();d.colorNameFallback=c->name();}result=d;}
+        if(record && record->workspaceId() == workspaceId){RemoteReadDto::InventoryDetail d;d.inventoryRecordId=record->id();d.workspaceId=record->workspaceId();d.quantity=record->quantity();d.storageId=record->storageLocationId();d.storagePath=locationPath(db,d.storageId);d.manufacturerDisplay=manufacturerName(db,record->manufacturerId());d.condition=record->condition();d.ownershipType=record->ownershipType();d.createdUtc=record->createdUtc();d.modifiedUtc=record->modifiedUtc();QSqlQuery aq(db);aq.prepare("SELECT COALESCE(SUM(quantity_allocated),0) FROM build_allocation WHERE inventory_record_id=?");aq.addBindValue(record->id());if(aq.exec()&&aq.next())d.allocatedQuantity=aq.value(0).toInt();const auto p=PartRepository(db).getById(record->partId());const auto c=ColorRepository(db).getById(record->colorId());if(p){d.partNumber=p->partNumber();d.partNameFallback=p->name();}if(c){d.rebrickableColorId=c->rebrickableId();d.colorNameFallback=c->name();}result=d;}
         if(guard)QMetaObject::invokeMethod(guard,[guard,completion,result=std::move(result)]()mutable{if(guard)completion(result);},Qt::QueuedConnection);
     },context,std::move(failure));
 }
@@ -350,6 +351,39 @@ void HostReadExecutor::searchInventoryPortable(const RemoteReadDto::InventorySea
 void HostReadExecutor::inventoryHistoryPortable(int workspaceId,const QString& partNumber,int rbColor,QObject* context,std::function<void(const QList<RemoteReadDto::InventoryHistoryRow>&)> completion,ErrorCallback failure)
 {
     QPointer<QObject> guard(context); enqueue(QStringLiteral("inventory.history"),[=,completion=std::move(completion)](ApplicationServices& services,const QSqlDatabase& db)mutable{QList<RemoteReadDto::InventoryHistoryRow> out;const auto p=PartRepository(db).getByPartNumber(partNumber);const auto c=ColorRepository(db).getByRebrickableId(rbColor);if(p&&c){for(const auto&x:services.inventory().history(workspaceId,p->id(),c->id()))out.append({x.movementId,x.movementType,x.quantityChange,x.fromStorageLocationId,x.fromStoragePath,x.toStorageLocationId,x.toStoragePath,x.condition,x.ownershipType,x.referenceType,x.referenceId,x.notes,x.createdUtc});}if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out=std::move(out)]()mutable{if(guard)completion(out);},Qt::QueuedConnection);},context,std::move(failure));
+}
+
+void HostReadExecutor::listLostInventoryPortable(int workspaceId, QObject* context,
+    std::function<void(const QList<RemoteReadDto::LostInventoryRow>&)> completion,
+    ErrorCallback failure)
+{
+    QPointer<QObject> guard(context);
+    enqueue(QStringLiteral("inventory.lost.list"),
+        [=, completion=std::move(completion)](ApplicationServices&, const QSqlDatabase& db) mutable {
+            QList<RemoteReadDto::LostInventoryRow> out;
+            const QList<StorageLocation> locations = StorageLocationRepository(db).getByWorkspace(workspaceId);
+            QHash<int, StorageLocation> byId;
+            for (const auto& location : locations) byId.insert(location.id(), location);
+            auto pathFor = [&byId](int id) {
+                QStringList names; int guardCount = 0;
+                while (id > 0 && byId.contains(id) && guardCount++ < 100) {
+                    const auto location = byId.value(id); names.prepend(location.name());
+                    id = location.parentLocationId();
+                }
+                return names.join(QStringLiteral(" / "));
+            };
+            for (const auto& item : LostInventoryRepository(db).getOutstanding(workspaceId)) {
+                const auto color = ColorRepository(db).getById(item.colorId);
+                if (!color || color->rebrickableId() < 0) continue;
+                out.append({item.partNumber, item.partName, color->rebrickableId(), item.colorName,
+                    item.outstandingQuantity, item.lastStorageLocationId,
+                    pathFor(item.lastStorageLocationId), item.condition,
+                    item.ownershipType, item.lastLostUtc});
+            }
+            if (guard) QMetaObject::invokeMethod(guard,
+                [guard, completion, out=std::move(out)]() mutable { if (guard) completion(out); },
+                Qt::QueuedConnection);
+        }, context, std::move(failure));
 }
 
 void HostReadExecutor::buildRequirementsPortable(int workspaceId,int buildId,const RemoteReadDto::PageRequest&page,QObject*context,std::function<void(const RemoteReadDto::Page<RemoteReadDto::BuildRequirement>&)>completion,ErrorCallback failure)

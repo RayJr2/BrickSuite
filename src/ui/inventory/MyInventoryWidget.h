@@ -43,6 +43,7 @@ class RebrickableApiClient;
 class AddInventoryDialog;
 class InventoryApplicationService;
 class RemoteReadApplicationServices;
+class RemoteInventoryMutationApplicationService;
 class BackgroundPartColorImageCacheService;
 class PartExternalIdEnrichmentService;
 class InventoryHistoryDialog;
@@ -58,7 +59,8 @@ public:
         InventoryApplicationService& inventoryService,
         QWidget* parent = nullptr,
         RemoteReadApplicationServices* remoteReads = nullptr,
-        PartExternalIdEnrichmentService* enrichmentService = nullptr);
+        PartExternalIdEnrichmentService* enrichmentService = nullptr,
+        RemoteInventoryMutationApplicationService* remoteMutations = nullptr);
 
     void setBackgroundPartColorImageCacheService(
         BackgroundPartColorImageCacheService* service);
@@ -108,6 +110,8 @@ private:
     void updatePagingControls();
     void addPart();
     void showLostInventory();
+    void openRemoteMutationDialog(const QString& operation,
+                                  const RemoteReadDto::InventoryDetail& detail);
 
     QString storagePathForId(int storageLocationId) const;
 
@@ -117,6 +121,7 @@ private:
     SessionStorageSelectionService& m_sessionStorageSelectionService;
     InventoryApplicationService& m_inventoryService;
     RemoteReadApplicationServices* m_remoteReads = nullptr;
+    RemoteInventoryMutationApplicationService* m_remoteMutations = nullptr;
     PartExternalIdEnrichmentService* m_enrichmentService = nullptr;
     BackgroundPartColorImageCacheService* m_backgroundColorImages = nullptr;
     ReadRequestToken m_inventoryRequestToken = 0;
@@ -158,6 +163,7 @@ private:
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
     AddInventoryDialog* m_activeAddInventoryDialog = nullptr;
     QPointer<InventoryHistoryDialog> m_activeHistoryDialog;
+    QPointer<QWidget> m_activeRemoteMutationDialog;
     int m_activeHistoryInventoryRecordId = 0;
 
     QHash<QString, QList<int>> m_rowsByPartNumber;

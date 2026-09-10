@@ -1,5 +1,6 @@
 #include "RemoteMutationApplicationServices.h"
 #include "../../network/BrickSuiteWebSocketClient.h"
+#include <QDebug>
 
 RemoteMutationApplicationServices::RemoteMutationApplicationServices(
     BrickSuiteWebSocketClient& client, QObject* parent)
@@ -33,14 +34,31 @@ QString RemoteMutationApplicationServices::submit(
                               {QStringLiteral("expected"), metadata.expected},
                               {QStringLiteral("mutation"), metadata.mutation}};
     return m_client.sendRequest(operation, payload, context,
-        [completion, failure](const QJsonObject& json) {
+        [operation, mutationId=metadata.mutationId, completion, failure](const QJsonObject& json) {
+            qDebug() << "Remote mutation response received" << operation << mutationId.left(8);
             RemoteMutationDto::Result result;
             RemoteMutationDto::Error error;
             if (!RemoteMutationDto::resultFromJson(json, &result, &error)) {
+                error.outcome = RemoteMutationDto::Outcome::Unknown;
+                error.mutationId = mutationId;
+                qWarning() << "Remote mutation success response could not be decoded"
+                           << operation << mutationId.left(8) << error.message;
                 if (failure) failure(error);
-            } else if (completion) completion(result);
+            } else if (result.operation != operation || result.mutationId != mutationId) {
+                error = {QStringLiteral("INTERNAL_ERROR"),
+                    QStringLiteral("The Host returned a mismatched mutation result."), false,
+                    RemoteMutationDto::Outcome::Unknown};
+                error.mutationId = mutationId;
+                qWarning() << "Remote mutation result rejected for identity mismatch"
+                           << operation << mutationId.left(8);
+                if (failure) failure(error);
+            } else {
+                qDebug() << "Remote mutation response decoded" << operation
+                         << mutationId.left(8) << "replayed" << result.replayed;
+                if (completion) completion(result);
+            }
         },
-        [failure, mutationId=metadata.mutationId](const BrickSuiteProtocol::Error& error) {
+        [operation, failure, mutationId=metadata.mutationId](const BrickSuiteProtocol::Error& error) {
             if (!failure) return;
             const bool unknown = error.code == QStringLiteral("TIMEOUT")
                                  || error.code == QStringLiteral("DISCONNECTED");
@@ -48,6 +66,8 @@ QString RemoteMutationApplicationServices::submit(
                 unknown ? RemoteMutationDto::Outcome::Unknown
                         : RemoteMutationDto::Outcome::DefinitiveFailure};
             mapped.mutationId = mutationId;
+            qDebug() << "Remote mutation request failed" << operation << mutationId.left(8)
+                     << error.code << (unknown ? "unknown outcome" : "definitive failure");
             failure(mapped);
         });
 }

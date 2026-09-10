@@ -307,7 +307,7 @@ int main(int argc, char** argv)
         const QStringList expected{
             QStringLiteral("workspace.list"), QStringLiteral("storage.list"),
             QStringLiteral("inventory.search"), QStringLiteral("inventory.get"),
-            QStringLiteral("inventory.history"), QStringLiteral("builds.list"),
+            QStringLiteral("inventory.history"), QStringLiteral("inventory.lost.list"), QStringLiteral("builds.list"),
             QStringLiteral("builds.get"), QStringLiteral("builds.requirements"),
             QStringLiteral("builds.missingParts"), QStringLiteral("builds.pulling"),
             QStringLiteral("collection.search"), QStringLiteral("collection.get"),
@@ -379,6 +379,7 @@ int main(int argc, char** argv)
             {"inventory.search",{{"workspaceId",1},{"text",""},{"storageId",0},{"rebrickableCategoryId",-1},{"rebrickableColorId",-1},{"page",1},{"pageSize",250}}},
             {"inventory.get",{{"workspaceId",1},{"inventoryRecordId",1}}},
             {"inventory.history",{{"workspaceId",1},{"partNumber","3001"},{"rebrickableColorId",4}}},
+            {"inventory.lost.list",{{"workspaceId",1}}},
             {"builds.list",{{"workspaceId",1},{"includeArchived",false}}},
             {"builds.get",{{"workspaceId",1},{"buildId",1}}},
             {"builds.requirements",{{"workspaceId",1},{"buildId",1},{"page",1},{"pageSize",250}}},

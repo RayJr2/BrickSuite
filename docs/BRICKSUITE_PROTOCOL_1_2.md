@@ -1,5 +1,35 @@
 # BrickSuite Protocol 1.2
 
+## Inventory mutations
+
+Protocol 1.2 Hosts advertise seven independently authorized Inventory operations and matching
+capabilities: `inventory.add`, `inventory.edit`, `inventory.move`, `inventory.correct`,
+`inventory.remove`, `inventory.markLost`, and `inventory.markFound`. Protocol 1.1 sessions do not
+receive these operations or capabilities.
+
+Every request uses the standard durable mutation envelope (`workspaceId`, `mutationId`, `expected`,
+and `mutation`). Part identity is a canonical Part number, Color identity is the Rebrickable Color
+ID, Manufacturer identity is its normalized name, and Storage identity is the Host Storage ID from
+remote operational reads. Client-local catalog row IDs are never authoritative.
+
+Record mutations include the expected Inventory record ID, quantity, Storage ID, and `modifiedUtc`.
+The Host rejects stale state with `STALE_VERSION`; invalid Workspace ownership, catalog identities,
+quantities, enumerated values, or non-inventory-capable destinations are rejected before mutation.
+Results identify source, destination, and surviving Inventory records where applicable, resulting
+quantities and Storage, the modification token, and create/merge outcomes.
+
+Domain changes, movement History, and the durable receipt commit atomically. Repeating the same
+mutation ID and payload returns the stored result with `replayed=true`; changing the payload produces
+`IDEMPOTENCY_CONFLICT`. Timeouts or disconnects have unknown outcome and must be retried with the
+exact same mutation ID and payload. Newly committed operations publish Workspace-scoped Inventory,
+Inventory History, Builds, Build Requirements, Missing Parts, and Pulling invalidation; replay and
+failed operations publish nothing.
+
+Remote Inventory uses the same user-facing workflows as local Inventory while translating selections
+to portable identities before asynchronous submission. The read-only `inventory.lost.list` operation
+returns the Host's outstanding Lost Part/Color projection so Mark Found never requires raw identity
+entry on the Client.
+
 Protocol 1.2 extends the frozen Protocol 1.1 read and invalidation contract with the
 domain-neutral infrastructure required for Host-authoritative mutations. M26.6A does
 not expose any operational write operation or enable any Remote Client write control.

@@ -38,6 +38,7 @@ public:
     quint64 authenticatedSessionGeneration() const;
 #ifdef BRICKSUITE_TESTING
     void sendProtocolEventForTesting(const OperationalInvalidation& invalidation);
+    int pendingRequestCountForTesting() const { return m_pending.size(); }
 #endif
 
 signals:

@@ -4,11 +4,13 @@
 #include "BrickSuiteHostIdentity.h"
 
 #include <QDateTime>
+#include <QDebug>
 #include <QJsonArray>
 #include <QRandomGenerator>
 #include <QSslCertificate>
 #include <QSslConfiguration>
 #include <QSslError>
+#include <QThread>
 
 BrickSuiteWebSocketClient::BrickSuiteWebSocketClient(QObject* parent)
     : QObject(parent)
@@ -171,12 +173,15 @@ QString BrickSuiteWebSocketClient::enqueueRequest(
         m_pending.erase(it);
         const BrickSuiteProtocol::Error error{QStringLiteral("TIMEOUT"),
             QStringLiteral("The Host request timed out."), true};
+        qWarning() << "BrickSuite request timed out" << pending.operation << id.left(8);
         emit requestFailed(id, error);
         if (pending.context && pending.failure) pending.failure(error);
         emit testConnectionCompleted(false, error.message);
     });
     pending.timer->start(qBound(1, timeoutMs, BrickSuiteProtocol::RequestTimeoutMs));
     m_pending.insert(message.requestId, pending);
+    qDebug() << "BrickSuite request queued" << operation << message.requestId.left(8)
+             << "pending" << m_pending.size();
     m_socket.sendTextMessage(QString::fromUtf8(BrickSuiteProtocol::serialize(message)));
     return message.requestId;
 }
@@ -263,6 +268,12 @@ void BrickSuiteWebSocketClient::handleSslErrors(const QList<QSslError>& errors)
 void BrickSuiteWebSocketClient::handleText(const QString& text)
 {
     const auto parsed = BrickSuiteProtocol::parse(text.toUtf8());
+    if (parsed.valid && parsed.message.operation.startsWith(QStringLiteral("inventory.")))
+        qDebug() << "BrickSuite Client raw WebSocket frame callback"
+                 << parsed.message.operation << parsed.message.requestId.left(8)
+                 << BrickSuiteProtocol::typeName(parsed.message.type)
+                 << "socketThreadCurrent" << (m_socket.thread() == QThread::currentThread())
+                 << "clientThreadCurrent" << (thread() == QThread::currentThread());
     if (!parsed.valid || parsed.message.type == BrickSuiteProtocol::MessageType::Request) {
         setStatus(BrickSuiteConnectionState::Error,
                   QStringLiteral("The Host returned an invalid protocol message."));
@@ -298,12 +309,18 @@ void BrickSuiteWebSocketClient::handleText(const QString& text)
 void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message& message)
 {
     auto it = m_pending.find(message.requestId);
-    if (it == m_pending.end()) return; // Unsolicited/stale response.
+    if (it == m_pending.end()) {
+        qWarning() << "Unmatched BrickSuite response" << message.operation
+                   << message.requestId.left(8) << "pending" << m_pending.size();
+        return; // Unsolicited/stale response.
+    }
     Pending pending = std::move(it.value());
     const QString operation = pending.operation;
     pending.timer->stop();
     pending.timer->deleteLater();
     m_pending.erase(it);
+    qDebug() << "BrickSuite response matched" << operation << message.requestId.left(8)
+             << "pending" << m_pending.size();
     if (message.type == BrickSuiteProtocol::MessageType::Error) {
         if (message.error.code == QStringLiteral("AUTH_FAILED")) {
             setStatus(BrickSuiteConnectionState::AuthenticationFailed,

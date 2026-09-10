@@ -23,6 +23,7 @@
 #include <QDialog>
 #include <QList>
 #include <QModelIndex>
+#include <QHash>
 
 #include "../../api/rebrickable/RebrickableService.h"
 #include "../../services/parts/BrickLinkCandidateDiscoveryService.h"
@@ -40,6 +41,7 @@ class QLineEdit;
 class QCompleter;
 class QStandardItemModel;
 class QTimer;
+class RemoteInventoryMutationApplicationService;
 
 class AddInventoryDialog : public QDialog
 {
@@ -54,6 +56,12 @@ public:
     explicit AddInventoryDialog(WorkspaceContext& workspaceContext,
                                 SessionStorageSelectionService& sessionStorageSelectionService,
                                 QWidget* parent = nullptr);
+    AddInventoryDialog(WorkspaceContext& workspaceContext,
+                       SessionStorageSelectionService& sessionStorageSelectionService,
+                       RemoteInventoryMutationApplicationService& remoteMutations,
+                       const QHash<int, QString>& hostStoragePaths,
+                       int preferredStorageLocationId,
+                       QWidget* parent = nullptr);
 
     bool inventoryWasAdded() const;
 
@@ -86,6 +94,7 @@ private:
     void initializeUi();
     void configureForSelectedPart();
     void clearPartSelection();
+    void setRemoteSubmissionPending(bool pending);
     void updatePartSearch();
     void selectSearchResult(const QModelIndex& index);
     void resolveEnteredPart();
@@ -145,4 +154,8 @@ private:
     bool m_inventoryWasAdded = false;
 
     int m_quickEntryColorId = 0;
+    RemoteInventoryMutationApplicationService* m_remoteMutations = nullptr;
+    QHash<int, QString> m_hostStoragePaths;
+    int m_preferredStorageLocationId = 0;
+    QString m_remoteMutationId;
 };

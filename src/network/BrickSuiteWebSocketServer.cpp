@@ -319,6 +319,8 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
                 response.payload.insert(QStringLiteral("capabilities"), capabilities);
                 it->invalidationsReady = true;
             }
+            qDebug() << "BrickSuite Host sending response" << operation
+                     << response.requestId.left(8) << BrickSuiteProtocol::typeName(response.type);
             send(guard.data(), response);
         });
 }
@@ -326,7 +328,13 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
 void BrickSuiteWebSocketServer::send(QWebSocket* socket,
                                      const BrickSuiteProtocol::Message& message)
 {
-    socket->sendTextMessage(QString::fromUtf8(BrickSuiteProtocol::serialize(message)));
+    const qint64 queuedBytes = socket->sendTextMessage(
+        QString::fromUtf8(BrickSuiteProtocol::serialize(message)));
+    if (message.operation.startsWith(QStringLiteral("inventory.")))
+        qDebug() << "BrickSuite Host WebSocket sendTextMessage completed"
+                 << message.operation << message.requestId.left(8)
+                 << "queuedBytes" << queuedBytes
+                 << "socketThreadCurrent" << (socket->thread() == QThread::currentThread());
 }
 
 void BrickSuiteWebSocketServer::reject(QWebSocket* socket,

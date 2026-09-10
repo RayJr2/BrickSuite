@@ -11,6 +11,7 @@ class HostReadProtocolService;
 class RemoteReadApplicationServices;
 class RemoteMutationApplicationServices;
 class RemotePullingApplicationService;
+class RemoteInventoryMutationApplicationService;
 class HostMutationProtocolService;
 class RemoteSessionState;
 class OperationalInvalidationPublisher;
@@ -31,6 +32,7 @@ public:
     RemoteReadApplicationServices* remoteReads() const;
     RemoteMutationApplicationServices* remoteMutations() const;
     RemotePullingApplicationService* remotePulling() const;
+    RemoteInventoryMutationApplicationService* remoteInventoryMutations() const;
     RemoteSessionState* remoteSession() const;
     OperationalInvalidationPublisher* invalidationPublisher() const;
     BrickSuiteConnectionStatus connectionStatus() const;
@@ -43,6 +45,7 @@ signals:
     void statusChanged();
     void invalidationReceived(const OperationalInvalidation& invalidation);
     void remotePullingMutationCommitted(int workspaceId, int buildId);
+    void remoteInventoryMutationCommitted(int workspaceId);
 
 private:
     BrickSuiteWebSocketServer* m_server = nullptr;
@@ -53,6 +56,7 @@ private:
     std::unique_ptr<RemoteReadApplicationServices> m_remoteReads;
     std::unique_ptr<RemoteMutationApplicationServices> m_remoteMutations;
     std::unique_ptr<RemotePullingApplicationService> m_remotePulling;
+    std::unique_ptr<RemoteInventoryMutationApplicationService> m_remoteInventoryMutations;
     std::unique_ptr<RemoteSessionState> m_remoteSession;
     std::unique_ptr<OperationalInvalidationPublisher> m_invalidationPublisher;
 };

@@ -8,6 +8,7 @@ namespace RemoteReadDto {
 
 constexpr int MaximumPageSize = 500;
 constexpr int MaximumStorageLocations = 10000;
+constexpr int MaximumLostInventoryRows = 10000;
 constexpr int MaximumTextLength = 512;
 
 struct PageRequest { int page = 1; int pageSize = 250; };
@@ -34,13 +35,20 @@ struct InventoryRow {
     int quantity = 0; qint64 storageId = 0; QString storagePath;
     QString manufacturerDisplay; QString condition; QString ownershipType;
 };
-struct InventoryDetail : InventoryRow { QDateTime createdUtc; QDateTime modifiedUtc; };
+struct InventoryDetail : InventoryRow { int allocatedQuantity = 0; QDateTime createdUtc; QDateTime modifiedUtc; };
 struct InventoryHistoryRow {
     qint64 movementId = 0; QString movementType; int quantityChange = 0;
     qint64 fromStorageId = 0; QString fromStoragePath;
     qint64 toStorageId = 0; QString toStoragePath;
     QString condition; QString ownershipType; QString referenceType;
     QString referenceId; QString notes; QDateTime createdUtc;
+};
+struct LostInventoryRow {
+    QString partNumber; QString partNameFallback;
+    int rebrickableColorId = -1; QString colorNameFallback;
+    int outstandingQuantity = 0; qint64 lastStorageId = 0;
+    QString lastStoragePath; QString condition; QString ownershipType;
+    QDateTime lastLostUtc;
 };
 
 struct BuildSummary {

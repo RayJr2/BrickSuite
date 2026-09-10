@@ -19,6 +19,7 @@
  */
 
 #include "AddInventoryDialog.h"
+#include "AddInventoryDialogButtonState.h"
 
 #include "../../app/WorkspaceContext.h"
 
@@ -37,6 +38,7 @@
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
+#include "../../services/application/RemoteInventoryMutationApplicationService.h"
 
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/parts/PartResolver.h"
@@ -70,6 +72,7 @@
 #include <QStringList>
 #include <QTimer>
 #include <QWidget>
+#include <algorithm>
 
 AddInventoryDialog::AddInventoryDialog(int partId,
                                        WorkspaceContext& workspaceContext,
@@ -112,6 +115,21 @@ AddInventoryDialog::AddInventoryDialog(
     updateAddButtonState();
 
     m_partSearchEdit->setFocus();
+}
+
+AddInventoryDialog::AddInventoryDialog(
+    WorkspaceContext& workspaceContext,
+    SessionStorageSelectionService& sessionStorageSelectionService,
+    RemoteInventoryMutationApplicationService& remoteMutations,
+    const QHash<int, QString>& hostStoragePaths, int preferredStorageLocationId,
+    QWidget* parent)
+    : QDialog(parent), m_workspaceContext(workspaceContext),
+      m_sessionStorageSelectionService(sessionStorageSelectionService),
+      m_remoteMutations(&remoteMutations), m_hostStoragePaths(hostStoragePaths),
+      m_preferredStorageLocationId(preferredStorageLocationId)
+{
+    m_quickEntryMode=true; initializeUi(); loadStorageLocations(); clearPartSelection();
+    updateAddButtonState(); m_partSearchEdit->setFocus();
 }
 
 void AddInventoryDialog::initializeUi()
@@ -513,6 +531,14 @@ void AddInventoryDialog::loadStorageLocations()
     if (!m_workspaceContext.hasCurrentWorkspace())
         return;
 
+    if (m_remoteMutations) {
+        QList<int> ids=m_hostStoragePaths.keys(); std::sort(ids.begin(),ids.end());
+        for(int id:ids)m_storageCombo->addItem(m_hostStoragePaths.value(id),id);
+        const int preferred=m_storageCombo->findData(m_preferredStorageLocationId);
+        if(preferred>=0)m_storageCombo->setCurrentIndex(preferred);
+        updateAddButtonState(); return;
+    }
+
     StorageLocationRepository repository;
 
     const QList<StorageLocation> locations = repository.getByWorkspace(
@@ -613,6 +639,26 @@ void AddInventoryDialog::addInventory()
     record.setOwnershipType(m_ownershipCombo->currentText().trimmed());
 
     record.setQuantity(m_quantitySpin->value());
+
+    if (m_remoteMutations) {
+        const auto color=ColorRepository().getById(colorId);
+        if(!color||color->rebrickableId()<0){QMessageBox::warning(this,"BrickSuite","The selected Color has no portable Rebrickable identity.");return;}
+        RemoteInventoryMutationDto::Request request;request.workspaceId=m_workspaceContext.currentWorkspaceId();
+        request.mutationId=m_remoteMutationId.isEmpty()?RemoteMutationDto::newMutationId():m_remoteMutationId;
+        request.partNumber=m_partNumber;request.colorExternalId=color->rebrickableId();
+        request.manufacturerName=m_manufacturerCombo->currentText().trimmed();request.storageLocationId=storageLocationId;
+        request.quantity=m_quantitySpin->value();request.condition=m_conditionCombo->currentText().trimmed();
+        request.ownershipType=m_ownershipCombo->currentText().trimmed();m_remoteMutationId=request.mutationId;
+        setRemoteSubmissionPending(true);m_statusLabel->setText("Saving to BrickSuite Host...");m_statusLabel->setVisible(true);
+        const QList<QWidget*> fields{m_partSearchEdit,m_colorCombo,m_storageCombo,m_manufacturerCombo,m_conditionCombo,m_ownershipCombo,m_quantitySpin,m_showAllColorsCheck,m_rememberPartCheck,m_tryBrickLinkIdCheck};for(QWidget* field:fields)if(field)field->setEnabled(false);
+        m_remoteMutations->add(request,this,[this,storageLocationId,fields](const RemoteInventoryMutationDto::Result&){
+            m_inventoryWasAdded=true;m_sessionStorageSelectionService.rememberDestination(m_workspaceContext.currentWorkspaceId(),storageLocationId);emit inventoryAdded();
+            if(m_keepOpenCheck&&m_keepOpenCheck->isChecked()){m_remoteMutationId.clear();for(QWidget* field:fields)if(field)field->setEnabled(true);setRemoteSubmissionPending(false);m_statusLabel->setText("Inventory added to BrickSuite Host.");if(!m_rememberPartCheck->isChecked())clearPartSelection();}else accept();
+        },[this,fields](const RemoteMutationDto::Error& error){setRemoteSubmissionPending(false);
+            if(error.outcome==RemoteMutationDto::Outcome::Unknown){m_statusLabel->setText("Outcome unknown. Retry safely to check the same Add.");return;}
+            m_remoteMutationId.clear();for(QWidget* field:fields)if(field)field->setEnabled(true);m_statusLabel->setText(error.message);});
+        return;
+    }
 
     InventoryRecordRepository repository;
 
@@ -1355,7 +1401,7 @@ void AddInventoryDialog::clearPartSelection()
 
 void AddInventoryDialog::updateAddButtonState()
 {
-    QPushButton* addButton = m_buttonBox->button(QDialogButtonBox::Ok);
+    QPushButton* addButton = AddInventoryDialogButtonState::submitButton(m_buttonBox);
 
     if (!addButton)
         return;
@@ -1367,6 +1413,11 @@ void AddInventoryDialog::updateAddButtonState()
     const bool validStorage = m_storageCombo->currentData().toInt() > 0;
 
     addButton->setEnabled(validPart && validColor && validStorage);
+}
+
+void AddInventoryDialog::setRemoteSubmissionPending(bool pending)
+{
+    AddInventoryDialogButtonState::setSubmissionPending(m_buttonBox, pending);
 }
 
 void AddInventoryDialog::setPreferredStorageLocationId(

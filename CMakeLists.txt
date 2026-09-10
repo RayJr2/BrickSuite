@@ -83,10 +83,16 @@ qt_add_executable(BrickSuite
     src/services/application/dto/RemoteMutationDtos.cpp
     src/services/application/dto/RemotePullingMutationDtos.h
     src/services/application/dto/RemotePullingMutationDtos.cpp
+    src/services/application/dto/RemoteInventoryMutationDtos.h
+    src/services/application/dto/RemoteInventoryMutationDtos.cpp
     src/services/application/HostPullingMutationService.h
     src/services/application/HostPullingMutationService.cpp
+    src/services/application/HostInventoryMutationService.h
+    src/services/application/HostInventoryMutationService.cpp
     src/services/application/RemotePullingApplicationService.h
     src/services/application/RemotePullingApplicationService.cpp
+    src/services/application/RemoteInventoryMutationApplicationService.h
+    src/services/application/RemoteInventoryMutationApplicationService.cpp
 
     src/database/DatabaseManager.h
     src/database/DatabaseManager.cpp
@@ -105,6 +111,8 @@ qt_add_executable(BrickSuite
 
     src/ui/MainWindow.h
     src/ui/MainWindow.cpp
+    src/ui/inventory/RemoteInventoryMutationDialog.h
+    src/ui/inventory/RemoteInventoryMutationDialog.cpp
     src/import/RebrickableReferenceImporter.cpp
     src/import/RebrickableReferenceImporter.h
     src/import/global/RebrickableImportTypes.h
@@ -251,6 +259,7 @@ qt_add_executable(BrickSuite
     src/ui/inventory/MyInventoryWidget.h
     src/ui/inventory/AddInventoryDialog.h
     src/ui/inventory/AddInventoryDialog.cpp
+    src/ui/inventory/AddInventoryDialogButtonState.h
     src/import/RebrickableInventoryImporter.h
     src/import/BrickOwlInventoryImporter.cpp
     src/import/RebrickableInventoryImporter.cpp
@@ -516,6 +525,24 @@ if(BUILD_TESTING)
     )
     target_link_libraries(InventoryRemoveHardeningTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME InventoryRemoveHardening COMMAND InventoryRemoveHardeningTest)
+
+    qt_add_executable(InventoryTransactionSeamsTest EXCLUDE_FROM_ALL
+        tests/InventoryTransactionSeamsTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/BuildAllocation.h src/models/BuildAllocation.cpp
+        src/models/InventoryMovement.h src/models/InventoryMovement.cpp
+        src/models/InventoryRecord.h src/models/InventoryRecord.cpp
+        src/models/Manufacturer.h
+        src/models/Part.h src/models/Part.cpp
+        src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
+        src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
+        src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+    )
+    target_link_libraries(InventoryTransactionSeamsTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME InventoryTransactionSeams COMMAND InventoryTransactionSeamsTest)
 
     qt_add_executable(BrickLinkCandidateResolutionTest EXCLUDE_FROM_ALL
         tests/BrickLinkCandidateResolutionTest.cpp
@@ -1100,6 +1127,7 @@ if(BUILD_TESTING)
         src/models/InventoryMovement.h src/models/InventoryMovement.cpp
         src/models/InventorySearchCriteria.h src/models/InventorySearchResult.h
         src/models/InventoryHistoryResult.h
+        src/models/LostInventoryItem.h
         src/models/Build.h src/models/Build.cpp
         src/models/BuildRequirement.h src/models/BuildRequirement.cpp
         src/models/BuildAllocation.h src/models/BuildAllocation.cpp
@@ -1115,6 +1143,7 @@ if(BUILD_TESTING)
         src/repositories/StorageLocationTypeRepository.h src/repositories/StorageLocationTypeRepository.cpp
         src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
         src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
+        src/repositories/LostInventoryRepository.h src/repositories/LostInventoryRepository.cpp
         src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
         src/repositories/BuildRequirementRepository.h src/repositories/BuildRequirementRepository.cpp
         src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
@@ -1247,6 +1276,7 @@ if(BUILD_TESTING)
         src/repositories/BuildRequirementRepository.h src/repositories/BuildRequirementRepository.cpp
         src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
         src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
+        src/repositories/LostInventoryRepository.h src/repositories/LostInventoryRepository.cpp
         src/repositories/PartRepository.h src/repositories/PartRepository.cpp
         src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
         src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
@@ -1261,6 +1291,90 @@ if(BUILD_TESTING)
     )
     target_link_libraries(RemotePullingMutationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME RemotePullingMutation COMMAND RemotePullingMutationTest)
+
+    qt_add_executable(RemoteInventoryMutationTest EXCLUDE_FROM_ALL
+        tests/RemoteInventoryMutationTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/InventoryRecord.h src/models/InventoryRecord.cpp
+        src/models/InventoryMovement.h src/models/InventoryMovement.cpp
+        src/models/BuildAllocation.h src/models/BuildAllocation.cpp
+        src/models/Part.h src/models/Part.cpp src/models/Manufacturer.h
+        src/repositories/RepositoryConnection.h
+        src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
+        src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
+        src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/services/application/HostInventoryMutationService.h src/services/application/HostInventoryMutationService.cpp
+        src/services/application/HostWriteExecutor.h src/services/application/HostWriteExecutor.cpp
+        src/services/application/HostMutationPublicationService.h src/services/application/HostMutationPublicationService.cpp
+        src/services/application/dto/RemoteMutationDtos.h src/services/application/dto/RemoteMutationDtos.cpp
+        src/services/application/dto/RemoteInventoryMutationDtos.h src/services/application/dto/RemoteInventoryMutationDtos.cpp
+        src/repositories/RemoteMutationReceiptRepository.h src/repositories/RemoteMutationReceiptRepository.cpp
+        src/network/OperationalInvalidation.h src/network/OperationalInvalidation.cpp
+        src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
+        src/network/BrickSuiteAuthentication.h src/network/BrickSuiteAuthentication.cpp
+        src/network/BrickSuiteHostIdentity.h src/network/BrickSuiteHostIdentity.cpp
+        src/network/BrickSuiteConnectionState.h
+        src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
+        src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
+        src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
+        src/services/application/HostMutationProtocolService.h src/services/application/HostMutationProtocolService.cpp
+        src/services/application/RemoteMutationApplicationServices.h src/services/application/RemoteMutationApplicationServices.cpp
+        src/services/application/RemoteInventoryMutationApplicationService.h src/services/application/RemoteInventoryMutationApplicationService.cpp
+        src/services/CredentialStore.h src/services/CredentialStore.cpp
+    )
+    target_compile_definitions(RemoteInventoryMutationTest PRIVATE BRICKSUITE_VERSION="${PROJECT_VERSION}" BRICKSUITE_TESTING)
+    target_link_libraries(RemoteInventoryMutationTest PRIVATE Qt6::Core Qt6::Sql Qt6::Network Qt6::WebSockets OpenSSL::Crypto)
+    if(WIN32)
+        target_link_libraries(RemoteInventoryMutationTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(RemoteInventoryMutationTest PRIVATE "-framework Security")
+    endif()
+    add_test(NAME RemoteInventoryMutation COMMAND RemoteInventoryMutationTest)
+
+    qt_add_executable(RemoteAddInventoryDialogButtonTest EXCLUDE_FROM_ALL
+        tests/RemoteAddInventoryDialogButtonTest.cpp
+        src/ui/inventory/AddInventoryDialogButtonState.h
+    )
+    target_link_libraries(RemoteAddInventoryDialogButtonTest PRIVATE
+        Qt6::Core Qt6::Gui Qt6::Widgets)
+    add_test(NAME RemoteAddInventoryDialogButton COMMAND RemoteAddInventoryDialogButtonTest)
+    set_tests_properties(RemoteAddInventoryDialogButton PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    qt_add_executable(RemoteInventoryDialogParityTest EXCLUDE_FROM_ALL
+        tests/RemoteInventoryDialogParityTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Color.h src/models/Color.cpp src/models/Manufacturer.h src/models/Part.h src/models/Part.cpp
+        src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/ui/helpers/ColorComboHelper.h src/ui/helpers/ColorComboHelper.cpp
+        src/ui/inventory/RemoteInventoryMutationDialog.h src/ui/inventory/RemoteInventoryMutationDialog.cpp
+        src/services/application/dto/RemoteMutationDtos.h src/services/application/dto/RemoteMutationDtos.cpp
+        src/services/application/dto/RemoteInventoryMutationDtos.h src/services/application/dto/RemoteInventoryMutationDtos.cpp
+        src/services/application/RemoteMutationApplicationServices.h src/services/application/RemoteMutationApplicationServices.cpp
+        src/services/application/RemoteInventoryMutationApplicationService.h src/services/application/RemoteInventoryMutationApplicationService.cpp
+        src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
+        src/network/BrickSuiteAuthentication.h src/network/BrickSuiteAuthentication.cpp
+        src/network/BrickSuiteHostIdentity.h src/network/BrickSuiteHostIdentity.cpp
+        src/network/BrickSuiteConnectionState.h
+        src/network/OperationalInvalidation.h src/network/OperationalInvalidation.cpp
+        src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
+        src/services/CredentialStore.h src/services/CredentialStore.cpp
+    )
+    target_compile_definitions(RemoteInventoryDialogParityTest PRIVATE BRICKSUITE_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(RemoteInventoryDialogParityTest PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Network Qt6::WebSockets OpenSSL::Crypto)
+    if(WIN32)
+        target_link_libraries(RemoteInventoryDialogParityTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(RemoteInventoryDialogParityTest PRIVATE "-framework Security")
+    endif()
+    add_test(NAME RemoteInventoryDialogParity COMMAND RemoteInventoryDialogParityTest)
+    set_tests_properties(RemoteInventoryDialogParity PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 if(WIN32)

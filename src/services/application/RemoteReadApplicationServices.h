@@ -32,6 +32,8 @@ public:
     ReadRequestToken inventoryHistory(qint64 workspaceId, const QString& partNumber,
         int rebrickableColorId, QObject* context,
         AsyncReadCompletion<QList<RemoteReadDto::InventoryHistoryRow>> completion);
+    ReadRequestToken listLostInventory(qint64 workspaceId, QObject* context,
+        AsyncReadCompletion<QList<RemoteReadDto::LostInventoryRow>> completion);
     ReadRequestToken listBuilds(qint64 workspaceId, bool includeArchived, QObject* context,
         AsyncReadCompletion<QList<RemoteReadDto::BuildSummary>> completion);
     ReadRequestToken getBuild(qint64 workspaceId, qint64 buildId, QObject* context,

@@ -36,7 +36,7 @@ Manufacturer ManufacturerRepository::fromQuery(const QSqlQuery& query)
 QList<Manufacturer> ManufacturerRepository::getAll(bool activeOnly) const
 {
     QList<Manufacturer> values;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     QString sql = R"(
         SELECT id, code, name, website_url, supports_lego_element_ids,
@@ -63,7 +63,7 @@ QList<Manufacturer> ManufacturerRepository::getAll(bool activeOnly) const
 
 std::optional<Manufacturer> ManufacturerRepository::getById(int id) const
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT id, code, name, website_url, supports_lego_element_ids,
                is_active, notes, created_utc, modified_utc, origin
@@ -80,7 +80,7 @@ std::optional<Manufacturer> ManufacturerRepository::getById(int id) const
 
 std::optional<Manufacturer> ManufacturerRepository::getByCode(const QString& code) const
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT id, code, name, website_url, supports_lego_element_ids,
                is_active, notes, created_utc, modified_utc, origin
@@ -97,7 +97,7 @@ std::optional<Manufacturer> ManufacturerRepository::getByCode(const QString& cod
 
 std::optional<Manufacturer> ManufacturerRepository::getByName(const QString& name) const
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT id, code, name, website_url, supports_lego_element_ids,
                is_active, notes, created_utc, modified_utc, origin
@@ -121,7 +121,7 @@ bool ManufacturerRepository::codeExists(
     if (normalizedCode.isEmpty())
         return false;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     QString sql = R"(
         SELECT 1
@@ -158,7 +158,7 @@ bool ManufacturerRepository::nameExists(
     if (normalizedName.isEmpty())
         return false;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     QString sql = R"(
         SELECT 1
@@ -190,7 +190,7 @@ ManufacturerIdentityConflict ManufacturerRepository::identityConflict(
     const QString& code, const QString& name, int excludeManufacturerId,
     QString* errorMessage) const
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     QString sql = "SELECT code, name FROM manufacturer WHERE "
                   "(code=:code COLLATE NOCASE OR name=:name COLLATE NOCASE)";
     if (excludeManufacturerId > 0)
@@ -221,7 +221,7 @@ ManufacturerUsage ManufacturerRepository::usage(int manufacturerId) const
     if (manufacturerId <= 0)
         return result;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     auto readCounts =
         [&database, manufacturerId, &result](const QString& sql, int& count, int& quantity) -> bool
@@ -283,7 +283,7 @@ bool ManufacturerRepository::create(Manufacturer& manufacturer) const
     const QString now =
         QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         INSERT INTO manufacturer
         (
@@ -368,7 +368,7 @@ bool ManufacturerRepository::update(Manufacturer& manufacturer) const
     const QString now =
         QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         UPDATE manufacturer
         SET code = :code,
@@ -426,7 +426,7 @@ bool ManufacturerRepository::setActive(int id, bool active) const
         return false;
     }
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         UPDATE manufacturer
         SET is_active = :is_active,

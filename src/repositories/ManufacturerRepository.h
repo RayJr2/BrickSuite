@@ -5,6 +5,7 @@
  */
 #pragma once
 
+#include "RepositoryConnection.h"
 #include "../models/Manufacturer.h"
 
 #include <QList>
@@ -33,9 +34,12 @@ struct ManufacturerUsage
     }
 };
 
-class ManufacturerRepository
+class ManufacturerRepository : protected RepositoryConnection
 {
 public:
+    ManufacturerRepository() = default;
+    explicit ManufacturerRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
     QList<Manufacturer> getAll(bool activeOnly = true) const;
     std::optional<Manufacturer> getById(int id) const;
     std::optional<Manufacturer> getByCode(const QString& code) const;

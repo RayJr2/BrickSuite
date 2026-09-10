@@ -21,6 +21,7 @@
 #include "LostInventoryDialog.h"
 
 #include "FoundInventoryDialog.h"
+#include "RemoteInventoryMutationDialog.h"
 
 #include "../../app/WorkspaceContext.h"
 
@@ -30,6 +31,8 @@
 #include "../../repositories/LostInventoryRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
+#include "../../services/application/RemoteReadApplicationServices.h"
+#include "../../services/application/RemoteInventoryMutationApplicationService.h"
 
 #include <QComboBox>
 #include <QDateTime>
@@ -48,6 +51,26 @@ LostInventoryDialog::LostInventoryDialog(
     : QDialog(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
+{
+    initializeUi();
+    loadLostInventory();
+}
+
+LostInventoryDialog::LostInventoryDialog(WorkspaceContext& workspaceContext,
+    SessionStorageSelectionService& sessionStorageSelectionService,
+    RemoteReadApplicationServices& remoteReads,
+    RemoteInventoryMutationApplicationService& remoteMutations,
+    const QHash<int, QString>& storagePaths, QWidget* parent)
+    : QDialog(parent), m_workspaceContext(workspaceContext),
+      m_sessionStorageSelectionService(sessionStorageSelectionService),
+      m_remoteReads(&remoteReads), m_remoteMutations(&remoteMutations),
+      m_remoteStoragePaths(storagePaths)
+{
+    initializeUi();
+    loadRemoteLostInventory();
+}
+
+void LostInventoryDialog::initializeUi()
 {
     setWindowTitle("Lost Inventory");
 
@@ -99,7 +122,6 @@ LostInventoryDialog::LostInventoryDialog(
 
     layout->addWidget(buttonBox);
 
-    loadLostInventory();
 }
 
 void LostInventoryDialog::loadLostInventory()
@@ -231,4 +253,39 @@ void LostInventoryDialog::loadLostInventory()
     } else {
         m_statusLabel->setText(QString("%1 lost Part/Color item(s).").arg(items.size()));
     }
+}
+
+void LostInventoryDialog::loadRemoteLostInventory()
+{
+    m_table->setRowCount(0);
+    m_statusLabel->setText("Loading Lost Inventory from BrickSuite Host...");
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    m_remoteReads->listLostInventory(workspaceId, this,
+        [this, workspaceId](AsyncReadResult<QList<RemoteReadDto::LostInventoryRow>> result) {
+            if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+            if (!result.succeeded()) {
+                m_statusLabel->setText("Unable to load Lost Inventory from BrickSuite Host.");
+                return;
+            }
+            int row = 0;
+            for (const auto& item : *result.value) {
+                m_table->insertRow(row);
+                m_table->setItem(row,0,new QTableWidgetItem(item.partNumber));
+                m_table->setItem(row,1,new QTableWidgetItem(item.partNameFallback));
+                m_table->setItem(row,2,new QTableWidgetItem(item.colorNameFallback));
+                m_table->setItem(row,3,new QTableWidgetItem(QString::number(item.outstandingQuantity)));
+                m_table->setItem(row,4,new QTableWidgetItem(item.lastStoragePath));
+                m_table->setItem(row,5,new QTableWidgetItem(item.lastLostUtc.toLocalTime().toString("yyyy-MM-dd HH:mm")));
+                auto* actions=new QComboBox(m_table);actions->addItem("Actions...");actions->addItem("Found / Return...");
+                m_table->setCellWidget(row,6,actions);
+                connect(actions,QOverload<int>::of(&QComboBox::currentIndexChanged),this,
+                    [this,actions,item](int index){if(index<=0)return;actions->setCurrentIndex(0);
+                        RemoteInventoryMutationDialog dialog(m_workspaceContext.currentWorkspaceId(),
+                            *m_remoteMutations,m_remoteStoragePaths,item,this);
+                        if(dialog.exec()==QDialog::Accepted)loadRemoteLostInventory();});
+                ++row;
+            }
+            m_statusLabel->setText(result.value->isEmpty()?"No outstanding lost inventory.":
+                QString("%1 lost Part/Color item(s).").arg(result.value->size()));
+        });
 }

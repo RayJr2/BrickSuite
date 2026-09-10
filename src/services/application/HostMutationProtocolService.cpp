@@ -1,5 +1,6 @@
 #include "HostMutationProtocolService.h"
 #include "../../network/BrickSuiteOperationDispatcher.h"
+#include <QDebug>
 
 HostMutationProtocolService::HostMutationProtocolService(
     const QString& databasePath, HostWriteExecutor::Publisher publisher, QObject* parent)
@@ -33,10 +34,14 @@ void HostMutationProtocolService::registerInternalOperation(
             m_executor.enqueue(context, RemoteMutationDto::requestHash(operation, metadata),
                 mutation, this,
                 [request, completion](const RemoteMutationDto::Result& result) {
+                    qDebug() << "Host mutation response created" << request.operation
+                             << request.requestId.left(8) << result.mutationId.left(8);
                     completion(BrickSuiteProtocol::response(request,
                         RemoteMutationDto::resultToJson(result)));
                 },
                 [request, completion](const RemoteMutationDto::Error& failure) {
+                    qDebug() << "Host mutation error response created" << request.operation
+                             << request.requestId.left(8) << failure.code;
                     completion(BrickSuiteProtocol::errorResponse(request, failure.code,
                         failure.message, failure.retryable));
                 });
@@ -78,10 +83,14 @@ void HostMutationProtocolService::registerOperation(
             m_executor.enqueue(context, RemoteMutationDto::requestHash(operation, metadata),
                 std::move(mutation), this,
                 [request, completion](const RemoteMutationDto::Result& result) {
+                    qDebug() << "Host mutation response created" << request.operation
+                             << request.requestId.left(8) << result.mutationId.left(8);
                     completion(BrickSuiteProtocol::response(request,
                         RemoteMutationDto::resultToJson(result)));
                 },
                 [request, completion](const RemoteMutationDto::Error& failure) {
+                    qDebug() << "Host mutation error response created" << request.operation
+                             << request.requestId.left(8) << failure.code;
                     completion(BrickSuiteProtocol::errorResponse(request, failure.code,
                         failure.message, failure.retryable));
                 });

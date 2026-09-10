@@ -45,6 +45,14 @@ int main(int argc, char** argv)
                   && decoded.partNumber == QStringLiteral("3001")
                   && decoded.rebrickableCategoryId == 11
                   && decoded.rebrickableColorId == 4, "portable inventory round trip failed");
+    RemoteReadDto::LostInventoryRow lost;lost.partNumber="3001";lost.partNameFallback="Brick 2 x 4";
+    lost.rebrickableColorId=4;lost.colorNameFallback="Red";lost.outstandingQuantity=3;
+    lost.lastStorageId=8;lost.lastStoragePath="Shelf / Bin";lost.condition="Used";
+    lost.ownershipType="Owned";lost.lastLostUtc=QDateTime::currentDateTimeUtc();
+    RemoteReadDto::LostInventoryRow decodedLost;
+    ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(lost),&decodedLost,&decodeError)
+        && decodedLost.partNumber=="3001"&&decodedLost.rebrickableColorId==4
+        && decodedLost.outstandingQuantity==3,"Lost Inventory DTO round trip failed");
     QJsonObject invalid = json; invalid.insert(QStringLiteral("partNumber"), QString(513, QLatin1Char('x')));
     ok &= require(!RemoteReadJson::fromJson(invalid, &decoded, &decodeError), "oversized text accepted");
     RemoteReadDto::StorageSummary storage;

@@ -31,9 +31,43 @@
 
 class QSqlQuery;
 
+
 class InventoryRecordRepository : protected RepositoryConnection
 {
 public:
+    struct AddResult {
+        int inventoryRecordId = 0;
+        int resultingQuantity = 0;
+        bool created = false;
+        bool merged = false;
+    };
+
+    struct UpdateResult {
+        int sourceRecordId = 0;
+        int survivingRecordId = 0;
+        int resultingQuantity = 0;
+        int storageLocationId = 0;
+        bool merged = false;
+    };
+
+    struct MoveResult {
+        int sourceRecordId = 0;
+        int destinationRecordId = 0;
+        int movedQuantity = 0;
+        int resultingSourceQuantity = 0;
+        int resultingDestinationQuantity = 0;
+        bool destinationCreated = false;
+    };
+
+    struct FoundResult {
+        int inventoryRecordId = 0;
+        int quantityRestored = 0;
+        int destinationStorageLocationId = 0;
+        int outstandingLostQuantity = 0;
+        bool created = false;
+        bool merged = false;
+    };
+
     InventoryRecordRepository() = default;
     explicit InventoryRecordRepository(const QSqlDatabase& database)
         : RepositoryConnection(database) {}
@@ -66,8 +100,14 @@ public:
                                const QString& referenceId = QString(),
                                const QString& notes = QString(),
                                bool manageTransaction = true);
+    bool addOrIncreaseQuantityInCurrentTransaction(
+        InventoryRecord& record, const QString& movementType = QString(),
+        const QString& referenceType = QString(), const QString& referenceId = QString(),
+        const QString& notes = QString(), AddResult* result = nullptr);
 
     bool updateOrMerge(InventoryRecord& record);
+    bool updateOrMergeInCurrentTransaction(InventoryRecord& record,
+                                           UpdateResult* result = nullptr);
 
     bool remove(int inventoryRecordId);
 
@@ -75,19 +115,29 @@ public:
                       int replacementPartId,
                       int quantityToCorrect,
                       const QString& notes = QString());
+    bool correctEntryInCurrentTransaction(
+        int inventoryRecordId, int replacementPartId, int quantityToCorrect,
+        const QString& notes = QString());
 
     bool removeEntry(int inventoryRecordId,
                      int quantityToRemove,
                      const QString& notes = QString(),
                      QString* errorMessage = nullptr);
+    bool removeEntryInCurrentTransaction(int inventoryRecordId, int quantityToRemove,
+                                         const QString& notes = QString(),
+                                         QString* errorMessage = nullptr);
 
     bool moveInventory(int inventoryRecordId, int destinationStorageLocationId, int quantityToMove);
+    bool moveInventoryInCurrentTransaction(int inventoryRecordId, int destinationStorageLocationId,
+                                           int quantityToMove, MoveResult* result = nullptr);
 
     int totalQuantityForPartColor(int workspaceId, int partId, int colorId) const;
 
     QList<InventoryRecord> getByPartColor(int workspaceId, int partId, int colorId) const;
 
     bool markLost(int inventoryRecordId, int quantityLost, const QString& notes = QString());
+    bool markLostInCurrentTransaction(
+        int inventoryRecordId, int quantityLost, const QString& notes = QString());
 
     bool markFound(int workspaceId,
                    int partId,
@@ -97,6 +147,11 @@ public:
                    const QString& condition,
                    const QString& ownershipType,
                    const QString& notes = QString());
+    bool markFoundInCurrentTransaction(
+        int workspaceId, int partId, int colorId, int quantityFound,
+        int destinationStorageLocationId, const QString& condition,
+        const QString& ownershipType, const QString& notes = QString(),
+        FoundResult* result = nullptr);
 
 private:
     InventoryRecord inventoryRecordFromQuery(const QSqlQuery& query) const;

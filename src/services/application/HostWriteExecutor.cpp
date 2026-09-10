@@ -155,11 +155,24 @@ public:
         }
         qInfo() << "Remote mutation committed" << context.operation << context.workspaceId
                 << context.mutationId.left(8) << timer.elapsed() << "ms";
-        if (publisher) publisher(outcome.publicationWorkflow, outcome.publicationScope);
-        if (completion && guarded)
-            QMetaObject::invokeMethod(guarded, [guarded, completion, result] {
-                if (guarded) completion(result);
-            }, Qt::QueuedConnection);
+        if (completion && guarded) {
+            const auto workflow=outcome.publicationWorkflow;
+            const auto scope=outcome.publicationScope;
+            QMetaObject::invokeMethod(guarded,
+                [guarded, completion, result, publisher, workflow, scope] {
+                    if (!guarded) return;
+                    // Complete the correlated protocol response synchronously on
+                    // the application thread before publishing any invalidation.
+                    // A refresh caused by that invalidation must never delay or
+                    // supersede the authoritative response for its own mutation.
+                    completion(result);
+                    if (publisher) publisher(workflow,scope);
+                }, Qt::QueuedConnection);
+        } else if (publisher) {
+            // The originating UI/transport context may have gone away after the
+            // commit. Other connected clients must still be invalidated.
+            publisher(outcome.publicationWorkflow,outcome.publicationScope);
+        }
     }
 
     void close()

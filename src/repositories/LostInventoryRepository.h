@@ -23,14 +23,18 @@
 #include "../models/LostInventoryItem.h"
 
 #include <QList>
+#include <QSqlDatabase>
 #include <optional>
 
 class LostInventoryRepository
 {
 public:
+    explicit LostInventoryRepository(const QSqlDatabase& database = QSqlDatabase());
     QList<LostInventoryItem> getOutstanding(int workspaceId) const;
 
     std::optional<LostInventoryItem> getOutstandingForPartColor(int workspaceId,
                                                                 int partId,
                                                                 int colorId) const;
+private:
+    QSqlDatabase m_database;
 };

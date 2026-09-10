@@ -38,12 +38,12 @@
 
 namespace
 {
-int normalizedManufacturerId(int requestedManufacturerId)
+int normalizedManufacturerId(const QSqlDatabase& database, int requestedManufacturerId)
 {
     if (requestedManufacturerId > 0)
         return requestedManufacturerId;
 
-    ManufacturerRepository repository;
+    ManufacturerRepository repository(database);
     return repository.legoManufacturerId();
 }
 }
@@ -55,7 +55,7 @@ bool InventoryRecordRepository::create(InventoryRecord& record)
         return false;
     }
 
-    const int manufacturerId = normalizedManufacturerId(record.manufacturerId());
+    const int manufacturerId = normalizedManufacturerId(repositoryDatabase(), record.manufacturerId());
 
     if (manufacturerId <= 0)
         return false;
@@ -381,7 +381,7 @@ bool InventoryRecordRepository::setQuantityWithMovement(
     movement.setReferenceId(referenceId.trimmed());
     movement.setNotes(notes.trimmed());
 
-    InventoryMovementRepository movementRepository;
+    InventoryMovementRepository movementRepository(database);
 
     if (!movementRepository.create(movement)) {
         qCritical() << "Unable to create inventory quantity adjustment movement.";
@@ -736,12 +736,42 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
                                                       const QString& notes,
                                                       bool manageTransaction)
 {
+    if (!manageTransaction)
+        return addOrIncreaseQuantityInCurrentTransaction(
+            record, movementType, referenceType, referenceId, notes);
+
+    QSqlDatabase database = repositoryDatabase();
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin inventory add transaction:"
+                    << database.lastError().text();
+        return false;
+    }
+    if (!addOrIncreaseQuantityInCurrentTransaction(
+            record, movementType, referenceType, referenceId, notes)) {
+        database.rollback();
+        return false;
+    }
+    if (!database.commit()) {
+        qCritical() << "Unable to commit inventory add transaction:"
+                    << database.lastError().text();
+        database.rollback();
+        return false;
+    }
+    return true;
+}
+
+bool InventoryRecordRepository::addOrIncreaseQuantityInCurrentTransaction(
+    InventoryRecord& record, const QString& movementType, const QString& referenceType,
+    const QString& referenceId, const QString& notes, AddResult* result)
+{
+    if (result) *result = {};
+
     if (record.workspaceId() <= 0 || record.partId() <= 0 || record.colorId() <= 0
         || record.storageLocationId() <= 0 || record.quantity() <= 0) {
         return false;
     }
 
-    const int manufacturerId = normalizedManufacturerId(record.manufacturerId());
+    const int manufacturerId = normalizedManufacturerId(repositoryDatabase(), record.manufacturerId());
 
     if (manufacturerId <= 0)
         return false;
@@ -749,15 +779,6 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
     record.setManufacturerId(manufacturerId);
 
     QSqlDatabase database = repositoryDatabase();
-
-    if (manageTransaction) {
-        if (!database.transaction()) {
-            qCritical() << "Unable to begin inventory add transaction:"
-                        << database.lastError().text();
-
-            return false;
-        }
-    }
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -795,9 +816,6 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
     if (!existingQuery.exec()) {
         qCritical() << "Unable to check existing inventory:" << existingQuery.lastError().text();
 
-        if (manageTransaction)
-            database.rollback();
-
         return false;
     }
 
@@ -833,9 +851,6 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
         if (!updateQuery.exec()) {
             qCritical() << "Unable to increase inventory quantity:"
                         << updateQuery.lastError().text();
-
-            if (manageTransaction)
-                database.rollback();
 
             return false;
         }
@@ -898,9 +913,6 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
         if (!insertQuery.exec()) {
             qCritical() << "Unable to create inventory record:" << insertQuery.lastError().text();
 
-            if (manageTransaction)
-                database.rollback();
-
             return false;
         }
 
@@ -939,25 +951,12 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
 
     movement.setNotes(notes.trimmed());
 
-    InventoryMovementRepository movementRepository;
+    InventoryMovementRepository movementRepository(database);
 
     if (!movementRepository.create(movement)) {
         qCritical() << "Unable to create inventory movement.";
 
-        if (manageTransaction)
-            database.rollback();
-
         return false;
-    }
-
-    if (manageTransaction) {
-        if (!database.commit()) {
-            qCritical() << "Unable to commit inventory add transaction:"
-                        << database.lastError().text();
-
-            database.rollback();
-            return false;
-        }
     }
 
     if (!existingRecord) {
@@ -966,17 +965,46 @@ bool InventoryRecordRepository::addOrIncreaseQuantity(InventoryRecord& record,
 
     record.setModifiedUtc(now);
 
+    if (result) {
+        result->inventoryRecordId = record.id();
+        result->resultingQuantity = record.quantity();
+        result->created = !existingRecord;
+        result->merged = existingRecord;
+    }
+
     return true;
 }
 
 bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
 {
+    QSqlDatabase database = repositoryDatabase();
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin inventory edit transaction:" << database.lastError().text();
+        return false;
+    }
+    if (!updateOrMergeInCurrentTransaction(record)) {
+        database.rollback();
+        return false;
+    }
+    if (!database.commit()) {
+        qCritical() << "Unable to commit inventory edit transaction:" << database.lastError().text();
+        database.rollback();
+        return false;
+    }
+    return true;
+}
+
+bool InventoryRecordRepository::updateOrMergeInCurrentTransaction(InventoryRecord& record,
+                                                                  UpdateResult* result)
+{
+    if (result) *result = {};
+
     if (record.id() <= 0 || record.workspaceId() <= 0 || record.partId() <= 0
         || record.colorId() <= 0 || record.storageLocationId() <= 0 || record.quantity() <= 0) {
         return false;
     }
 
-    const int manufacturerId = normalizedManufacturerId(record.manufacturerId());
+    const int manufacturerId = normalizedManufacturerId(repositoryDatabase(), record.manufacturerId());
 
     if (manufacturerId <= 0)
         return false;
@@ -984,12 +1012,6 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
     record.setManufacturerId(manufacturerId);
 
     QSqlDatabase database = repositoryDatabase();
-
-    if (!database.transaction()) {
-        qCritical() << "Unable to begin inventory edit transaction:" << database.lastError().text();
-
-        return false;
-    }
 
     //
     // Load original record.
@@ -1017,7 +1039,6 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
         qCritical() << "Unable to load original inventory record:"
                     << originalQuery.lastError().text();
 
-        database.rollback();
         return false;
     }
 
@@ -1075,7 +1096,6 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
         qCritical() << "Unable to check inventory edit destination:"
                     << destinationQuery.lastError().text();
 
-        database.rollback();
         return false;
     }
 
@@ -1110,7 +1130,6 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
         if (!mergeQuery.exec()) {
             qCritical() << "Unable to merge inventory records:" << mergeQuery.lastError().text();
 
-            database.rollback();
             return false;
         }
 
@@ -1136,7 +1155,6 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
             qCritical() << "Unable to zero merged source inventory:"
                         << zeroSourceQuery.lastError().text();
 
-            database.rollback();
             return false;
         }
 
@@ -1180,12 +1198,11 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
         if (!updateQuery.exec()) {
             qCritical() << "Unable to update inventory record:" << updateQuery.lastError().text();
 
-            database.rollback();
             return false;
         }
     }
 
-    InventoryMovementRepository movementRepository;
+    InventoryMovementRepository movementRepository(database);
 
     auto createMovement = [&](const QString& movementType,
                               int quantityChange,
@@ -1225,7 +1242,6 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
         const QString movementType = difference > 0 ? "QuantityIncrease" : "QuantityDecrease";
 
         if (!createMovement(movementType, difference, record.colorId(), QString())) {
-            database.rollback();
             return false;
         }
     }
@@ -1238,7 +1254,6 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
                             0,
                             record.colorId(),
                             QString("Color ID %1 -> %2").arg(originalColorId).arg(record.colorId()))) {
-            database.rollback();
             return false;
         }
     }
@@ -1251,7 +1266,6 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
                             0,
                             record.colorId(),
                             QString("%1 -> %2").arg(originalCondition).arg(record.condition()))) {
-            database.rollback();
             return false;
         }
     }
@@ -1266,7 +1280,6 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
                             QString("%1 -> %2")
                                 .arg(originalOwnershipType)
                                 .arg(record.ownershipType()))) {
-            database.rollback();
             return false;
         }
     }
@@ -1300,7 +1313,6 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
         movement.setOwnershipType(record.ownershipType());
 
         if (!movementRepository.create(movement)) {
-            database.rollback();
             return false;
         }
     }
@@ -1310,20 +1322,19 @@ bool InventoryRecordRepository::updateOrMerge(InventoryRecord& record)
                             record.quantity(),
                             record.colorId(),
                             "Inventory record merged with existing destination record.")) {
-            database.rollback();
             return false;
         }
     }
 
-    if (!database.commit()) {
-        qCritical() << "Unable to commit inventory edit transaction:"
-                    << database.lastError().text();
-
-        database.rollback();
-        return false;
-    }
-
     record.setModifiedUtc(QDateTime::currentDateTimeUtc());
+
+    if (result) {
+        result->sourceRecordId = originalQuery.value("id").toInt();
+        result->survivingRecordId = finalRecordId;
+        result->resultingQuantity = record.quantity();
+        result->storageLocationId = record.storageLocationId();
+        result->merged = merged;
+    }
 
     return true;
 }
@@ -1359,6 +1370,24 @@ bool InventoryRecordRepository::correctEntry(int inventoryRecordId,
                                              int quantityToCorrect,
                                              const QString& notes)
 {
+    QSqlDatabase database = repositoryDatabase();
+    if (!database.transaction()) return false;
+    if (!correctEntryInCurrentTransaction(inventoryRecordId, replacementPartId,
+                                          quantityToCorrect, notes)) {
+        database.rollback();
+        return false;
+    }
+    if (!database.commit()) {
+        database.rollback();
+        return false;
+    }
+    return true;
+}
+
+bool InventoryRecordRepository::correctEntryInCurrentTransaction(
+    int inventoryRecordId, int replacementPartId, int quantityToCorrect,
+    const QString& notes)
+{
     if (inventoryRecordId <= 0 || replacementPartId <= 0 || quantityToCorrect <= 0)
         return false;
 
@@ -1370,20 +1399,12 @@ bool InventoryRecordRepository::correctEntry(int inventoryRecordId,
     if (source->partId() == replacementPartId)
         return false;
 
-    PartRepository partRepository;
+    PartRepository partRepository(repositoryDatabase());
     const std::optional<Part> sourcePart = partRepository.getById(source->partId());
     const std::optional<Part> replacementPart = partRepository.getById(replacementPartId);
 
     if (!sourcePart || !replacementPart)
         return false;
-
-    QSqlDatabase database = repositoryDatabase();
-
-    if (!database.transaction()) {
-        qCritical() << "Unable to begin inventory correction transaction:"
-                    << database.lastError().text();
-        return false;
-    }
 
     const QString sourceNotes = notes.trimmed().isEmpty()
                                     ? QString("Corrected to Part %1").arg(replacementPart->partNumber())
@@ -1397,7 +1418,6 @@ bool InventoryRecordRepository::correctEntry(int inventoryRecordId,
                                  replacementPart->partNumber(),
                                  sourceNotes,
                                  false)) {
-        database.rollback();
         return false;
     }
 
@@ -1422,17 +1442,8 @@ bool InventoryRecordRepository::correctEntry(int inventoryRecordId,
                                sourcePart->partNumber(),
                                destinationNotes,
                                false)) {
-        database.rollback();
         return false;
     }
-
-    if (!database.commit()) {
-        qCritical() << "Unable to commit inventory correction transaction:"
-                    << database.lastError().text();
-        database.rollback();
-        return false;
-    }
-
     return true;
 }
 
@@ -1440,6 +1451,24 @@ bool InventoryRecordRepository::removeEntry(int inventoryRecordId,
                                             int quantityToRemove,
                                             const QString& notes,
                                             QString* errorMessage)
+{
+    QSqlDatabase database = repositoryDatabase();
+    if (!database.transaction()) return false;
+    if (!removeEntryInCurrentTransaction(inventoryRecordId, quantityToRemove, notes,
+                                         errorMessage)) {
+        database.rollback();
+        return false;
+    }
+    if (!database.commit()) {
+        database.rollback();
+        return false;
+    }
+    return true;
+}
+
+bool InventoryRecordRepository::removeEntryInCurrentTransaction(
+    int inventoryRecordId, int quantityToRemove, const QString& notes,
+    QString* errorMessage)
 {
     auto fail = [errorMessage](const QString& message) {
         if (errorMessage)
@@ -1451,30 +1480,22 @@ bool InventoryRecordRepository::removeEntry(int inventoryRecordId,
         return fail(QStringLiteral("The inventory record or removal quantity is invalid."));
 
     QSqlDatabase database = repositoryDatabase();
-    if (!database.transaction()) {
-        qCritical() << "Unable to begin inventory removal transaction:"
-                    << database.lastError().text();
-        return fail(QStringLiteral("Unable to begin the inventory removal transaction."));
-    }
 
     const std::optional<InventoryRecord> record = getById(inventoryRecordId);
 
     if (!record || record->quantity() <= 0 || quantityToRemove > record->quantity()) {
-        database.rollback();
         return fail(QStringLiteral("The inventory quantity changed. Refresh My Inventory and try again."));
     }
 
-    BuildAllocationRepository allocationRepository;
+    BuildAllocationRepository allocationRepository(database);
     const std::optional<int> allocated =
         allocationRepository.tryTotalAllocatedForInventoryRecord(inventoryRecordId);
     if (!allocated) {
-        database.rollback();
         return fail(QStringLiteral("Unable to verify active Build allocations. No inventory was removed."));
     }
 
     const int maximumRemovable = qMax(0, record->quantity() - *allocated);
     if (quantityToRemove > maximumRemovable) {
-        database.rollback();
         if (maximumRemovable == 0) {
             return fail(QStringLiteral(
                             "Cannot remove inventory from this record. It has %1 part(s), and all %2 "
@@ -1502,17 +1523,8 @@ bool InventoryRecordRepository::removeEntry(int inventoryRecordId,
                                      ? QStringLiteral("Inventory entry removed as a correction.")
                                      : notes.trimmed(),
                                  false)) {
-        database.rollback();
         return fail(QStringLiteral("Unable to update inventory and record its history."));
     }
-
-    if (!database.commit()) {
-        qCritical() << "Unable to commit inventory removal transaction:"
-                    << database.lastError().text();
-        database.rollback();
-        return fail(QStringLiteral("Unable to commit the inventory removal transaction."));
-    }
-
     return true;
 }
 
@@ -1520,17 +1532,35 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
                                               int destinationStorageLocationId,
                                               int quantityToMove)
 {
+    QSqlDatabase database = repositoryDatabase();
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin inventory move transaction:" << database.lastError().text();
+        return false;
+    }
+    if (!moveInventoryInCurrentTransaction(inventoryRecordId, destinationStorageLocationId,
+                                           quantityToMove)) {
+        database.rollback();
+        return false;
+    }
+    if (!database.commit()) {
+        qCritical() << "Unable to commit inventory move:" << database.lastError().text();
+        database.rollback();
+        return false;
+    }
+    return true;
+}
+
+bool InventoryRecordRepository::moveInventoryInCurrentTransaction(
+    int inventoryRecordId, int destinationStorageLocationId, int quantityToMove,
+    MoveResult* result)
+{
+    if (result) *result = {};
+
     if (inventoryRecordId <= 0 || destinationStorageLocationId <= 0 || quantityToMove <= 0) {
         return false;
     }
 
     QSqlDatabase database = repositoryDatabase();
-
-    if (!database.transaction()) {
-        qCritical() << "Unable to begin inventory move transaction:" << database.lastError().text();
-
-        return false;
-    }
 
     //
     // Load the source inventory record.
@@ -1557,7 +1587,6 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
     if (!sourceQuery.exec() || !sourceQuery.next()) {
         qCritical() << "Unable to load source inventory record:" << sourceQuery.lastError().text();
 
-        database.rollback();
         return false;
     }
 
@@ -1580,14 +1609,12 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
     if (destinationStorageLocationId == sourceStorageLocationId) {
         qWarning() << "Source and destination storage locations are identical.";
 
-        database.rollback();
         return false;
     }
 
     if (quantityToMove > sourceQuantity) {
         qWarning() << "Cannot move more inventory than is available.";
 
-        database.rollback();
         return false;
     }
 
@@ -1612,7 +1639,6 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
     if (!destinationLocationQuery.exec() || !destinationLocationQuery.next()) {
         qCritical() << "Invalid destination storage location.";
 
-        database.rollback();
         return false;
     }
 
@@ -1659,16 +1685,18 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
     if (!destinationQuery.exec()) {
         qCritical() << "Unable to query move destination:" << destinationQuery.lastError().text();
 
-        database.rollback();
         return false;
     }
 
     int destinationRecordId = 0;
+    int resultingDestinationQuantity = quantityToMove;
+    bool destinationCreated = false;
 
     if (destinationQuery.next()) {
         destinationRecordId = destinationQuery.value("id").toInt();
 
         const int destinationQuantity = destinationQuery.value("quantity").toInt();
+        resultingDestinationQuantity = destinationQuantity + quantityToMove;
 
         QSqlQuery updateDestinationQuery(database);
 
@@ -1680,7 +1708,7 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
             WHERE id = :id
         )");
 
-        updateDestinationQuery.bindValue(":quantity", destinationQuantity + quantityToMove);
+        updateDestinationQuery.bindValue(":quantity", resultingDestinationQuantity);
 
         updateDestinationQuery.bindValue(":modified_utc", now);
 
@@ -1690,10 +1718,10 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
             qCritical() << "Unable to update destination inventory:"
                         << updateDestinationQuery.lastError().text();
 
-            database.rollback();
             return false;
         }
     } else {
+        destinationCreated = true;
         //
         // No destination record exists, so create one.
         //
@@ -1752,7 +1780,6 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
             qCritical() << "Unable to create destination inventory:"
                         << insertDestinationQuery.lastError().text();
 
-            database.rollback();
             return false;
         }
 
@@ -1785,7 +1812,6 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
     if (!updateSourceQuery.exec()) {
         qCritical() << "Unable to update source inventory:" << updateSourceQuery.lastError().text();
 
-        database.rollback();
         return false;
     }
 
@@ -1819,20 +1845,21 @@ bool InventoryRecordRepository::moveInventory(int inventoryRecordId,
 
     movement.setOwnershipType(ownershipType);
 
-    InventoryMovementRepository movementRepository;
+    InventoryMovementRepository movementRepository(database);
 
     if (!movementRepository.create(movement)) {
         qCritical() << "Unable to record inventory movement.";
 
-        database.rollback();
         return false;
     }
 
-    if (!database.commit()) {
-        qCritical() << "Unable to commit inventory move:" << database.lastError().text();
-
-        database.rollback();
-        return false;
+    if (result) {
+        result->sourceRecordId = inventoryRecordId;
+        result->destinationRecordId = destinationRecordId;
+        result->movedQuantity = quantityToMove;
+        result->resultingSourceQuantity = remainingQuantity;
+        result->resultingDestinationQuantity = resultingDestinationQuantity;
+        result->destinationCreated = destinationCreated;
     }
 
     return true;
@@ -1942,6 +1969,22 @@ bool InventoryRecordRepository::markLost(int inventoryRecordId,
                                          int quantityLost,
                                          const QString& notes)
 {
+    QSqlDatabase database = repositoryDatabase();
+    if (!database.transaction()) return false;
+    if (!markLostInCurrentTransaction(inventoryRecordId, quantityLost, notes)) {
+        database.rollback();
+        return false;
+    }
+    if (!database.commit()) {
+        database.rollback();
+        return false;
+    }
+    return true;
+}
+
+bool InventoryRecordRepository::markLostInCurrentTransaction(
+    int inventoryRecordId, int quantityLost, const QString& notes)
+{
     if (inventoryRecordId <= 0 || quantityLost <= 0) {
         qWarning() << "Lost inventory rejected due to invalid arguments."
                    << "InventoryRecordId:" << inventoryRecordId
@@ -1950,12 +1993,6 @@ bool InventoryRecordRepository::markLost(int inventoryRecordId,
     }
 
     QSqlDatabase database = repositoryDatabase();
-
-    if (!database.transaction()) {
-        qCritical() << "Unable to begin Lost inventory transaction:" << database.lastError().text();
-
-        return false;
-    }
 
     //
     // Reload the current inventory record inside
@@ -1986,8 +2023,6 @@ bool InventoryRecordRepository::markLost(int inventoryRecordId,
                        "for Lost operation:"
                     << query.lastError().text();
 
-        database.rollback();
-
         return false;
     }
 
@@ -2010,8 +2045,6 @@ bool InventoryRecordRepository::markLost(int inventoryRecordId,
                    << "InventoryRecordId:" << inventoryRecordId
                    << "CurrentQuantity:" << currentQuantity
                    << "QuantityLost:" << quantityLost;
-        database.rollback();
-
         return false;
     }
 
@@ -2039,8 +2072,6 @@ bool InventoryRecordRepository::markLost(int inventoryRecordId,
         qCritical() << "Unable to reduce inventory "
                        "for Lost operation:"
                     << updateQuery.lastError().text();
-
-        database.rollback();
 
         return false;
     }
@@ -2070,21 +2101,10 @@ bool InventoryRecordRepository::markLost(int inventoryRecordId,
 
     movement.setNotes(notes.trimmed());
 
-    InventoryMovementRepository movementRepository;
+    InventoryMovementRepository movementRepository(database);
 
     if (!movementRepository.create(movement)) {
         qCritical() << "Unable to create Lost inventory movement.";
-
-        database.rollback();
-
-        return false;
-    }
-
-    if (!database.commit()) {
-        qCritical() << "Unable to commit Lost inventory transaction:"
-                    << database.lastError().text();
-
-        database.rollback();
 
         return false;
     }
@@ -2108,6 +2128,34 @@ bool InventoryRecordRepository::markFound(int workspaceId,
                                           const QString& ownershipType,
                                           const QString& notes)
 {
+    QSqlDatabase database = repositoryDatabase();
+    if (!database.transaction()) {
+        qCritical() << "Unable to begin Found inventory transaction:"
+                    << database.lastError().text();
+        return false;
+    }
+    if (!markFoundInCurrentTransaction(workspaceId, partId, colorId, quantityFound,
+                                       destinationStorageLocationId, condition,
+                                       ownershipType, notes)) {
+        database.rollback();
+        return false;
+    }
+    if (!database.commit()) {
+        qCritical() << "Unable to commit Found inventory transaction:"
+                    << database.lastError().text();
+        database.rollback();
+        return false;
+    }
+    return true;
+}
+
+bool InventoryRecordRepository::markFoundInCurrentTransaction(
+    int workspaceId, int partId, int colorId, int quantityFound,
+    int destinationStorageLocationId, const QString& condition,
+    const QString& ownershipType, const QString& notes, FoundResult* result)
+{
+    if (result) *result = {};
+
     if (workspaceId <= 0 || partId <= 0 || colorId <= 0 || quantityFound <= 0
         || destinationStorageLocationId <= 0) {
         qWarning() << "Found inventory rejected due to invalid arguments."
@@ -2120,13 +2168,6 @@ bool InventoryRecordRepository::markFound(int workspaceId,
     }
 
     QSqlDatabase database = repositoryDatabase();
-
-    if (!database.transaction()) {
-        qCritical() << "Unable to begin Found inventory transaction:"
-                    << database.lastError().text();
-
-        return false;
-    }
 
     //
     // Recalculate outstanding lost quantity inside
@@ -2168,8 +2209,6 @@ bool InventoryRecordRepository::markFound(int workspaceId,
                        "lost quantity:"
                     << lostQuery.lastError().text();
 
-        database.rollback();
-
         return false;
     }
 
@@ -2181,8 +2220,6 @@ bool InventoryRecordRepository::markFound(int workspaceId,
                    << "ColorId:" << colorId
                    << "OutstandingLost:" << outstandingLost
                    << "QuantityFound:" << quantityFound;
-        database.rollback();
-
         return false;
     }
 
@@ -2209,19 +2246,19 @@ bool InventoryRecordRepository::markFound(int workspaceId,
     //   Quantity Change = +quantityFound
     //   To Location     = destination
     //
-    if (!addOrIncreaseQuantity(record, "Found", QString(), QString(), notes.trimmed(), false)) {
-        database.rollback();
-
+    AddResult addResult;
+    if (!addOrIncreaseQuantityInCurrentTransaction(
+            record, "Found", QString(), QString(), notes.trimmed(), &addResult)) {
         return false;
     }
 
-    if (!database.commit()) {
-        qCritical() << "Unable to commit Found inventory transaction:"
-                    << database.lastError().text();
-
-        database.rollback();
-
-        return false;
+    if (result) {
+        result->inventoryRecordId = addResult.inventoryRecordId;
+        result->quantityRestored = quantityFound;
+        result->destinationStorageLocationId = destinationStorageLocationId;
+        result->outstandingLostQuantity = outstandingLost - quantityFound;
+        result->created = addResult.created;
+        result->merged = addResult.merged;
     }
 
     qInfo() << "Lost inventory returned to loose inventory."

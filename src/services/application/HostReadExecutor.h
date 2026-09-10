@@ -92,6 +92,9 @@ public:
         int rebrickableColorId, QObject* context,
         std::function<void(const QList<RemoteReadDto::InventoryHistoryRow>&)> completion,
         ErrorCallback failure = {});
+    void listLostInventoryPortable(int workspaceId, QObject* context,
+        std::function<void(const QList<RemoteReadDto::LostInventoryRow>&)> completion,
+        ErrorCallback failure = {});
     void buildRequirementsPortable(int workspaceId, int buildId, const RemoteReadDto::PageRequest& page,
         QObject* context,
         std::function<void(const RemoteReadDto::Page<RemoteReadDto::BuildRequirement>&)> completion,

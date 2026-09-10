@@ -165,6 +165,11 @@ QString baseSql()
 
 } // namespace
 
+LostInventoryRepository::LostInventoryRepository(const QSqlDatabase& database)
+    : m_database(database.isValid() ? database : DatabaseManager::instance().database())
+{
+}
+
 QList<LostInventoryItem> LostInventoryRepository::getOutstanding(int workspaceId) const
 {
     QList<LostInventoryItem> results;
@@ -172,9 +177,7 @@ QList<LostInventoryItem> LostInventoryRepository::getOutstanding(int workspaceId
     if (workspaceId <= 0)
         return results;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
-
-    QSqlQuery query(database);
+    QSqlQuery query(m_database);
 
     const QString sql = baseSql() +
                         R"(
@@ -212,9 +215,7 @@ std::optional<LostInventoryItem> LostInventoryRepository::getOutstandingForPartC
         return std::nullopt;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
-
-    QSqlQuery query(database);
+    QSqlQuery query(m_database);
 
     const QString sql = baseSql() +
                         R"(

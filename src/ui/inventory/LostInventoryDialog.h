@@ -21,11 +21,15 @@
 #pragma once
 
 #include <QDialog>
+#include <QHash>
+#include <QString>
 
 class WorkspaceContext;
 class SessionStorageSelectionService;
 class QLabel;
 class QTableWidget;
+class RemoteReadApplicationServices;
+class RemoteInventoryMutationApplicationService;
 
 class LostInventoryDialog : public QDialog
 {
@@ -35,13 +39,23 @@ public:
     explicit LostInventoryDialog(WorkspaceContext& workspaceContext,
                                  SessionStorageSelectionService& sessionStorageSelectionService,
                                  QWidget* parent = nullptr);
+    LostInventoryDialog(WorkspaceContext& workspaceContext,
+        SessionStorageSelectionService& sessionStorageSelectionService,
+        RemoteReadApplicationServices& remoteReads,
+        RemoteInventoryMutationApplicationService& remoteMutations,
+        const QHash<int, QString>& storagePaths, QWidget* parent = nullptr);
 
 private:
     void loadLostInventory();
+    void initializeUi();
+    void loadRemoteLostInventory();
 
     WorkspaceContext& m_workspaceContext;
     SessionStorageSelectionService& m_sessionStorageSelectionService;
 
     QTableWidget* m_table = nullptr;
     QLabel* m_statusLabel = nullptr;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
+    RemoteInventoryMutationApplicationService* m_remoteMutations = nullptr;
+    QHash<int, QString> m_remoteStoragePaths;
 };

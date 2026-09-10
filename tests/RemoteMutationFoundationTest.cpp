@@ -11,6 +11,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSemaphore>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QUuid>
@@ -88,6 +89,7 @@ int main(int argc, char** argv)
                "business payload changes hash")) return 1;
 
     int publications = 0;
+    QStringList deliveryOrder;
     QString failedMutationId;
     auto mutation = [](const QSqlDatabase& db) {
         QSqlQuery query(db); query.exec(QStringLiteral("UPDATE mutation_probe SET value=value+1"));
@@ -96,9 +98,20 @@ int main(int argc, char** argv)
     };
     const QString hash = RemoteMutationDto::requestHash(QStringLiteral("test.mutation"), first);
     {
-        HostWriteExecutor executor(path, [&](auto, const auto&){ ++publications; });
-        const Awaited committed = run(executor, context(first.mutationId), hash, mutation);
-        if (!check(committed.success && !committed.result.replayed, "first mutation commits")) return 1;
+        HostWriteExecutor executor(path, [&](auto, const auto&){
+            QMetaObject::invokeMethod(&app, [&]{ ++publications; deliveryOrder.append("invalidation"); },
+                                      Qt::QueuedConnection);
+        });
+        Awaited committed; QEventLoop completionLoop;
+        executor.enqueue(context(first.mutationId), hash, mutation, &app,
+            [&](const auto& result){committed.success=true;committed.result=result;
+                deliveryOrder.append("response");QTimer::singleShot(0,&completionLoop,&QEventLoop::quit);},
+            [&](const auto& error){committed.error=error;completionLoop.quit();});
+        QTimer::singleShot(20000,&completionLoop,&QEventLoop::quit);completionLoop.exec();
+        QCoreApplication::processEvents();
+        if (!check(committed.success && !committed.result.replayed, "first mutation commits")
+            || !check(deliveryOrder == QStringList{"response","invalidation"},
+                      "authoritative response is delivered before invalidation")) return 1;
     }
     {
         HostWriteExecutor restarted(path, [&](auto, const auto&){ ++publications; });

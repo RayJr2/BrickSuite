@@ -324,7 +324,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                                                   m_applicationServices.inventory(),
                                                   m_tabWidget,
                                                   m_remoteReads,
-                                                  m_partExternalIdEnrichmentService);
+                                                  m_partExternalIdEnrichmentService,
+                                                  m_networkManager.remoteInventoryMutations());
 
     m_myCollectionWidget = new MyCollectionWidget(m_workspaceContext,
                                                    m_applicationServices.collection(),
@@ -345,6 +346,12 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         m_buildsWidget->refresh();
         m_myInventoryWidget->refresh();
         m_buildsWidget->refreshOpenLocalPulling(buildId);
+    });
+    connect(&m_networkManager, &BrickSuiteNetworkManager::remoteInventoryMutationCommitted,
+            this, [this](int workspaceId) {
+        if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+        m_myInventoryWidget->refresh();
+        m_buildsWidget->refresh();
     });
 
     if (m_remoteReads)
