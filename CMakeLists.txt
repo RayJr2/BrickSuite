@@ -448,6 +448,7 @@ qt_add_executable(BrickSuite
     CONTRIBUTING.md
     SECURITY.md
     deployment/update/update.json
+    docs/BRICKSUITE_PROTOCOL_1_1.md
 
 )
 target_link_libraries(BrickSuite PRIVATE

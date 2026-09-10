@@ -109,6 +109,37 @@ int main(int argc, char* argv[])
     ok &= check(!coordinator.isDirty(P::Inventory),
                 "Workspace transition must clear old Workspace dirty state.");
 
+    // A completion captured before a context transition must not mutate the
+    // new Host/Workspace refresh state.
+    inventoryVisible = true;
+    coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Inventory, 8));
+    ok &= check(waitUntil([&] { return inventoryStarts == 3; }),
+                "A current-context refresh should start before transition.");
+    const auto obsoleteCompletion = inventoryCompletion;
+    coordinator.resetContext(true, 3, 4);
+    obsoleteCompletion(true);
+    ok &= check(!coordinator.isDirty(P::Inventory)
+                    && !coordinator.isInFlight(P::Inventory)
+                    && inventoryStarts == 3,
+                "Obsolete in-flight completion must not affect the new context.");
+
+    // Two authenticated Clients own independent coordinators. The same Host
+    // burst must coalesce once in each without shared mutable refresh state.
+    RemoteRefreshCoordinator secondClient;
+    secondClient.resetContext(true, 1, 1);
+    int secondClientStarts = 0;
+    secondClient.registerProjection(P::Inventory, [] { return true; },
+        [&](const OperationalInvalidation&, auto completion) {
+            ++secondClientStarts;
+            completion(true);
+        });
+    coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Inventory));
+    secondClient.receiveInvalidation(event(OperationalInvalidationDomain::Inventory));
+    secondClient.receiveInvalidation(event(OperationalInvalidationDomain::Inventory));
+    ok &= check(waitUntil([&] { return inventoryStarts == 4 && secondClientStarts == 1; }),
+                "Each Client must coalesce and refresh independently.");
+    inventoryCompletion(true);
+
     coordinator.setConnected(false);
     coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Inventory));
     ok &= check(!coordinator.isDirty(P::Inventory),
