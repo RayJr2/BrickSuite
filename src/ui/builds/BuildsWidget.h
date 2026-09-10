@@ -76,6 +76,9 @@ signals:
     void remotePullingRefreshRequested(int buildId);
     void remotePullingDialogOpened();
     void remotePullingRefreshFinished(int buildId, bool succeeded);
+    void hostBuildMetadataMutationCommitted(int workspaceId, int buildId);
+    void hostBuildRequirementsMutationCommitted(int workspaceId, int buildId,
+                                                bool inventoryAffected);
 
 protected:
     void showEvent(QShowEvent* event) override;

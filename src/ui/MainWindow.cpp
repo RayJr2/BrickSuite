@@ -80,6 +80,8 @@
 #include "../network/BrickSuiteHostIdentity.h"
 #include "../network/RemoteSessionState.h"
 #include "../services/application/RemoteRefreshCoordinator.h"
+#include "../services/application/HostMutationPublicationService.h"
+#include "../network/OperationalInvalidationPublisher.h"
 
 #include <QAction>
 #include <QApplication>
@@ -147,6 +149,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     , m_networkManager(networkManager)
     , m_remoteReads(applicationServices.remoteReads())
 {
+    m_hostMutationPublications = std::make_unique<HostMutationPublicationService>(
+        [this](const OperationalInvalidation& invalidation) {
+            if (auto* publisher = m_networkManager.invalidationPublisher())
+                publisher->publish(invalidation);
+        });
     setWindowTitle("BrickSuite");
     resize(1200, 800);
 
@@ -302,6 +309,12 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
                 m_buildsWidget->selectBuild(build.id());
 
+                HostMutationPublicationService::Scope scope;
+                scope.workspaceId = build.workspaceId();
+                scope.buildId = build.id();
+                m_hostMutationPublications->publish(
+                    HostMutationPublicationService::Workflow::BuildMetadata, scope);
+
                 statusBar()->showMessage(QString("Build created: %1").arg(build.name()), 5000);
             });
 
@@ -351,6 +364,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                 }
                 m_tabWidget->setCurrentWidget(m_buildsWidget);
                 m_buildsWidget->selectBuild(result.buildId);
+                HostMutationPublicationService::Scope scope;
+                scope.workspaceId = m_workspaceContext.currentWorkspaceId();
+                scope.buildId = result.buildId;
+                m_hostMutationPublications->publish(
+                    HostMutationPublicationService::Workflow::BuildRequirements, scope);
                 statusBar()->showMessage(QString("Set Build created: %1").arg(buildName), 5000);
                 QMessageBox::information(
                     this, "Create Set Build",
@@ -381,6 +399,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                 }
                 m_tabWidget->setCurrentWidget(m_buildsWidget);
                 m_buildsWidget->selectBuild(result.buildId);
+                HostMutationPublicationService::Scope scope;
+                scope.workspaceId = m_workspaceContext.currentWorkspaceId();
+                scope.buildId = result.buildId;
+                m_hostMutationPublications->publish(
+                    HostMutationPublicationService::Workflow::BuildRequirements, scope);
                 statusBar()->showMessage(QString("Minifig Build created: %1").arg(buildName), 5000);
                 QMessageBox::information(
                     this,
@@ -414,6 +437,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                 if (dialog.exec() == QDialog::Accepted) {
                     m_myInventoryWidget->refresh();
 
+                    HostMutationPublicationService::Scope scope;
+                    scope.workspaceId = m_workspaceContext.currentWorkspaceId();
+                    m_hostMutationPublications->publish(
+                        HostMutationPublicationService::Workflow::Inventory, scope);
+
                     if (m_backgroundPartColorImageCacheService) {
                         m_backgroundPartColorImageCacheService->rebuildQueue();
                     }
@@ -434,8 +462,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                 AddPartReferenceDialog dialog(
                     m_applicationServices.partReferenceCustomizations(), partId, nullptr, this);
                 if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded()
-                    && m_partReferenceDialog) {
-                    m_partReferenceDialog->refreshCustomizations();
+                    ) {
+                    if (m_partReferenceDialog)
+                        m_partReferenceDialog->refreshCustomizations();
+                    m_hostMutationPublications->publish(
+                        HostMutationPublicationService::Workflow::PartReferenceCustomization);
                 }
             });
 
@@ -460,8 +491,55 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     connect(m_storageWidget, &StorageWidget::storageLocationsChanged,
             m_myCollectionWidget, &MyCollectionWidget::refresh);
+    connect(m_storageWidget, &StorageWidget::hostStorageMutationCommitted, this,
+            [this](int workspaceId, int locationId) {
+        HostMutationPublicationService::Scope scope;
+        scope.workspaceId = workspaceId;
+        scope.storageLocationId = locationId;
+        m_hostMutationPublications->publish(
+            HostMutationPublicationService::Workflow::Storage, scope);
+    });
+    connect(m_myInventoryWidget, &MyInventoryWidget::hostInventoryMutationCommitted, this,
+            [this](int workspaceId, int inventoryRecordId) {
+        HostMutationPublicationService::Scope scope;
+        scope.workspaceId = workspaceId;
+        if (inventoryRecordId > 0) scope.inventoryRecordId = inventoryRecordId;
+        m_hostMutationPublications->publish(
+            HostMutationPublicationService::Workflow::Inventory, scope);
+    });
+    connect(m_buildsWidget, &BuildsWidget::hostBuildMetadataMutationCommitted, this,
+            [this](int workspaceId, int buildId) {
+        HostMutationPublicationService::Scope scope;
+        scope.workspaceId = workspaceId;
+        scope.buildId = buildId;
+        m_hostMutationPublications->publish(
+            HostMutationPublicationService::Workflow::BuildMetadata, scope);
+    });
+    connect(m_buildsWidget, &BuildsWidget::hostBuildRequirementsMutationCommitted, this,
+            [this](int workspaceId, int buildId, bool inventoryAffected) {
+        HostMutationPublicationService::Scope scope;
+        scope.workspaceId = workspaceId;
+        scope.buildId = buildId;
+        m_hostMutationPublications->publish(
+            inventoryAffected ? HostMutationPublicationService::Workflow::Pulling
+                              : HostMutationPublicationService::Workflow::BuildRequirements,
+            scope);
+    });
+    connect(m_myCollectionWidget, &MyCollectionWidget::hostCollectionMutationCommitted, this,
+            [this](int workspaceId, int itemId) {
+        HostMutationPublicationService::Scope scope;
+        scope.workspaceId = workspaceId;
+        scope.collectionItemId = itemId;
+        m_hostMutationPublications->publish(
+            HostMutationPublicationService::Workflow::Collection, scope);
+    });
 
     const auto showCollectionItem = [this](int collectionItemId) {
+        HostMutationPublicationService::Scope scope;
+        scope.workspaceId = m_workspaceContext.currentWorkspaceId();
+        scope.collectionItemId = collectionItemId;
+        m_hostMutationPublications->publish(
+            HostMutationPublicationService::Workflow::Collection, scope);
         m_tabWidget->setCurrentWidget(m_myCollectionWidget);
         m_myCollectionWidget->selectCollectionItem(collectionItemId);
         statusBar()->showMessage("Item added to My Collection.", 5000);
@@ -811,6 +889,15 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                 m_applicationServices.partReferenceCustomizations(), m_remoteReads, this);
             m_partReferenceDialog->setAddInventoryAvailable(
                 m_myInventoryWidget && m_myInventoryWidget->hasActiveAddInventoryDialog());
+            connect(m_partReferenceDialog,
+                    &PartReferenceDialog::hostCustomizationMutationCommitted,
+                    this, [this](const QString& partNumber) {
+                HostMutationPublicationService::Scope scope;
+                scope.partNumber = partNumber;
+                m_hostMutationPublications->publish(
+                    HostMutationPublicationService::Workflow::PartReferenceCustomization,
+                    scope);
+            });
 
             connect(m_partReferenceDialog,
                     &PartReferenceDialog::sendToAddInventoryRequested,
@@ -2416,6 +2503,9 @@ void MainWindow::updateWorkspace()
         return;
     }
 
+    m_hostMutationPublications->publish(
+        HostMutationPublicationService::Workflow::Workspace);
+
     //
     // Update the visible list immediately. The Workspace ID and current
     // Workspace selection do not change.
@@ -2455,6 +2545,9 @@ void MainWindow::addWorkspace()
 
         return;
     }
+
+    m_hostMutationPublications->publish(
+        HostMutationPublicationService::Workflow::Workspace);
 
     m_nameEdit->clear();
     m_descriptionEdit->clear();

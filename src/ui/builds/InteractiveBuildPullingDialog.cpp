@@ -424,6 +424,8 @@ void InteractiveBuildPullingDialog::recordPulls()
         return;
     }
 
+    emit pullsRecorded();
+
     const QString successMessage =
         tr("Recorded %1 piece(s) from %2 storage row(s).")
             .arg(result.piecesPulled)

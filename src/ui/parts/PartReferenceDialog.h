@@ -49,6 +49,7 @@ public:
 signals:
     void sendToAddInventoryRequested(const QString& partNumber);
     void remoteCustomizationsRefreshFinished(bool succeeded);
+    void hostCustomizationMutationCommitted(const QString& partNumber);
 
 protected:
     void closeEvent(QCloseEvent* event) override;

@@ -71,6 +71,8 @@ qt_add_executable(BrickSuite
     src/network/RemoteSessionState.cpp
     src/services/application/RemoteRefreshCoordinator.h
     src/services/application/RemoteRefreshCoordinator.cpp
+    src/services/application/HostMutationPublicationService.h
+    src/services/application/HostMutationPublicationService.cpp
 
     src/database/DatabaseManager.h
     src/database/DatabaseManager.cpp
@@ -1169,6 +1171,15 @@ if(BUILD_TESTING)
     )
     target_link_libraries(RemoteRefreshCoordinatorTest PRIVATE Qt6::Core)
     add_test(NAME RemoteRefreshCoordinator COMMAND RemoteRefreshCoordinatorTest)
+
+    qt_add_executable(HostMutationPublicationTest EXCLUDE_FROM_ALL
+        tests/HostMutationPublicationTest.cpp
+        src/network/OperationalInvalidation.h src/network/OperationalInvalidation.cpp
+        src/services/application/HostMutationPublicationService.h
+        src/services/application/HostMutationPublicationService.cpp
+    )
+    target_link_libraries(HostMutationPublicationTest PRIVATE Qt6::Core)
+    add_test(NAME HostMutationPublication COMMAND HostMutationPublicationTest)
 endif()
 
 if(WIN32)

@@ -449,6 +449,10 @@ void MyCollectionWidget::handleAction(int itemId, bool active, const QString& ac
     if (action == "details") {
         CollectionItemDialog dialog(itemId, this);
         connect(&dialog, &CollectionItemDialog::itemChanged, this, &MyCollectionWidget::refresh);
+        connect(&dialog, &CollectionItemDialog::itemChanged, this, [this, itemId] {
+            emit hostCollectionMutationCommitted(
+                m_workspaceContext.currentWorkspaceId(), itemId);
+        });
         dialog.exec();
         return;
     }
@@ -460,7 +464,10 @@ void MyCollectionWidget::handleAction(int itemId, bool active, const QString& ac
     if (answer != QMessageBox::Yes) return;
     const auto result = CollectionItemService().setActive(itemId, reactivate);
     if (!result.success) QMessageBox::critical(this, "Update Collection Item", result.message);
-    else refresh();
+    else {
+        refresh();
+        emit hostCollectionMutationCommitted(m_workspaceContext.currentWorkspaceId(), itemId);
+    }
     Q_UNUSED(active);
 }
 

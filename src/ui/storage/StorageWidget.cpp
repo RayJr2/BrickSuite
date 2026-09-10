@@ -430,6 +430,7 @@ void StorageWidget::addLocation()
 
     loadStorageTree();
     emit storageLocationsChanged();
+    emit hostStorageMutationCommitted(location.workspaceId(), location.id());
 }
 
 void StorageWidget::editLocation()
@@ -559,6 +560,7 @@ void StorageWidget::editLocation()
 
     loadStorageTree();
     emit storageLocationsChanged();
+    emit hostStorageMutationCommitted(updated.workspaceId(), updated.id());
 }
 
 void StorageWidget::deactivateLocation()
@@ -616,6 +618,7 @@ void StorageWidget::deactivateLocation()
 
     loadStorageTree();
     emit storageLocationsChanged();
+    emit hostStorageMutationCommitted(m_workspaceContext.currentWorkspaceId(), locationId);
 }
 
 void StorageWidget::reactivateLocation()
@@ -675,4 +678,5 @@ void StorageWidget::reactivateLocation()
 
     loadStorageTree();
     emit storageLocationsChanged();
+    emit hostStorageMutationCommitted(m_workspaceContext.currentWorkspaceId(), locationId);
 }

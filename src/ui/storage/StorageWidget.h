@@ -43,6 +43,7 @@ public:
 
 signals:
     void storageLocationsChanged();
+    void hostStorageMutationCommitted(int workspaceId, int storageLocationId);
     void remoteRefreshFinished(bool succeeded);
 
 private slots:

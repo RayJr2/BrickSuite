@@ -1065,6 +1065,8 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
 
                         if (dialog.exec() == QDialog::Accepted) {
                             refresh();
+                            emit hostInventoryMutationCommitted(
+                                m_workspaceContext.currentWorkspaceId(), inventoryRecordId);
                         }
                     } else if (action == "move") {
                         MoveInventoryDialog dialog(inventoryRecordId, m_workspaceContext,
@@ -1072,6 +1074,8 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
 
                         if (dialog.exec() == QDialog::Accepted) {
                             refresh();
+                            emit hostInventoryMutationCommitted(
+                                m_workspaceContext.currentWorkspaceId(), inventoryRecordId);
                         }
                     } else if (action == "correct") {
                         CorrectInventoryDialog dialog(inventoryRecordId, m_workspaceContext, this);
@@ -1079,6 +1083,8 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                         if (dialog.exec() == QDialog::Accepted) {
                             searchInventory();
                             emit inventoryChanged();
+                            emit hostInventoryMutationCommitted(
+                                m_workspaceContext.currentWorkspaceId(), inventoryRecordId);
                             return;
                         }
                     } else if (action == "remove") {
@@ -1087,6 +1093,8 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                         if (dialog.exec() == QDialog::Accepted) {
                             searchInventory();
                             emit inventoryChanged();
+                            emit hostInventoryMutationCommitted(
+                                m_workspaceContext.currentWorkspaceId(), inventoryRecordId);
                             return;
                         }
                     } else if (action == "lost") {
@@ -1098,6 +1106,8 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                             // reload the current inventory view.
                             //
                             searchInventory();
+                            emit hostInventoryMutationCommitted(
+                                m_workspaceContext.currentWorkspaceId(), inventoryRecordId);
 
                             return;
                         }
@@ -1406,6 +1416,7 @@ void MyInventoryWidget::importCsv()
     if (dialog.exec() == QDialog::Accepted) {
         refresh();
         emit inventoryChanged();
+        emit hostInventoryMutationCommitted(m_workspaceContext.currentWorkspaceId(), 0);
     }
 }
 
@@ -1501,9 +1512,11 @@ void MyInventoryWidget::addPart()
         dialog,
         &AddInventoryDialog::inventoryAdded,
         this,
-        [dialog]()
+        [this, dialog]()
         {
             dialog->setProperty("brickSuiteInventoryAddedWhileOpen", true);
+            emit hostInventoryMutationCommitted(
+                m_workspaceContext.currentWorkspaceId(), 0);
         });
 
     m_activeAddInventoryDialog = dialog;

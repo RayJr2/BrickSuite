@@ -81,6 +81,7 @@ public:
 
 signals:
     void inventoryChanged();
+    void hostInventoryMutationCommitted(int workspaceId, int inventoryRecordId);
     void addInventoryDialogAvailabilityChanged(bool available);
     void remoteInventoryRefreshFinished(bool succeeded);
     void remoteLocationsRefreshFinished(bool succeeded);

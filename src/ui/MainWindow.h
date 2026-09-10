@@ -21,6 +21,8 @@
 #pragma once
 
 #include <QMainWindow>
+#include "../services/application/HostMutationPublicationService.h"
+#include <memory>
 class QCloseEvent;
 
 class WorkspaceContext;
@@ -93,6 +95,7 @@ private:
     quint64 m_workspaceRequestToken = 0;
     bool m_refreshAfterWorkspaceReload = false;
     RemoteRefreshCoordinator* m_remoteRefreshCoordinator = nullptr;
+    std::unique_ptr<HostMutationPublicationService> m_hostMutationPublications;
 
     QTabWidget* m_tabWidget = nullptr;
     QWidget* m_workspaceTab = nullptr;

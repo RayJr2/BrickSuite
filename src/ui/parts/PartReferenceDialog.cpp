@@ -999,8 +999,12 @@ void PartReferenceDialog::addPartToReference()
     if (m_remoteReads) return;
     const PartReferenceEntry* anchor = findEffectiveEntry(m_selectedPartNumber);
     AddPartReferenceDialog dialog(m_customizationService, 0, anchor, this);
-    if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded())
+    if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded()) {
         refreshCustomizations();
+        // The dialog may add a different Part than the current anchor. Do not
+        // claim a narrow Part scope unless it is known reliably.
+        emit hostCustomizationMutationCommitted(QString());
+    }
 }
 
 void PartReferenceDialog::removeSelectedCustomization()
@@ -1013,10 +1017,12 @@ void PartReferenceDialog::removeSelectedCustomization()
                                   .arg(m_selectedPartNumber)) != QMessageBox::Yes) return;
     const auto result = m_customizationService.remove(m_manifest, m_selectedUserEntryId);
     if (!result.success) { QMessageBox::warning(this, tr("Part Reference"), result.message); return; }
+    const QString removedPartNumber = m_selectedPartNumber;
     m_selectedPartNumber.clear(); m_selectedPartName.clear(); m_selectedUserEntryId = 0;
     m_selectedLabel->setText(tr("Selected: None")); m_copyButton->setEnabled(false);
     m_sendButton->setEnabled(false); m_removeReferenceButton->setEnabled(false);
     refreshCustomizations();
+    emit hostCustomizationMutationCommitted(removedPartNumber);
 }
 
 void PartReferenceDialog::restoreUiState()

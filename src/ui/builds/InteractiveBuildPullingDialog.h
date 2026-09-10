@@ -33,6 +33,9 @@ class InteractiveBuildPullingDialog : public QDialog
 public:
     explicit InteractiveBuildPullingDialog(int buildId, QWidget* parent = nullptr);
 
+signals:
+    void pullsRecorded();
+
 private slots:
     void recordPulls();
     void refreshView();

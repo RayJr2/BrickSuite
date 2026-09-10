@@ -480,8 +480,11 @@ BuildsWidget::BuildsWidget(
 
         SetImportPreviewDialog dialog(build->id(), setNumber, this);
 
-        if (dialog.exec() == QDialog::Accepted)
+        if (dialog.exec() == QDialog::Accepted) {
             loadRequirements();
+            emit hostBuildRequirementsMutationCommitted(
+                m_workspaceContext.currentWorkspaceId(), build->id(), false);
+        }
     });
 
     loadColors();
@@ -828,6 +831,8 @@ void BuildsWidget::loadBuilds()
                             QMessageBox::information(this, "Link to Sets Catalog",
                                                      result.message);
                             selectBuild(buildId);
+                            emit hostBuildMetadataMutationCommitted(
+                                m_workspaceContext.currentWorkspaceId(), buildId);
                         }
                         return;
                     }
@@ -835,8 +840,11 @@ void BuildsWidget::loadBuilds()
                     if (action == "edit") {
                         EditBuildDialog dialog(buildId, this);
 
-                        if (dialog.exec() == QDialog::Accepted)
+                        if (dialog.exec() == QDialog::Accepted) {
                             selectBuild(buildId);
+                            emit hostBuildMetadataMutationCommitted(
+                                m_workspaceContext.currentWorkspaceId(), buildId);
+                        }
 
                         return;
                     }
@@ -982,6 +990,8 @@ void BuildsWidget::loadBuilds()
                                 << "PreviouslyPulledPieces:" << totalPulled;
 
                         selectBuild(buildId);
+                        emit hostBuildRequirementsMutationCommitted(
+                            m_workspaceContext.currentWorkspaceId(), buildId, totalPulled > 0);
 
                         QMessageBox::information(
                             this,
@@ -1047,6 +1057,8 @@ void BuildsWidget::loadBuilds()
                         loadBuilds();
                         loadRequirements();
                         updateRequirementUiState();
+                        emit hostBuildMetadataMutationCommitted(
+                            m_workspaceContext.currentWorkspaceId(), buildId);
 
                         QMessageBox::information(this,
                                                  "Archive Build",
@@ -1096,6 +1108,8 @@ void BuildsWidget::loadBuilds()
                                                                   : build->status());
 
                         selectBuild(buildId);
+                        emit hostBuildMetadataMutationCommitted(
+                            m_workspaceContext.currentWorkspaceId(), buildId);
 
                         QMessageBox::information(this,
                                                  "Reactivate Build",
@@ -1201,6 +1215,8 @@ void BuildsWidget::loadBuilds()
                                     << "SparePieces:" << sparePieces;
 
                             selectBuild(buildId);
+                            emit hostBuildMetadataMutationCommitted(
+                                m_workspaceContext.currentWorkspaceId(), buildId);
 
                             QMessageBox::information(
                                 this,
@@ -1321,6 +1337,8 @@ void BuildsWidget::loadBuilds()
                                 << "SparePiecesPulled:" << sparePulled;
 
                         selectBuild(buildId);
+                        emit hostBuildMetadataMutationCommitted(
+                            m_workspaceContext.currentWorkspaceId(), buildId);
 
                         QMessageBox::information(this,
                                                  "Complete Build",
@@ -1333,8 +1351,11 @@ void BuildsWidget::loadBuilds()
                         DisassembleSetDialog dialog(buildId,
                                                     m_sessionStorageSelectionService, this);
 
-                        if (dialog.exec() == QDialog::Accepted)
+                        if (dialog.exec() == QDialog::Accepted) {
                             selectBuild(buildId);
+                            emit hostBuildRequirementsMutationCommitted(
+                                m_workspaceContext.currentWorkspaceId(), buildId, true);
+                        }
 
                         return;
                     }
@@ -1522,6 +1543,7 @@ void BuildsWidget::addBuild()
     m_statusCombo->setCurrentIndex(0);
 
     selectBuild(build.id());
+    bool requirementsImported = false;
 
     if (build.buildType() == "Set"
         && build.inventoryMode() == "CompleteSet"
@@ -1530,10 +1552,20 @@ void BuildsWidget::addBuild()
                                       build.setNumber().trimmed(),
                                       this);
 
-        if (dialog.exec() == QDialog::Accepted)
+        if (dialog.exec() == QDialog::Accepted) {
             loadRequirements();
+            requirementsImported = true;
+        }
 
         updateRequirementUiState();
+    }
+
+    if (requirementsImported) {
+        emit hostBuildRequirementsMutationCommitted(
+            m_workspaceContext.currentWorkspaceId(), build.id(), false);
+    } else {
+        emit hostBuildMetadataMutationCommitted(
+            m_workspaceContext.currentWorkspaceId(), build.id());
     }
 
     QMessageBox::information(this,
@@ -1874,6 +1906,8 @@ void BuildsWidget::loadRequirements()
 
                         if (dialog.exec() == QDialog::Accepted) {
                             loadRequirements();
+                            emit hostBuildRequirementsMutationCommitted(
+                                m_workspaceContext.currentWorkspaceId(), m_selectedBuildId, false);
                             return;
                         }
                     } else if (action == "delete") {
@@ -1894,6 +1928,8 @@ void BuildsWidget::loadRequirements()
                                     "Unable to delete the build requirement.");
                             } else {
                                 loadRequirements();
+                                emit hostBuildRequirementsMutationCommitted(
+                                    m_workspaceContext.currentWorkspaceId(), m_selectedBuildId, false);
                                 return;
                             }
                         }
@@ -1941,6 +1977,8 @@ void BuildsWidget::loadRequirements()
 
                         if (dialog.exec() == QDialog::Accepted) {
                             loadRequirements();
+                            emit hostBuildRequirementsMutationCommitted(
+                                m_workspaceContext.currentWorkspaceId(), m_selectedBuildId, false);
                             return;
                         }
                     }
@@ -2358,6 +2396,8 @@ void BuildsWidget::addRequirement()
     m_partNumberEdit->setFocus();
 
     loadRequirements();
+    emit hostBuildRequirementsMutationCommitted(
+        m_workspaceContext.currentWorkspaceId(), m_selectedBuildId, false);
 }
 
 void BuildsWidget::allocateAvailable()
@@ -2719,6 +2759,8 @@ void BuildsWidget::allocateAvailable()
 
     loadRequirements();
     updateRequirementUiState();
+    emit hostBuildRequirementsMutationCommitted(
+        m_workspaceContext.currentWorkspaceId(), m_selectedBuildId, false);
 
     QString message;
 
@@ -3192,6 +3234,9 @@ void BuildsWidget::storeSpare(int requirementId)
     m_sessionStorageSelectionService.rememberDestination(
         currentBuild->workspaceId(), storageLocationId);
 
+    emit hostBuildRequirementsMutationCommitted(
+        currentBuild->workspaceId(), currentBuild->id(), true);
+
     qInfo() << "Complete Set spare stored."
             << "BuildId:" << currentBuild->id()
             << "RequirementId:" << requirementId
@@ -3411,8 +3456,11 @@ void BuildsWidget::importPullList()
 
     ImportPullListDialog dialog(m_selectedBuildId, fileName, this);
 
-    if (dialog.exec() == QDialog::Accepted)
+    if (dialog.exec() == QDialog::Accepted) {
         loadRequirements();
+        emit hostBuildRequirementsMutationCommitted(
+            m_workspaceContext.currentWorkspaceId(), m_selectedBuildId, true);
+    }
 }
 
 void BuildsWidget::interactivePulling()
@@ -3443,6 +3491,10 @@ void BuildsWidget::interactivePulling()
     }
 
     InteractiveBuildPullingDialog dialog(m_selectedBuildId, this);
+    connect(&dialog, &InteractiveBuildPullingDialog::pullsRecorded, this, [this] {
+        emit hostBuildRequirementsMutationCommitted(
+            m_workspaceContext.currentWorkspaceId(), m_selectedBuildId, true);
+    });
     dialog.exec();
 
     loadRequirements();
@@ -3888,6 +3940,9 @@ void BuildsWidget::importMocPartsCsv()
             << "RegularPieces:" << result.regularPieces
             << "SparePieces:" << result.sparePieces
             << "MetadataUpdated:" << buildMetadataUpdated;
+
+    emit hostBuildRequirementsMutationCommitted(
+        m_workspaceContext.currentWorkspaceId(), m_selectedBuildId, false);
 
     QMessageBox::information(this,
                              "Import MOC Parts",
