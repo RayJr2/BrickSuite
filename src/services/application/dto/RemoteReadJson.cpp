@@ -13,11 +13,12 @@ bool integer(const QJsonObject& o, const char* key, qint64 minimum, qint64 maxim
     if (d != static_cast<double>(n) || n < minimum || n > maximum) return false;
     *out = n; return true;
 }
-bool textField(const QJsonObject& o, const char* key, QString* out, bool required = true)
+bool textField(const QJsonObject& o, const char* key, QString* out, bool required = true,
+               int maximumLength = RemoteReadDto::MaximumTextLength)
 {
     const QJsonValue v = o.value(QLatin1String(key));
     if (v.isUndefined() && !required) { out->clear(); return true; }
-    if (!v.isString() || v.toString().size() > RemoteReadDto::MaximumTextLength) return false;
+    if (!v.isString() || v.toString().size() > maximumLength) return false;
     *out = v.toString(); return !required || !out->trimmed().isEmpty();
 }
 }
@@ -61,6 +62,32 @@ bool fromJson(const QJsonObject& o, RemoteReadDto::StorageSummary* v, DecodeErro
         || !o.value("allowsCollection").isBool()) return fail(e,QStringLiteral("Invalid Storage summary."));
     v->sortOrder=int(order); v->active=o.value("active").toBool();
     v->allowsInventory=o.value("allowsInventory").toBool(); v->allowsCollection=o.value("allowsCollection").toBool(); return true;
+}
+QJsonObject toJson(const RemoteReadDto::StorageDetail& v)
+{
+    QJsonObject o=toJson(static_cast<const RemoteReadDto::StorageSummary&>(v));
+    o["workspaceId"]=double(v.workspaceId); o["storageTypeId"]=double(v.storageTypeId);
+    o["description"]=v.description; o["createdUtc"]=utc(v.createdUtc); o["modifiedUtc"]=utc(v.modifiedUtc);
+    return o;
+}
+bool fromJson(const QJsonObject& o, RemoteReadDto::StorageDetail* v, DecodeError* e)
+{
+    if(!fromJson(o,static_cast<RemoteReadDto::StorageSummary*>(v),e)
+       ||!integer(o,"workspaceId",1,9007199254740991LL,&v->workspaceId)
+       ||!integer(o,"storageTypeId",1,9007199254740991LL,&v->storageTypeId)
+       ||!textField(o,"description",&v->description,false,2000)
+       ||!parseUtc(o.value("createdUtc"),&v->createdUtc)||!parseUtc(o.value("modifiedUtc"),&v->modifiedUtc))
+        return fail(e,QStringLiteral("Invalid Storage detail."));
+    return true;
+}
+QJsonObject toJson(const RemoteReadDto::StorageType& v)
+{ return {{"storageTypeId",double(v.storageTypeId)},{"name",v.name},{"description",v.description},{"active",v.active}}; }
+bool fromJson(const QJsonObject& o, RemoteReadDto::StorageType* v, DecodeError* e)
+{
+    if(!integer(o,"storageTypeId",1,9007199254740991LL,&v->storageTypeId)
+       ||!textField(o,"name",&v->name)||!textField(o,"description",&v->description,false,2000)
+       ||!o.value("active").isBool()) return fail(e,QStringLiteral("Invalid Storage type."));
+    v->active=o.value("active").toBool(); return true;
 }
 QJsonObject toJson(const RemoteReadDto::InventoryRow& v)
 { return {{"inventoryRecordId",double(v.inventoryRecordId)},{"workspaceId",double(v.workspaceId)},{"partNumber",v.partNumber},{"partNameFallback",v.partNameFallback},{"rebrickableCategoryId",v.rebrickableCategoryId},{"rebrickableColorId",v.rebrickableColorId},{"colorNameFallback",v.colorNameFallback},{"quantity",v.quantity},{"storageId",double(v.storageId)},{"storagePath",v.storagePath},{"manufacturerDisplay",v.manufacturerDisplay},{"condition",v.condition},{"ownershipType",v.ownershipType}}; }

@@ -22,12 +22,20 @@
 
 #include <QWidget>
 #include <QElapsedTimer>
+#include <QPointer>
+#include <optional>
+#include "../../services/application/dto/RemoteReadDtos.h"
+#include "../../services/application/dto/RemoteStorageMutationDtos.h"
+#include "StorageLocationDialog.h"
+#include <functional>
 
 class WorkspaceContext;
 class QTreeWidget;
 class QPushButton;
 class QLabel;
+class QMessageBox;
 class RemoteReadApplicationServices;
+class RemoteStorageMutationApplicationService;
 
 class StorageWidget : public QWidget
 {
@@ -37,6 +45,7 @@ public:
     explicit StorageWidget(
         WorkspaceContext& workspaceContext,
         RemoteReadApplicationServices* remoteReads = nullptr,
+        RemoteStorageMutationApplicationService* remoteMutations = nullptr,
         QWidget* parent = nullptr);
     void refresh();
     void setRemoteSessionConnected(bool connected);
@@ -57,11 +66,33 @@ private:
     void loadStorageTree();
     void loadRemoteStorageTree();
     void setMutationControlsEnabled(bool enabled);
+    void updateRemoteActionState();
+    void remoteAddLocation();
+    void remoteEditLocation();
+    void remoteSetActive(bool active);
+    void fetchRemoteTypes(std::function<void(bool)> completion);
+    void openRemoteDialog(StorageLocationDialog::Mode mode,
+                          const std::optional<RemoteReadDto::StorageDetail>& detail);
+    void submitRemoteDialog();
+    void submitRemoteSetActive(const RemoteReadDto::StorageDetail& detail,bool active);
+    QList<StorageLocationDialog::Choice> remoteParentChoices(qint64 excludedId=0)const;
 
     WorkspaceContext& m_workspaceContext;
     RemoteReadApplicationServices* m_remoteReads = nullptr;
+    RemoteStorageMutationApplicationService* m_remoteMutations = nullptr;
     quint64 m_storageRequestToken = 0;
     QElapsedTimer m_storageRequestTimer;
+    QList<RemoteReadDto::StorageSummary> m_remoteStorage;
+    QList<RemoteReadDto::StorageType> m_remoteTypes;
+    QPointer<StorageLocationDialog> m_remoteDialog;
+    QPointer<QMessageBox> m_remoteConfirmation;
+    std::optional<RemoteReadDto::StorageDetail> m_remoteDialogDetail;
+    std::optional<RemoteStorageMutationDto::Request> m_retainedRequest;
+    QString m_retainedOperation;
+    quint64 m_actionGeneration = 0;
+    bool m_remoteConnected = false;
+    bool m_remoteStale = true;
+    bool m_remoteMutationPending = false;
 
     QTreeWidget* m_tree = nullptr;
     QPushButton* m_addButton = nullptr;

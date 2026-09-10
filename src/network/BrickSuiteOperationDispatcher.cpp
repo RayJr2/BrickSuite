@@ -20,6 +20,11 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
         };
         addCapability(QStringLiteral("workspace.list"), QStringLiteral("workspace.read"));
         addCapability(QStringLiteral("storage.list"), QStringLiteral("storage.read"));
+        addCapability(QStringLiteral("storage.get"), QStringLiteral("storage.get"));
+        addCapability(QStringLiteral("storage.types.list"), QStringLiteral("storage.types.list"));
+        addCapability(QStringLiteral("storage.add"), QStringLiteral("storage.add"));
+        addCapability(QStringLiteral("storage.edit"), QStringLiteral("storage.edit"));
+        addCapability(QStringLiteral("storage.setActive"), QStringLiteral("storage.setActive"));
         addCapability(QStringLiteral("inventory.search"), QStringLiteral("inventory.read"));
         addCapability(QStringLiteral("inventory.get"), QStringLiteral("inventory.detail.read"));
         addCapability(QStringLiteral("inventory.history"), QStringLiteral("inventory.history.read"));

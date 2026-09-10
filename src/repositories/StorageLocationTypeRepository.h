@@ -39,6 +39,7 @@ public:
     QList<StorageLocationType> getActive() const;
 
     std::optional<StorageLocationType> getById(int id) const;
+    bool tryGetById(int id, std::optional<StorageLocationType>& type) const;
 
 private:
     StorageLocationType locationTypeFromQuery(const QSqlQuery& query) const;

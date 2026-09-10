@@ -43,6 +43,7 @@ public:
                                     const QString& partNumber = QString(),
                                     int rebrickableColorId = -1);
     void refreshRemoteHistory();
+    void refreshAfterStorageChange();
     void setRemoteSessionConnected(bool connected);
 
 signals:

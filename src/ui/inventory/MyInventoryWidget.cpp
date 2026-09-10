@@ -679,6 +679,9 @@ void MyInventoryWidget::loadRemoteStorageLocations()
             if (restored >= 0) m_storageCombo->setCurrentIndex(restored);
             m_storageCombo->setToolTip({});
             m_storageCombo->setEnabled(true);
+            if (auto* lost = qobject_cast<LostInventoryDialog*>(
+                    m_activeRemoteMutationDialog.data()))
+                lost->refreshRemoteStoragePaths(m_storagePathById);
             emit remoteLocationsRefreshFinished(true);
         });
 }
@@ -1390,6 +1393,12 @@ void MyInventoryWidget::refreshOpenRemoteHistory(
 {
     if (hasOpenRemoteHistory(inventoryRecordId))
         m_activeHistoryDialog->refreshRemoteHistory();
+}
+
+void MyInventoryWidget::refreshOpenHistoryAfterStorageChange()
+{
+    if (m_activeHistoryDialog)
+        m_activeHistoryDialog->refreshAfterStorageChange();
 }
 
 void MyInventoryWidget::setRemoteSessionConnected(bool connected)

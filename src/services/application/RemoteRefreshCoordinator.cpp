@@ -116,7 +116,8 @@ QSet<RemoteRefreshCoordinator::Projection> RemoteRefreshCoordinator::projections
     case OperationalInvalidationDomain::Workspaces: return {P::Workspaces};
     case OperationalInvalidationDomain::Storage:
         return {P::Storage, P::Inventory, P::InventoryLocations,
-                P::Collection, P::CollectionLocations};
+                P::Collection, P::CollectionLocations, P::Pulling,
+                P::InventoryHistory};
     case OperationalInvalidationDomain::Inventory:
         return {P::Inventory, P::Builds, P::MissingParts, P::Pulling,
                 P::InventoryHistory};

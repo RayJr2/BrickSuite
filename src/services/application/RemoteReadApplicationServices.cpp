@@ -104,6 +104,10 @@ ReadRequestToken RemoteReadApplicationServices::listStorage(qint64 workspaceId, 
             for(const auto& v:rows.toArray()){RemoteReadDto::StorageSummary row;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&row,&e)){if(error)*error=e.message;return false;}out->append(row);}return true;
         });
 }
+ReadRequestToken RemoteReadApplicationServices::getStorage(qint64 workspaceId,qint64 storageId,QObject*context,AsyncReadCompletion<RemoteReadDto::StorageDetail> completion)
+{return request<RemoteReadDto::StorageDetail>("storage.get",{{"workspaceId",double(workspaceId)},{"storageId",double(storageId)}},context,std::move(completion),[](const QJsonObject&o,auto*out,QString*error){RemoteReadJson::DecodeError e;const auto v=o.value("item");if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),out,&e)){if(error)*error=e.message;return false;}return true;});}
+ReadRequestToken RemoteReadApplicationServices::listStorageTypes(QObject*context,AsyncReadCompletion<QList<RemoteReadDto::StorageType>> completion)
+{return request<QList<RemoteReadDto::StorageType>>("storage.types.list",{},context,std::move(completion),[](const QJsonObject&o,auto*out,QString*error){const auto rows=o.value("rows");if(!rows.isArray()||rows.toArray().size()>RemoteReadDto::MaximumStorageLocations)return false;for(const auto&v:rows.toArray()){RemoteReadDto::StorageType row;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&row,&e)){if(error)*error=e.message;return false;}out->append(row);}return true;});}
 
 ReadRequestToken RemoteReadApplicationServices::searchInventory(
     const RemoteReadDto::InventorySearchRequest& r, QObject* context,

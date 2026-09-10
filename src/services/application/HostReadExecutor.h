@@ -41,6 +41,12 @@ public:
     void listStoragePortable(int workspaceId, bool includeInactive, QObject* context,
         std::function<void(const std::optional<QList<RemoteReadDto::StorageSummary>>&)> completion,
         ErrorCallback failure = {});
+    void getStoragePortable(int workspaceId, int storageId, QObject* context,
+        std::function<void(const std::optional<RemoteReadDto::StorageDetail>&)> completion,
+        ErrorCallback failure = {});
+    void listStorageTypesPortable(QObject* context,
+        std::function<void(const QList<RemoteReadDto::StorageType>&)> completion,
+        ErrorCallback failure = {});
     void searchInventory(const InventorySearchCriteria& criteria, QObject* context,
                          std::function<void(const InventoryApplicationService::Page&)> completion,
                          ErrorCallback failure = {});

@@ -175,6 +175,12 @@ void InventoryHistoryDialog::refreshRemoteHistory()
     loadHistory();
 }
 
+void InventoryHistoryDialog::refreshAfterStorageChange()
+{
+    if (!m_remoteReads) buildStoragePathCache();
+    loadHistory();
+}
+
 void InventoryHistoryDialog::setRemoteSessionConnected(bool connected)
 {
     if (!m_remoteReads) return;

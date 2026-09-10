@@ -20,6 +20,7 @@
 #include <QElapsedTimer>
 #include <QJsonDocument>
 #include <cstdio>
+#include <algorithm>
 
 namespace {
 bool check(bool value, const char* message)
@@ -158,6 +159,14 @@ int main(int argc, char** argv)
                         && fullStorage->last().parentStorageId==fullStorage->first().storageId
                         && !fullStorage->last().active && fullStorage->last().typeName.size()>0,
                     "complete Storage hierarchy fidelity");
+        std::optional<RemoteReadDto::StorageDetail> storageDetail;
+        ok &= check(waitFor([&](QEventLoop& loop){executor.getStoragePortable(1,activeStorage->first().storageId,&app,[&](const auto&result){storageDetail=result;loop.quit();});}),"Storage detail completion");
+        ok &= check(storageDetail&&storageDetail->workspaceId==1&&storageDetail->storageTypeId>0
+                    &&storageDetail->displayPath==QStringLiteral("Host Bin")&&storageDetail->createdUtc.isValid()
+                    &&storageDetail->modifiedUtc.isValid(),"Storage detail portable projection");
+        QList<RemoteReadDto::StorageType> storageTypes;
+        ok &= check(waitFor([&](QEventLoop&loop){executor.listStorageTypesPortable(&app,[&](const auto&result){storageTypes=result;loop.quit();});}),"Storage type list completion");
+        ok &= check(!storageTypes.isEmpty()&&std::all_of(storageTypes.cbegin(),storageTypes.cend(),[](const auto&type){return type.storageTypeId>0&&type.active;}),"only active Host Storage types returned");
         std::optional<QList<RemoteReadDto::StorageSummary>> missingStorage = QList<RemoteReadDto::StorageSummary>{};
         ok &= check(waitFor([&](QEventLoop& loop) {
             executor.listStoragePortable(999, true, &app, [&](const auto& result) { missingStorage=result; loop.quit(); });
@@ -210,8 +219,9 @@ int main(int argc, char** argv)
             executor.inventoryHistoryPortable(1, QStringLiteral("3001"), 4, &app,
                 [&](const auto& result) { history = result; loop.quit(); });
         }), "Inventory history completion");
-        ok &= check(history.size() == 1 && history.first().quantityChange == 7,
-                    "Inventory history portable lookup");
+        ok &= check(history.size() == 1 && history.first().quantityChange == 7
+                        && history.first().toStoragePath == QStringLiteral("Host Bin"),
+                    "Inventory history resolves the current full Storage path");
 
         QList<Build> builds;
         ok &= check(waitFor([&](QEventLoop& loop) {
@@ -306,6 +316,7 @@ int main(int argc, char** argv)
         protocol.registerOperations(dispatcher);
         const QStringList expected{
             QStringLiteral("workspace.list"), QStringLiteral("storage.list"),
+            QStringLiteral("storage.get"), QStringLiteral("storage.types.list"),
             QStringLiteral("inventory.search"), QStringLiteral("inventory.get"),
             QStringLiteral("inventory.history"), QStringLiteral("inventory.lost.list"), QStringLiteral("builds.list"),
             QStringLiteral("builds.get"), QStringLiteral("builds.requirements"),
@@ -376,6 +387,7 @@ int main(int argc, char** argv)
         ok &= check(crossWorkspaceRejected, "Collection detail cannot probe another Workspace");
         const QList<QPair<QString,QJsonObject>> requests{
             {"workspace.list",{}}, {"storage.list",{{"workspaceId",1}}},
+            {"storage.get",{{"workspaceId",1},{"storageId",1}}}, {"storage.types.list",{}},
             {"inventory.search",{{"workspaceId",1},{"text",""},{"storageId",0},{"rebrickableCategoryId",-1},{"rebrickableColorId",-1},{"page",1},{"pageSize",250}}},
             {"inventory.get",{{"workspaceId",1},{"inventoryRecordId",1}}},
             {"inventory.history",{{"workspaceId",1},{"partNumber","3001"},{"rebrickableColorId",4}}},

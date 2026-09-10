@@ -136,6 +136,13 @@ QList<Workspace> WorkspaceRepository::getAll() const
 std::optional<Workspace>
 WorkspaceRepository::getById(int id) const
 {
+    std::optional<Workspace> workspace;
+    return tryGetById(id, workspace) ? workspace : std::nullopt;
+}
+
+bool WorkspaceRepository::tryGetById(int id, std::optional<Workspace>& workspace) const
+{
+    workspace.reset();
     QSqlDatabase database =
         repositoryDatabase();
 
@@ -161,13 +168,14 @@ WorkspaceRepository::getById(int id) const
             << "Unable to retrieve workspace:"
             << query.lastError().text();
 
-        return std::nullopt;
+        return false;
     }
 
     if (!query.next())
-        return std::nullopt;
+        return true;
 
-    return workspaceFromQuery(query);
+    workspace = workspaceFromQuery(query);
+    return true;
 }
 
 bool WorkspaceRepository::update(

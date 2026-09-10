@@ -23,6 +23,19 @@ struct StorageSummary {
     QString displayPath; QString typeName; int sortOrder = 0;
     bool active = true; bool allowsInventory = true; bool allowsCollection = false;
 };
+struct StorageDetail : StorageSummary {
+    qint64 workspaceId = 0;
+    qint64 storageTypeId = 0;
+    QString description;
+    QDateTime createdUtc;
+    QDateTime modifiedUtc;
+};
+struct StorageType {
+    qint64 storageTypeId = 0;
+    QString name;
+    QString description;
+    bool active = true;
+};
 
 struct InventorySearchRequest {
     qint64 workspaceId = 0; QString text; qint64 storageId = 0;

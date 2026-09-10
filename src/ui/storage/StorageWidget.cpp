@@ -19,13 +19,18 @@
  */
 
 #include "StorageWidget.h"
+#include "StorageLocationDialog.h"
+#include "RemoteStorageActionEligibility.h"
 
 #include "../../app/WorkspaceContext.h"
+#include "../../database/DatabaseManager.h"
 #include "../../models/StorageLocation.h"
 #include "../../models/StorageLocationType.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../repositories/StorageLocationTypeRepository.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
+#include "../../services/application/RemoteStorageMutationApplicationService.h"
+#include "../../services/application/HostStorageMutationService.h"
 
 #include <QComboBox>
 #include <QCheckBox>
@@ -43,15 +48,32 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
+#include <QSet>
+#include <algorithm>
 #include <qheaderview.h>
+
+namespace {
+bool commitStorageMutation(QSqlDatabase database,
+                           const HostStorageMutationService::Result& result)
+{
+    if (!result.success) {
+        database.rollback();
+        return false;
+    }
+    if (database.commit()) return true;
+    database.rollback();
+    return false;
+}
+}
 
 StorageWidget::StorageWidget(
     WorkspaceContext& workspaceContext,
     RemoteReadApplicationServices* remoteReads,
+    RemoteStorageMutationApplicationService* remoteMutations,
     QWidget* parent)
     : QWidget(parent),
       m_workspaceContext(workspaceContext),
-      m_remoteReads(remoteReads)
+      m_remoteReads(remoteReads),m_remoteMutations(remoteMutations)
 {
     auto* layout = new QVBoxLayout(this);
 
@@ -106,27 +128,22 @@ StorageWidget::StorageWidget(
     m_editButton->setEnabled(false);
     m_deactivateButton->setEnabled(false);
     m_reactivateButton->setEnabled(false);
-    if (m_remoteReads) {
-        const QString tooltip = QStringLiteral("Remote Storage changes are not available yet.");
-        for (auto* button : {m_addButton,m_editButton,m_deactivateButton,m_reactivateButton})
-            button->setToolTip(tooltip);
-    }
-
     connect(m_tree, &QTreeWidget::itemSelectionChanged, this, [this]() {
         QTreeWidgetItem* item = m_tree->currentItem();
         const bool selected = item != nullptr;
         const bool isActive = selected && item->data(0, Qt::UserRole + 2).toBool();
 
-        m_editButton->setEnabled(!m_remoteReads && selected);
-        m_deactivateButton->setEnabled(!m_remoteReads && selected && isActive);
-        m_reactivateButton->setEnabled(!m_remoteReads && selected && !isActive);
+        if(m_remoteReads)updateRemoteActionState();
+        else {m_editButton->setEnabled(selected);m_deactivateButton->setEnabled(selected&&isActive);m_reactivateButton->setEnabled(selected&&!isActive);}
     });
 }
 
 void StorageWidget::workspaceChanged(int workspaceId)
 {
-    Q_UNUSED(workspaceId);
-
+    ++m_actionGeneration;
+    const bool preserveRemoteRetry=m_remoteReads&&m_retainedRequest
+        &&(workspaceId<=0||workspaceId==m_retainedRequest->workspaceId);
+    if(!preserveRemoteRetry){m_retainedRequest.reset();m_retainedOperation.clear();if(m_remoteDialog)m_remoteDialog->close();if(m_remoteConfirmation)m_remoteConfirmation->close();}
     loadStorageTree();
 }
 
@@ -138,7 +155,8 @@ void StorageWidget::refresh()
 void StorageWidget::setRemoteSessionConnected(bool connected)
 {
     if (!m_remoteReads) return;
-    setMutationControlsEnabled(false);
+    m_remoteConnected=connected;if(!connected){m_remoteStale=true;++m_actionGeneration;if(m_remoteDialog&&!m_remoteMutationPending)m_remoteDialog->close();if(m_remoteConfirmation)m_remoteConfirmation->close();}
+    updateRemoteActionState();
     if (!connected) {
         ++m_storageRequestToken;
         m_statusLabel->setText(m_tree->topLevelItemCount() > 0
@@ -259,7 +277,7 @@ void StorageWidget::loadStorageTree()
 
 void StorageWidget::loadRemoteStorageTree()
 {
-    m_tree->clear(); setMutationControlsEnabled(false);
+    m_tree->clear();m_remoteStorage.clear();m_remoteStale=true;setMutationControlsEnabled(false);
     const int workspaceId = m_workspaceContext.currentWorkspaceId();
     if (workspaceId <= 0) { m_statusLabel->setText(QStringLiteral("Select a Host Workspace.")); emit remoteRefreshFinished(false); return; }
     if (!m_remoteReads->isAvailableFor(QStringLiteral("storage.list"))) {
@@ -270,7 +288,8 @@ void StorageWidget::loadRemoteStorageTree()
     m_storageRequestToken = m_remoteReads->listStorage(workspaceId, true, this,
         [this,workspaceId](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> result) {
             if(result.token!=m_storageRequestToken||workspaceId!=m_workspaceContext.currentWorkspaceId())return;
-            if(!result.succeeded()){m_statusLabel->setText(result.message.isEmpty()?QStringLiteral("Unable to load Storage from BrickSuite Host."):result.message);emit remoteRefreshFinished(false);return;}
+            if(!result.succeeded()){m_remoteStale=true;m_statusLabel->setText(result.message.isEmpty()?QStringLiteral("Unable to load Storage from BrickSuite Host."):result.message);updateRemoteActionState();emit remoteRefreshFinished(false);return;}
+            m_remoteStorage=*result.value;m_remoteStale=false;
             const qint64 roundTripMs=m_storageRequestTimer.isValid()?m_storageRequestTimer.elapsed():0;
             QElapsedTimer constructionTimer;constructionTimer.start();QHash<qint64,QTreeWidgetItem*> items;
             for(const auto& location:*result.value){auto* item=new QTreeWidgetItem;
@@ -280,6 +299,7 @@ void StorageWidget::loadRemoteStorageTree()
             for(const auto& location:*result.value){auto* item=items.value(location.storageId);auto* parent=items.value(location.parentStorageId);if(parent)parent->addChild(item);else m_tree->addTopLevelItem(item);}
             m_tree->expandAll();m_statusLabel->setText(result.value->isEmpty()?QStringLiteral("This Host Workspace has no Storage locations."):QStringLiteral("%1 Storage locations from BrickSuite Host.").arg(result.value->size()));
             qDebug().noquote()<<"Remote Storage rows="<<result.value->size()<<"roundtripMs="<<roundTripMs<<"hierarchyMs="<<constructionTimer.elapsed();
+            updateRemoteActionState();
             emit remoteRefreshFinished(true);
         });
 }
@@ -290,9 +310,95 @@ void StorageWidget::setMutationControlsEnabled(bool enabled)
     m_deactivateButton->setEnabled(false);m_reactivateButton->setEnabled(false);
 }
 
+void StorageWidget::fetchRemoteTypes(std::function<void(bool)> completion)
+{
+    if(!m_remoteReads||!m_remoteReads->isAvailableFor("storage.types.list")){completion(false);return;}
+    const quint64 generation=m_actionGeneration;const int workspace=m_workspaceContext.currentWorkspaceId();
+    m_remoteReads->listStorageTypes(this,[this,generation,workspace,completion=std::move(completion)](AsyncReadResult<QList<RemoteReadDto::StorageType>> result)mutable{
+        if(generation!=m_actionGeneration||workspace!=m_workspaceContext.currentWorkspaceId())return;
+        if(!result.succeeded()||result.value->isEmpty()){m_statusLabel->setText(result.message.isEmpty()?QStringLiteral("No active Host Storage types are available."):result.message);completion(false);return;}
+        m_remoteTypes=*result.value;completion(true);
+    });
+}
+
+QList<StorageLocationDialog::Choice> StorageWidget::remoteParentChoices(qint64 excludedId)const
+{
+    QList<StorageLocationDialog::Choice> result;
+    for(const auto&candidate:m_remoteStorage){if(!candidate.active||candidate.storageId==excludedId)continue;bool descendant=false;qint64 current=candidate.parentStorageId;QSet<qint64>seen;while(current>0&&!seen.contains(current)){if(current==excludedId){descendant=true;break;}seen.insert(current);auto it=std::find_if(m_remoteStorage.cbegin(),m_remoteStorage.cend(),[current](const auto&row){return row.storageId==current;});if(it==m_remoteStorage.cend())break;current=it->parentStorageId;}if(!descendant)result.append({candidate.storageId,candidate.displayPath.isEmpty()?candidate.name:candidate.displayPath});}
+    return result;
+}
+
+void StorageWidget::remoteAddLocation()
+{
+    if(m_remoteDialog){m_remoteDialog->raise();m_remoteDialog->activateWindow();return;}
+    if(!m_addButton->isEnabled())return;
+    fetchRemoteTypes([this](bool ok){if(!ok)return;openRemoteDialog(StorageLocationDialog::Mode::Add,std::nullopt);});
+}
+
+void StorageWidget::remoteEditLocation()
+{
+    if(m_remoteDialog){m_remoteDialog->raise();m_remoteDialog->activateWindow();return;}
+    auto*item=m_tree->currentItem();if(!item||!m_editButton->isEnabled())return;
+    const qint64 id=item->data(0,Qt::UserRole).toLongLong();const int workspace=m_workspaceContext.currentWorkspaceId();const quint64 generation=m_actionGeneration;
+    m_statusLabel->setText(QStringLiteral("Loading Storage details from BrickSuite Host..."));
+    m_remoteReads->getStorage(workspace,id,this,[this,generation,workspace](AsyncReadResult<RemoteReadDto::StorageDetail> result){if(generation!=m_actionGeneration||workspace!=m_workspaceContext.currentWorkspaceId())return;if(!result.succeeded()){m_statusLabel->setText(result.message.isEmpty()?QStringLiteral("Unable to load the selected Storage location."):result.message);return;}const auto detail=*result.value;fetchRemoteTypes([this,detail](bool ok){if(ok)openRemoteDialog(StorageLocationDialog::Mode::Edit,detail);});});
+}
+
+void StorageWidget::openRemoteDialog(StorageLocationDialog::Mode mode,const std::optional<RemoteReadDto::StorageDetail>&detail)
+{
+    if(m_remoteDialog)return;StorageLocationDialog::Values values;if(detail){values={detail->name,detail->description,detail->parentStorageId,detail->storageTypeId,detail->allowsInventory,detail->allowsCollection};}
+    else if(auto*item=m_tree->currentItem())values.parentStorageId=item->data(0,Qt::UserRole).toLongLong();
+    QList<StorageLocationDialog::Choice>types;for(const auto&type:m_remoteTypes)types.append({type.storageTypeId,type.name});
+    auto*dialog=new StorageLocationDialog(mode,values,types,remoteParentChoices(detail?detail->storageId:0),this);m_remoteDialog=dialog;m_remoteDialogDetail=detail;m_retainedRequest.reset();m_retainedOperation.clear();
+    connect(dialog,&StorageLocationDialog::submitRequested,this,&StorageWidget::submitRemoteDialog);
+    connect(dialog,&QObject::destroyed,this,[this]{m_remoteDialog=nullptr;m_remoteDialogDetail.reset();m_retainedRequest.reset();m_retainedOperation.clear();m_remoteMutationPending=false;updateRemoteActionState();});
+    dialog->open();
+}
+
+void StorageWidget::submitRemoteDialog()
+{
+    auto*dialog=m_remoteDialog.data();if(!dialog||m_remoteMutationPending||!m_remoteMutations)return;
+    QString operation;RemoteStorageMutationDto::Request request;
+    if(m_retainedRequest){operation=m_retainedOperation;request=*m_retainedRequest;}
+    else {operation=m_remoteDialogDetail?QStringLiteral("storage.edit"):QStringLiteral("storage.add");const auto values=dialog->values();request.workspaceId=m_workspaceContext.currentWorkspaceId();request.mutationId=RemoteMutationDto::newMutationId();request.name=values.name;request.description=values.description;request.parentStorageId=values.parentStorageId;request.storageTypeId=values.storageTypeId;request.allowsInventory=values.allowsInventory;request.allowsCollection=values.allowsCollection;if(m_remoteDialogDetail){const auto&d=*m_remoteDialogDetail;request.storageId=d.storageId;request.expected={d.modifiedUtc.toUTC().toString(Qt::ISODateWithMs),d.parentStorageId,d.storageTypeId,d.name,d.description,d.sortOrder,d.active,d.allowsInventory,d.allowsCollection};}}
+    if(m_retainedRequest&&!m_remoteMutations->isAvailableFor(operation)){dialog->setUnknownOutcome(true,QStringLiteral("Reconnect to BrickSuite Host before retrying this unchanged request."));return;}
+    m_retainedRequest=request;m_retainedOperation=operation;m_remoteMutationPending=true;dialog->setPending(true);updateRemoteActionState();QPointer<StorageLocationDialog>guard(dialog);
+    auto success=[this,guard](const RemoteStorageMutationDto::Result&){m_remoteMutationPending=false;m_retainedRequest.reset();m_retainedOperation.clear();if(guard)guard->completeSuccessfully();updateRemoteActionState();};
+    auto failure=[this,guard](const RemoteMutationDto::Error&error){m_remoteMutationPending=false;if(!guard)return;if(error.outcome==RemoteMutationDto::Outcome::Unknown){guard->setUnknownOutcome(true,QStringLiteral("The outcome is unknown. Reconnect, then retry safely with the same mutation ID."));}else{m_retainedRequest.reset();m_retainedOperation.clear();if(error.code==QStringLiteral("STALE_VERSION")){guard->showError(QStringLiteral("Storage changed on the Host. Your edit was not applied."));guard->close();loadRemoteStorageTree();}else guard->showError(error.message.isEmpty()?QStringLiteral("The Host rejected the Storage change."):error.message);}updateRemoteActionState();};
+    if(operation==QStringLiteral("storage.add"))m_remoteMutations->add(request,dialog,std::move(success),std::move(failure));else m_remoteMutations->edit(request,dialog,std::move(success),std::move(failure));
+}
+
+void StorageWidget::remoteSetActive(bool active)
+{
+    if(m_remoteMutationPending||!m_remoteMutations)return;
+    if(m_retainedRequest&&m_retainedOperation==QStringLiteral("storage.setActive")){if(active!=m_retainedRequest->active||!m_remoteDialogDetail)return;submitRemoteSetActive(*m_remoteDialogDetail,active);return;}
+    auto*item=m_tree->currentItem();if(!item)return;const qint64 id=item->data(0,Qt::UserRole).toLongLong();const int workspace=m_workspaceContext.currentWorkspaceId();const quint64 generation=m_actionGeneration;
+    m_remoteReads->getStorage(workspace,id,this,[this,generation,workspace,active](AsyncReadResult<RemoteReadDto::StorageDetail>result){if(generation!=m_actionGeneration||workspace!=m_workspaceContext.currentWorkspaceId())return;if(!result.succeeded()){m_statusLabel->setText(result.message.isEmpty()?QStringLiteral("Unable to load the selected Storage location."):result.message);return;}const auto detail=*result.value;const QString verb=active?QStringLiteral("Reactivate"):QStringLiteral("Deactivate");auto*box=new QMessageBox(QMessageBox::Question,verb+QStringLiteral(" Storage Location"),QStringLiteral("%1 \"%2\"?").arg(verb,detail.name),QMessageBox::Yes|QMessageBox::No,this);box->setDefaultButton(QMessageBox::No);box->setAttribute(Qt::WA_DeleteOnClose);m_remoteConfirmation=box;m_remoteMutationPending=true;updateRemoteActionState();connect(box,&QMessageBox::finished,this,[this,box,detail,active](int result){if(m_remoteConfirmation==box)m_remoteConfirmation=nullptr;m_remoteMutationPending=false;if(result==QMessageBox::Yes&&m_remoteConnected&&detail.workspaceId==m_workspaceContext.currentWorkspaceId()){m_remoteDialogDetail=detail;submitRemoteSetActive(detail,active);}else updateRemoteActionState();});box->open();});
+}
+
+void StorageWidget::submitRemoteSetActive(const RemoteReadDto::StorageDetail&detail,bool active)
+{
+    RemoteStorageMutationDto::Request request;if(m_retainedRequest)request=*m_retainedRequest;else{request.workspaceId=detail.workspaceId;request.storageId=detail.storageId;request.mutationId=RemoteMutationDto::newMutationId();request.active=active;request.expected={detail.modifiedUtc.toUTC().toString(Qt::ISODateWithMs),detail.parentStorageId,detail.storageTypeId,detail.name,detail.description,detail.sortOrder,detail.active,detail.allowsInventory,detail.allowsCollection};m_retainedRequest=request;m_retainedOperation=QStringLiteral("storage.setActive");}
+    m_remoteMutationPending=true;updateRemoteActionState();m_statusLabel->setText(active?QStringLiteral("Reactivating Storage on BrickSuite Host..."):QStringLiteral("Deactivating Storage on BrickSuite Host..."));
+    m_remoteMutations->setActive(request,this,[this](const auto&){m_remoteMutationPending=false;m_retainedRequest.reset();m_retainedOperation.clear();m_remoteDialogDetail.reset();m_statusLabel->setText(QStringLiteral("Storage change committed on BrickSuite Host."));updateRemoteActionState();},[this](const RemoteMutationDto::Error&error){m_remoteMutationPending=false;if(error.outcome==RemoteMutationDto::Outcome::Unknown)m_statusLabel->setText(QStringLiteral("The outcome is unknown. Reconnect and choose the same action to retry safely."));else{m_retainedRequest.reset();m_retainedOperation.clear();m_remoteDialogDetail.reset();m_statusLabel->setText(error.message.isEmpty()?QStringLiteral("The Host rejected the Storage change."):error.message);if(error.code==QStringLiteral("STALE_VERSION"))loadRemoteStorageTree();}updateRemoteActionState();});
+}
+
+void StorageWidget::updateRemoteActionState()
+{
+    if(!m_remoteReads)return;
+    auto*item=m_tree->currentItem();const bool selected=item;const bool active=selected&&item->data(0,Qt::UserRole+2).toBool();
+    RemoteStorageActionEligibilityInput input;input.connected=m_remoteConnected;input.workspaceCurrent=m_workspaceContext.currentWorkspaceId()>0;input.stale=m_remoteStale;input.pending=m_remoteMutationPending;input.selected=selected;input.selectedActive=active;input.canGet=m_remoteReads->isAvailableFor("storage.get");input.canListTypes=m_remoteReads->isAvailableFor("storage.types.list");input.canAdd=m_remoteMutations&&m_remoteMutations->isAvailableFor("storage.add");input.canEdit=m_remoteMutations&&m_remoteMutations->isAvailableFor("storage.edit");input.canSetActive=m_remoteMutations&&m_remoteMutations->isAvailableFor("storage.setActive");const auto eligibility=remoteStorageActionEligibility(input);
+    m_addButton->setEnabled(eligibility.add);m_editButton->setEnabled(eligibility.edit);m_deactivateButton->setEnabled(eligibility.deactivate);m_reactivateButton->setEnabled(eligibility.reactivate);
+    if(m_retainedRequest&&m_retainedOperation==QStringLiteral("storage.setActive")&&selected
+       &&item->data(0,Qt::UserRole).toLongLong()==m_retainedRequest->storageId&&m_remoteConnected&&!m_remoteStale&&!m_remoteMutationPending){m_deactivateButton->setEnabled(!m_retainedRequest->active);m_reactivateButton->setEnabled(m_retainedRequest->active);}
+    const QString unavailable=!m_remoteConnected?QStringLiteral("Storage changes are unavailable while disconnected."):m_remoteStale?QStringLiteral("Refresh Storage before making changes."):QStringLiteral("The connected Host does not advertise this Storage operation.");
+    m_addButton->setToolTip(eligibility.add?QString():unavailable);m_editButton->setToolTip(eligibility.edit?QString():selected?unavailable:QStringLiteral("Select a Storage location to edit."));
+    m_deactivateButton->setToolTip(m_deactivateButton->isEnabled()?QString():unavailable);m_reactivateButton->setToolTip(m_reactivateButton->isEnabled()?QString():unavailable);
+}
+
 void StorageWidget::addLocation()
 {
-    if (m_remoteReads) return;
+    if (m_remoteReads) { remoteAddLocation(); return; }
     if (!m_workspaceContext.hasCurrentWorkspace())
         return;
 
@@ -399,43 +505,35 @@ void StorageWidget::addLocation()
                 .toInt();
     }
 
-    StorageLocation location;
-
-    location.setWorkspaceId(
-        m_workspaceContext.currentWorkspaceId());
-
-    location.setParentLocationId(
-        parentLocationId);
-
-    location.setLocationTypeId(
-        locationTypeId);
-
-    location.setName(name);
-
-    location.setIsActive(true);
-    location.setAllowsInventory(inventoryCheck->isChecked());
-    location.setAllowsCollection(collectionCheck->isChecked());
-
-    StorageLocationRepository repository;
-
-    if (!repository.create(location))
+    QSqlDatabase database = DatabaseManager::instance().database();
+    if (!database.transaction())
     {
-        QMessageBox::critical(
-            this,
-            "BrickSuite",
-            "Unable to create the storage location.");
-
+        QMessageBox::critical(this, "BrickSuite", "Unable to begin the Storage update.");
+        return;
+    }
+    HostStorageMutationService service(database);
+    HostStorageMutationService::AddRequest request;
+    request.workspaceId = m_workspaceContext.currentWorkspaceId();
+    request.parentStorageId = parentLocationId; request.storageTypeId = locationTypeId;
+    request.name = name; request.allowsInventory = inventoryCheck->isChecked();
+    request.allowsCollection = collectionCheck->isChecked();
+    const auto result = service.add(request);
+    if (!commitStorageMutation(database, result)) {
+        QMessageBox::critical(this, "BrickSuite",
+                              result.error.message.isEmpty()
+                                  ? QStringLiteral("Unable to create the storage location.")
+                                  : result.error.message);
         return;
     }
 
     loadStorageTree();
     emit storageLocationsChanged();
-    emit hostStorageMutationCommitted(location.workspaceId(), location.id());
+    emit hostStorageMutationCommitted(result.location.workspaceId(), result.location.id());
 }
 
 void StorageWidget::editLocation()
 {
-    if (m_remoteReads) return;
+    if (m_remoteReads) { remoteEditLocation(); return; }
     QTreeWidgetItem* selectedItem = m_tree->currentItem();
 
     if (!selectedItem)
@@ -544,28 +642,36 @@ void StorageWidget::editLocation()
     updated.setAllowsInventory(inventoryCheck->isChecked());
     updated.setAllowsCollection(collectionCheck->isChecked());
 
-    if (existing->allowsInventory() && !updated.allowsInventory()
-        && locationRepository.hasInventory(locationId)) {
-        QMessageBox::warning(this, "BrickSuite",
-                             "This location still contains loose inventory. Move the inventory "
-                             "before removing its Inventory capability.");
+    QSqlDatabase database = DatabaseManager::instance().database();
+    if (!database.transaction()) {
+        QMessageBox::critical(this, "BrickSuite", "Unable to begin the Storage update.");
         return;
     }
-
-    if (!locationRepository.update(updated)) {
-        QMessageBox::critical(this, "BrickSuite", "Unable to update the storage location.");
-
+    HostStorageMutationService service(database);
+    HostStorageMutationService::EditRequest request;
+    request.workspaceId = updated.workspaceId(); request.storageId = updated.id();
+    request.parentStorageId = updated.parentLocationId();
+    request.storageTypeId = updated.locationTypeId(); request.name = updated.name();
+    request.description = updated.description(); request.allowsInventory = updated.allowsInventory();
+    request.allowsCollection = updated.allowsCollection();
+    request.expected = HostStorageMutationService::expectedState(*existing);
+    const auto result = service.edit(request);
+    if (!commitStorageMutation(database, result)) {
+        QMessageBox::warning(this, "BrickSuite",
+                             result.error.message.isEmpty()
+                                 ? QStringLiteral("Unable to update the storage location.")
+                                 : result.error.message);
         return;
     }
 
     loadStorageTree();
     emit storageLocationsChanged();
-    emit hostStorageMutationCommitted(updated.workspaceId(), updated.id());
+    emit hostStorageMutationCommitted(result.location.workspaceId(), result.location.id());
 }
 
 void StorageWidget::deactivateLocation()
 {
-    if (m_remoteReads) return;
+    if (m_remoteReads) { remoteSetActive(false); return; }
     QTreeWidgetItem* selectedItem = m_tree->currentItem();
 
     if (!selectedItem)
@@ -610,9 +716,23 @@ void StorageWidget::deactivateLocation()
     if (answer != QMessageBox::Yes)
         return;
 
-    if (!repository.deactivate(locationId)) {
-        QMessageBox::critical(this, "BrickSuite", "Unable to deactivate the storage location.");
-
+    const auto existing = repository.getById(locationId);
+    if (!existing) return;
+    QSqlDatabase database = DatabaseManager::instance().database();
+    if (!database.transaction()) {
+        QMessageBox::critical(this, "BrickSuite", "Unable to begin the Storage update.");
+        return;
+    }
+    HostStorageMutationService service(database);
+    HostStorageMutationService::SetActiveRequest request;
+    request.workspaceId = existing->workspaceId(); request.storageId = locationId;
+    request.active = false; request.expected = HostStorageMutationService::expectedState(*existing);
+    const auto result = service.setActive(request);
+    if (!commitStorageMutation(database, result)) {
+        QMessageBox::warning(this, "BrickSuite",
+                             result.error.message.isEmpty()
+                                 ? QStringLiteral("Unable to deactivate the storage location.")
+                                 : result.error.message);
         return;
     }
 
@@ -623,7 +743,7 @@ void StorageWidget::deactivateLocation()
 
 void StorageWidget::reactivateLocation()
 {
-    if (m_remoteReads) return;
+    if (m_remoteReads) { remoteSetActive(true); return; }
     QTreeWidgetItem* selectedItem = m_tree->currentItem();
 
     if (!selectedItem)
@@ -671,8 +791,23 @@ void StorageWidget::reactivateLocation()
     if (answer != QMessageBox::Yes)
         return;
 
-    if (!repository.reactivate(locationId)) {
-        QMessageBox::critical(this, "BrickSuite", "Unable to reactivate the storage location.");
+    const auto existing = repository.getById(locationId);
+    if (!existing) return;
+    QSqlDatabase database = DatabaseManager::instance().database();
+    if (!database.transaction()) {
+        QMessageBox::critical(this, "BrickSuite", "Unable to begin the Storage update.");
+        return;
+    }
+    HostStorageMutationService service(database);
+    HostStorageMutationService::SetActiveRequest request;
+    request.workspaceId = existing->workspaceId(); request.storageId = locationId;
+    request.active = true; request.expected = HostStorageMutationService::expectedState(*existing);
+    const auto result = service.setActive(request);
+    if (!commitStorageMutation(database, result)) {
+        QMessageBox::warning(this, "BrickSuite",
+                             result.error.message.isEmpty()
+                                 ? QStringLiteral("Unable to reactivate the storage location.")
+                                 : result.error.message);
         return;
     }
 

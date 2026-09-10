@@ -85,14 +85,22 @@ qt_add_executable(BrickSuite
     src/services/application/dto/RemotePullingMutationDtos.cpp
     src/services/application/dto/RemoteInventoryMutationDtos.h
     src/services/application/dto/RemoteInventoryMutationDtos.cpp
+    src/services/application/dto/RemoteStorageMutationDtos.h
+    src/services/application/dto/RemoteStorageMutationDtos.cpp
     src/services/application/HostPullingMutationService.h
     src/services/application/HostPullingMutationService.cpp
     src/services/application/HostInventoryMutationService.h
     src/services/application/HostInventoryMutationService.cpp
+    src/services/application/HostStorageProtocolMutationService.h
+    src/services/application/HostStorageProtocolMutationService.cpp
+    src/services/application/HostStorageMutationService.h
+    src/services/application/HostStorageMutationService.cpp
     src/services/application/RemotePullingApplicationService.h
     src/services/application/RemotePullingApplicationService.cpp
     src/services/application/RemoteInventoryMutationApplicationService.h
     src/services/application/RemoteInventoryMutationApplicationService.cpp
+    src/services/application/RemoteStorageMutationApplicationService.h
+    src/services/application/RemoteStorageMutationApplicationService.cpp
 
     src/database/DatabaseManager.h
     src/database/DatabaseManager.cpp
@@ -194,6 +202,9 @@ qt_add_executable(BrickSuite
     src/services/collection/CollectionItemService.h
     src/services/collection/CollectionItemService.cpp
     src/ui/storage/StorageWidget.cpp
+    src/ui/storage/StorageLocationDialog.h
+    src/ui/storage/StorageLocationDialog.cpp
+    src/ui/storage/RemoteStorageActionEligibility.h
     src/ui/storage/StorageWidget.h
     src/ui/collection/MyCollectionWidget.h
     src/ui/collection/MyCollectionWidget.cpp
@@ -669,6 +680,41 @@ if(BUILD_TESTING)
     )
     target_link_libraries(SessionStorageSelectionServiceTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME SessionStorageSelectionService COMMAND SessionStorageSelectionServiceTest)
+
+    qt_add_executable(StorageMutationServiceTest EXCLUDE_FROM_ALL
+        tests/StorageMutationServiceTest.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Workspace.h src/models/Workspace.cpp
+        src/models/StorageLocation.h src/models/StorageLocation.cpp
+        src/models/StorageLocationType.h src/models/StorageLocationType.cpp
+        src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
+        src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
+        src/repositories/StorageLocationTypeRepository.h src/repositories/StorageLocationTypeRepository.cpp
+        src/services/application/HostStorageMutationService.h
+        src/services/application/HostStorageMutationService.cpp
+        src/services/application/HostStorageProtocolMutationService.h
+        src/services/application/HostStorageProtocolMutationService.cpp
+        src/services/application/HostWriteExecutor.h
+        src/services/application/HostMutationPublicationService.h
+        src/services/application/dto/RemoteMutationDtos.h
+        src/services/application/dto/RemoteMutationDtos.cpp
+        src/services/application/dto/RemoteReadDtos.h
+        src/services/application/dto/RemoteReadJson.h
+        src/services/application/dto/RemoteReadJson.cpp
+        src/services/application/dto/RemoteStorageMutationDtos.h
+        src/services/application/dto/RemoteStorageMutationDtos.cpp
+    )
+    target_link_libraries(StorageMutationServiceTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME StorageMutationService COMMAND StorageMutationServiceTest)
+
+    qt_add_executable(RemoteStorageUiTest EXCLUDE_FROM_ALL
+        tests/RemoteStorageUiTest.cpp
+        src/ui/storage/StorageLocationDialog.h src/ui/storage/StorageLocationDialog.cpp
+        src/ui/storage/RemoteStorageActionEligibility.h
+    )
+    target_link_libraries(RemoteStorageUiTest PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+    add_test(NAME RemoteStorageUi COMMAND RemoteStorageUiTest)
+    set_tests_properties(RemoteStorageUi PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     qt_add_executable(AutomaticBackupPolicyTest EXCLUDE_FROM_ALL
         tests/AutomaticBackupPolicyTest.cpp
@@ -1299,6 +1345,9 @@ if(BUILD_TESTING)
         src/models/InventoryRecord.h src/models/InventoryRecord.cpp
         src/models/InventoryMovement.h src/models/InventoryMovement.cpp
         src/models/BuildAllocation.h src/models/BuildAllocation.cpp
+        src/models/Workspace.h src/models/Workspace.cpp
+        src/models/StorageLocation.h src/models/StorageLocation.cpp
+        src/models/StorageLocationType.h src/models/StorageLocationType.cpp
         src/models/Part.h src/models/Part.cpp src/models/Manufacturer.h
         src/repositories/RepositoryConnection.h
         src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
@@ -1306,11 +1355,18 @@ if(BUILD_TESTING)
         src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
         src/repositories/PartRepository.h src/repositories/PartRepository.cpp
         src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
+        src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
+        src/repositories/StorageLocationTypeRepository.h src/repositories/StorageLocationTypeRepository.cpp
         src/services/application/HostInventoryMutationService.h src/services/application/HostInventoryMutationService.cpp
+        src/services/application/HostStorageMutationService.h src/services/application/HostStorageMutationService.cpp
+        src/services/application/HostStorageProtocolMutationService.h src/services/application/HostStorageProtocolMutationService.cpp
         src/services/application/HostWriteExecutor.h src/services/application/HostWriteExecutor.cpp
         src/services/application/HostMutationPublicationService.h src/services/application/HostMutationPublicationService.cpp
         src/services/application/dto/RemoteMutationDtos.h src/services/application/dto/RemoteMutationDtos.cpp
         src/services/application/dto/RemoteInventoryMutationDtos.h src/services/application/dto/RemoteInventoryMutationDtos.cpp
+        src/services/application/dto/RemoteReadDtos.h src/services/application/dto/RemoteReadJson.h src/services/application/dto/RemoteReadJson.cpp
+        src/services/application/dto/RemoteStorageMutationDtos.h src/services/application/dto/RemoteStorageMutationDtos.cpp
         src/repositories/RemoteMutationReceiptRepository.h src/repositories/RemoteMutationReceiptRepository.cpp
         src/network/OperationalInvalidation.h src/network/OperationalInvalidation.cpp
         src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
@@ -1323,6 +1379,7 @@ if(BUILD_TESTING)
         src/services/application/HostMutationProtocolService.h src/services/application/HostMutationProtocolService.cpp
         src/services/application/RemoteMutationApplicationServices.h src/services/application/RemoteMutationApplicationServices.cpp
         src/services/application/RemoteInventoryMutationApplicationService.h src/services/application/RemoteInventoryMutationApplicationService.cpp
+        src/services/application/RemoteStorageMutationApplicationService.h src/services/application/RemoteStorageMutationApplicationService.cpp
         src/services/CredentialStore.h src/services/CredentialStore.cpp
     )
     target_compile_definitions(RemoteInventoryMutationTest PRIVATE BRICKSUITE_VERSION="${PROJECT_VERSION}" BRICKSUITE_TESTING)

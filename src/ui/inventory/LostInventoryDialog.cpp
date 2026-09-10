@@ -70,6 +70,14 @@ LostInventoryDialog::LostInventoryDialog(WorkspaceContext& workspaceContext,
     loadRemoteLostInventory();
 }
 
+void LostInventoryDialog::refreshRemoteStoragePaths(
+    const QHash<int, QString>& storagePaths)
+{
+    if (!m_remoteReads) return;
+    m_remoteStoragePaths = storagePaths;
+    loadRemoteLostInventory();
+}
+
 void LostInventoryDialog::initializeUi()
 {
     setWindowTitle("Lost Inventory");
@@ -280,9 +288,22 @@ void LostInventoryDialog::loadRemoteLostInventory()
                 m_table->setCellWidget(row,6,actions);
                 connect(actions,QOverload<int>::of(&QComboBox::currentIndexChanged),this,
                     [this,actions,item](int index){if(index<=0)return;actions->setCurrentIndex(0);
-                        RemoteInventoryMutationDialog dialog(m_workspaceContext.currentWorkspaceId(),
-                            *m_remoteMutations,m_remoteStoragePaths,item,this);
-                        if(dialog.exec()==QDialog::Accepted)loadRemoteLostInventory();});
+                        if (m_activeRemoteMutationDialog) {
+                            m_activeRemoteMutationDialog->raise();
+                            m_activeRemoteMutationDialog->activateWindow();
+                            return;
+                        }
+                        auto* dialog = new RemoteInventoryMutationDialog(
+                            m_workspaceContext.currentWorkspaceId(), *m_remoteMutations,
+                            m_remoteStoragePaths, item, this);
+                        dialog->setAttribute(Qt::WA_DeleteOnClose);
+                        m_activeRemoteMutationDialog = dialog;
+                        connect(dialog, &QDialog::finished, this, [this, dialog](int result) {
+                            if (m_activeRemoteMutationDialog == dialog)
+                                m_activeRemoteMutationDialog = nullptr;
+                            if (result == QDialog::Accepted) loadRemoteLostInventory();
+                        });
+                        dialog->open();});
                 ++row;
             }
             m_statusLabel->setText(result.value->isEmpty()?"No outstanding lost inventory.":

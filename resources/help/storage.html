@@ -129,6 +129,29 @@ it to active service.</p>
 <p>This makes temporary storage changes reversible without losing the history associated with the
 location.</p>
 
+<h2>Storage on a BrickSuite Remote Client</h2>
+
+<p>When connected to a compatible BrickSuite Host, <b>Add Location</b>, <b>Edit Location</b>,
+<b>Deactivate Location</b>, and <b>Reactivate Location</b> operate on the Host's Storage hierarchy.
+Each action is available only when the Host advertises that exact capability. Storage types and
+parent locations shown by the dialog use Host identities rather than similarly named Client-local
+reference data.</p>
+
+<p>The Host remains authoritative. It rejects invalid parents, hierarchy cycles, inactive types,
+and attempts to remove a capability or deactivate a location while affected Inventory, Collection
+items, or active child locations remain. Deactivation is reversible and never cascades or deletes
+the location. Storage type administration remains a Host-local workflow.</p>
+
+<p>If another user changes a location after you open Edit, BrickSuite rejects the stale edit rather
+than overwriting the newer Host data. If a connection loss or timeout leaves the result unknown,
+reconnect and use <b>Retry Safely</b>; BrickSuite reuses the same mutation identity so a committed
+change is not applied twice.</p>
+
+<div class="note"><b>Before changing capabilities or deactivating a location:</b> A location that
+still contains loose Inventory cannot lose its Inventory capability or be deactivated. Likewise,
+a location with current Collection items cannot lose its Collection capability or be deactivated.
+Move those contents to another valid location first.</div>
+
 <h2>Storage and My Inventory</h2>
 
 <p>Storage and My Inventory work together. Storage defines the physical destinations; My Inventory

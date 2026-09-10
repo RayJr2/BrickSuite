@@ -2398,11 +2398,11 @@ void BuildsWidget::showRemotePulling(int buildId)
     (*requestPage)(1, *refreshGeneration);
 }
 
-void BuildsWidget::refreshOpenLocalPulling(int buildId)
+void BuildsWidget::refreshOpenLocalPulling(const std::optional<int>& buildId)
 {
     for (InteractiveBuildPullingDialog* dialog
          : findChildren<InteractiveBuildPullingDialog*>()) {
-        if (dialog && dialog->buildId() == buildId)
+        if (dialog && (!buildId || dialog->buildId() == *buildId))
             dialog->refreshAfterExternalCommit();
     }
 }

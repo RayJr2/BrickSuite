@@ -70,6 +70,7 @@ public:
     void refreshRemoteLocations();
     bool hasOpenRemoteHistory(const std::optional<qint64>& inventoryRecordId = std::nullopt) const;
     void refreshOpenRemoteHistory(const std::optional<qint64>& inventoryRecordId = std::nullopt);
+    void refreshOpenHistoryAfterStorageChange();
     void settingsChanged();
     void reloadManufacturers();
     void setRemoteSessionConnected(bool connected);

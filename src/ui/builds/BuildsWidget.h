@@ -70,7 +70,7 @@ public:
     void selectBuild(int buildId);
     void reloadManufacturers();
     void setRemoteSessionConnected(bool connected);
-    void refreshOpenLocalPulling(int buildId);
+    void refreshOpenLocalPulling(const std::optional<int>& buildId = std::nullopt);
 
 signals:
     void collectionItemRequested(int collectionItemId);

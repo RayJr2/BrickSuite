@@ -202,7 +202,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     m_workspaceTab = createWorkspaceTab();
 
     // Storage tab
-    m_storageWidget = new StorageWidget(m_workspaceContext, m_remoteReads, m_tabWidget);
+    m_storageWidget = new StorageWidget(m_workspaceContext, m_remoteReads,
+        m_networkManager.remoteStorageMutations(), m_tabWidget);
 
     // Parts Catalog tab
     m_partsCatalogWidget = new PartsCatalogWidget(m_partExternalIdEnrichmentService, m_tabWidget);
@@ -514,6 +515,14 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         m_hostMutationPublications->publish(
             HostMutationPublicationService::Workflow::Storage, scope);
     });
+    connect(&m_networkManager,&BrickSuiteNetworkManager::remoteStorageMutationCommitted,this,
+        [this](int workspaceId,int){if(workspaceId!=m_workspaceContext.currentWorkspaceId())return;
+            if(m_storageWidget)m_storageWidget->refresh();
+            if(m_myInventoryWidget)m_myInventoryWidget->refresh();
+            if(m_myCollectionWidget)m_myCollectionWidget->refresh();
+            if(m_myInventoryWidget)m_myInventoryWidget->refreshOpenHistoryAfterStorageChange();
+            if(m_buildsWidget)m_buildsWidget->refreshOpenLocalPulling();
+        },Qt::QueuedConnection);
     connect(m_myInventoryWidget, &MyInventoryWidget::hostInventoryMutationCommitted, this,
             [this](int workspaceId, int inventoryRecordId) {
         HostMutationPublicationService::Scope scope;

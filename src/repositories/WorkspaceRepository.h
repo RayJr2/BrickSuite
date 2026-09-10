@@ -39,6 +39,7 @@ public:
     QList<Workspace> getAll() const;
 
     std::optional<Workspace> getById(int id) const;
+    bool tryGetById(int id, std::optional<Workspace>& workspace) const;
 
     bool update(const Workspace& workspace);
 

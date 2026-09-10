@@ -22,6 +22,7 @@
 
 #include <QDialog>
 #include <QHash>
+#include <QPointer>
 #include <QString>
 
 class WorkspaceContext;
@@ -30,6 +31,7 @@ class QLabel;
 class QTableWidget;
 class RemoteReadApplicationServices;
 class RemoteInventoryMutationApplicationService;
+class RemoteInventoryMutationDialog;
 
 class LostInventoryDialog : public QDialog
 {
@@ -44,6 +46,7 @@ public:
         RemoteReadApplicationServices& remoteReads,
         RemoteInventoryMutationApplicationService& remoteMutations,
         const QHash<int, QString>& storagePaths, QWidget* parent = nullptr);
+    void refreshRemoteStoragePaths(const QHash<int, QString>& storagePaths);
 
 private:
     void loadLostInventory();
@@ -58,4 +61,5 @@ private:
     RemoteReadApplicationServices* m_remoteReads = nullptr;
     RemoteInventoryMutationApplicationService* m_remoteMutations = nullptr;
     QHash<int, QString> m_remoteStoragePaths;
+    QPointer<RemoteInventoryMutationDialog> m_activeRemoteMutationDialog;
 };

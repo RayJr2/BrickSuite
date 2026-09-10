@@ -32,6 +32,7 @@ class QSqlQuery;
 class StorageLocationRepository : protected RepositoryConnection
 {
 public:
+    enum class CheckResult { Error, No, Yes };
     StorageLocationRepository() = default;
     explicit StorageLocationRepository(const QSqlDatabase& database)
         : RepositoryConnection(database) {}
@@ -49,10 +50,12 @@ public:
     QList<StorageLocation> getChildren(int workspaceId, int parentLocationId) const;
 
     std::optional<StorageLocation> getById(int id) const;
+    bool tryGetById(int id, std::optional<StorageLocation>& location) const;
 
     bool update(StorageLocation& location);
 
     bool hasChildren(int locationId) const;
+    CheckResult hasActiveChildrenChecked(int locationId) const;
 
     bool isValidOperationalDestination(int workspaceId, int locationId,
                                        int excludedLocationId = 0) const;
@@ -63,8 +66,12 @@ public:
     bool isValidCollectionDestination(int workspaceId, int locationId) const;
 
     bool hasInventory(int locationId) const;
+    CheckResult hasInventoryChecked(int locationId) const;
+
+    CheckResult hasCollectionChecked(int locationId) const;
 
     bool isDescendant(int locationId, int possibleDescendantId) const;
+    CheckResult isDescendantChecked(int locationId, int possibleDescendantId) const;
 
     bool deactivate(int locationId);
 

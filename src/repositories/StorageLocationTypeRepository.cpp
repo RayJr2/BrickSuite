@@ -88,6 +88,14 @@ QList<StorageLocationType> StorageLocationTypeRepository::getActive() const
 
 std::optional<StorageLocationType> StorageLocationTypeRepository::getById(int id) const
 {
+    std::optional<StorageLocationType> type;
+    return tryGetById(id, type) ? type : std::nullopt;
+}
+
+bool StorageLocationTypeRepository::tryGetById(
+    int id, std::optional<StorageLocationType>& type) const
+{
+    type.reset();
     QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
@@ -109,13 +117,14 @@ std::optional<StorageLocationType> StorageLocationTypeRepository::getById(int id
     if (!query.exec()) {
         qCritical() << "Unable to retrieve storage location type:" << query.lastError().text();
 
-        return std::nullopt;
+        return false;
     }
 
     if (!query.next())
-        return std::nullopt;
+        return true;
 
-    return locationTypeFromQuery(query);
+    type = locationTypeFromQuery(query);
+    return true;
 }
 
 StorageLocationType StorageLocationTypeRepository::locationTypeFromQuery(const QSqlQuery& query) const

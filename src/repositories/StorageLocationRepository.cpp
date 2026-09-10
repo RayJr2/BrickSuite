@@ -308,6 +308,14 @@ QList<StorageLocation> StorageLocationRepository::getChildren(int workspaceId,
 
 std::optional<StorageLocation> StorageLocationRepository::getById(int id) const
 {
+    std::optional<StorageLocation> location;
+    return tryGetById(id, location) ? location : std::nullopt;
+}
+
+bool StorageLocationRepository::tryGetById(
+    int id, std::optional<StorageLocation>& location) const
+{
+    location.reset();
     QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
@@ -335,13 +343,14 @@ std::optional<StorageLocation> StorageLocationRepository::getById(int id) const
     if (!query.exec()) {
         qCritical() << "Unable to retrieve storage location:" << query.lastError().text();
 
-        return std::nullopt;
+        return false;
     }
 
     if (!query.next())
-        return std::nullopt;
+        return true;
 
-    return locationFromQuery(query);
+    location = locationFromQuery(query);
+    return true;
 }
 
 bool StorageLocationRepository::update(StorageLocation& location)
@@ -446,6 +455,14 @@ StorageLocation StorageLocationRepository::locationFromQuery(const QSqlQuery& qu
 
 bool StorageLocationRepository::hasChildren(int locationId) const
 {
+    return hasActiveChildrenChecked(locationId) == CheckResult::Yes;
+}
+
+StorageLocationRepository::CheckResult
+StorageLocationRepository::hasActiveChildrenChecked(int locationId) const
+{
+    if (locationId <= 0)
+        return CheckResult::Error;
     QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
@@ -462,13 +479,13 @@ bool StorageLocationRepository::hasChildren(int locationId) const
     if (!query.exec()) {
         qCritical() << "Unable to check storage location children:" << query.lastError().text();
 
-        return false;
+        return CheckResult::Error;
     }
 
     if (!query.next())
-        return false;
+        return CheckResult::Error;
 
-    return query.value(0).toInt() > 0;
+    return query.value(0).toInt() > 0 ? CheckResult::Yes : CheckResult::No;
 }
 
 bool StorageLocationRepository::isValidOperationalDestination(
@@ -533,6 +550,14 @@ bool StorageLocationRepository::hasInventory(int locationId) const
 {
     if (locationId <= 0)
         return false;
+    return hasInventoryChecked(locationId) != CheckResult::No;
+}
+
+StorageLocationRepository::CheckResult
+StorageLocationRepository::hasInventoryChecked(int locationId) const
+{
+    if (locationId <= 0)
+        return CheckResult::Error;
 
     QSqlDatabase database = repositoryDatabase();
 
@@ -552,21 +577,45 @@ bool StorageLocationRepository::hasInventory(int locationId) const
         qCritical() << "Unable to check storage location inventory:"
                     << query.lastError().text();
 
-        // Fail safe: if the check itself fails, report inventory present so
-        // the caller does not deactivate a location whose contents are unknown.
-        return true;
+        return CheckResult::Error;
     }
 
-    return query.next();
+    return query.next() ? CheckResult::Yes : CheckResult::No;
 }
+
+StorageLocationRepository::CheckResult
+StorageLocationRepository::hasCollectionChecked(int locationId) const
+{
+    if (locationId <= 0)
+        return CheckResult::Error;
+    QSqlQuery query(repositoryDatabase());
+    query.prepare(R"(
+        SELECT 1 FROM collection_item
+        WHERE storage_location_id = :location_id AND is_active = 1 LIMIT 1
+    )");
+    query.bindValue(":location_id", locationId);
+    if (!query.exec()) {
+        qCritical() << "Unable to check storage location Collection occupancy:"
+                    << query.lastError().text();
+        return CheckResult::Error;
+    }
+    return query.next() ? CheckResult::Yes : CheckResult::No;
+}
+
 bool StorageLocationRepository::isDescendant(int locationId, int possibleDescendantId) const
 {
+    return isDescendantChecked(locationId, possibleDescendantId) == CheckResult::Yes;
+}
+
+StorageLocationRepository::CheckResult StorageLocationRepository::isDescendantChecked(
+    int locationId, int possibleDescendantId) const
+{
     if (locationId <= 0 || possibleDescendantId <= 0) {
-        return false;
+        return CheckResult::Error;
     }
 
     if (locationId == possibleDescendantId)
-        return true;
+        return CheckResult::Yes;
 
     QSqlDatabase database = repositoryDatabase();
 
@@ -579,7 +628,7 @@ bool StorageLocationRepository::isDescendant(int locationId, int possibleDescend
             FROM storage_location
             WHERE parent_location_id = :location_id
 
-            UNION ALL
+            UNION
 
             SELECT sl.id
             FROM storage_location sl
@@ -599,10 +648,10 @@ bool StorageLocationRepository::isDescendant(int locationId, int possibleDescend
     if (!query.exec()) {
         qCritical() << "Unable to check storage hierarchy:" << query.lastError().text();
 
-        return false;
+        return CheckResult::Error;
     }
 
-    return query.next();
+    return query.next() ? CheckResult::Yes : CheckResult::No;
 }
 
 bool StorageLocationRepository::deactivate(int locationId)

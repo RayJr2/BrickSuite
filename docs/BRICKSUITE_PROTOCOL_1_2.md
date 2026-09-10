@@ -1,5 +1,35 @@
 # BrickSuite Protocol 1.2
 
+## Storage reads and mutations
+
+Protocol 1.2 adds authenticated `storage.get` and `storage.types.list` reads with matching exact
+capabilities. `storage.get` accepts positive `workspaceId` and `storageId` values and returns the
+Host-authoritative location identity, nullable parent, type identity/name, name, description, sort
+order, active and capability flags, UTC creation/modification timestamps, and derived display path.
+`storage.types.list` takes no payload and returns active Host Storage type IDs, names, and
+descriptions. These IDs are Host identities; Client-local type IDs are never substituted.
+
+The independently advertised `storage.add`, `storage.edit`, and `storage.setActive` operations use
+the standard mutation envelope and exact same-named capabilities. Add accepts name, optional
+description, nullable parent (zero denotes root), Host type ID, and Inventory/Collection capability
+flags. Edit adds the target Storage ID and a complete expected prior snapshot. Set-active carries
+the target, desired state, and the same expected snapshot. Unknown fields, unsafe IDs, malformed
+booleans, and overlong text are rejected before worker execution.
+
+The Host applies all three operations through its connection-bound Storage mutation service on the
+serialized write connection. That service validates Workspace ownership/activity, parent and type
+state, hierarchy cycles, active children, Inventory and Collection occupancy, capability removal,
+and reactivation prerequisites. A changed expected snapshot returns `STALE_VERSION`; validation
+and business conflicts are definitive and create no receipt. Successful results include `created`
+and the full authoritative Storage detail, so a Client need not perform an immediate follow-up read.
+
+The receipt and Storage change commit atomically. Same-ID/same-payload retry returns the stored
+result with `replayed=true`; changed payload returns `IDEMPOTENCY_CONFLICT`. Only timeout or
+disconnect creates an unknown outcome. After a new commit, the correlated response is handed to
+the server send path before one Workspace/Storage-scoped `Storage` invalidation and Host-local
+Storage notification are published. Replays and failures publish nothing. Protocol 1.1 and Hosts
+without an exact operation capability remain read-only.
+
 ## Inventory mutations
 
 Protocol 1.2 Hosts advertise seven independently authorized Inventory operations and matching
@@ -163,9 +193,9 @@ An authenticated `FullBrickSuiteClient` may invoke only an explicitly registered
 operation supported by its negotiated protocol. A broad write marker, if ever added,
 must not authorize an operation by itself.
 
-M26.6B registers one production mutation operation: `builds.pulling.record`, advertised
-as capability `builds.pulling.write`. Inventory, Storage, general Builds, Collection,
-and Part Reference remain read-only.
+Production Protocol 1.2 mutation capabilities currently cover interactive Pulling, Inventory, and
+the three Storage operations documented above. General Builds, Collection, and Part Reference
+remain read-only.
 
 ## Interactive Pulling mutation
 
@@ -216,8 +246,8 @@ authenticated request
  -> Workspace/domain validation
  -> domain mutation + receipt transaction
  -> commit
+ -> authoritative response handed to the server send path
  -> post-commit HostMutationPublicationService notification
- -> authoritative response
 ```
 
 No invalidation is published on validation failure or rollback. Publication failure

@@ -87,11 +87,35 @@ int main(int argc, char* argv[])
     inventoryCompletion(true);
 
     inventoryVisible = false;
+    int pullingStarts = 0;
+    coordinator.registerProjection(P::Pulling, [] { return true; },
+        [&](const OperationalInvalidation&, auto completion) {
+            ++pullingStarts;
+            completion(true);
+        });
+    int historyStarts = 0;
+    coordinator.registerProjection(P::InventoryHistory, [] { return true; },
+        [&](const OperationalInvalidation&, auto completion) {
+            ++historyStarts;
+            completion(true);
+        });
+    int requirementStarts = 0;
+    coordinator.registerProjection(P::BuildRequirements, [] { return true; },
+        [&](const OperationalInvalidation&, auto completion) {
+            ++requirementStarts;
+            completion(true);
+        });
     coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Storage));
     ok &= check(waitUntil([&] { return locationStarts == 1; }),
                 "Storage invalidation must refresh visible dependent location choices.");
+    ok &= check(pullingStarts == 1 && historyStarts == 1,
+                "Storage invalidation must refresh open path-bearing Pulling and History views.");
+    ok &= check(requirementStarts == 0,
+                "Storage invalidation must not refresh path-free Build requirements.");
     ok &= check(storageStarts == 0 && coordinator.isDirty(P::Storage),
                 "A hidden Storage surface must remain dirty without loading.");
+    ok &= check(coordinator.isDirty(P::Inventory),
+                "A hidden path-bearing Inventory surface must remain dirty.");
     storageVisible = true;
     coordinator.surfaceBecameRelevant(P::Storage);
     ok &= check(storageStarts == 1 && !coordinator.isDirty(P::Storage),

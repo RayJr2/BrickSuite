@@ -1,8 +1,10 @@
 #include "../src/database/DatabaseSchema.h"
 #include "../src/services/application/HostInventoryMutationService.h"
 #include "../src/services/application/HostMutationProtocolService.h"
+#include "../src/services/application/HostStorageProtocolMutationService.h"
 #include "../src/services/application/RemoteInventoryMutationApplicationService.h"
 #include "../src/services/application/RemoteMutationApplicationServices.h"
+#include "../src/services/application/RemoteStorageMutationApplicationService.h"
 #include "../src/services/application/dto/RemoteInventoryMutationDtos.h"
 #include "../src/network/BrickSuiteHostIdentity.h"
 #include "../src/network/BrickSuiteWebSocketClient.h"
@@ -120,9 +122,12 @@ int main(int argc,char** argv)
         "inventory.remove","inventory.markLost","inventory.markFound"};
     for(const QString& operation:operations)protocol.registerOperation(server.operationDispatcher(),operation,operation,
         [operation](const auto& metadata,auto* error){return HostInventoryMutationService::createMutation(operation,metadata,error);});
+    const QStringList storageOperations{"storage.add","storage.edit","storage.setActive"};
+    for(const QString&operation:storageOperations)protocol.registerOperation(server.operationDispatcher(),operation,operation,[operation](const auto&metadata,auto*error){return HostStorageProtocolMutationService::createMutation(operation,metadata,error);});
     BrickSuiteWebSocketClient client;client.configure(QUrl(QString("wss://127.0.0.1:%1").arg(server.serverPort())),identity.fingerprint,token,false);
     ok&=require(connectClient(client),"correlation loopback client failed to authenticate");
     RemoteMutationApplicationServices mutations(client);RemoteInventoryMutationApplicationService inventory(mutations);
+    RemoteStorageMutationApplicationService storageMutations(mutations);
     bool completed=false,failed=false,timedOut=false,frameReceived=false;
     bool invalidationReceived=false,responseCompletedBeforeSlowRefresh=false;
     QString transportRequestId;QEventLoop loop;
@@ -136,8 +141,9 @@ int main(int argc,char** argv)
             // response must already have completed before invalidation consumers run.
             QElapsedTimer slowRefresh;slowRefresh.start();
             while(slowRefresh.elapsed()<250){}
+            if(completed)loop.quit();
         });
-    transportRequestId=inventory.edit(request,&loop,[&](const auto&){completed=true;loop.quit();},
+    transportRequestId=inventory.edit(request,&loop,[&](const auto&){completed=true;if(invalidationReceived)loop.quit();},
         [&](const auto& error){failed=true;timedOut=error.outcome==RemoteMutationDto::Outcome::Unknown;loop.quit();});
     QTimer::singleShot(5000,&loop,&QEventLoop::quit);loop.exec();
     ok&=require(completed&&!failed&&!timedOut,"correlated Edit did not complete definitively")
@@ -148,6 +154,21 @@ int main(int argc,char** argv)
         &&require(client.pendingRequestCountForTesting()==0,"successful Edit remained in pending request table");
     QEventLoop settle;QTimer::singleShot(100,&settle,&QEventLoop::quit);settle.exec();
     ok&=require(!failed&&client.pendingRequestCountForTesting()==0,"completed Edit later entered timeout path");
+    RemoteStorageMutationDto::Request storageAdd;storageAdd.workspaceId=workspace;storageAdd.mutationId=RemoteMutationDto::newMutationId();storageAdd.name="Remote Protocol Storage";storageAdd.description="Authoritative";storageAdd.storageTypeId=type;storageAdd.allowsInventory=true;
+    RemoteStorageMutationDto::Result storageResult;bool storageFailed=false;QEventLoop storageLoop;
+    storageMutations.add(storageAdd,&storageLoop,[&](const auto&result){storageResult=result;storageLoop.quit();},[&](const auto&){storageFailed=true;storageLoop.quit();});
+    QTimer::singleShot(5000,&storageLoop,&QEventLoop::quit);storageLoop.exec();
+    ok&=require(!storageFailed&&storageResult.storage.storageId>0&&storageResult.created
+                &&storageResult.storage.displayPath==QStringLiteral("Remote Protocol Storage"),"remote Storage add did not return authoritative detail");
+    const qint64 createdStorageId=storageResult.storage.storageId;
+    storageResult={};QEventLoop replayLoop;storageMutations.add(storageAdd,&replayLoop,[&](const auto&result){storageResult=result;replayLoop.quit();},[&](const auto&){storageFailed=true;replayLoop.quit();});QTimer::singleShot(5000,&replayLoop,&QEventLoop::quit);replayLoop.exec();
+    ok&=require(storageResult.replayed&&storageResult.storage.storageId==createdStorageId,"remote Storage replay was not idempotent");
+    auto storageRequestFrom=[&](const RemoteReadDto::StorageDetail&detail){RemoteStorageMutationDto::Request r;r.workspaceId=workspace;r.storageId=detail.storageId;r.mutationId=RemoteMutationDto::newMutationId();r.name=detail.name;r.description=detail.description;r.parentStorageId=detail.parentStorageId;r.storageTypeId=detail.storageTypeId;r.allowsInventory=detail.allowsInventory;r.allowsCollection=detail.allowsCollection;r.active=detail.active;r.expected.modifiedUtc=detail.modifiedUtc.toUTC().toString(Qt::ISODateWithMs);r.expected.parentStorageId=detail.parentStorageId;r.expected.storageTypeId=detail.storageTypeId;r.expected.name=detail.name;r.expected.description=detail.description;r.expected.sortOrder=detail.sortOrder;r.expected.active=detail.active;r.expected.allowsInventory=detail.allowsInventory;r.expected.allowsCollection=detail.allowsCollection;return r;};
+    auto storageEdit=storageRequestFrom(storageResult.storage);storageEdit.name=QStringLiteral("Renamed Remote Storage");storageEdit.description=QStringLiteral("Edited");QEventLoop editLoop;storageMutations.edit(storageEdit,&editLoop,[&](const auto&result){storageResult=result;editLoop.quit();},[&](const auto&){storageFailed=true;editLoop.quit();});QTimer::singleShot(5000,&editLoop,&QEventLoop::quit);editLoop.exec();
+    ok&=require(!storageFailed&&storageResult.storage.name==QStringLiteral("Renamed Remote Storage")&&storageResult.storage.displayPath==QStringLiteral("Renamed Remote Storage"),"remote Storage edit failed");
+    auto storageOff=storageRequestFrom(storageResult.storage);storageOff.active=false;QEventLoop activeLoop;storageMutations.setActive(storageOff,&activeLoop,[&](const auto&result){storageResult=result;activeLoop.quit();},[&](const auto&){storageFailed=true;activeLoop.quit();});QTimer::singleShot(5000,&activeLoop,&QEventLoop::quit);activeLoop.exec();
+    ok&=require(!storageFailed&&!storageResult.storage.active,"remote Storage setActive failed");
+    auto staleEdit=storageEdit;staleEdit.mutationId=RemoteMutationDto::newMutationId();bool staleRejected=false;QEventLoop staleLoop;storageMutations.edit(staleEdit,&staleLoop,[&](const auto&){staleLoop.quit();},[&](const auto&error){staleRejected=error.code==QStringLiteral("STALE_VERSION");staleLoop.quit();});QTimer::singleShot(5000,&staleLoop,&QEventLoop::quit);staleLoop.exec();ok&=require(staleRejected,"stale remote Storage edit was not rejected");
     client.disconnectFromHost();server.stop();
     return ok?0:1;
 }
