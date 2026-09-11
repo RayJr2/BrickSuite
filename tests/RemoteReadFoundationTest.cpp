@@ -134,9 +134,43 @@ int main(int argc, char** argv)
     customization.customizationId=7; customization.partNumber="3001";
     customization.catalog="Bricks"; customization.section="Basic"; customization.displayOrder=12;
     RemoteReadDto::PartReferenceCustomization decodedCustomization;
+    const QJsonObject emptyCustomizationJson=RemoteReadJson::toJson(customization);
+    ok &= require(emptyCustomizationJson.value("anchorPartNumber").isString()
+        && emptyCustomizationJson.value("anchorPartNumber").toString().isEmpty()
+        && !emptyCustomizationJson.contains("createdUtc")
+        && !emptyCustomizationJson.contains("modifiedUtc")
+        && RemoteReadJson::fromJson(emptyCustomizationJson,&decodedCustomization,&decodeError)
+        && decodedCustomization.displayOrder==12 && decodedCustomization.anchorPartNumber.isEmpty()
+        && decodedCustomization.notes.isEmpty(),
+        "Part Reference empty optional strings round trip failed");
+    customization.partNameFallback="Brick 2 x 4"; customization.representativeFor="3001";
+    customization.notes="User note"; customization.placement="After";
+    customization.anchorPartNumber="3002";
+    customization.createdUtc=QDateTime::fromString("2026-01-01T00:00:00.000Z",Qt::ISODateWithMs);
+    customization.modifiedUtc=QDateTime::fromString("2026-01-02T00:00:00.000Z",Qt::ISODateWithMs);
     ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(customization),
-        &decodedCustomization, &decodeError) && decodedCustomization.displayOrder==12,
-        "Part Reference customization round trip failed");
+        &decodedCustomization,&decodeError)
+        && decodedCustomization.partNameFallback==customization.partNameFallback
+        && decodedCustomization.representativeFor==customization.representativeFor
+        && decodedCustomization.notes==customization.notes
+        && decodedCustomization.placement==customization.placement
+        && decodedCustomization.anchorPartNumber==customization.anchorPartNumber
+        && decodedCustomization.createdUtc==customization.createdUtc
+        && decodedCustomization.modifiedUtc==customization.modifiedUtc,
+        "Part Reference populated optional strings round trip failed");
+    QJsonObject nullOptional=RemoteReadJson::toJson(customization);
+    nullOptional["anchorPartNumber"]=QJsonValue::Null;
+    ok &= require(RemoteReadJson::fromJson(nullOptional,&decodedCustomization,&decodeError)
+        && decodedCustomization.anchorPartNumber.isEmpty(),
+        "Part Reference null optional string compatibility failed");
+    QJsonObject invalidRequired=RemoteReadJson::toJson(customization);
+    invalidRequired["partNumber"]=QJsonValue::Null;
+    ok &= require(!RemoteReadJson::fromJson(invalidRequired,&decodedCustomization,&decodeError),
+        "Part Reference required string accepted null");
+    invalidRequired=RemoteReadJson::toJson(customization);
+    invalidRequired["catalog"]=42;
+    ok &= require(!RemoteReadJson::fromJson(invalidRequired,&decodedCustomization,&decodeError),
+        "Part Reference required string accepted wrong type");
     ok &= require(inventoryBytes<BrickSuiteProtocol::MaximumMessageBytes
         && requirementBytes<BrickSuiteProtocol::MaximumMessageBytes
         && pullingBytes<BrickSuiteProtocol::MaximumMessageBytes

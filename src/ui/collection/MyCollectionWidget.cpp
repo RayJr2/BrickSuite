@@ -1,6 +1,7 @@
 #include "MyCollectionWidget.h"
 
 #include "CollectionItemDialog.h"
+#include "RemoteCollectionMutationDialog.h"
 #include "../help/HelpManager.h"
 #include "../help/HelpTopic.h"
 #include "../helpers/LargeViewLoadingGuard.h"
@@ -12,6 +13,7 @@
 #include "../../services/collection/CollectionItemService.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
+#include "../../services/application/RemoteCollectionMutationApplicationService.h"
 #include "../../repositories/SetCatalogRepository.h"
 #include "../../repositories/MinifigCatalogRepository.h"
 #include "../../services/images/MinifigImageService.h"
@@ -57,9 +59,10 @@ QString locationPath(const StorageLocation& location, const QHash<int, StorageLo
 MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext,
                                        CollectionApplicationService& collectionService,
                                        RemoteReadApplicationServices* remoteReads,
+                                       RemoteCollectionMutationApplicationService* remoteMutations,
                                        QWidget* parent)
     : QWidget(parent), m_workspaceContext(workspaceContext), m_collectionService(collectionService),
-      m_remoteReads(remoteReads)
+      m_remoteReads(remoteReads), m_remoteMutations(remoteMutations)
 {
     HelpManager::setContextTopic(this, HelpTopic::MyCollection);
     m_setImages = new SetImageService(this);
@@ -155,7 +158,7 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext,
             : QStringLiteral("Loading page %1...").arg(m_page + 1));
     });
     connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged,
-            this, [this](int) { refresh(); });
+            this, [this](int) { if (m_remoteMutationDialog) m_remoteMutationDialog->reject(); refresh(); });
 
     auto applyImage = [this](const QString& key, const QString& path, const QString& type) {
         for (int row = 0; row < m_table->rowCount(); ++row) {
@@ -234,6 +237,7 @@ void MyCollectionWidget::setRemoteSessionConnected(bool connected)
         ++m_collectionRequestToken;
         ++m_storageRequestToken;
         ++m_detailRequestToken;
+        if (m_remoteMutationDialog) m_remoteMutationDialog->reject();
         m_messageLabel->setText(m_table->rowCount() > 0
             ? QStringLiteral("Host disconnected; displayed Collection may be stale.")
             : QStringLiteral("BrickSuite Host Collection is unavailable."));
@@ -545,15 +549,62 @@ void MyCollectionWidget::populateRemotePage(const QList<RemoteReadDto::Collectio
         for (int column = 0; column < columns.size(); ++column)
             m_table->setItem(row, column + 1, new QTableWidgetItem(columns.at(column)));
         auto* actions = new QComboBox(m_table); actions->addItem("Actions..."); actions->addItem("Details", "details");
+        if (m_remoteMutations && m_remoteMutations->isAvailableFor(QStringLiteral("collection.edit")))
+            actions->addItem(QStringLiteral("Edit..."), QStringLiteral("edit"));
+        if (m_remoteMutations && m_remoteMutations->isAvailableFor(QStringLiteral("collection.setActive")))
+            actions->addItem(value.active ? QStringLiteral("Archive") : QStringLiteral("Reactivate"),
+                             value.active ? QStringLiteral("archive") : QStringLiteral("reactivate"));
         m_table->setCellWidget(row, 10, actions);
         connect(actions, &QComboBox::currentIndexChanged, this, [this, actions, id=int(value.collectionItemId)](int index) {
-            if (index <= 0) return; actions->setCurrentIndex(0); showRemoteDetails(id);
+            if (index <= 0) return;
+            const QString action = actions->itemData(index).toString(); actions->setCurrentIndex(0);
+            if (action == QStringLiteral("details")) showRemoteDetails(id);
+            else if (action == QStringLiteral("edit")) openRemoteMutation(QStringLiteral("collection.edit"), id);
+            else openRemoteMutation(QStringLiteral("collection.setActive"), id);
         });
         if (value.type == QStringLiteral("Set") && !imageUrl.isEmpty()) m_setImages->requestSetImage(reference, imageUrl);
         else if (value.type == QStringLiteral("Minifig") && !imageUrl.isEmpty()) m_minifigImages->requestMinifigImage(reference, imageUrl);
     }
     m_messageLabel->setText(rows.isEmpty() ? QStringLiteral("No Collection items match the current filters.")
         : QStringLiteral("Showing %1 - %2 from BrickSuite Host.").arg(m_page * UserSettings::instance().resultsPerPage() + 1).arg(m_page * UserSettings::instance().resultsPerPage() + rows.size()));
+}
+
+void MyCollectionWidget::openRemoteMutation(const QString& operation, int itemId)
+{
+    if (!m_remoteReads || !m_remoteMutations || m_remoteMutationDialog
+        || !m_remoteMutations->isAvailableFor(operation)) return;
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    const quint64 token = ++m_detailRequestToken;
+    m_remoteReads->getCollection(workspaceId, itemId, this,
+        [this, workspaceId, token, operation](AsyncReadResult<RemoteReadDto::CollectionDetail> detailResult) {
+            if (token != m_detailRequestToken || workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+            if (!detailResult.succeeded()) { QMessageBox::warning(this, QStringLiteral("Collection Item"), detailResult.message); return; }
+            const auto detail = *detailResult.value;
+            m_remoteReads->listStorage(workspaceId, this,
+                [this, workspaceId, operation, detail](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> storageResult) {
+                    if (workspaceId != m_workspaceContext.currentWorkspaceId() || m_remoteMutationDialog) return;
+                    if (!storageResult.succeeded()) { QMessageBox::warning(this, QStringLiteral("Collection Item"), storageResult.message); return; }
+                    RemoteCollectionMutationDto::Request seed;
+                    seed.workspaceId = workspaceId; seed.collectionItemId = detail.collectionItemId;
+                    seed.state = detail.state; seed.condition = detail.condition; seed.completeness = detail.completeness;
+                    seed.storageId = detail.storageId; seed.nickname = detail.nickname; seed.notes = detail.notes;
+                    seed.desiredActive = !detail.active;
+                    seed.expected = {detail.modifiedUtc.toUTC().toString(Qt::ISODateWithMs), detail.type,
+                        detail.setNumber, detail.minifigNumber, detail.state, detail.condition,
+                        detail.completeness, detail.nickname, detail.notes, detail.storageId,
+                        detail.sourceBuildId, detail.active};
+                    const QString reference = detail.type == QStringLiteral("Set") ? detail.setNumber
+                        : detail.type == QStringLiteral("Minifig") ? detail.minifigNumber : detail.referenceFallback;
+                    auto* dialog = new RemoteCollectionMutationDialog(operation, workspaceId,
+                        *m_remoteMutations, *storageResult.value, seed, reference, detail.titleFallback, this);
+                    m_remoteMutationDialog = dialog;
+                    connect(dialog, &RemoteCollectionMutationDialog::mutationCompleted, this,
+                        [this](int item) { refreshRemoteCurrentPage(); if (item > 0) selectCollectionItem(item); });
+                    connect(dialog, &RemoteCollectionMutationDialog::refreshRequired, this,
+                        [this] { refreshRemoteCurrentPage(); });
+                    dialog->open();
+                });
+        });
 }
 
 void MyCollectionWidget::showRemoteDetails(int itemId)

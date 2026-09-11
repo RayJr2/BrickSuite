@@ -306,3 +306,20 @@ The domain mutation and receipt must share one transaction. Business validation 
 be repeated inside that transaction. `HostMutationPublicationService` runs only after
 commit. Any timeout-capable UI must preserve the mutation ID while the outcome is
 unknown.
+
+## Collection mutations
+
+Authenticated Hosts advertise `collection.add`, `collection.edit`, and `collection.setActive`
+as independent exact capabilities. Read access does not imply Collection write access.
+Add carries exactly one portable source identity: a Rebrickable Set number, a Rebrickable
+Minifig number, or a Host Build ID. Client-local catalog row IDs are never authoritative.
+
+Edit and lifecycle requests carry the prior authoritative item as expected state, including
+`modifiedUtc`, active state, immutable source identity, Storage ID, and mutable values. The Host
+rejects stale state instead of overwriting newer data. Successful replies return the authoritative
+item. Standard Protocol 1.2 receipts make an identical retry a replay and reject a changed payload
+under the same mutation ID. Only timeout or disconnection has an unknown client outcome.
+
+A newly committed mutation sends its correlated response before publishing one `Collection`
+invalidation. Receipt replay publishes no second invalidation, and Collection writes do not emit
+synthetic Inventory or Build invalidations.

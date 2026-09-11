@@ -9,6 +9,8 @@ class RebrickableMinifigPartsService;
 class QPushButton;
 class QTableWidget;
 class WorkspaceContext;
+class RemoteReadApplicationServices;
+class RemoteCollectionMutationApplicationService;
 
 class MinifigDetailsDialog : public QDialog
 {
@@ -16,7 +18,9 @@ class MinifigDetailsDialog : public QDialog
 
 public:
     explicit MinifigDetailsDialog(int minifigCatalogId, WorkspaceContext& workspaceContext,
-                                  QWidget* parent = nullptr);
+                                  QWidget* parent = nullptr,
+                                  RemoteReadApplicationServices* remoteReads = nullptr,
+                                  RemoteCollectionMutationApplicationService* remoteMutations = nullptr);
 
 signals:
     void createBuildRequested(int minifigCatalogId, const QString& buildName);
@@ -34,6 +38,8 @@ private:
 
     int m_minifigCatalogId = 0;
     WorkspaceContext& m_workspaceContext;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
+    RemoteCollectionMutationApplicationService* m_remoteMutations = nullptr;
     QString m_minifigNumber;
     QString m_minifigName;
     QString m_imageUrl;

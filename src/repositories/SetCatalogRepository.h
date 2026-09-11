@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include "RepositoryConnection.h"
 #include "../models/SetCatalogItem.h"
 #include "../models/SetCatalogSearchCriteria.h"
 
@@ -28,10 +29,14 @@
 
 class QSqlQuery;
 
-class SetCatalogRepository
+class SetCatalogRepository : protected RepositoryConnection
 {
 public:
+    SetCatalogRepository() = default;
+    explicit SetCatalogRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
     std::optional<SetCatalogItem> getById(int id) const;
+    bool tryGetById(int id, std::optional<SetCatalogItem>& item) const;
 
     std::optional<SetCatalogItem> getBySetNumber(const QString& setNumber) const;
     QList<SetCatalogItem> getExactMatchesBySetNumber(const QString& setNumber,

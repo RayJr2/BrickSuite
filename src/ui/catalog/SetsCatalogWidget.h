@@ -28,13 +28,17 @@ class QLineEdit;
 class QPushButton;
 class QTableWidget;
 class WorkspaceContext;
+class RemoteReadApplicationServices;
+class RemoteCollectionMutationApplicationService;
 
 class SetsCatalogWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit SetsCatalogWidget(WorkspaceContext& workspaceContext, QWidget* parent = nullptr);
+    explicit SetsCatalogWidget(WorkspaceContext& workspaceContext, QWidget* parent = nullptr,
+        RemoteReadApplicationServices* remoteReads = nullptr,
+        RemoteCollectionMutationApplicationService* remoteMutations = nullptr);
 
     void refresh();
 
@@ -53,6 +57,8 @@ private:
     void loadYears();
     void updatePagingControls();
     WorkspaceContext& m_workspaceContext;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
+    RemoteCollectionMutationApplicationService* m_remoteMutations = nullptr;
 
     int m_currentPage = 0;
     int m_lastResultCount = 0;

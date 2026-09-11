@@ -186,8 +186,14 @@ bool BuildRepository::create(Build& build)
 
 std::optional<Build> BuildRepository::getById(int id) const
 {
-    if (id <= 0)
-        return std::nullopt;
+    std::optional<Build> build;
+    return tryGetById(id, build) ? build : std::nullopt;
+}
+
+bool BuildRepository::tryGetById(int id, std::optional<Build>& build) const
+{
+    build.reset();
+    if (id <= 0) return true;
 
     QSqlDatabase database = repositoryDatabase();
 
@@ -224,13 +230,11 @@ std::optional<Build> BuildRepository::getById(int id) const
     if (!query.exec()) {
         qCritical() << "Unable to retrieve build:" << query.lastError().text();
 
-        return std::nullopt;
+        return false;
     }
 
-    if (!query.next())
-        return std::nullopt;
-
-    return buildFromQuery(query);
+    if (query.next()) build = buildFromQuery(query);
+    return true;
 }
 
 QList<Build> BuildRepository::getByWorkspace(int workspaceId, bool includeArchived) const

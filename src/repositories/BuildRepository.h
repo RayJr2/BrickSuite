@@ -39,6 +39,7 @@ public:
     bool create(Build& build);
 
     std::optional<Build> getById(int id) const;
+    bool tryGetById(int id, std::optional<Build>& build) const;
 
     QList<Build> getByWorkspace(int workspaceId, bool includeArchived = false) const;
 

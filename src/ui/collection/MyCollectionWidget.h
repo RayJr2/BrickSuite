@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include <QPointer>
 
 class WorkspaceContext;
 class MinifigImageService;
@@ -12,6 +13,8 @@ class QPushButton;
 class QTableWidget;
 class CollectionApplicationService;
 class RemoteReadApplicationServices;
+class RemoteCollectionMutationApplicationService;
+class QDialog;
 namespace RemoteReadDto { struct CollectionSummary; struct CollectionDetail; }
 
 class MyCollectionWidget : public QWidget
@@ -21,6 +24,7 @@ public:
     explicit MyCollectionWidget(WorkspaceContext& workspaceContext,
                                 CollectionApplicationService& collectionService,
                                 RemoteReadApplicationServices* remoteReads = nullptr,
+                                RemoteCollectionMutationApplicationService* remoteMutations = nullptr,
                                 QWidget* parent = nullptr);
     void refresh();
     void refreshRemoteCurrentPage(bool refreshLocations = false);
@@ -40,12 +44,15 @@ private:
     void requestRemotePage();
     void populateRemotePage(const QList<RemoteReadDto::CollectionSummary>& rows);
     void showRemoteDetails(int itemId);
+    void openRemoteMutation(const QString& operation, int itemId);
     void handleAction(int itemId, bool active, const QString& action);
     QString effectiveCriteriaKey() const;
 
     WorkspaceContext& m_workspaceContext;
     CollectionApplicationService& m_collectionService;
     RemoteReadApplicationServices* m_remoteReads = nullptr;
+    RemoteCollectionMutationApplicationService* m_remoteMutations = nullptr;
+    QPointer<QDialog> m_remoteMutationDialog;
     SetImageService* m_setImages = nullptr;
     MinifigImageService* m_minifigImages = nullptr;
     QLineEdit* m_searchEdit = nullptr;

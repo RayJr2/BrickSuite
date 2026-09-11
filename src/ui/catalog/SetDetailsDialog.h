@@ -33,6 +33,8 @@ class PartImageService;
 class RebrickableSetPartsService;
 class QTableWidget;
 class WorkspaceContext;
+class RemoteReadApplicationServices;
+class RemoteCollectionMutationApplicationService;
 
 class SetDetailsDialog : public QDialog
 {
@@ -40,7 +42,9 @@ class SetDetailsDialog : public QDialog
 
 public:
     explicit SetDetailsDialog(int setCatalogId, WorkspaceContext& workspaceContext,
-                              QWidget* parent = nullptr);
+                              QWidget* parent = nullptr,
+                              RemoteReadApplicationServices* remoteReads = nullptr,
+                              RemoteCollectionMutationApplicationService* remoteMutations = nullptr);
 
 signals:
     void createBuildRequested(int setCatalogId, const QString& buildName);
@@ -62,6 +66,8 @@ private:
 
     int m_setCatalogId = 0;
     WorkspaceContext& m_workspaceContext;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
+    RemoteCollectionMutationApplicationService* m_remoteMutations = nullptr;
 
     QString m_setNumber;
     QString m_setName;

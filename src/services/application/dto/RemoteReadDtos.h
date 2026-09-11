@@ -104,7 +104,7 @@ struct CollectionSummary {
     qint64 collectionItemId = 0; qint64 workspaceId = 0; QString type;
     QString setNumber; QString minifigNumber; QString referenceFallback; QString titleFallback;
     QString state; QString condition; QString completeness; qint64 storageId = 0;
-    QString storagePath; QString nickname; bool active = true;
+    QString storagePath; QString nickname; qint64 sourceBuildId = 0; bool active = true;
 };
 struct CollectionDetail : CollectionSummary { QString notes; QDateTime createdUtc; QDateTime modifiedUtc; };
 

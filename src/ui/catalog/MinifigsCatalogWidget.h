@@ -9,6 +9,8 @@ class QTableWidget;
 class QComboBox;
 class MinifigImageService;
 class WorkspaceContext;
+class RemoteReadApplicationServices;
+class RemoteCollectionMutationApplicationService;
 
 class MinifigsCatalogWidget : public QWidget
 {
@@ -16,7 +18,9 @@ class MinifigsCatalogWidget : public QWidget
 
 public:
     explicit MinifigsCatalogWidget(WorkspaceContext& workspaceContext,
-                                   QWidget* parent = nullptr);
+                                   QWidget* parent = nullptr,
+                                   RemoteReadApplicationServices* remoteReads = nullptr,
+                                   RemoteCollectionMutationApplicationService* remoteMutations = nullptr);
     void refresh();
 
 signals:
@@ -35,6 +39,8 @@ private:
     void updatePagingControls();
     void loadThemes();
     WorkspaceContext& m_workspaceContext;
+    RemoteReadApplicationServices* m_remoteReads = nullptr;
+    RemoteCollectionMutationApplicationService* m_remoteMutations = nullptr;
 
     int m_currentPage = 0;
     int m_totalResultCount = 0;

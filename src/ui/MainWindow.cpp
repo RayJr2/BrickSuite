@@ -210,10 +210,12 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     m_partsCatalogWidget = new PartsCatalogWidget(m_partExternalIdEnrichmentService, m_tabWidget);
 
     // Sets Catalog tab
-    m_setsCatalogWidget = new SetsCatalogWidget(m_workspaceContext, m_tabWidget);
+    m_setsCatalogWidget = new SetsCatalogWidget(m_workspaceContext, m_tabWidget,
+        m_remoteReads, m_networkManager.remoteCollectionMutations());
 
     // Minifigs Catalog tab
-    m_minifigsCatalogWidget = new MinifigsCatalogWidget(m_workspaceContext, m_tabWidget);
+    m_minifigsCatalogWidget = new MinifigsCatalogWidget(m_workspaceContext, m_tabWidget,
+        m_remoteReads, m_networkManager.remoteCollectionMutations());
 
     connect(m_setsCatalogWidget,
             &SetsCatalogWidget::createBuildRequested,
@@ -332,7 +334,14 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     m_myCollectionWidget = new MyCollectionWidget(m_workspaceContext,
                                                    m_applicationServices.collection(),
                                                    m_remoteReads,
+                                                   m_networkManager.remoteCollectionMutations(),
                                                    m_tabWidget);
+    connect(&m_networkManager, &BrickSuiteNetworkManager::remoteCollectionMutationCommitted,
+            this, [this](int workspaceId, int collectionItemId) {
+        if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+        m_myCollectionWidget->refresh();
+        m_myCollectionWidget->selectCollectionItem(collectionItemId);
+    });
 
     // Builds tab
     m_buildsWidget = new BuildsWidget(m_workspaceContext,
@@ -341,7 +350,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                                       m_tabWidget,
                                       m_remoteReads,
                                       m_partExternalIdEnrichmentService,
-                                      m_networkManager.remotePulling());
+                                      m_networkManager.remotePulling(),
+                                      m_networkManager.remoteCollectionMutations());
     connect(&m_networkManager, &BrickSuiteNetworkManager::remotePullingMutationCommitted,
             this, [this](int workspaceId, int buildId) {
         if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
@@ -564,7 +574,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         HostMutationPublicationService::Scope scope;
         scope.workspaceId = workspaceId;
         scope.collectionItemId = itemId;
-        m_hostMutationPublications->publish(
+        if (!m_remoteReads) m_hostMutationPublications->publish(
             HostMutationPublicationService::Workflow::Collection, scope);
     });
 
@@ -572,7 +582,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         HostMutationPublicationService::Scope scope;
         scope.workspaceId = m_workspaceContext.currentWorkspaceId();
         scope.collectionItemId = collectionItemId;
-        m_hostMutationPublications->publish(
+        if (!m_remoteReads) m_hostMutationPublications->publish(
             HostMutationPublicationService::Workflow::Collection, scope);
         m_tabWidget->setCurrentWidget(m_myCollectionWidget);
         m_myCollectionWidget->selectCollectionItem(collectionItemId);

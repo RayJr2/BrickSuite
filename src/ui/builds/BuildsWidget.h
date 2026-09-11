@@ -30,6 +30,7 @@ class SessionStorageSelectionService;
 class BuildApplicationService;
 class RemoteReadApplicationServices;
 class RemotePullingApplicationService;
+class RemoteCollectionMutationApplicationService;
 class PartExternalIdEnrichmentService;
 
 class QComboBox;
@@ -58,7 +59,8 @@ public:
         QWidget* parent = nullptr,
         RemoteReadApplicationServices* remoteReads = nullptr,
         PartExternalIdEnrichmentService* enrichmentService = nullptr,
-        RemotePullingApplicationService* remotePulling = nullptr);
+        RemotePullingApplicationService* remotePulling = nullptr,
+        RemoteCollectionMutationApplicationService* remoteCollection = nullptr);
 
     void refresh();
     void refreshRemoteBuildsPreservingSelection();
@@ -103,6 +105,7 @@ private:
     void renderRemoteRequirements();
     void showRemoteDetails(int buildId);
     void showRemotePulling(int buildId);
+    void addRemoteBuildToCollection(const RemoteReadDto::BuildSummary& build);
     void loadManufacturers();
     void updateUiState();
 
@@ -123,6 +126,7 @@ private:
     RemoteReadApplicationServices* m_remoteReads = nullptr;
     PartExternalIdEnrichmentService* m_enrichmentService = nullptr;
     RemotePullingApplicationService* m_remotePulling = nullptr;
+    RemoteCollectionMutationApplicationService* m_remoteCollection = nullptr;
     QList<RemoteReadDto::BuildRequirement> m_remoteRequirements;
     quint64 m_buildListGeneration = 0;
     quint64 m_requirementGeneration = 0;

@@ -91,10 +91,16 @@ void bindCriteria(QSqlQuery& query,
 
 std::optional<MinifigCatalogItem> MinifigCatalogRepository::getById(int id) const
 {
-    if (id <= 0)
-        return std::nullopt;
+    std::optional<MinifigCatalogItem> item;
+    return tryGetById(id, item) ? item : std::nullopt;
+}
 
-    QSqlQuery query(DatabaseManager::instance().database());
+bool MinifigCatalogRepository::tryGetById(
+    int id, std::optional<MinifigCatalogItem>& item) const
+{
+    item.reset();
+    if (id <= 0) return true;
+    QSqlQuery query(repositoryDatabase());
     query.prepare(QStringLiteral("SELECT %1 FROM minifig_catalog mc WHERE mc.id = :id")
                       .arg(selectColumns()));
     query.bindValue(":id", id);
@@ -102,24 +108,25 @@ std::optional<MinifigCatalogItem> MinifigCatalogRepository::getById(int id) cons
     if (!query.exec()) {
         qCritical() << "Unable to retrieve Minifig Catalog item:"
                     << query.lastError().text();
-        return std::nullopt;
+        return false;
     }
-
-    return query.next() ? std::optional<MinifigCatalogItem>(itemFromQuery(query))
-                        : std::nullopt;
+    if (query.next()) item = itemFromQuery(query);
+    return true;
 }
 
 std::optional<MinifigCatalogItem> MinifigCatalogRepository::getByExternalIdentifier(
     const QString& provider,
-    const QString& externalId) const
+    const QString& externalId,
+    bool* querySucceeded) const
 {
+    if (querySucceeded) *querySucceeded = false;
     const QString trimmedProvider = provider.trimmed();
     const QString trimmedExternalId = externalId.trimmed();
 
     if (trimmedProvider.isEmpty() || trimmedExternalId.isEmpty())
         return std::nullopt;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(QStringLiteral(R"(
         SELECT %1
         FROM minifig_catalog mc
@@ -137,6 +144,7 @@ std::optional<MinifigCatalogItem> MinifigCatalogRepository::getByExternalIdentif
                     << query.lastError().text();
         return std::nullopt;
     }
+    if (querySucceeded) *querySucceeded = true;
 
     return query.next() ? std::optional<MinifigCatalogItem>(itemFromQuery(query))
                         : std::nullopt;
@@ -151,7 +159,7 @@ QList<MinifigExternalIdentifier> MinifigCatalogRepository::identifiersForMinifig
     if (minifigCatalogId <= 0)
         return identifiers;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     QString sql = QStringLiteral(R"(
         SELECT id, minifig_catalog_id, provider, external_id, source, is_active
         FROM minifig_external_identifier
@@ -207,7 +215,7 @@ QList<MinifigCatalogSearchResult> MinifigCatalogRepository::search(
     appendCriteria(sql, criteria, searchText, provider);
     sql += QStringLiteral(" ORDER BY mc.name COLLATE NOCASE, mc.id LIMIT :limit OFFSET :offset");
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     if (!query.prepare(sql)) {
         qCritical() << "Unable to prepare Minifig Catalog search:"
                     << query.lastError().text();
@@ -241,7 +249,7 @@ int MinifigCatalogRepository::count(const MinifigCatalogSearchCriteria& criteria
     QString sql = QStringLiteral("SELECT COUNT(*) FROM minifig_catalog mc WHERE 1 = 1");
     appendCriteria(sql, criteria, searchText, provider);
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     if (!query.prepare(sql)) {
         qCritical() << "Unable to prepare Minifig Catalog count:"
                     << query.lastError().text();

@@ -106,15 +106,23 @@ bool CollectionRepository::create(CollectionItem& item)
 
 std::optional<CollectionItem> CollectionRepository::getById(int id) const
 {
-    if (id <= 0) return std::nullopt;
+    std::optional<CollectionItem> item;
+    return tryGetById(id, item) ? item : std::nullopt;
+}
+
+bool CollectionRepository::tryGetById(int id, std::optional<CollectionItem>& item) const
+{
+    item.reset();
+    if (id <= 0) return true;
     QSqlQuery query(repositoryDatabase());
     query.prepare(QString("SELECT %1 FROM collection_item ci WHERE ci.id=:id").arg(itemColumns()));
     query.bindValue(":id", id);
     if (!query.exec()) {
         qCritical() << "Unable to retrieve Collection item:" << query.lastError().text();
-        return std::nullopt;
+        return false;
     }
-    return query.next() ? std::optional<CollectionItem>(itemFromQuery(query)) : std::nullopt;
+    if (query.next()) item = itemFromQuery(query);
+    return true;
 }
 
 std::optional<CollectionItem> CollectionRepository::getBySourceBuild(int buildId) const
@@ -143,6 +151,14 @@ bool CollectionRepository::tryGetBySourceBuild(
 bool CollectionRepository::hasSourceBuild(int buildId) const
 {
     return getBySourceBuild(buildId).has_value();
+}
+
+bool CollectionRepository::tryHasSourceBuild(int buildId, bool& found) const
+{
+    std::optional<CollectionItem> item;
+    const bool succeeded = tryGetBySourceBuild(buildId, item);
+    found = item.has_value();
+    return succeeded;
 }
 
 QList<CollectionSearchResult> CollectionRepository::search(

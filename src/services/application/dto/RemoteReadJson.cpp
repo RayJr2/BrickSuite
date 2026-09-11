@@ -21,6 +21,19 @@ bool textField(const QJsonObject& o, const char* key, QString* out, bool require
     if (!v.isString() || v.toString().size() > maximumLength) return false;
     *out = v.toString(); return !required || !out->trimmed().isEmpty();
 }
+bool optionalNullableTextField(const QJsonObject& o, const char* key, QString* out,
+                               int maximumLength = RemoteReadDto::MaximumTextLength)
+{
+    const QJsonValue value = o.value(QLatin1String(key));
+    if (value.isUndefined() || value.isNull()) { out->clear(); return true; }
+    if (!value.isString() || value.toString().size() > maximumLength) return false;
+    *out = value.toString();
+    return true;
+}
+QString optionalWireText(const QString& value)
+{
+    return value.isNull() ? QStringLiteral("") : value;
+}
 }
 
 namespace RemoteReadJson {
@@ -129,11 +142,13 @@ bool fromJson(const QJsonObject&o,RemoteReadDto::MissingPart*v,DecodeError*e){qi
 QJsonObject toJson(const RemoteReadDto::PullingRow&v){return{{"requirementId",double(v.requirementId)},{"allocationId",double(v.allocationId)},{"inventoryRecordId",double(v.inventoryRecordId)},{"storageId",double(v.storageId)},{"storagePath",v.storagePath},{"partNumber",v.partNumber},{"partNameFallback",v.partNameFallback},{"rebrickableColorId",v.rebrickableColorId},{"colorNameFallback",v.colorNameFallback},{"quantityRequired",v.quantityRequired},{"quantityPulled",v.quantityPulled},{"quantityAllocated",v.quantityAllocated},{"inventoryQuantity",v.inventoryQuantity},{"substitution",v.substitution}};}
 bool fromJson(const QJsonObject&o,RemoteReadDto::PullingRow*v,DecodeError*e){qint64 color=0,required=0,pulled=0,allocated=0,inventory=0;if(!integer(o,"requirementId",1,9007199254740991LL,&v->requirementId)||!integer(o,"allocationId",1,9007199254740991LL,&v->allocationId)||!integer(o,"inventoryRecordId",1,9007199254740991LL,&v->inventoryRecordId)||!integer(o,"storageId",0,9007199254740991LL,&v->storageId)||!integer(o,"rebrickableColorId",-1,INT_MAX,&color)||!integer(o,"quantityRequired",0,INT_MAX,&required)||!integer(o,"quantityPulled",0,INT_MAX,&pulled)||!integer(o,"quantityAllocated",0,INT_MAX,&allocated)||(o.contains("inventoryQuantity")&&!integer(o,"inventoryQuantity",0,INT_MAX,&inventory))||!textField(o,"storagePath",&v->storagePath,false)||!textField(o,"partNumber",&v->partNumber)||!textField(o,"partNameFallback",&v->partNameFallback,false)||!textField(o,"colorNameFallback",&v->colorNameFallback,false)||!o.value("substitution").isBool())return fail(e,"Invalid Pulling row.");v->rebrickableColorId=int(color);v->quantityRequired=int(required);v->quantityPulled=int(pulled);v->quantityAllocated=int(allocated);v->inventoryQuantity=int(inventory);v->substitution=o.value("substitution").toBool();return true;}
 QJsonObject toJson(const RemoteReadDto::CollectionSummary& v)
-{ return {{"collectionItemId",double(v.collectionItemId)},{"workspaceId",double(v.workspaceId)},{"type",v.type},{"setNumber",v.setNumber},{"minifigNumber",v.minifigNumber},{"referenceFallback",v.referenceFallback},{"titleFallback",v.titleFallback},{"state",v.state},{"condition",v.condition},{"completeness",v.completeness},{"storageId",double(v.storageId)},{"storagePath",v.storagePath},{"nickname",v.nickname},{"active",v.active}}; }
+{ return {{"collectionItemId",double(v.collectionItemId)},{"workspaceId",double(v.workspaceId)},{"type",v.type},{"setNumber",v.setNumber},{"minifigNumber",v.minifigNumber},{"referenceFallback",v.referenceFallback},{"titleFallback",v.titleFallback},{"state",v.state},{"condition",v.condition},{"completeness",v.completeness},{"storageId",double(v.storageId)},{"storagePath",v.storagePath},{"nickname",v.nickname},{"sourceBuildId",double(v.sourceBuildId)},{"active",v.active}}; }
 bool fromJson(const QJsonObject& o, RemoteReadDto::CollectionSummary* v, DecodeError* e)
 {
     if (!integer(o,"collectionItemId",1,9007199254740991LL,&v->collectionItemId) || !integer(o,"workspaceId",1,9007199254740991LL,&v->workspaceId)
-        || !integer(o,"storageId",0,9007199254740991LL,&v->storageId) || !textField(o,"type",&v->type)
+        || !integer(o,"storageId",0,9007199254740991LL,&v->storageId)
+        || (o.contains("sourceBuildId") && !integer(o,"sourceBuildId",0,9007199254740991LL,&v->sourceBuildId))
+        || !textField(o,"type",&v->type)
         || !textField(o,"setNumber",&v->setNumber,false) || !textField(o,"minifigNumber",&v->minifigNumber,false) || !textField(o,"referenceFallback",&v->referenceFallback,false)
         || !textField(o,"titleFallback",&v->titleFallback,false) || !textField(o,"state",&v->state)
         || !textField(o,"condition",&v->condition) || !textField(o,"completeness",&v->completeness)
@@ -144,15 +159,20 @@ bool fromJson(const QJsonObject& o, RemoteReadDto::CollectionSummary* v, DecodeE
 QJsonObject toJson(const RemoteReadDto::CollectionDetail&v){QJsonObject o=toJson(static_cast<const RemoteReadDto::CollectionSummary&>(v));o["notes"]=v.notes;o["createdUtc"]=utc(v.createdUtc);o["modifiedUtc"]=utc(v.modifiedUtc);return o;}
 bool fromJson(const QJsonObject&o,RemoteReadDto::CollectionDetail*v,DecodeError*e){return fromJson(o,static_cast<RemoteReadDto::CollectionSummary*>(v),e)&&textField(o,"notes",&v->notes,false)&&parseUtc(o.value("createdUtc"),&v->createdUtc)&&parseUtc(o.value("modifiedUtc"),&v->modifiedUtc);}
 QJsonObject toJson(const RemoteReadDto::PartReferenceCustomization& v)
-{ return {{"customizationId",double(v.customizationId)},{"partNumber",v.partNumber},{"partNameFallback",v.partNameFallback},{"catalog",v.catalog},{"section",v.section},{"displayOrder",v.displayOrder},{"representativeFor",v.representativeFor},{"notes",v.notes},{"placement",v.placement},{"anchorPartNumber",v.anchorPartNumber},{"createdUtc",utc(v.createdUtc)},{"modifiedUtc",utc(v.modifiedUtc)}}; }
+{
+    QJsonObject result{{"customizationId",double(v.customizationId)},{"partNumber",v.partNumber},{"partNameFallback",optionalWireText(v.partNameFallback)},{"catalog",v.catalog},{"section",v.section},{"displayOrder",v.displayOrder},{"representativeFor",optionalWireText(v.representativeFor)},{"notes",optionalWireText(v.notes)},{"placement",optionalWireText(v.placement)},{"anchorPartNumber",optionalWireText(v.anchorPartNumber)}};
+    if (v.createdUtc.isValid()) result["createdUtc"] = utc(v.createdUtc);
+    if (v.modifiedUtc.isValid()) result["modifiedUtc"] = utc(v.modifiedUtc);
+    return result;
+}
 bool fromJson(const QJsonObject& o, RemoteReadDto::PartReferenceCustomization* v, DecodeError* e)
 {
     qint64 order=0;
     if (!integer(o,"customizationId",1,9007199254740991LL,&v->customizationId) || !integer(o,"displayOrder",0,INT_MAX,&order)
-        || !textField(o,"partNumber",&v->partNumber) || !textField(o,"partNameFallback",&v->partNameFallback,false)
+        || !textField(o,"partNumber",&v->partNumber) || !optionalNullableTextField(o,"partNameFallback",&v->partNameFallback)
         || !textField(o,"catalog",&v->catalog) || !textField(o,"section",&v->section)
-        || !textField(o,"representativeFor",&v->representativeFor,false) || !textField(o,"notes",&v->notes,false)
-        || !textField(o,"placement",&v->placement,false) || !textField(o,"anchorPartNumber",&v->anchorPartNumber,false)
+        || !optionalNullableTextField(o,"representativeFor",&v->representativeFor) || !optionalNullableTextField(o,"notes",&v->notes)
+        || !optionalNullableTextField(o,"placement",&v->placement) || !optionalNullableTextField(o,"anchorPartNumber",&v->anchorPartNumber)
         || (!o.value("createdUtc").isUndefined() && !parseUtc(o.value("createdUtc"),&v->createdUtc))
         || (!o.value("modifiedUtc").isUndefined() && !parseUtc(o.value("modifiedUtc"),&v->modifiedUtc)))
         return fail(e,QStringLiteral("Invalid Part Reference customization.")); v->displayOrder=int(order); return true;

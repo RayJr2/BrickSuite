@@ -1006,8 +1006,8 @@ void DisassembleSetDialog::disassembleSet()
     if (m_linkedCollectionItemId > 0) {
         const auto state = static_cast<CollectionItemState>(
             m_collectionStateCombo->currentData().toInt());
-        const auto collectionResult = CollectionItemService().updateStateForDisassembly(
-            m_buildId, state);
+        const auto collectionResult = CollectionItemService(database)
+            .updateStateForDisassemblyInCurrentTransaction(m_buildId, state);
         if (!collectionResult.success) {
             qCritical() << "Build disassembly failed synchronizing Collection state."
                         << "BuildId:" << m_buildId;

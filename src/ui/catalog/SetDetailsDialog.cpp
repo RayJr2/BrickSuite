@@ -20,6 +20,9 @@
 
 #include "SetDetailsDialog.h"
 #include "../collection/CatalogCollectionDialog.h"
+#include "../collection/RemoteCollectionMutationDialog.h"
+#include "../../services/application/RemoteReadApplicationServices.h"
+#include "../../services/application/RemoteCollectionMutationApplicationService.h"
 #include "../../app/WorkspaceContext.h"
 
 #include "../../models/SetCatalogItem.h"
@@ -54,10 +57,11 @@
 #include <QVBoxLayout>
 
 SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspaceContext,
-                                   QWidget* parent)
+                                   QWidget* parent, RemoteReadApplicationServices* remoteReads,
+                                   RemoteCollectionMutationApplicationService* remoteMutations)
     : QDialog(parent)
     , m_setCatalogId(setCatalogId)
-    , m_workspaceContext(workspaceContext)
+    , m_workspaceContext(workspaceContext), m_remoteReads(remoteReads), m_remoteMutations(remoteMutations)
 {
     setWindowTitle("Set Details");
 
@@ -404,7 +408,9 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
     if (!loadSet())
         return;
 
-    m_addToCollectionButton->setEnabled(m_workspaceContext.hasCurrentWorkspace());
+    m_addToCollectionButton->setEnabled(m_workspaceContext.hasCurrentWorkspace()
+        && (!m_remoteReads || (m_remoteMutations
+            && m_remoteMutations->isAvailableFor(QStringLiteral("collection.add")))));
 
     loadComposition();
 
@@ -420,6 +426,26 @@ void SetDetailsDialog::addToCollection()
     if (!m_workspaceContext.hasCurrentWorkspace()) {
         QMessageBox::warning(this, "Add to Collection",
                              "Select a workspace before adding a Set to My Collection.");
+        return;
+    }
+    if (m_remoteReads) {
+        if (!m_remoteMutations || !m_remoteMutations->isAvailableFor(QStringLiteral("collection.add"))) {
+            QMessageBox::information(this, "Add to Collection", "The connected Host does not permit adding Collection items."); return;
+        }
+        const int workspaceId = m_workspaceContext.currentWorkspaceId();
+        m_remoteReads->listStorage(workspaceId, this, [this, workspaceId](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> result) {
+            if (workspaceId != m_workspaceContext.currentWorkspaceId() || !result.succeeded()) {
+                if (!result.succeeded()) QMessageBox::warning(this, "Add to Collection", result.message); return;
+            }
+            RemoteCollectionMutationDto::Request seed; seed.workspaceId=workspaceId;
+            seed.sourceType="SetCatalog"; seed.setNumber=m_setNumber; seed.state="Assembled";
+            seed.condition="Used"; seed.completeness="Unknown";
+            auto* dialog=new RemoteCollectionMutationDialog("collection.add",workspaceId,*m_remoteMutations,
+                *result.value,seed,m_setNumber,m_setName,this);
+            connect(&m_workspaceContext,&WorkspaceContext::currentWorkspaceChanged,dialog,&QDialog::reject);
+            connect(dialog,&RemoteCollectionMutationDialog::mutationCompleted,this,&SetDetailsDialog::collectionItemCreated);
+            dialog->open();
+        });
         return;
     }
     CatalogCollectionDialog dialog(m_workspaceContext.currentWorkspaceId(),

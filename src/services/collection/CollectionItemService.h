@@ -3,6 +3,8 @@
 #include "../../models/CollectionItem.h"
 
 #include <QString>
+#include <QSqlDatabase>
+#include <functional>
 
 class CollectionItemService
 {
@@ -29,7 +31,12 @@ public:
         Error error = Error::None;
         QString message;
         int collectionItemId = 0;
+        CollectionItem item;
+        bool changed = false;
     };
+
+    CollectionItemService();
+    explicit CollectionItemService(const QSqlDatabase& database);
 
     struct SetLinkPreview {
         Result result;
@@ -69,8 +76,42 @@ public:
     Result linkLegacySetBuild(int buildId, int expectedSetCatalogId) const;
     Result setActive(int itemId, bool active) const;
 
+    Result createSetInCurrentTransaction(int workspaceId, int setCatalogId,
+        CollectionItemState state, int storageLocationId = 0, int sourceBuildId = 0,
+        const QString& nickname = {}, const QString& notes = {},
+        CollectionItemCondition condition = CollectionItemCondition::Used,
+        CollectionItemCompleteness completeness = CollectionItemCompleteness::Unknown) const;
+    Result createMinifigInCurrentTransaction(int workspaceId, int minifigCatalogId,
+        CollectionItemState state, int storageLocationId = 0, int sourceBuildId = 0,
+        const QString& nickname = {}, const QString& notes = {},
+        CollectionItemCondition condition = CollectionItemCondition::Used,
+        CollectionItemCompleteness completeness = CollectionItemCompleteness::Unknown) const;
+    Result createMocFromBuildInCurrentTransaction(int workspaceId, int sourceBuildId,
+        CollectionItemState state, int storageLocationId = 0,
+        const QString& nickname = {}, const QString& notes = {},
+        CollectionItemCondition condition = CollectionItemCondition::Used,
+        CollectionItemCompleteness completeness = CollectionItemCompleteness::Complete) const;
+    Result createFromBuildInCurrentTransaction(int workspaceId, int sourceBuildId,
+        CollectionItemState state, int storageLocationId = 0,
+        const QString& nickname = {}, const QString& notes = {},
+        CollectionItemCondition condition = CollectionItemCondition::Used,
+        CollectionItemCompleteness completeness = CollectionItemCompleteness::Complete) const;
+    Result updateDetailsInCurrentTransaction(int itemId, CollectionItemState state,
+        int storageLocationId, const QString& nickname, const QString& notes,
+        bool allowPartsSource, CollectionItemCondition condition,
+        CollectionItemCompleteness completeness) const;
+    Result updateStateForDisassemblyInCurrentTransaction(
+        int sourceBuildId, CollectionItemState state) const;
+    Result linkLegacySetBuildInCurrentTransaction(
+        int buildId, int expectedSetCatalogId) const;
+    Result setActiveInCurrentTransaction(int itemId, bool active) const;
+
 private:
-    Result create(CollectionItem item) const;
+    QSqlDatabase database() const;
+    Result inTransaction(const std::function<Result()>& operation) const;
+    Result createInCurrentTransaction(CollectionItem item) const;
     Result validate(CollectionItem& item, bool creating,
                     int preservedLocationId = 0) const;
+
+    QString m_connectionName;
 };

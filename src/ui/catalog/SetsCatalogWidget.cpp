@@ -45,8 +45,11 @@
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
-SetsCatalogWidget::SetsCatalogWidget(WorkspaceContext& workspaceContext, QWidget* parent)
-    : QWidget(parent), m_workspaceContext(workspaceContext)
+SetsCatalogWidget::SetsCatalogWidget(WorkspaceContext& workspaceContext, QWidget* parent,
+                                     RemoteReadApplicationServices* remoteReads,
+                                     RemoteCollectionMutationApplicationService* remoteMutations)
+    : QWidget(parent), m_workspaceContext(workspaceContext), m_remoteReads(remoteReads),
+      m_remoteMutations(remoteMutations)
 {
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -311,7 +314,8 @@ void SetsCatalogWidget::searchSets(const QString& loadingMessage)
                     actionCombo->setCurrentIndex(0);
 
                     if (action == "details") {
-                        SetDetailsDialog dialog(setCatalogId, m_workspaceContext, this);
+                        SetDetailsDialog dialog(setCatalogId, m_workspaceContext, this,
+                                                m_remoteReads, m_remoteMutations);
 
                         connect(&dialog, &SetDetailsDialog::createBuildRequested,
                                 this, &SetsCatalogWidget::createStockBuildRequested);

@@ -64,6 +64,7 @@ public:
                                      int excludedLocationId = 0) const;
 
     bool isValidCollectionDestination(int workspaceId, int locationId) const;
+    CheckResult isValidCollectionDestinationChecked(int workspaceId, int locationId) const;
 
     bool hasInventory(int locationId) const;
     CheckResult hasInventoryChecked(int locationId) const;
@@ -83,5 +84,8 @@ private:
     bool isValidCapabilityDestination(int workspaceId, int locationId,
                                       const QString& capabilityColumn,
                                       int excludedLocationId = 0) const;
+    CheckResult isValidCapabilityDestinationChecked(int workspaceId, int locationId,
+                                                     const QString& capabilityColumn,
+                                                     int excludedLocationId = 0) const;
     StorageLocation locationFromQuery(const QSqlQuery& query) const;
 };

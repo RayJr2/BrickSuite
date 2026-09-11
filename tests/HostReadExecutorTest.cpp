@@ -93,6 +93,7 @@ bool seedDatabase(const QString& path, const QString& workspaceName)
         execute(QStringLiteral("INSERT INTO part(part_number,name,part_category_id,rebrickable_part_id,is_active,created_utc,modified_utc,material) SELECT '3001','Host Brick',id,'3001',1,'%1','%1','Plastic' FROM part_category WHERE rebrickable_id=11").arg(now));
         execute(QStringLiteral("INSERT INTO color(name,rgb,is_transparent,rebrickable_id,created_utc,modified_utc) VALUES('Host Red','C91A09',0,4,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) VALUES(1,NULL,1,'Host Bin','',0,1,1,1,'%1','%1')").arg(now));
+        execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) VALUES(1,NULL,1,'Collection Display','',1,1,0,1,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) SELECT 1,id,2,'Inactive Child','',5,0,0,1,'%1','%1' FROM storage_location WHERE name='Host Bin'").arg(now));
         execute(QStringLiteral("INSERT INTO workspace(name,description,created_utc,modified_utc,is_active) VALUES('Other Workspace','','%1','%1',1)").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) SELECT id,NULL,1,'Other Storage','',0,1,1,0,'%1','%1' FROM workspace WHERE name='Other Workspace'").arg(now));
@@ -147,17 +148,24 @@ int main(int argc, char** argv)
         ok &= check(waitFor([&](QEventLoop& loop) {
             executor.listStoragePortable(1, false, &app, [&](const auto& result) { activeStorage=result; loop.quit(); });
         }), "active Storage read completion");
-        ok &= check(activeStorage && activeStorage->size()==1
-                        && activeStorage->first().name==QStringLiteral("Host Bin")
-                        && activeStorage->first().allowsInventory && activeStorage->first().allowsCollection,
-                    "active Storage portable projection");
+        ok &= check(activeStorage && activeStorage->size()==2
+                        && std::any_of(activeStorage->cbegin(),activeStorage->cend(),[](const auto& row) {
+                            return row.name==QStringLiteral("Host Bin") && row.allowsInventory && row.allowsCollection;
+                        })
+                        && std::any_of(activeStorage->cbegin(),activeStorage->cend(),[](const auto& row) {
+                            return row.name==QStringLiteral("Collection Display") && !row.allowsInventory && row.allowsCollection;
+                        })
+                        && std::none_of(activeStorage->cbegin(),activeStorage->cend(),[](const auto& row) {
+                            return row.name==QStringLiteral("Other Storage");
+                        }), "active Storage includes Collection-only locations from only the requested Workspace");
         std::optional<QList<RemoteReadDto::StorageSummary>> fullStorage;
         ok &= check(waitFor([&](QEventLoop& loop) {
             executor.listStoragePortable(1, true, &app, [&](const auto& result) { fullStorage=result; loop.quit(); });
         }), "complete Storage read completion");
-        ok &= check(fullStorage && fullStorage->size()==2
-                        && fullStorage->last().parentStorageId==fullStorage->first().storageId
-                        && !fullStorage->last().active && fullStorage->last().typeName.size()>0,
+        ok &= check(fullStorage && fullStorage->size()==3
+                        && std::any_of(fullStorage->cbegin(),fullStorage->cend(),[](const auto& row) {
+                            return row.name==QStringLiteral("Inactive Child") && !row.active && row.parentStorageId>0 && !row.typeName.isEmpty();
+                        }),
                     "complete Storage hierarchy fidelity");
         std::optional<RemoteReadDto::StorageDetail> storageDetail;
         ok &= check(waitFor([&](QEventLoop& loop){executor.getStoragePortable(1,activeStorage->first().storageId,&app,[&](const auto&result){storageDetail=result;loop.quit();});}),"Storage detail completion");

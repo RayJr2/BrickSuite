@@ -505,20 +505,37 @@ bool StorageLocationRepository::isValidInventoryDestination(
 bool StorageLocationRepository::isValidCollectionDestination(
     int workspaceId, int locationId) const
 {
-    return isValidCapabilityDestination(workspaceId, locationId,
-                                        QStringLiteral("allows_collection"));
+    return isValidCollectionDestinationChecked(workspaceId, locationId) == CheckResult::Yes;
+}
+
+StorageLocationRepository::CheckResult
+StorageLocationRepository::isValidCollectionDestinationChecked(
+    int workspaceId, int locationId) const
+{
+    return isValidCapabilityDestinationChecked(workspaceId, locationId,
+                                               QStringLiteral("allows_collection"));
 }
 
 bool StorageLocationRepository::isValidCapabilityDestination(
     int workspaceId, int locationId, const QString& capabilityColumn,
     int excludedLocationId) const
 {
+    return isValidCapabilityDestinationChecked(workspaceId, locationId,
+                                                capabilityColumn,
+                                                excludedLocationId) == CheckResult::Yes;
+}
+
+StorageLocationRepository::CheckResult
+StorageLocationRepository::isValidCapabilityDestinationChecked(
+    int workspaceId, int locationId, const QString& capabilityColumn,
+    int excludedLocationId) const
+{
     if (workspaceId <= 0 || locationId <= 0 || locationId == excludedLocationId)
-        return false;
+        return CheckResult::No;
 
     if (capabilityColumn != QStringLiteral("allows_inventory")
         && capabilityColumn != QStringLiteral("allows_collection"))
-        return false;
+        return CheckResult::Error;
 
     QSqlQuery query(repositoryDatabase());
     query.prepare(QString(R"(
@@ -541,9 +558,9 @@ bool StorageLocationRepository::isValidCapabilityDestination(
     if (!query.exec()) {
         qCritical() << "Unable to validate operational storage destination:"
                     << query.lastError().text();
-        return false;
+        return CheckResult::Error;
     }
-    return query.next();
+    return query.next() ? CheckResult::Yes : CheckResult::No;
 }
 
 bool StorageLocationRepository::hasInventory(int locationId) const

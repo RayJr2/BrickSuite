@@ -89,6 +89,8 @@ qt_add_executable(BrickSuite
     src/services/application/dto/RemoteStorageMutationDtos.cpp
     src/services/application/dto/RemotePartReferenceMutationDtos.h
     src/services/application/dto/RemotePartReferenceMutationDtos.cpp
+    src/services/application/dto/RemoteCollectionMutationDtos.h
+    src/services/application/dto/RemoteCollectionMutationDtos.cpp
     src/services/application/HostPullingMutationService.h
     src/services/application/HostPullingMutationService.cpp
     src/services/application/HostInventoryMutationService.h
@@ -99,6 +101,8 @@ qt_add_executable(BrickSuite
     src/services/application/HostStorageMutationService.cpp
     src/services/application/HostPartReferenceMutationService.h
     src/services/application/HostPartReferenceMutationService.cpp
+    src/services/application/HostCollectionMutationService.h
+    src/services/application/HostCollectionMutationService.cpp
     src/services/application/RemotePullingApplicationService.h
     src/services/application/RemotePullingApplicationService.cpp
     src/services/application/RemoteInventoryMutationApplicationService.h
@@ -107,6 +111,11 @@ qt_add_executable(BrickSuite
     src/services/application/RemoteStorageMutationApplicationService.cpp
     src/services/application/RemotePartReferenceMutationApplicationService.h
     src/services/application/RemotePartReferenceMutationApplicationService.cpp
+    src/services/application/RemoteCollectionMutationApplicationService.h
+    src/services/application/RemoteCollectionMutationApplicationService.cpp
+    src/ui/collection/RemoteCollectionMutationDialog.h
+    src/ui/collection/RemoteCollectionMutationDialog.cpp
+    src/ui/collection/RemoteCollectionStorageFilter.h
 
     src/database/DatabaseManager.h
     src/database/DatabaseManager.cpp
@@ -673,6 +682,55 @@ if(BUILD_TESTING)
     )
     target_link_libraries(CollectionFoundationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME CollectionFoundation COMMAND CollectionFoundationTest)
+
+    qt_add_executable(CollectionTransactionSeamsTest EXCLUDE_FROM_ALL
+        tests/CollectionTransactionSeamsTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Workspace.h src/models/Workspace.cpp
+        src/models/StorageLocation.h src/models/StorageLocation.cpp
+        src/models/CollectionItem.h src/models/CollectionItem.cpp
+        src/models/Build.h src/models/Build.cpp
+        src/models/SetCatalogItem.h src/models/SetCatalogItem.cpp
+        src/models/SetCatalogSearchCriteria.h
+        src/models/MinifigCatalogItem.h src/models/MinifigCatalogItem.cpp
+        src/models/MinifigCatalogSearchCriteria.h src/models/MinifigCatalogSearchResult.h
+        src/models/MinifigExternalIdentifier.h src/models/Manufacturer.h
+        src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
+        src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
+        src/repositories/CollectionRepository.h src/repositories/CollectionRepository.cpp
+        src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
+        src/repositories/SetCatalogRepository.h src/repositories/SetCatalogRepository.cpp
+        src/repositories/MinifigCatalogRepository.h src/repositories/MinifigCatalogRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/services/collection/CollectionItemService.h src/services/collection/CollectionItemService.cpp
+        src/services/database/AutomaticBackupPolicy.h src/services/database/AutomaticBackupPolicy.cpp
+    )
+    target_link_libraries(CollectionTransactionSeamsTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME CollectionTransactionSeams COMMAND CollectionTransactionSeamsTest)
+
+    qt_add_executable(RemoteCollectionMutationTest EXCLUDE_FROM_ALL
+        tests/RemoteCollectionMutationTest.cpp
+        src/database/DatabaseManager.cpp src/database/DatabaseSchema.cpp src/services/database/AutomaticBackupPolicy.cpp
+        src/models/Workspace.cpp src/models/StorageLocation.cpp src/models/CollectionItem.cpp
+        src/models/Build.cpp src/models/SetCatalogItem.cpp src/models/MinifigCatalogItem.cpp
+        src/repositories/WorkspaceRepository.cpp src/repositories/StorageLocationRepository.cpp
+        src/repositories/CollectionRepository.cpp src/repositories/BuildRepository.cpp
+        src/repositories/SetCatalogRepository.cpp src/repositories/MinifigCatalogRepository.cpp
+        src/repositories/ManufacturerRepository.cpp
+        src/services/collection/CollectionItemService.cpp
+        src/services/application/HostCollectionMutationService.cpp
+        src/services/application/dto/RemoteCollectionMutationDtos.cpp
+        src/services/application/dto/RemoteMutationDtos.cpp
+    )
+    target_link_libraries(RemoteCollectionMutationTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME RemoteCollectionMutation COMMAND RemoteCollectionMutationTest)
+
+    qt_add_executable(RemoteCollectionStorageFilterTest EXCLUDE_FROM_ALL
+        tests/RemoteCollectionStorageFilterTest.cpp
+    )
+    target_link_libraries(RemoteCollectionStorageFilterTest PRIVATE Qt6::Core)
+    add_test(NAME RemoteCollectionStorageFilter COMMAND RemoteCollectionStorageFilterTest)
 
     qt_add_executable(SessionStorageSelectionServiceTest EXCLUDE_FROM_ALL
         tests/SessionStorageSelectionServiceTest.cpp

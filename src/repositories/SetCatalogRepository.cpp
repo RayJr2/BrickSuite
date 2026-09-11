@@ -30,12 +30,15 @@
 
 std::optional<SetCatalogItem> SetCatalogRepository::getById(int id) const
 {
-    if (id <= 0)
-        return std::nullopt;
+    std::optional<SetCatalogItem> item;
+    return tryGetById(id, item) ? item : std::nullopt;
+}
 
-    QSqlDatabase database = DatabaseManager::instance().database();
-
-    QSqlQuery query(database);
+bool SetCatalogRepository::tryGetById(int id, std::optional<SetCatalogItem>& item) const
+{
+    item.reset();
+    if (id <= 0) return true;
+    QSqlQuery query(repositoryDatabase());
 
     query.prepare(R"(
         SELECT
@@ -57,13 +60,11 @@ std::optional<SetCatalogItem> SetCatalogRepository::getById(int id) const
     if (!query.exec()) {
         qCritical() << "Unable to retrieve set catalog item:" << query.lastError().text();
 
-        return std::nullopt;
+        return false;
     }
 
-    if (!query.next())
-        return std::nullopt;
-
-    return setFromQuery(query);
+    if (query.next()) item = setFromQuery(query);
+    return true;
 }
 
 std::optional<SetCatalogItem> SetCatalogRepository::getBySetNumber(const QString& setNumber) const
@@ -73,7 +74,7 @@ std::optional<SetCatalogItem> SetCatalogRepository::getBySetNumber(const QString
     if (trimmed.isEmpty())
         return std::nullopt;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -117,7 +118,7 @@ QList<SetCatalogItem> SetCatalogRepository::getExactMatchesBySetNumber(
         if (querySucceeded) *querySucceeded = true;
         return results;
     }
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(SELECT id,set_number,name,year,theme_id,num_parts,image_url,
         created_utc,modified_utc FROM set_catalog
         WHERE set_number = :set_number COLLATE BINARY ORDER BY id)");
@@ -136,7 +137,7 @@ QList<SetCatalogItem> SetCatalogRepository::search(const SetCatalogSearchCriteri
 {
     QList<SetCatalogItem> results;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QString sql = R"(
         SELECT
@@ -226,7 +227,7 @@ QList<SetCatalogItem> SetCatalogRepository::search(const SetCatalogSearchCriteri
 
 int SetCatalogRepository::count(const SetCatalogSearchCriteria& criteria) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QString sql = R"(
         SELECT COUNT(*)
@@ -292,7 +293,7 @@ QList<int> SetCatalogRepository::getYears() const
 {
     QList<int> years;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 
@@ -316,7 +317,7 @@ QList<int> SetCatalogRepository::getYears() const
 
 int SetCatalogRepository::count() const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
 

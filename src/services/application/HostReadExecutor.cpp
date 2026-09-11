@@ -18,6 +18,7 @@
 #include <QSet>
 #include <QStringList>
 #include <QUuid>
+#include <algorithm>
 
 class HostReadExecutor::Worker : public QObject
 {
@@ -184,8 +185,10 @@ void HostReadExecutor::listStoragePortable(int workspaceId, bool includeInactive
             return;
         }
         StorageLocationRepository locations(database); StorageLocationTypeRepository types(database);
-        const auto rows = includeInactive ? locations.getByWorkspaceIncludingInactive(workspaceId)
-                                          : locations.getByWorkspace(workspaceId);
+        auto rows = locations.getByWorkspaceIncludingInactive(workspaceId);
+        if (!includeInactive)
+            rows.erase(std::remove_if(rows.begin(), rows.end(),
+                [](const StorageLocation& row) { return !row.isActive(); }), rows.end());
         QHash<int,QString> typeNames; for (const auto& type : types.getAll()) typeNames.insert(type.id(),type.name());
         QHash<int,StorageLocation> byId; for(const auto& row:rows) byId.insert(row.id(),row);
         QList<RemoteReadDto::StorageSummary> result;

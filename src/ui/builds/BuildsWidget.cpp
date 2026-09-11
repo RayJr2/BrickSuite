@@ -28,6 +28,7 @@
 #include "AllocateBuildRequirementDialog.h"
 #include "DisassembleSetDialog.h"
 #include "../collection/CatalogCollectionDialog.h"
+#include "../collection/RemoteCollectionMutationDialog.h"
 #include "../../repositories/CollectionRepository.h"
 #include "../../services/collection/CollectionItemService.h"
 #include "EditBuildDialog.h"
@@ -64,6 +65,7 @@
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
 #include "../../services/application/RemotePullingApplicationService.h"
+#include "../../services/application/RemoteCollectionMutationApplicationService.h"
 #include "../../ui/procurement/ProcurementPreviewDialog.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
@@ -147,7 +149,8 @@ BuildsWidget::BuildsWidget(
     QWidget* parent,
     RemoteReadApplicationServices* remoteReads,
     PartExternalIdEnrichmentService* enrichmentService,
-    RemotePullingApplicationService* remotePulling)
+    RemotePullingApplicationService* remotePulling,
+    RemoteCollectionMutationApplicationService* remoteCollection)
     : QWidget(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
@@ -155,6 +158,7 @@ BuildsWidget::BuildsWidget(
     , m_remoteReads(remoteReads)
     , m_enrichmentService(enrichmentService)
     , m_remotePulling(remotePulling)
+    , m_remoteCollection(remoteCollection)
     , m_remoteMode(remoteReads != nullptr)
 {
     auto* mainLayout = new QVBoxLayout(this);
@@ -1457,14 +1461,17 @@ void BuildsWidget::renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& 
                 build.active, build.inventoryMode, build.status)
             && m_remoteReads->isAvailableFor(QStringLiteral("builds.pulling")))
             actions->addItem("View Pulling...", "pulling");
-        actions->setToolTip("Remote Builds are read-only. Build changes are not available yet.");
+        if (build.active && build.status == QStringLiteral("Complete") && m_remoteCollection
+            && m_remoteCollection->isAvailableFor(QStringLiteral("collection.add")))
+            actions->addItem(QStringLiteral("Add to Collection..."), QStringLiteral("add_collection"));
         connect(actions, &QComboBox::currentIndexChanged, this,
-            [this, actions, id = int(build.buildId)](int index) {
+            [this, actions, build](int index) {
                 if (index <= 0) return;
                 const QString action = actions->itemData(index).toString();
                 actions->setCurrentIndex(0);
-                if (action == "details") showRemoteDetails(id);
-                else if (action == "pulling") showRemotePulling(id);
+                if (action == "details") showRemoteDetails(int(build.buildId));
+                else if (action == "pulling") showRemotePulling(int(build.buildId));
+                else if (action == "add_collection") addRemoteBuildToCollection(build);
             });
         m_buildsTable->setCellWidget(row, 7, actions);
     }
@@ -1485,6 +1492,25 @@ void BuildsWidget::renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& 
         }
         m_newBuildGroup->setChecked(restoreNewBuildExpanded);
     }
+}
+
+void BuildsWidget::addRemoteBuildToCollection(const RemoteReadDto::BuildSummary& build)
+{
+    if (!m_remoteReads || !m_remoteCollection
+        || !m_remoteCollection->isAvailableFor(QStringLiteral("collection.add"))) return;
+    const int workspaceId=m_workspaceContext.currentWorkspaceId();
+    if(build.workspaceId!=workspaceId)return;
+    m_remoteReads->listStorage(workspaceId,this,[this,workspaceId,build](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> result){
+        if(workspaceId!=m_workspaceContext.currentWorkspaceId()||!result.succeeded()){if(!result.succeeded())QMessageBox::warning(this,"Add to Collection",result.message);return;}
+        RemoteCollectionMutationDto::Request seed;seed.workspaceId=workspaceId;seed.sourceType="Build";seed.buildId=build.buildId;
+        seed.state="Assembled";seed.condition="Used";seed.completeness="Complete";
+        const QString reference=build.buildType==QStringLiteral("Minifig")?build.minifigNumber:build.setNumber;
+        auto*dialog=new RemoteCollectionMutationDialog("collection.add",workspaceId,*m_remoteCollection,*result.value,
+            seed,reference,build.name,this);
+        connect(&m_workspaceContext,&WorkspaceContext::currentWorkspaceChanged,dialog,&QDialog::reject);
+        connect(dialog,&RemoteCollectionMutationDialog::mutationCompleted,this,[this](int item){emit collectionItemRequested(item);refreshRemoteBuildsPreservingSelection();});
+        dialog->open();
+    });
 }
 
 void BuildsWidget::addBuild()

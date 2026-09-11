@@ -33,8 +33,11 @@
 #include <QVBoxLayout>
 
 MinifigsCatalogWidget::MinifigsCatalogWidget(WorkspaceContext& workspaceContext,
-                                             QWidget* parent)
+                                             QWidget* parent,
+                                             RemoteReadApplicationServices* remoteReads,
+                                             RemoteCollectionMutationApplicationService* remoteMutations)
     : QWidget(parent), m_workspaceContext(workspaceContext)
+    , m_remoteReads(remoteReads), m_remoteMutations(remoteMutations)
     , m_imageService(new MinifigImageService(this))
 {
     auto* mainLayout = new QVBoxLayout(this);
@@ -228,7 +231,8 @@ void MinifigsCatalogWidget::searchMinifigs(const QString& loadingMessage)
                     if (index <= 0)
                         return;
                     actionCombo->setCurrentIndex(0);
-                    MinifigDetailsDialog dialog(minifigCatalogId, m_workspaceContext, this);
+                    MinifigDetailsDialog dialog(minifigCatalogId, m_workspaceContext, this,
+                                                m_remoteReads, m_remoteMutations);
                     connect(&dialog, &MinifigDetailsDialog::createBuildRequested,
                             this, &MinifigsCatalogWidget::createBuildRequested);
                     connect(&dialog, &MinifigDetailsDialog::collectionItemCreated,
