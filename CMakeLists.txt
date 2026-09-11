@@ -91,6 +91,8 @@ qt_add_executable(BrickSuite
     src/services/application/dto/RemotePartReferenceMutationDtos.cpp
     src/services/application/dto/RemoteCollectionMutationDtos.h
     src/services/application/dto/RemoteCollectionMutationDtos.cpp
+    src/services/application/dto/RemoteBuildMutationDtos.h
+    src/services/application/dto/RemoteBuildMutationDtos.cpp
     src/services/application/HostPullingMutationService.h
     src/services/application/HostPullingMutationService.cpp
     src/services/application/HostInventoryMutationService.h
@@ -103,6 +105,8 @@ qt_add_executable(BrickSuite
     src/services/application/HostPartReferenceMutationService.cpp
     src/services/application/HostCollectionMutationService.h
     src/services/application/HostCollectionMutationService.cpp
+    src/services/application/HostBuildMutationService.h
+    src/services/application/HostBuildMutationService.cpp
     src/services/application/RemotePullingApplicationService.h
     src/services/application/RemotePullingApplicationService.cpp
     src/services/application/RemoteInventoryMutationApplicationService.h
@@ -113,6 +117,8 @@ qt_add_executable(BrickSuite
     src/services/application/RemotePartReferenceMutationApplicationService.cpp
     src/services/application/RemoteCollectionMutationApplicationService.h
     src/services/application/RemoteCollectionMutationApplicationService.cpp
+    src/services/application/RemoteBuildMutationApplicationService.h
+    src/services/application/RemoteBuildMutationApplicationService.cpp
     src/ui/collection/RemoteCollectionMutationDialog.h
     src/ui/collection/RemoteCollectionMutationDialog.cpp
     src/ui/collection/RemoteCollectionStorageFilter.h
@@ -475,6 +481,14 @@ qt_add_executable(BrickSuite
     src/ui/inventory/LostInventoryDialog.cpp
     src/services/builds/BuildPullingService.h
     src/services/builds/BuildPullingService.cpp
+    src/services/builds/BuildMutationService.h
+    src/services/builds/BuildMutationService.cpp
+    src/services/builds/BuildRequirementMutationService.h
+    src/services/builds/BuildRequirementMutationService.cpp
+    src/services/builds/BuildAllocationMutationService.h
+    src/services/builds/BuildAllocationMutationService.cpp
+    src/services/builds/BuildLifecycleService.h
+    src/services/builds/BuildLifecycleService.cpp
     src/services/builds/BuildRequirementAvailabilityService.h
     src/services/builds/BuildRequirementAvailabilityService.cpp
     src/services/builds/MinifigBuildCreationService.h
@@ -726,6 +740,15 @@ if(BUILD_TESTING)
     target_link_libraries(RemoteCollectionMutationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME RemoteCollectionMutation COMMAND RemoteCollectionMutationTest)
 
+    qt_add_executable(RemoteBuildMutationTest EXCLUDE_FROM_ALL
+        tests/RemoteBuildMutationTest.cpp
+        src/services/application/dto/RemoteBuildMutationDtos.h
+        src/services/application/dto/RemoteBuildMutationDtos.cpp
+        src/services/application/dto/RemoteMutationDtos.h
+        src/services/application/dto/RemoteMutationDtos.cpp)
+    target_link_libraries(RemoteBuildMutationTest PRIVATE Qt6::Core)
+    add_test(NAME RemoteBuildMutation COMMAND RemoteBuildMutationTest)
+
     qt_add_executable(RemoteCollectionStorageFilterTest EXCLUDE_FROM_ALL
         tests/RemoteCollectionStorageFilterTest.cpp
     )
@@ -965,6 +988,17 @@ if(BUILD_TESTING)
         src/models/Workspace.h src/models/Workspace.cpp
         src/models/Build.h src/models/Build.cpp
         src/models/BuildRequirement.h src/models/BuildRequirement.cpp
+        src/models/BuildAllocation.h src/models/BuildAllocation.cpp
+        src/models/InventoryRecord.h src/models/InventoryRecord.cpp
+        src/models/InventoryMovement.h src/models/InventoryMovement.cpp
+        src/models/InventorySearchCriteria.h src/models/InventorySearchResult.h
+        src/models/InventoryHistoryResult.h
+        src/models/StorageLocation.h src/models/StorageLocation.cpp
+        src/models/CollectionItem.h src/models/CollectionItem.cpp
+        src/models/Part.h src/models/Part.cpp
+        src/models/Color.h src/models/Color.cpp
+        src/models/SetCatalogItem.h src/models/SetCatalogItem.cpp
+        src/models/SetCatalogSearchCriteria.h
         src/models/MinifigCatalogItem.h src/models/MinifigCatalogItem.cpp
         src/models/MinifigCatalogSearchCriteria.h
         src/models/MinifigCatalogSearchResult.h
@@ -974,11 +1008,23 @@ if(BUILD_TESTING)
         src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
         src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
         src/repositories/BuildRequirementRepository.h src/repositories/BuildRequirementRepository.cpp
+        src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
+        src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
+        src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
+        src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
+        src/repositories/CollectionRepository.h src/repositories/CollectionRepository.cpp
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
+        src/repositories/SetCatalogRepository.h src/repositories/SetCatalogRepository.cpp
         src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
         src/repositories/MinifigCatalogRepository.h src/repositories/MinifigCatalogRepository.cpp
         src/repositories/MinifigCatalogPartRepository.h src/repositories/MinifigCatalogPartRepository.cpp
         src/services/builds/MinifigBuildCreationService.h
         src/services/builds/MinifigBuildCreationService.cpp
+        src/services/builds/BuildLifecycleService.h src/services/builds/BuildLifecycleService.cpp
+        src/services/builds/BuildRequirementMutationService.h src/services/builds/BuildRequirementMutationService.cpp
+        src/services/builds/BuildAllocationMutationService.h src/services/builds/BuildAllocationMutationService.cpp
+        src/services/collection/CollectionItemService.h src/services/collection/CollectionItemService.cpp
     )
     target_link_libraries(MinifigBuildCreationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME MinifigBuildCreation COMMAND MinifigBuildCreationTest)
@@ -1037,6 +1083,25 @@ if(BUILD_TESTING)
     )
     target_link_libraries(SetBuildCreationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME SetBuildCreation COMMAND SetBuildCreationTest)
+
+    qt_add_executable(BuildMutationTransactionSeamsTest EXCLUDE_FROM_ALL
+        tests/BuildMutationTransactionSeamsTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Workspace.h src/models/Workspace.cpp
+        src/models/Build.h src/models/Build.cpp
+        src/models/BuildRequirement.h src/models/BuildRequirement.cpp
+        src/models/BuildAllocation.h src/models/BuildAllocation.cpp
+        src/models/Manufacturer.h
+        src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
+        src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
+        src/repositories/BuildRequirementRepository.h src/repositories/BuildRequirementRepository.cpp
+        src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/services/builds/BuildMutationService.h src/services/builds/BuildMutationService.cpp
+    )
+    target_link_libraries(BuildMutationTransactionSeamsTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME BuildMutationTransactionSeams COMMAND BuildMutationTransactionSeamsTest)
 
     qt_add_executable(V020ToV030MigrationTest EXCLUDE_FROM_ALL
         tests/V020ToV030MigrationTest.cpp

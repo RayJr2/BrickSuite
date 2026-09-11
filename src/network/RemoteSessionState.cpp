@@ -37,6 +37,12 @@ bool RemoteSessionState::accepts(const Snapshot& value) const
         && value.workspaceId == m_workspaceId;
 }
 
+bool RemoteSessionState::acceptsHostGlobal(const Snapshot& value) const
+{
+    return m_authenticated && value.hostIdentity == m_hostIdentity
+        && value.sessionGeneration == m_sessionGeneration;
+}
+
 bool RemoteSessionState::acceptsEvent(
     quint64 sessionGeneration, const std::optional<qint64>& workspaceId) const
 {

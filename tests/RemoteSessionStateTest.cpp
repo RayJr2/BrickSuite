@@ -44,6 +44,8 @@ int main(int argc, char* argv[])
                 "Selecting a Workspace must advance Workspace generation.");
     ok &= check(!state.accepts(first),
                 "A result from the prior Workspace generation must be rejected.");
+    ok &= check(state.acceptsHostGlobal(first),
+                "A Host-global result from the current session must survive Workspace selection.");
     ok &= check(state.acceptsEvent(state.sessionGeneration(), qint64(7))
                 && !state.acceptsEvent(state.sessionGeneration(), qint64(8)),
                 "Only events for the current Workspace may be accepted.");
@@ -53,6 +55,8 @@ int main(int argc, char* argv[])
                 "Disconnect after a successful load must mark Host state stale.");
     ok &= check(!state.accepts(workspaceSeven),
                 "A result from the disconnected session must be rejected.");
+    ok &= check(!state.acceptsHostGlobal(workspaceSeven),
+                "A Host-global result from a disconnected session must be rejected.");
     ok &= check(!state.acceptsEvent(workspaceSeven.sessionGeneration, qint64(7)),
                 "An event from a disconnected session must be rejected.");
 
@@ -65,6 +69,8 @@ int main(int argc, char* argv[])
                 "Reconnect must advance session generation.");
     ok &= check(!state.acceptsEvent(workspaceSeven.sessionGeneration, qint64(7)),
                 "An obsolete-session event must be rejected after reconnect.");
+    ok &= check(!state.acceptsHostGlobal(workspaceSeven),
+                "A Host-global result from an obsolete session must be rejected after reconnect.");
 
     state.authenticated(hostB);
     ok &= check(clears == 1 && state.hostIdentity() == hostB,

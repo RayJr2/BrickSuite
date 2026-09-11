@@ -96,6 +96,8 @@ bool seedDatabase(const QString& path, const QString& workspaceName)
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) VALUES(1,NULL,1,'Collection Display','',1,1,0,1,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) SELECT 1,id,2,'Inactive Child','',5,0,0,1,'%1','%1' FROM storage_location WHERE name='Host Bin'").arg(now));
         execute(QStringLiteral("INSERT INTO workspace(name,description,created_utc,modified_utc,is_active) VALUES('Other Workspace','','%1','%1',1)").arg(now));
+        execute(QStringLiteral("INSERT INTO manufacturer(code,name,website_url,supports_lego_element_ids,is_active,notes,created_utc,modified_utc,origin) VALUES('ALT','Alternate Bricks','',0,1,'','%1','%1','User')").arg(now));
+        execute(QStringLiteral("INSERT INTO manufacturer(code,name,website_url,supports_lego_element_ids,is_active,notes,created_utc,modified_utc,origin) VALUES('OLD','Inactive Bricks','',0,0,'','%1','%1','User')").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) SELECT id,NULL,1,'Other Storage','',0,1,1,0,'%1','%1' FROM workspace WHERE name='Other Workspace'").arg(now));
         execute(QStringLiteral("INSERT INTO inventory_record(workspace_id,part_id,color_id,storage_location_id,manufacturer_id,condition,ownership_type,quantity,created_utc,modified_utc) SELECT 1,p.id,c.id,s.id,1,'Used','Owned',7,'%1','%1' FROM part p,color c,storage_location s WHERE p.part_number='3001' AND c.rebrickable_id=4 AND s.name='Host Bin'").arg(now));
         execute(QStringLiteral("INSERT INTO inventory_movement(workspace_id,inventory_record_id,part_id,color_id,movement_type,quantity_change,to_storage_location_id,condition,ownership_type,reference_type,reference_id,notes,created_utc) SELECT 1,i.id,i.part_id,i.color_id,'Add',7,i.storage_location_id,'Used','Owned','Test','seed','Host history','%1' FROM inventory_record i").arg(now));
@@ -144,6 +146,16 @@ int main(int argc, char** argv)
         ok &= check(failure.isEmpty() && workspaces.size() == 2
                         && workspaces.first().name() == QStringLiteral("Host Workspace"),
                     "worker uses Host database, never poison default database");
+        QStringList manufacturerNames;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.listManufacturerNames(&app, [&](const QStringList& result) {
+                manufacturerNames = result; loop.quit();
+            }, [&](const QString& error) { failure = error; loop.quit(); });
+        }), "Manufacturer choice read completion");
+        ok &= check(failure.isEmpty() && manufacturerNames.contains(QStringLiteral("LEGO"))
+                        && manufacturerNames.contains(QStringLiteral("Alternate Bricks"))
+                        && !manufacturerNames.contains(QStringLiteral("Inactive Bricks")),
+                    "only active Host manufacturer choices returned by worker-owned connection");
         std::optional<QList<RemoteReadDto::StorageSummary>> activeStorage;
         ok &= check(waitFor([&](QEventLoop& loop) {
             executor.listStoragePortable(1, false, &app, [&](const auto& result) { activeStorage=result; loop.quit(); });
@@ -326,7 +338,7 @@ int main(int argc, char** argv)
             QStringLiteral("workspace.list"), QStringLiteral("storage.list"),
             QStringLiteral("storage.get"), QStringLiteral("storage.types.list"),
             QStringLiteral("inventory.search"), QStringLiteral("inventory.get"),
-            QStringLiteral("inventory.history"), QStringLiteral("inventory.lost.list"), QStringLiteral("builds.list"),
+            QStringLiteral("inventory.history"), QStringLiteral("inventory.lost.list"), QStringLiteral("manufacturers.list"), QStringLiteral("builds.list"),
             QStringLiteral("builds.get"), QStringLiteral("builds.requirements"),
             QStringLiteral("builds.missingParts"), QStringLiteral("builds.pulling"),
             QStringLiteral("collection.search"), QStringLiteral("collection.get"),
@@ -362,6 +374,17 @@ int main(int argc, char** argv)
                          identity.fingerprint, token, false);
         ok &= check(connectClient(client), "secure Host read loopback authenticates");
         RemoteReadApplicationServices remote(client);
+        QStringList remoteManufacturers;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            remote.listManufacturerNames(&app, [&](const auto& result) {
+                if (result.succeeded()) remoteManufacturers = *result.value;
+                loop.quit();
+            });
+        }), "remote manufacturer choices completion");
+        ok &= check(remoteManufacturers.contains(QStringLiteral("LEGO"))
+                        && remoteManufacturers.contains(QStringLiteral("Alternate Bricks"))
+                        && !remoteManufacturers.contains(QStringLiteral("Inactive Bricks")),
+                    "remote manufacturer choices preserve Host active names");
         RemoteReadDto::InventoryDetail remoteDetail;
         ok &= check(waitFor([&](QEventLoop& loop) {
             remote.getInventory(1, 1, &app, [&](const auto& result) {
@@ -394,7 +417,7 @@ int main(int argc, char** argv)
         }), "cross-Workspace Collection detail completion");
         ok &= check(crossWorkspaceRejected, "Collection detail cannot probe another Workspace");
         const QList<QPair<QString,QJsonObject>> requests{
-            {"workspace.list",{}}, {"storage.list",{{"workspaceId",1}}},
+            {"workspace.list",{}}, {"manufacturers.list",{}}, {"storage.list",{{"workspaceId",1}}},
             {"storage.get",{{"workspaceId",1},{"storageId",1}}}, {"storage.types.list",{}},
             {"inventory.search",{{"workspaceId",1},{"text",""},{"storageId",0},{"rebrickableCategoryId",-1},{"rebrickableColorId",-1},{"page",1},{"pageSize",250}}},
             {"inventory.get",{{"workspaceId",1},{"inventoryRecordId",1}}},

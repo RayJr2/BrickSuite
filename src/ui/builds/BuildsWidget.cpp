@@ -48,6 +48,10 @@
 #include "../../repositories/BuildAllocationRepository.h"
 #include "../../repositories/BuildRepository.h"
 #include "../../repositories/BuildRequirementRepository.h"
+#include "../../services/builds/BuildMutationService.h"
+#include "../../services/builds/BuildRequirementMutationService.h"
+#include "../../services/builds/BuildLifecycleService.h"
+#include "../../services/builds/BuildAllocationMutationService.h"
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/ManufacturerRepository.h"
@@ -66,6 +70,8 @@
 #include "../../services/application/RemoteReadApplicationServices.h"
 #include "../../services/application/RemotePullingApplicationService.h"
 #include "../../services/application/RemoteCollectionMutationApplicationService.h"
+#include "../../services/application/RemoteBuildMutationApplicationService.h"
+#include "../../services/application/dto/RemoteBuildMutationDtos.h"
 #include "../../ui/procurement/ProcurementPreviewDialog.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
@@ -88,6 +94,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPalette>
+#include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSettings>
@@ -103,6 +110,7 @@
 #include <QTextStream>
 #include <QVBoxLayout>
 #include <utility>
+#include <memory>
 
 namespace {
 
@@ -140,6 +148,23 @@ MocFileMetadata parseRebrickableMocFileName(const QString& fileName)
     return metadata;
 }
 
+RemoteBuildMutationDto::ExpectedState expectedState(
+    const RemoteReadDto::BuildSummary& build)
+{
+    RemoteBuildMutationDto::ExpectedState value;
+    value.modifiedUtc = build.modifiedUtc.toUTC().toString(Qt::ISODateWithMs);
+    value.buildType = build.buildType;
+    value.reference = build.buildType == QStringLiteral("Minifig")
+        ? build.minifigNumber : build.setNumber;
+    value.inventoryMode = build.inventoryMode;
+    value.manufacturer = build.manufacturerDisplay;
+    value.name = build.name;
+    value.status = build.status;
+    value.notes = build.notes;
+    value.active = build.active;
+    return value;
+}
+
 } // namespace
 
 BuildsWidget::BuildsWidget(
@@ -150,7 +175,8 @@ BuildsWidget::BuildsWidget(
     RemoteReadApplicationServices* remoteReads,
     PartExternalIdEnrichmentService* enrichmentService,
     RemotePullingApplicationService* remotePulling,
-    RemoteCollectionMutationApplicationService* remoteCollection)
+    RemoteCollectionMutationApplicationService* remoteCollection,
+    RemoteBuildMutationApplicationService* remoteBuildMutations)
     : QWidget(parent)
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
@@ -159,6 +185,7 @@ BuildsWidget::BuildsWidget(
     , m_enrichmentService(enrichmentService)
     , m_remotePulling(remotePulling)
     , m_remoteCollection(remoteCollection)
+    , m_remoteBuildMutations(remoteBuildMutations)
     , m_remoteMode(remoteReads != nullptr)
 {
     auto* mainLayout = new QVBoxLayout(this);
@@ -423,11 +450,10 @@ BuildsWidget::BuildsWidget(
                 const bool completeSet =
                     m_inventoryModeCombo->currentData().toString() == "CompleteSet";
 
-                ManufacturerRepository repository;
-
                 if (!completeSet) {
-                    const int legoIndex =
-                        m_manufacturerCombo->findData(repository.legoManufacturerId());
+                    const int legoIndex = m_remoteMode
+                        ? m_manufacturerCombo->findText(QStringLiteral("LEGO"), Qt::MatchFixedString)
+                        : m_manufacturerCombo->findData(ManufacturerRepository().legoManufacturerId());
 
                     if (legoIndex >= 0)
                         m_manufacturerCombo->setCurrentIndex(legoIndex);
@@ -496,12 +522,12 @@ BuildsWidget::BuildsWidget(
     });
 
     loadColors();
-    if (m_buildService.status().isAvailable())
-        loadManufacturers();
+    loadManufacturers();
 
     workspaceChanged(m_workspaceContext.currentWorkspaceId());
 
     updateRequirementUiState();
+
 }
 
 void BuildsWidget::showEvent(QShowEvent* event)
@@ -524,6 +550,8 @@ void BuildsWidget::workspaceChanged(int workspaceId)
     Q_UNUSED(workspaceId);
 
     if (m_remoteMode) {
+        m_pendingRemoteAddRequest.reset();
+        m_addButton->setText(QStringLiteral("Add Build"));
         for (QDialog* dialog : findChildren<QDialog*>()) {
             if (dialog->objectName().startsWith(QStringLiteral("remoteBuild")))
                 dialog->close();
@@ -618,6 +646,7 @@ int BuildsWidget::selectedBuildId() const
 void BuildsWidget::setRemoteSessionConnected(bool connected)
 {
     if (!m_remoteMode) return;
+    m_remoteSessionConnected = connected;
     for (QDialog* dialog : findChildren<QDialog*>()) {
         if (!dialog->objectName().startsWith(QStringLiteral("remoteBuildPullingDialog_"))) continue;
         if (QLabel* status = dialog->findChild<QLabel*>(QStringLiteral("remotePullingStatus"))) {
@@ -636,11 +665,19 @@ void BuildsWidget::setRemoteSessionConnected(bool connected)
             : QStringLiteral("Build requirements are unavailable from this Host."));
     }
     m_showArchivedBuildsCheck->setEnabled(connected);
+    if (connected)
+        loadRemoteManufacturerChoices();
+    else
+        ++m_manufacturerGeneration;
     updateUiState();
 }
 
 void BuildsWidget::reloadManufacturers()
 {
+    if (m_remoteMode) {
+        loadRemoteManufacturerChoices();
+        return;
+    }
     const int selectedId = m_manufacturerCombo->currentData().toInt();
     loadManufacturers();
     const int index = m_manufacturerCombo->findData(selectedId);
@@ -895,6 +932,8 @@ void BuildsWidget::loadBuilds()
                                     "Cancelled status and can then be archived.")
                                 .arg(build->name());
 
+                        QList<DisassembleSetDialog::ReturnSelection> cancellationSelections;
+                        int cancellationCollectionState = 0;
                         if (totalPulled > 0) {
                             message += QString(
                                 "\n\n%1 piece(s) have already been physically pulled. "
@@ -920,78 +959,40 @@ void BuildsWidget::loadBuilds()
 
                         if (totalPulled > 0) {
                             DisassembleSetDialog dialog(buildId,
-                                                        m_sessionStorageSelectionService, this);
+                                                        m_sessionStorageSelectionService,
+                                                        this,
+                                                        true);
 
                             if (dialog.exec() != QDialog::Accepted)
                                 return;
+                            cancellationSelections = dialog.returnSelections();
+                            cancellationCollectionState = dialog.linkedCollectionState();
+                        }
 
-                            build = buildRepository.getById(buildId);
-
-                            if (!build) {
-                                QMessageBox::critical(
-                                    this,
-                                    "Cancel Build",
-                                    "The parts were returned, but BrickSuite could "
-                                    "not reload the Build to mark it Cancelled.");
-                                selectBuild(buildId);
-                                return;
+                        QList<BuildLifecycleService::DisassemblyReturn> returns;
+                        CollectionItemState collectionState = CollectionItemState::Unassembled;
+                        if (totalPulled > 0) {
+                            for (const auto& selection : cancellationSelections) {
+                                returns.append({selection.requirementId,
+                                                selection.partId,
+                                                selection.colorId,
+                                                selection.manufacturerId,
+                                                selection.storageLocationId,
+                                                selection.quantity,
+                                                selection.spare});
+                            }
+                            if (cancellationCollectionState > 0) {
+                                collectionState = static_cast<CollectionItemState>(
+                                    cancellationCollectionState);
                             }
                         }
-
-                        QSqlDatabase database = DatabaseManager::instance().database();
-
-                        if (!database.transaction()) {
-                            qCritical() << "Unable to start Build cancellation transaction."
-                                        << "BuildId:" << buildId
-                                        << "DatabaseError:" << database.lastError().text();
-
-                            QMessageBox::critical(this,
-                                                  "Cancel Build",
-                                                  "Unable to start the cancellation.");
+                        const auto cancelled = BuildLifecycleService().cancel(
+                            buildId, returns, collectionState);
+                        if (!cancelled.success) {
+                            QMessageBox::critical(this, "Cancel Build", cancelled.message);
                             return;
                         }
-
-                        BuildAllocationRepository allocationRepository;
-
-                        if (!allocationRepository.removeAllForBuild(buildId)) {
-                            database.rollback();
-
-                            qCritical() << "Build cancellation failed while releasing allocations."
-                                        << "BuildId:" << buildId;
-
-                            QMessageBox::critical(
-                                this,
-                                "Cancel Build",
-                                "Unable to release the Build's inventory allocations.");
-                            return;
-                        }
-
-                        build->setStatus("Cancelled");
-
-                        if (!buildRepository.update(*build)) {
-                            database.rollback();
-
-                            qCritical() << "Build cancellation failed while saving Cancelled status."
-                                        << "BuildId:" << buildId;
-
-                            QMessageBox::critical(this,
-                                                  "Cancel Build",
-                                                  "Unable to mark the Build Cancelled.");
-                            return;
-                        }
-
-                        if (!database.commit()) {
-                            qCritical() << "Unable to commit Build cancellation."
-                                        << "BuildId:" << buildId
-                                        << "DatabaseError:" << database.lastError().text();
-
-                            database.rollback();
-
-                            QMessageBox::critical(this,
-                                                  "Cancel Build",
-                                                  "Unable to commit the cancellation.");
-                            return;
-                        }
+                        build = cancelled.build;
 
                         qInfo() << "Build cancelled."
                                 << "BuildId:" << buildId
@@ -1047,7 +1048,8 @@ void BuildsWidget::loadBuilds()
                         if (response != QMessageBox::Yes)
                             return;
 
-                        if (!repository.setActive(buildId, false)) {
+                        const auto archived = BuildMutationService().setActive(buildId, false);
+                        if (!archived.success) {
                             qCritical() << "Unable to archive Build."
                                         << "BuildId:" << buildId;
 
@@ -1088,26 +1090,15 @@ void BuildsWidget::loadBuilds()
                             return;
                         }
 
-                        if (build->status() == "Cancelled") {
-                            build->setStatus("Planned");
-                            build->setIsActive(true);
-
-                            if (!repository.update(*build)) {
-                                QMessageBox::critical(
-                                    this,
-                                    "Reactivate Build",
-                                    "Unable to reactivate the selected Build.");
-                                return;
-                            }
-                        } else {
-                            if (!repository.setActive(buildId, true)) {
-                                QMessageBox::critical(
-                                    this,
-                                    "Reactivate Build",
-                                    "Unable to reactivate the selected Build.");
-                                return;
-                            }
+                        const auto reactivated = BuildMutationService().setActive(buildId, true);
+                        if (!reactivated.success) {
+                            QMessageBox::critical(
+                                this,
+                                "Reactivate Build",
+                                reactivated.message);
+                            return;
                         }
+                        build = reactivated.build;
 
                         qInfo() << "Build reactivated."
                                 << "BuildId:" << buildId
@@ -1205,17 +1196,18 @@ void BuildsWidget::loadBuilds()
                             if (response != QMessageBox::Yes)
                                 return;
 
-                            build->setStatus("Complete");
+                            const auto completed = BuildMutationService().complete(buildId);
 
-                            if (!buildRepository.update(*build)) {
+                            if (!completed.success) {
                                 qCritical() << "Unable to mark Complete Set Complete."
                                             << "BuildId:" << buildId;
 
                                 QMessageBox::critical(this,
                                                       "Complete Set",
-                                                      "Unable to mark the Complete Set Complete.");
+                                                      completed.message);
                                 return;
                             }
+                            build = completed.build;
 
                             qInfo() << "Complete Set completed."
                                     << "BuildId:" << buildId
@@ -1327,17 +1319,18 @@ void BuildsWidget::loadBuilds()
                         if (response != QMessageBox::Yes)
                             return;
 
-                        build->setStatus("Complete");
+                        const auto completed = BuildMutationService().complete(buildId);
 
-                        if (!buildRepository.update(*build)) {
+                        if (!completed.success) {
                             qCritical() << "Unable to mark Build Complete."
                                         << "BuildId:" << buildId;
 
                             QMessageBox::critical(this,
                                                   "Complete Build",
-                                                  "Unable to mark the Build Complete.");
+                                                  completed.message);
                             return;
                         }
+                        build = completed.build;
 
                         qInfo() << "Build completed."
                                 << "BuildId:" << buildId
@@ -1464,6 +1457,27 @@ void BuildsWidget::renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& 
         if (build.active && build.status == QStringLiteral("Complete") && m_remoteCollection
             && m_remoteCollection->isAvailableFor(QStringLiteral("collection.add")))
             actions->addItem(QStringLiteral("Add to Collection..."), QStringLiteral("add_collection"));
+        if (m_remoteBuildMutations) {
+            if (build.active && m_remoteBuildMutations->isAvailableFor(QStringLiteral("builds.edit")))
+                actions->addItem(QStringLiteral("Edit Build..."), QStringLiteral("edit"));
+            if (build.active && (build.status == QStringLiteral("Planned")
+                                 || build.status == QStringLiteral("Pulling"))) {
+                if (m_remoteBuildMutations->isAvailableFor(QStringLiteral("builds.complete")))
+                    actions->addItem(build.inventoryMode == QStringLiteral("CompleteSet")
+                                         ? QStringLiteral("Complete Set...")
+                                         : QStringLiteral("Complete Build..."),
+                                     QStringLiteral("complete"));
+                if (m_remoteBuildMutations->isAvailableFor(QStringLiteral("builds.cancel")))
+                    actions->addItem(QStringLiteral("Cancel Build..."), QStringLiteral("cancel"));
+            }
+            if (build.active && (build.status == QStringLiteral("Cancelled")
+                                 || build.status == QStringLiteral("Disassembled"))
+                && m_remoteBuildMutations->isAvailableFor(QStringLiteral("builds.setActive")))
+                actions->addItem(QStringLiteral("Archive Build"), QStringLiteral("archive"));
+            if (!build.active
+                && m_remoteBuildMutations->isAvailableFor(QStringLiteral("builds.setActive")))
+                actions->addItem(QStringLiteral("Reactivate Build"), QStringLiteral("reactivate"));
+        }
         connect(actions, &QComboBox::currentIndexChanged, this,
             [this, actions, build](int index) {
                 if (index <= 0) return;
@@ -1472,12 +1486,17 @@ void BuildsWidget::renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& 
                 if (action == "details") showRemoteDetails(int(build.buildId));
                 else if (action == "pulling") showRemotePulling(int(build.buildId));
                 else if (action == "add_collection") addRemoteBuildToCollection(build);
+                else if (action == "edit") editRemoteBuild(build);
+                else if (action == "complete") submitRemoteBuildMutation(action, build);
+                else if (action == "cancel") submitRemoteBuildMutation(action, build);
+                else if (action == "archive") submitRemoteBuildMutation(action, build, false);
+                else if (action == "reactivate") submitRemoteBuildMutation(action, build, true);
             });
         m_buildsTable->setCellWidget(row, 7, actions);
     }
     m_statusLabel->setText(builds.isEmpty()
         ? QStringLiteral("No Builds were found in this Host workspace.")
-        : QStringLiteral("%1 Host Build(s). Remote Builds are read-only.").arg(builds.size()));
+        : QStringLiteral("%1 Host Build(s).").arg(builds.size()));
     if (m_restoreSelectedBuildId > 0) {
         const int wanted = m_restoreSelectedBuildId;
         const bool restoreNewBuildExpanded = m_restoreNewBuildExpanded;
@@ -1513,6 +1532,185 @@ void BuildsWidget::addRemoteBuildToCollection(const RemoteReadDto::BuildSummary&
     });
 }
 
+void BuildsWidget::editRemoteBuild(const RemoteReadDto::BuildSummary& build)
+{
+    if (!m_remoteBuildMutations || !m_remoteReads) return;
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    m_remoteReads->getBuild(workspaceId, build.buildId, this,
+        [this, workspaceId](AsyncReadResult<RemoteReadDto::BuildDetail> result) {
+            if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+            if (!result.succeeded()) {
+                QMessageBox::warning(this, QStringLiteral("Edit Build"), result.message); return;
+            }
+            const auto authoritative = *result.value;
+            auto* dialog = new QDialog(this); dialog->setAttribute(Qt::WA_DeleteOnClose);
+            dialog->setWindowTitle(QStringLiteral("Edit Build"));
+            auto* form = new QFormLayout(dialog);
+            form->addRow(QStringLiteral("Type:"), new QLabel(authoritative.buildType, dialog));
+            const QString reference = authoritative.buildType == QStringLiteral("Minifig")
+                ? authoritative.minifigNumber : authoritative.setNumber;
+            form->addRow(QStringLiteral("Reference:"), new QLabel(reference, dialog));
+            auto* name = new QLineEdit(authoritative.name, dialog);
+            auto* manufacturer = new QComboBox(dialog);
+            manufacturer->setObjectName(QStringLiteral("remoteBuildManufacturerCombo"));
+            for (const QString& name : m_remoteManufacturerNames) {
+                manufacturer->addItem(name, name);
+            }
+            int manufacturerIndex = manufacturer->findText(
+                authoritative.manufacturerDisplay, Qt::MatchFixedString);
+            if (manufacturerIndex < 0 && !authoritative.manufacturerDisplay.isEmpty()) {
+                manufacturer->addItem(authoritative.manufacturerDisplay,
+                                      authoritative.manufacturerDisplay);
+                manufacturerIndex = manufacturer->count() - 1;
+            }
+            manufacturer->setCurrentIndex(manufacturerIndex);
+            manufacturer->setEnabled(authoritative.inventoryMode == QStringLiteral("CompleteSet"));
+            auto* notes = new QTextEdit(dialog); notes->setPlainText(authoritative.notes);
+            auto* status = new QLabel(dialog); status->setWordWrap(true);
+            auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel,
+                                                 dialog);
+            form->addRow(QStringLiteral("Manufacturer:"), manufacturer);
+            form->addRow(QStringLiteral("Name:"), name);
+            form->addRow(QStringLiteral("Notes:"), notes);
+            form->addRow(status); form->addRow(buttons);
+            connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+            auto mutationId = std::make_shared<QString>();
+            connect(buttons, &QDialogButtonBox::accepted, dialog,
+                [this, dialog, buttons, name, manufacturer, notes, status,
+                 authoritative, mutationId] {
+                    if (name->text().trimmed().isEmpty()) {
+                        status->setText(QStringLiteral("Enter a name for the Build.")); return;
+                    }
+                    RemoteBuildMutationDto::Request request;
+                    request.workspaceId = authoritative.workspaceId;
+                    request.buildId = authoritative.buildId;
+                    if (mutationId->isEmpty()) *mutationId = RemoteMutationDto::newMutationId();
+                    request.mutationId = *mutationId; request.expected = expectedState(authoritative);
+                    request.name = name->text().trimmed();
+                    request.manufacturer = manufacturer->currentText().trimmed();
+                    request.notes = notes->toPlainText().trimmed(); buttons->setEnabled(false);
+                    status->setText(QStringLiteral("Saving to BrickSuite Host..."));
+                    m_remoteBuildMutations->submit(QStringLiteral("builds.edit"), request, dialog,
+                        [this, dialog](const RemoteBuildMutationDto::Result&) {
+                            dialog->accept(); refreshRemoteBuildsPreservingSelection();
+                        }, [this, buttons, status, mutationId](const RemoteMutationDto::Error& error) {
+                            buttons->setEnabled(true); status->setText(error.outcome == RemoteMutationDto::Outcome::Unknown
+                                ? QStringLiteral("The outcome is unknown. Retry Safely to check the same mutation.")
+                                : error.message);
+                            if (error.outcome != RemoteMutationDto::Outcome::Unknown) mutationId->clear();
+                            if (error.code == QStringLiteral("STALE_VERSION"))
+                                refreshRemoteBuildsPreservingSelection();
+                        });
+                });
+            connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged,
+                    dialog, &QDialog::reject);
+            dialog->open();
+        });
+}
+
+void BuildsWidget::submitRemoteBuildMutation(const QString& action,
+                                              const RemoteReadDto::BuildSummary& build,
+                                              bool desiredActive)
+{
+    if (!m_remoteBuildMutations || !m_remoteReads) return;
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    m_remoteReads->getBuild(workspaceId, build.buildId, this,
+        [this, workspaceId, action, desiredActive]
+        (AsyncReadResult<RemoteReadDto::BuildDetail> result) {
+            if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+            if (!result.succeeded()) {
+                QMessageBox::warning(this, QStringLiteral("Build"), result.message); return;
+            }
+            const auto authoritative=*result.value;
+            if(action!=QStringLiteral("cancel")){
+                openRemoteBuildMutationDialog(action,authoritative,desiredActive);return;
+            }
+            m_remoteReads->buildCancellationReturns(workspaceId,authoritative.buildId,this,
+                [this,workspaceId,authoritative,desiredActive](AsyncReadResult<QList<RemoteReadDto::BuildCancellationReturnRow>> pulled){
+                    if(workspaceId!=m_workspaceContext.currentWorkspaceId())return;
+                    if(!pulled.succeeded()){QMessageBox::warning(this,"Cancel Build",pulled.message);return;}
+                    if(pulled.value->isEmpty()){openRemoteBuildMutationDialog("cancel",authoritative,desiredActive);return;}
+                    m_remoteReads->listStorage(workspaceId,this,[this,workspaceId,authoritative,rows=*pulled.value,desiredActive](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> storage){
+                        if(workspaceId!=m_workspaceContext.currentWorkspaceId())return;
+                        if(!storage.succeeded()){QMessageBox::warning(this,"Cancel Build",storage.message);return;}
+                        const QString reference=authoritative.buildType==QStringLiteral("Minifig")?authoritative.minifigNumber:authoritative.setNumber;
+                        auto*dialog=new DisassembleSetDialog(workspaceId,authoritative.name,reference,rows,*storage.value,m_sessionStorageSelectionService,this);
+                        dialog->setAttribute(Qt::WA_DeleteOnClose);
+                        connect(&m_workspaceContext,&WorkspaceContext::currentWorkspaceChanged,dialog,&QDialog::reject);
+                        connect(dialog,&QDialog::accepted,this,[this,dialog,authoritative,desiredActive]{
+                            QList<RemoteBuildMutationDto::ReturnRow> returns;
+                            for(const auto&selection:dialog->returnSelections())returns.append({selection.requirementId,selection.manufacturerName,selection.storageLocationId,selection.quantity,selection.spare});
+                            openRemoteBuildMutationDialog("cancel",authoritative,desiredActive,returns);
+                        });
+                        dialog->open();
+                    });
+                });
+        });
+}
+
+void BuildsWidget::openRemoteBuildMutationDialog(const QString& action,
+                                                  const RemoteReadDto::BuildSummary& build,
+                                                  bool desiredActive,
+                                                  const QList<RemoteBuildMutationDto::ReturnRow>& returns)
+{
+    QString operation;
+    QString prompt;
+    if (action == QStringLiteral("complete")) {
+        operation = QStringLiteral("builds.complete");
+        prompt = QStringLiteral("Mark \"%1\" Complete?").arg(build.name);
+    } else if (action == QStringLiteral("cancel")) {
+        operation = QStringLiteral("builds.cancel");
+        prompt = QStringLiteral("Cancel \"%1\"? Allocations will be released. "
+                                "If pieces have already been pulled, the Host will require "
+                                "an explicit return plan.").arg(build.name);
+    } else {
+        operation = QStringLiteral("builds.setActive");
+        prompt = desiredActive ? QStringLiteral("Reactivate \"%1\"?").arg(build.name)
+                               : QStringLiteral("Archive \"%1\"?").arg(build.name);
+    }
+    auto* dialog = new QDialog(this); dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(QStringLiteral("Build"));
+    auto* layout = new QVBoxLayout(dialog);
+    auto* question = new QLabel(prompt, dialog); question->setWordWrap(true);
+    auto* status = new QLabel(dialog); status->setWordWrap(true);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                                         dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Continue"));
+    layout->addWidget(question); layout->addWidget(status); layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    auto mutationId = std::make_shared<QString>();
+    connect(buttons, &QDialogButtonBox::accepted, dialog,
+        [this, dialog, buttons, status, mutationId, operation, build, desiredActive, returns] {
+            RemoteBuildMutationDto::Request request;
+            request.workspaceId = build.workspaceId; request.buildId = build.buildId;
+            if (mutationId->isEmpty()) *mutationId = RemoteMutationDto::newMutationId();
+            request.mutationId = *mutationId; request.expected = expectedState(build);
+            request.desiredActive = desiredActive; buttons->setEnabled(false);
+            request.returns = returns;
+            status->setText(QStringLiteral("Saving to BrickSuite Host..."));
+            m_remoteBuildMutations->submit(operation, request, dialog,
+                [this, dialog](const RemoteBuildMutationDto::Result&) {
+                    dialog->accept(); refreshRemoteBuildsPreservingSelection();
+                }, [this, dialog, buttons, status, mutationId](const RemoteMutationDto::Error& error) {
+                    buttons->setEnabled(true);
+                    if (error.outcome == RemoteMutationDto::Outcome::Unknown) {
+                        status->setText(QStringLiteral("The outcome is unknown. Retry Safely to check the same mutation."));
+                        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Retry Safely"));
+                    } else {
+                        mutationId->clear(); status->setText(error.message);
+                    }
+                    if (error.code == QStringLiteral("STALE_VERSION")
+                        || error.code == QStringLiteral("CONFLICT")) {
+                        refreshRemoteBuildsPreservingSelection();
+                        dialog->reject();
+                    }
+                });
+        });
+    connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged,
+            dialog, &QDialog::reject);
+    dialog->open();
+}
+
 void BuildsWidget::addBuild()
 {
     if (!m_workspaceContext.hasCurrentWorkspace()) {
@@ -1542,6 +1740,43 @@ void BuildsWidget::addBuild()
         return;
     }
 
+    if (m_remoteMode) {
+        if (!m_remoteBuildMutations
+            || !m_remoteBuildMutations->isAvailableFor(QStringLiteral("builds.add"))) return;
+        if (!m_pendingRemoteAddRequest) {
+            RemoteBuildMutationDto::Request request;
+            request.workspaceId = m_workspaceContext.currentWorkspaceId();
+            request.mutationId = RemoteMutationDto::newMutationId();
+            request.buildType = buildType; request.reference = setNumber;
+            request.inventoryMode = inventoryMode;
+            request.manufacturer = inventoryMode == QStringLiteral("CompleteSet")
+                ? m_manufacturerCombo->currentText() : QString();
+            request.initialStatus = QStringLiteral("Planned");
+            request.name = name; request.notes = notes;
+            m_pendingRemoteAddRequest = request;
+        }
+        const auto request = *m_pendingRemoteAddRequest;
+        m_addButton->setEnabled(false);
+        m_statusLabel->setText(QStringLiteral("Creating Build on BrickSuite Host..."));
+        m_remoteBuildMutations->submit(QStringLiteral("builds.add"), request, this,
+            [this](const RemoteBuildMutationDto::Result&) {
+                m_pendingRemoteAddRequest.reset(); m_addButton->setText(QStringLiteral("Add Build"));
+                m_setNumberEdit->clear(); m_nameEdit->clear(); m_notesEdit->clear();
+                m_statusCombo->setCurrentIndex(0); refreshRemoteBuildsPreservingSelection();
+                updateUiState();
+            }, [this](const RemoteMutationDto::Error& error) {
+                if (error.outcome == RemoteMutationDto::Outcome::Unknown) {
+                    m_statusLabel->setText(QStringLiteral("The outcome is unknown. Retry Safely to check the same mutation."));
+                    m_addButton->setText(QStringLiteral("Retry Safely"));
+                } else {
+                    m_pendingRemoteAddRequest.reset(); m_addButton->setText(QStringLiteral("Add Build"));
+                    m_statusLabel->setText(error.message);
+                }
+                updateUiState();
+            });
+        return;
+    }
+
     Build build;
 
     build.setWorkspaceId(m_workspaceContext.currentWorkspaceId());
@@ -1553,12 +1788,13 @@ void BuildsWidget::addBuild()
     build.setStatus(status);
     build.setNotes(notes);
 
-    BuildRepository repository;
+    const auto createResult = BuildMutationService().create(build);
 
-    if (!repository.create(build)) {
-        QMessageBox::critical(this, "BrickSuite", "Unable to create the build.");
+    if (!createResult.success) {
+        QMessageBox::critical(this, "BrickSuite", createResult.message);
         return;
     }
+    build = createResult.build;
 
     m_setNumberEdit->clear();
     m_inventoryModeCombo->setCurrentIndex(0);
@@ -1608,8 +1844,12 @@ void BuildsWidget::addBuild()
 
 void BuildsWidget::updateUiState()
 {
-    const bool enabled = m_buildService.status().isAvailable()
-        && m_workspaceContext.hasCurrentWorkspace() && !m_remoteMode;
+    // Local Build creation is handled by BuildMutationService and must not be
+    // gated by the read projection's availability. Remote clients keep the
+    // expander usable while its mutation content remains disabled.
+    const bool enabled = m_workspaceContext.hasCurrentWorkspace()
+        && (!m_remoteMode || (m_remoteSessionConnected && m_remoteBuildMutations
+            && m_remoteBuildMutations->isAvailableFor(QStringLiteral("builds.add"))));
 
     m_typeCombo->setEnabled(enabled);
 
@@ -1624,16 +1864,27 @@ void BuildsWidget::updateUiState()
 
     m_manufacturerCombo->setEnabled(enabled && completeSet);
     m_nameEdit->setEnabled(enabled);
-    m_statusCombo->setEnabled(enabled);
+    m_statusCombo->setEnabled(enabled && !m_remoteMode);
     m_notesEdit->setEnabled(enabled);
     m_addButton->setEnabled(enabled);
     m_newBuildGroup->setEnabled(true);
     m_newBuildContent->setEnabled(enabled);
+    if (m_remoteMode && m_pendingRemoteAddRequest) {
+        m_typeCombo->setEnabled(false); m_setNumberEdit->setEnabled(false);
+        m_inventoryModeCombo->setEnabled(false); m_manufacturerCombo->setEnabled(false);
+        m_nameEdit->setEnabled(false); m_statusCombo->setEnabled(false); m_notesEdit->setEnabled(false);
+        m_addButton->setEnabled(enabled);
+    }
 }
 
 void BuildsWidget::loadManufacturers()
 {
     m_manufacturerCombo->clear();
+
+    if (m_remoteMode) {
+        loadRemoteManufacturerChoices();
+        return;
+    }
 
     ManufacturerRepository repository;
 
@@ -1651,6 +1902,27 @@ void BuildsWidget::loadManufacturers()
     m_manufacturerCombo->setEnabled(
         m_workspaceContext.hasCurrentWorkspace()
         && m_inventoryModeCombo->currentData().toString() == "CompleteSet");
+}
+
+void BuildsWidget::loadRemoteManufacturerChoices()
+{
+    if (!m_remoteMode || !m_remoteReads || !m_remoteSessionConnected)
+        return;
+    const quint64 generation = ++m_manufacturerGeneration;
+    m_remoteReads->listManufacturerNames(this,
+        [this, generation](AsyncReadResult<QStringList> result) {
+            if (generation != m_manufacturerGeneration || !result.succeeded()) return;
+            const QString current = m_manufacturerCombo->currentText();
+            m_remoteManufacturerNames = *result.value;
+            m_manufacturerCombo->clear();
+            for (const QString& name : m_remoteManufacturerNames)
+                m_manufacturerCombo->addItem(name, name);
+            int index = m_manufacturerCombo->findText(current, Qt::MatchFixedString);
+            if (index < 0)
+                index = m_manufacturerCombo->findText(QStringLiteral("LEGO"), Qt::MatchFixedString);
+            if (index >= 0) m_manufacturerCombo->setCurrentIndex(index);
+            updateUiState();
+        });
 }
 
 void BuildsWidget::loadColors()
@@ -1924,13 +2196,13 @@ void BuildsWidget::loadRequirements()
                                                  QMessageBox::No);
 
                         if (response == QMessageBox::Yes) {
-                            BuildRequirementRepository repository;
+                            const auto result = BuildRequirementMutationService().remove(requirementId);
 
-                            if (!repository.remove(requirementId)) {
+                            if (!result.success) {
                                 QMessageBox::critical(
                                     this,
                                     "BrickSuite",
-                                    "Unable to delete the build requirement.");
+                                    result.message);
                             } else {
                                 loadRequirements();
                                 emit hostBuildRequirementsMutationCommitted(
@@ -2496,15 +2768,12 @@ void BuildsWidget::addRequirement()
     requirement.setQuantityRequired(m_quantitySpin->value());
     requirement.setIsSpare(m_spareCheck->isChecked());
 
-    BuildRequirementRepository repository;
+    const auto result = BuildRequirementMutationService().add(requirement);
 
-    if (!repository.create(requirement)) {
+    if (!result.success) {
         QMessageBox::critical(this,
                               "BrickSuite",
-                              QString("Unable to add the requirement.\n\n"
-                                      "The same Part / Color / Spare "
-                                      "combination may already exist "
-                                      "for this build."));
+                              result.message);
         return;
     }
 
@@ -2642,206 +2911,17 @@ void BuildsWidget::allocateAvailable()
         preferredStoragePath = storageCombo->currentText();
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
-
-    if (!database.transaction()) {
-        qCritical() << "Unable to start Allocate Available transaction."
-                    << "BuildId:" << m_selectedBuildId
-                    << "DatabaseError:" << database.lastError().text();
-
-        QMessageBox::critical(this,
-                              "Allocate Available",
-                              "Unable to start the automatic allocation transaction.");
-        return;
-    }
-
-    int allocationsCreated = 0;
-    int allocationsUpdated = 0;
-    int piecesAdded = 0;
-    int preferredPiecesAdded = 0;
-
-    for (const BuildRequirement& requirement : requirements) {
-        if (requirement.isSpare())
-            continue;
-
-        const int remainingRequired =
-            qMax(requirement.quantityRequired()
-                     - requirement.quantityPulled(),
-                 0);
-
-        if (remainingRequired <= 0)
-            continue;
-
-        //
-        // Requirement allocation total, not Build/Part/Color total.
-        //
-        int requirementAllocated =
-            allocationRepository.totalAllocatedForRequirement(requirement.id());
-
-        int stillNeeded =
-            qMax(remainingRequired - requirementAllocated, 0);
-
-        if (stillNeeded <= 0)
-            continue;
-
-        const int effectivePartId = requirement.effectivePartId();
-        const int effectiveColorId = requirement.effectiveColorId();
-
-        const QList<InventoryRecord> sourceRecords =
-            inventoryRepository.getByPartColor(
-                m_workspaceContext.currentWorkspaceId(),
-                effectivePartId,
-                effectiveColorId);
-
-        QList<InventoryRecord> records;
-
-        if (preferredStorageLocationId > 0) {
-            for (const InventoryRecord& record : sourceRecords) {
-                if (record.storageLocationId() == preferredStorageLocationId)
-                    records.append(record);
-            }
-
-            for (const InventoryRecord& record : sourceRecords) {
-                if (record.storageLocationId() != preferredStorageLocationId)
-                    records.append(record);
-            }
-        } else {
-            records = sourceRecords;
-        }
-
-        for (const InventoryRecord& record : records) {
-            if (stillNeeded <= 0)
-                break;
-
-            const int totalAllocated =
-                allocationRepository.totalAllocatedForInventoryRecord(record.id());
-
-            //
-            // Only this requirement's own allocation is reusable by this
-            // requirement. Reservations for other requirements in this same
-            // Build remain committed.
-            //
-            int currentRequirementAllocated = 0;
-            std::optional<BuildAllocation> existingAllocation;
-
-            const QList<BuildAllocation> recordAllocations =
-                allocationRepository.getByInventoryRecord(record.id());
-
-            for (const BuildAllocation& allocation : recordAllocations) {
-                if (allocation.buildRequirementId() == requirement.id()) {
-                    currentRequirementAllocated += allocation.quantityAllocated();
-
-                    if (!existingAllocation)
-                        existingAllocation = allocation;
-                }
-            }
-
-            const int otherAllocated =
-                qMax(totalAllocated - currentRequirementAllocated, 0);
-
-            const int maximumForRequirement =
-                qMax(record.quantity() - otherAllocated, 0);
-
-            const int additionalCapacity =
-                qMax(maximumForRequirement - currentRequirementAllocated, 0);
-
-            if (additionalCapacity <= 0)
-                continue;
-
-            const int quantityToAdd =
-                qMin(stillNeeded, additionalCapacity);
-
-            if (quantityToAdd <= 0)
-                continue;
-
-            const int newAllocationQuantity =
-                currentRequirementAllocated + quantityToAdd;
-
-            if (existingAllocation) {
-                existingAllocation->setQuantityAllocated(newAllocationQuantity);
-
-                if (!allocationRepository.update(*existingAllocation)) {
-                    qCritical() << "Allocate Available failed updating allocation."
-                                << "BuildId:" << m_selectedBuildId
-                                << "RequirementId:" << requirement.id()
-                                << "InventoryRecordId:" << record.id();
-
-                    database.rollback();
-
-                    QMessageBox::critical(
-                        this,
-                        "Allocate Available",
-                        "Unable to update an existing Build allocation. "
-                        "No automatic allocations were saved.");
-
-                    loadRequirements();
-                    return;
-                }
-
-                ++allocationsUpdated;
-            } else {
-                BuildAllocation allocation;
-
-                allocation.setBuildId(m_selectedBuildId);
-                allocation.setBuildRequirementId(requirement.id());
-                allocation.setInventoryRecordId(record.id());
-                allocation.setPartId(effectivePartId);
-                allocation.setColorId(effectiveColorId);
-                allocation.setStorageLocationId(record.storageLocationId());
-                allocation.setQuantityAllocated(quantityToAdd);
-
-                if (!allocationRepository.create(allocation)) {
-                    qCritical() << "Allocate Available failed creating allocation."
-                                << "BuildId:" << m_selectedBuildId
-                                << "RequirementId:" << requirement.id()
-                                << "InventoryRecordId:" << record.id()
-                                << "PartId:" << effectivePartId
-                                << "ColorId:" << effectiveColorId
-                                << "Quantity:" << quantityToAdd;
-
-                    database.rollback();
-
-                    QMessageBox::critical(
-                        this,
-                        "Allocate Available",
-                        "Unable to create a Build allocation. "
-                        "No automatic allocations were saved.");
-
-                    loadRequirements();
-                    return;
-                }
-
-                ++allocationsCreated;
-            }
-
-            piecesAdded += quantityToAdd;
-
-            if (preferredStorageLocationId > 0
-                && record.storageLocationId() == preferredStorageLocationId) {
-                preferredPiecesAdded += quantityToAdd;
-            }
-
-            stillNeeded -= quantityToAdd;
-            requirementAllocated += quantityToAdd;
-        }
-    }
-
-    if (!database.commit()) {
-        qCritical() << "Unable to commit Allocate Available transaction."
-                    << "BuildId:" << m_selectedBuildId
-                    << "DatabaseError:" << database.lastError().text();
-
-        database.rollback();
-
-        QMessageBox::critical(this,
-                              "Allocate Available",
-                              "Unable to save the automatic allocations. "
-                              "No automatic allocations were saved.");
-
+    const auto allocationResult = BuildAllocationMutationService().allocateAvailable(
+        m_selectedBuildId, preferredStorageLocationId);
+    if (!allocationResult.success) {
+        QMessageBox::critical(this, "Allocate Available", allocationResult.message);
         loadRequirements();
         return;
     }
-
+    const int allocationsCreated = allocationResult.allocationsCreated;
+    const int allocationsUpdated = allocationResult.allocationsUpdated;
+    const int piecesAdded = allocationResult.piecesAdded;
+    const int preferredPiecesAdded = allocationResult.preferredPiecesAdded;
     int satisfiedRequirements = 0;
     int partiallySatisfiedRequirements = 0;
     int stillMissingRequirements = 0;
@@ -3239,131 +3319,28 @@ void BuildsWidget::storeSpare(int requirementId)
     if (quantity <= 0 || storageLocationId <= 0)
         return;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
-
-    if (!database.transaction()) {
-        QMessageBox::critical(this,
-                              "Store Spare",
-                              "Unable to start the spare-storage transaction.");
-        return;
-    }
-
-    const std::optional<Build> currentBuild =
-        buildRepository.getById(m_selectedBuildId);
-
-    std::optional<BuildRequirement> currentRequirement =
-        requirementRepository.getById(requirementId);
-
-    const std::optional<StorageLocation> destination =
-        storageRepository.getById(storageLocationId);
-
-    if (!currentBuild
-        || !currentRequirement
-        || !destination
-        || currentBuild->inventoryMode() != "CompleteSet"
-        || currentBuild->status() != "Complete"
-        || !currentRequirement->isSpare()
-        || currentRequirement->buildId() != currentBuild->id()
-        || !destination->isActive()
-        || destination->workspaceId() != currentBuild->workspaceId()) {
-        database.rollback();
-
-        QMessageBox::critical(this,
-                              "Store Spare",
-                              "The Complete Set, spare requirement, or storage "
-                              "destination changed. No changes were saved.");
-        return;
-    }
-
-    const int currentRemaining =
-        qMax(currentRequirement->quantityRequired()
-                 - currentRequirement->quantityReleased(),
-             0);
-
-    if (quantity > currentRemaining) {
-        database.rollback();
-
-        QMessageBox::warning(this,
-                             "Store Spare",
-                             QString("Only %1 spare piece(s) remain available "
-                                     "to store. No changes were saved.")
-                                 .arg(currentRemaining));
-        return;
-    }
-
-    InventoryRecord record;
-
-    record.setWorkspaceId(currentBuild->workspaceId());
-    record.setPartId(currentRequirement->partId());
-    record.setColorId(currentRequirement->colorId());
-    record.setStorageLocationId(storageLocationId);
-    record.setManufacturerId(currentBuild->manufacturerId());
-    record.setCondition("New");
-    record.setOwnershipType("Owned");
-    record.setQuantity(quantity);
-
-    const QString notes =
-        QString("Stored boxed spare from Complete Set %1%2.")
-            .arg(currentBuild->name())
-            .arg(currentBuild->setNumber().trimmed().isEmpty()
-                     ? QString()
-                     : QString(" (%1)").arg(currentBuild->setNumber()));
-
-    InventoryRecordRepository inventoryRepository;
-
-    if (!inventoryRepository.addOrIncreaseQuantity(record,
-                                                   "SetSpareRelease",
-                                                   "Build",
-                                                   QString::number(currentBuild->id()),
-                                                   notes,
-                                                   false)) {
-        database.rollback();
-
-        QMessageBox::critical(this,
-                              "Store Spare",
-                              "Unable to add the spare part to My Loose Inventory. "
-                              "No changes were saved.");
-        return;
-    }
-
-    currentRequirement->setQuantityReleased(
-        currentRequirement->quantityReleased() + quantity);
-
-    if (!requirementRepository.update(*currentRequirement)) {
-        database.rollback();
-
-        QMessageBox::critical(this,
-                              "Store Spare",
-                              "Unable to record the stored spare quantity. "
-                              "No changes were saved.");
-        return;
-    }
-
-    if (!database.commit()) {
-        database.rollback();
-
-        QMessageBox::critical(this,
-                              "Store Spare",
-                              "Unable to commit the spare-storage transaction. "
-                              "No changes were saved.");
+    const auto stored = BuildLifecycleService().storeCompleteSetSpare(
+        m_selectedBuildId, requirementId, storageLocationId, quantity);
+    if (!stored.success) {
+        QMessageBox::critical(this, "Store Spare", stored.message);
         return;
     }
 
     m_sessionStorageSelectionService.rememberDestination(
-        currentBuild->workspaceId(), storageLocationId);
+        stored.build.workspaceId(), storageLocationId);
 
     emit hostBuildRequirementsMutationCommitted(
-        currentBuild->workspaceId(), currentBuild->id(), true);
+        stored.build.workspaceId(), stored.build.id(), true);
 
     qInfo() << "Complete Set spare stored."
-            << "BuildId:" << currentBuild->id()
+            << "BuildId:" << stored.build.id()
             << "RequirementId:" << requirementId
-            << "PartId:" << currentRequirement->partId()
-            << "ColorId:" << currentRequirement->colorId()
-            << "ManufacturerId:" << currentBuild->manufacturerId()
+            << "PartId:" << requirement->partId()
+            << "ColorId:" << requirement->colorId()
+            << "ManufacturerId:" << stored.build.manufacturerId()
             << "Quantity:" << quantity
             << "StorageLocationId:" << storageLocationId
-            << "QuantityReleased:" << currentRequirement->quantityReleased();
+            << "QuantityReleased:" << requirement->quantityReleased() + quantity;
 
     QMessageBox::information(
         this,

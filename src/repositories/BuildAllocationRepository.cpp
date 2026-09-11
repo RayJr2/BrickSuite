@@ -76,8 +76,16 @@ std::optional<BuildAllocation> BuildAllocationRepository::getById(int id) const
 QList<BuildAllocation> BuildAllocationRepository::getByBuild(int buildId) const
 {
     QList<BuildAllocation> allocations;
+    tryGetByBuild(buildId, allocations);
+    return allocations;
+}
+
+bool BuildAllocationRepository::tryGetByBuild(
+    int buildId, QList<BuildAllocation>& allocations) const
+{
+    allocations.clear();
     if (buildId <= 0)
-        return allocations;
+        return true;
     QSqlQuery query(repositoryDatabase());
     query.prepare(QStringLiteral("SELECT %1 FROM build_allocation WHERE build_id = :build_id "
                                  "ORDER BY part_id, color_id, storage_location_id")
@@ -85,11 +93,11 @@ QList<BuildAllocation> BuildAllocationRepository::getByBuild(int buildId) const
     query.bindValue(":build_id", buildId);
     if (!query.exec()) {
         qCritical() << "Unable to retrieve build allocations:" << query.lastError().text();
-        return allocations;
+        return false;
     }
     while (query.next())
         allocations.append(allocationFromQuery(query));
-    return allocations;
+    return true;
 }
 
 QList<BuildAllocation> BuildAllocationRepository::getByRequirement(int buildRequirementId) const

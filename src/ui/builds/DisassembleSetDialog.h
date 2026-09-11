@@ -22,6 +22,7 @@
 
 #include <QDialog>
 #include <QList>
+#include "../../services/application/dto/RemoteReadDtos.h"
 
 class QComboBox;
 class QLabel;
@@ -35,9 +36,30 @@ class DisassembleSetDialog : public QDialog
     Q_OBJECT
 
 public:
+    struct ReturnSelection
+    {
+        int requirementId = 0;
+        int partId = 0;
+        int colorId = 0;
+        int manufacturerId = 0;
+        QString manufacturerName;
+        int storageLocationId = 0;
+        int quantity = 0;
+        bool spare = false;
+    };
+
     explicit DisassembleSetDialog(int buildId,
                                   SessionStorageSelectionService& sessionStorageSelectionService,
-                                  QWidget* parent = nullptr);
+                                  QWidget* parent = nullptr,
+                                  bool collectOnly = false);
+    DisassembleSetDialog(int workspaceId, const QString& buildName,
+                         const QString& reference,
+                         const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
+                         const QList<RemoteReadDto::StorageSummary>& storage,
+                         SessionStorageSelectionService& sessionStorageSelectionService,
+                         QWidget* parent = nullptr);
+    QList<ReturnSelection> returnSelections() const;
+    int linkedCollectionState() const;
 
 private:
     struct RowData
@@ -46,6 +68,7 @@ private:
         int partId = 0;
         int colorId = 0;
         int manufacturerId = 0;
+        QString manufacturerName;
 
         int sourceQuantity = 0;
         bool isSpare = false;
@@ -57,6 +80,8 @@ private:
     bool loadBuild();
     bool loadStorageLocations();
     bool loadRequirements();
+    void loadRemoteRows(const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
+                        const QList<RemoteReadDto::StorageSummary>& storage);
 
     void applyDefaultDestination();
     void updateSummary();
@@ -77,6 +102,8 @@ private:
     QString m_inventoryMode;
     QString m_disassemblyLabel;
     int m_linkedCollectionItemId = 0;
+    bool m_collectOnly = false;
+    QList<ReturnSelection> m_returnSelections;
 
     QLabel* m_buildLabel = nullptr;
     QLabel* m_collectionStateLabel = nullptr;

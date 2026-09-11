@@ -46,7 +46,6 @@ private:
     QLabel* m_inventoryModeLabel = nullptr;
 
     QLineEdit* m_nameEdit = nullptr;
-    QComboBox* m_statusCombo = nullptr;
     QComboBox* m_manufacturerCombo = nullptr;
     QTextEdit* m_notesEdit = nullptr;
 

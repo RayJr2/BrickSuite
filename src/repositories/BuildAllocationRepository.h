@@ -25,6 +25,7 @@ public:
     bool create(BuildAllocation& allocation);
     std::optional<BuildAllocation> getById(int id) const;
     QList<BuildAllocation> getByBuild(int buildId) const;
+    bool tryGetByBuild(int buildId, QList<BuildAllocation>& allocations) const;
     QList<BuildAllocation> getByRequirement(int buildRequirementId) const;
     QList<BuildAllocation> getByInventoryRecord(int inventoryRecordId) const;
     bool update(BuildAllocation& allocation);

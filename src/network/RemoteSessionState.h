@@ -28,6 +28,7 @@ public:
     DataState dataState() const;
     Snapshot snapshot() const;
     bool accepts(const Snapshot& snapshot) const;
+    bool acceptsHostGlobal(const Snapshot& snapshot) const;
     bool acceptsEvent(quint64 sessionGeneration,
                       const std::optional<qint64>& workspaceId) const;
 

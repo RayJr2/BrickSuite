@@ -40,6 +40,7 @@
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../services/collection/CollectionItemService.h"
+#include "../../services/builds/BuildLifecycleService.h"
 
 #include <QDebug>
 #include <QAbstractItemView>
@@ -61,10 +62,11 @@
 
 DisassembleSetDialog::DisassembleSetDialog(
     int buildId, SessionStorageSelectionService& sessionStorageSelectionService,
-    QWidget* parent)
+    QWidget* parent, bool collectOnly)
     : QDialog(parent)
     , m_buildId(buildId)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
+    , m_collectOnly(collectOnly)
 {
     setWindowTitle("Disassemble Complete Set");
 
@@ -189,8 +191,16 @@ DisassembleSetDialog::DisassembleSetDialog(
 
     connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
 
+    if (m_buildId <= 0)
+        return;
+
     if (!loadBuild())
         return;
+
+    if (m_collectOnly) {
+        setWindowTitle("Return Pulled Pieces");
+        m_disassembleButton->setText("Continue");
+    }
 
     if (!loadStorageLocations())
         return;
@@ -199,6 +209,54 @@ DisassembleSetDialog::DisassembleSetDialog(
         return;
 
     updateSummary();
+}
+
+DisassembleSetDialog::DisassembleSetDialog(
+    int workspaceId, const QString& buildName, const QString& reference,
+    const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
+    const QList<RemoteReadDto::StorageSummary>& storage,
+    SessionStorageSelectionService& sessionStorageSelectionService, QWidget* parent)
+    : DisassembleSetDialog(0, sessionStorageSelectionService, parent, true)
+{
+    m_workspaceId=workspaceId;m_buildName=buildName;m_setNumber=reference;
+    m_inventoryMode=QStringLiteral("Stock");m_disassemblyLabel=QStringLiteral("Build");
+    setWindowTitle(QStringLiteral("Return Pulled Pieces"));
+    m_disassembleButton->setText(QStringLiteral("Continue"));
+    m_buildLabel->setText(reference.isEmpty()?buildName:QString("%1 — %2").arg(reference,buildName));
+    loadRemoteRows(rows,storage);updateSummary();
+}
+
+void DisassembleSetDialog::loadRemoteRows(
+    const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
+    const QList<RemoteReadDto::StorageSummary>& storage)
+{
+    m_locations.clear();QSet<qint64> parents;
+    for(const auto&location:storage)if(location.active&&location.parentStorageId>0)parents.insert(location.parentStorageId);
+    for(const auto&location:storage)if(location.active&&location.allowsInventory&&!parents.contains(location.storageId))
+        m_locations.append({int(location.storageId),location.displayPath});
+    std::sort(m_locations.begin(),m_locations.end(),[](const auto&a,const auto&b){return a.path.compare(b.path,Qt::CaseInsensitive)<0;});
+    populateLocationCombo(m_defaultDestinationCombo);
+    const int remembered=m_sessionStorageSelectionService.rememberedDestination(m_workspaceId);
+    const int defaultIndex=m_defaultDestinationCombo->findData(remembered);
+    if(defaultIndex>=0)m_defaultDestinationCombo->setCurrentIndex(defaultIndex);
+    m_table->setHorizontalHeaderItem(4,new QTableWidgetItem(QStringLiteral("Pulled Qty")));
+    m_table->setRowCount(0);m_rows.clear();int tableRow=0;
+    for(const auto&source:rows){
+        if(source.quantityPulled<=0)continue;m_table->insertRow(tableRow);
+        m_table->setItem(tableRow,0,new QTableWidgetItem(source.partNumber));
+        m_table->setItem(tableRow,1,new QTableWidgetItem(source.partNameFallback));
+        m_table->setItem(tableRow,2,new QTableWidgetItem(source.colorNameFallback));
+        m_table->setItem(tableRow,3,new QTableWidgetItem(source.manufacturerDisplay));
+        m_table->setItem(tableRow,4,new QTableWidgetItem(QString::number(source.quantityPulled)));
+        m_table->setItem(tableRow,5,new QTableWidgetItem(source.spare?QStringLiteral("Yes"):QStringLiteral("No")));
+        auto*quantity=new QSpinBox(m_table);quantity->setRange(source.quantityPulled,source.quantityPulled);quantity->setValue(source.quantityPulled);
+        auto*destination=new QComboBox(m_table);populateLocationCombo(destination);
+        m_table->setCellWidget(tableRow,6,quantity);m_table->setCellWidget(tableRow,7,destination);
+        RowData row;row.requirementId=int(source.requirementId);row.manufacturerName=source.manufacturerDisplay;
+        row.sourceQuantity=source.quantityPulled;row.isSpare=source.spare;row.quantitySpin=quantity;row.destinationCombo=destination;m_rows.append(row);
+        connect(destination,&QComboBox::currentIndexChanged,this,[this]{updateSummary();});++tableRow;
+    }
+    if(m_rows.isEmpty())m_statusLabel->setText(QStringLiteral("No pulled pieces require a return plan."));
 }
 
 bool DisassembleSetDialog::loadBuild()
@@ -727,8 +785,9 @@ void DisassembleSetDialog::disassembleSet()
                                              ? "Build"
                                              : "Build");
 
-    const QMessageBox::StandardButton response
-        = QMessageBox::question(this,
+    const QMessageBox::StandardButton response = m_collectOnly
+        ? QMessageBox::Yes
+        : QMessageBox::question(this,
                                 "Disassemble Build",
                                 QString("Disassemble this %1?\n\n"
                                         "%2%3\n\n"
@@ -759,277 +818,41 @@ void DisassembleSetDialog::disassembleSet()
     if (response != QMessageBox::Yes)
         return;
 
-    QSqlDatabase database = DatabaseManager::instance().database();
-
-    if (!database.transaction()) {
-        qCritical() << "Unable to start Build disassembly transaction."
-                    << "BuildId:" << m_buildId
-                    << "DatabaseError:" << database.lastError().text();
-        QMessageBox::critical(this,
-                              "Disassemble Set",
-                              "Unable to start the disassembly "
-                              "transaction.");
-
-        return;
-    }
-
-    InventoryRecordRepository inventoryRepository;
-    BuildRequirementRepository requirementRepository;
-    BuildAllocationRepository allocationRepository;
-
+    QList<BuildLifecycleService::DisassemblyReturn> returns;
+    m_returnSelections.clear();
     for (const RowData& row : m_rows) {
         const int quantity = row.quantitySpin->value();
-
         if (quantity <= 0)
             continue;
-
-        const int storageLocationId = row.destinationCombo->currentData().toInt();
-
-        //
-        // Revalidate the destination inside the
-        // transaction.
-        //
-        StorageLocationRepository storageRepository;
-
-        const std::optional<StorageLocation> destination = storageRepository.getById(
-            storageLocationId);
-
-        if (!destination || !destination->isActive()
-            || destination->workspaceId() != m_workspaceId) {
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Disassemble Set",
-                                  "A selected storage location is no "
-                                  "longer valid.\n\n"
-                                  "No changes were saved.");
-
-            return;
-        }
-
-        InventoryRecord record;
-
-        record.setWorkspaceId(m_workspaceId);
-
-        record.setPartId(row.partId);
-
-        record.setColorId(row.colorId);
-
-        record.setStorageLocationId(storageLocationId);
-
-        record.setManufacturerId(row.manufacturerId);
-
-        //
-        // Regular assembled pieces become Used when the model is
-        // disassembled. Unreleased Complete Set spares were never assembled,
-        // so they remain New when they enter loose inventory.
-        //
-        if (m_inventoryMode == "CompleteSet" && row.isSpare) {
-            record.setCondition("New");
-        } else {
-            record.setCondition("Used");
-        }
-
-        record.setOwnershipType("Owned");
-
-        record.setQuantity(quantity);
-
-        const QString requirementType = row.isSpare ? "spare" : "regular";
-
-        QString notes;
-
-        if (m_inventoryMode == "CompleteSet") {
-            notes = row.isSpare
-                        ? QString("Unreleased boxed spare returned while "
-                                  "disassembling %1 (%2). "
-                                  "Manufacturer ID: %3.")
-                              .arg(m_buildName)
-                              .arg(m_setNumber)
-                              .arg(row.manufacturerId)
-                        : QString("Disassembled from %1 (%2), "
-                                  "%3 Complete Set requirement. "
-                                  "Manufacturer ID: %4.")
-                              .arg(m_buildName)
-                              .arg(m_setNumber)
-                              .arg(requirementType)
-                              .arg(row.manufacturerId);
-        } else {
-            notes = QString("Returned from completed Build %1%2. "
-                            "Manufacturer ID: %3.")
-                        .arg(m_buildName)
-                        .arg(m_setNumber.trimmed().isEmpty() ? QString()
-                                                             : QString(" (%1)").arg(m_setNumber))
-                        .arg(row.manufacturerId);
-        }
-
-        //
-        // manageTransaction=false because this entire
-        // Set operation owns the outer transaction.
-        //
-        // addOrIncreaseQuantity() will still create
-        // the InventoryMovement record.
-        //
-        const QString movementType = m_inventoryMode == "CompleteSet" ? "SetDisassembly"
-                                                                      : "BuildDisassembly";
-
-        if (!inventoryRepository.addOrIncreaseQuantity(record,
-                                                       movementType,
-                                                       "Build",
-                                                       QString::number(m_buildId),
-                                                       notes,
-                                                       false)) {
-            qCritical() << "Build disassembly failed returning inventory."
-                        << "BuildId:" << m_buildId
-                        << "PartId:" << row.partId
-                        << "ColorId:" << row.colorId
-                        << "Quantity:" << quantity
-                        << "StorageLocationId:" << storageLocationId;
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Disassemble Set",
-                                  "Unable to add a Set Part to loose "
-                                  "inventory.\n\n"
-                                  "No changes were saved.");
-
-            return;
-        }
-
-        if (m_inventoryMode == "Stock") {
-            if (!allocationRepository.reducePulledManufacturer(
-                    m_buildId,
-                    row.partId,
-                    row.colorId,
-                    row.manufacturerId,
-                    quantity)) {
-                qCritical() << "Build disassembly failed reducing manufacturer provenance."
-                            << "BuildId:" << m_buildId
-                            << "PartId:" << row.partId
-                            << "ColorId:" << row.colorId
-                            << "ManufacturerId:" << row.manufacturerId
-                            << "Quantity:" << quantity;
-
-                database.rollback();
-
-                QMessageBox::critical(
-                    this,
-                    "Disassemble Build",
-                    "Unable to update manufacturer provenance.\n\n"
-                    "No changes were saved.");
-
-                return;
-            }
-
-            const std::optional<BuildRequirement> requirement = requirementRepository.getById(
-                row.requirementId);
-
-            if (!requirement) {
-                database.rollback();
-
-                QMessageBox::critical(this,
-                                      "Disassemble Build",
-                                      "Unable to reload the Build Requirement.\n\n"
-                                      "No changes were saved.");
-
-                return;
-            }
-
-            //
-            // Reduce Pulled by the quantity actually returned
-            // to loose inventory.
-            //
-            // Normally a complete disassembly will return the
-            // entire Pulled quantity, resulting in Pulled = 0.
-            //
-            // If the user returns fewer pieces, the difference
-            // remains associated with the Build.
-            //
-            const int remainingPulled = qMax(requirement->quantityPulled()
-                                                 - row.quantitySpin->value(),
-                                             0);
-
-            BuildRequirement updatedRequirement = *requirement;
-
-            updatedRequirement.setQuantityPulled(remainingPulled);
-
-            if (!requirementRepository.update(updatedRequirement)) {
-                qCritical() << "Build disassembly failed updating pulled quantity."
-                            << "BuildId:" << m_buildId
-                            << "RequirementId:" << row.requirementId
-                            << "RemainingPulled:" << remainingPulled;
-                database.rollback();
-
-                QMessageBox::critical(this,
-                                      "Disassemble Build",
-                                      "Unable to update the pulled quantity.\n\n"
-                                      "No changes were saved.");
-
-                return;
-            }
-        }
+        BuildLifecycleService::DisassemblyReturn value;
+        value.requirementId = row.requirementId;
+        value.partId = row.partId;
+        value.colorId = row.colorId;
+        value.manufacturerId = row.manufacturerId;
+        value.storageLocationId = row.destinationCombo->currentData().toInt();
+        value.quantity = quantity;
+        value.spare = row.isSpare;
+        returns.append(value);
+        m_returnSelections.append({value.requirementId,
+                                   value.partId,
+                                   value.colorId,
+                                   value.manufacturerId,
+                                   row.manufacturerName,
+                                   value.storageLocationId,
+                                   value.quantity,
+                                   value.spare});
     }
-
-    //
-    // Only mark the Build Disassembled after every
-    // inventory row and movement record succeeds.
-    //
-    BuildRepository buildRepository;
-
-    std::optional<Build> build = buildRepository.getById(m_buildId);
-
-    if (!build) {
-        database.rollback();
-
-        QMessageBox::critical(this,
-                              "Disassemble Set",
-                              "Unable to reload the Build.\n\n"
-                              "No changes were saved.");
-
-        return;
-    }
-
-    build->setStatus("Disassembled");
-
-    if (!buildRepository.update(*build)) {
-        qCritical() << "Build disassembly failed updating Build status."
-                    << "BuildId:" << m_buildId;
-        database.rollback();
-
-        QMessageBox::critical(this,
-                              "Disassemble Set",
-                              "Unable to update the Build Status.\n\n"
-                              "No changes were saved.");
-
-        return;
-    }
-
-    if (m_linkedCollectionItemId > 0) {
-        const auto state = static_cast<CollectionItemState>(
-            m_collectionStateCombo->currentData().toInt());
-        const auto collectionResult = CollectionItemService(database)
-            .updateStateForDisassemblyInCurrentTransaction(m_buildId, state);
-        if (!collectionResult.success) {
-            qCritical() << "Build disassembly failed synchronizing Collection state."
-                        << "BuildId:" << m_buildId;
-            database.rollback();
+    const auto collectionState = m_linkedCollectionItemId > 0
+        ? static_cast<CollectionItemState>(m_collectionStateCombo->currentData().toInt())
+        : CollectionItemState::Unassembled;
+    if (!m_collectOnly) {
+        const auto result = BuildLifecycleService().disassemble(
+            m_buildId, returns, collectionState);
+        if (!result.success) {
             QMessageBox::critical(this, "Disassemble Build",
-                "Unable to update the linked Collection item.\n\nNo changes were saved.");
+                                  result.message + "\n\nNo changes were saved.");
             return;
         }
-    }
-
-    if (!database.commit()) {
-        qCritical() << "Unable to commit Build disassembly."
-                    << "BuildId:" << m_buildId
-                    << "DatabaseError:" << database.lastError().text();
-        database.rollback();
-
-        QMessageBox::critical(this,
-                              "Disassemble Set",
-                              "Unable to commit the Set disassembly.\n\n"
-                              "No changes were saved.");
-
-        return;
     }
 
     if (commonDestinationId > 0) {
@@ -1037,20 +860,32 @@ void DisassembleSetDialog::disassembleSet()
             m_workspaceId, commonDestinationId);
     }
 
-    qInfo() << "Build disassembled."
+    if (!m_collectOnly) {
+        qInfo() << "Build disassembled."
             << "BuildId:" << m_buildId
             << "Name:" << m_buildName
             << "InventoryMode:" << m_inventoryMode
             << "RowsReturned:" << rowsReturned
             << "PiecesReturned:" << totalReturned;
 
-    QMessageBox::information(this,
+        QMessageBox::information(this,
                              "Disassemble Build",
                              QString("%1 disassembled successfully.\n\n"
                                      "%2 loose pieces were added to "
                                      "My Loose Inventory.")
                                  .arg(m_disassemblyLabel)
-                                 .arg(totalReturned));
+                                     .arg(totalReturned));
+    }
 
     accept();
+}
+
+QList<DisassembleSetDialog::ReturnSelection> DisassembleSetDialog::returnSelections() const
+{
+    return m_returnSelections;
+}
+
+int DisassembleSetDialog::linkedCollectionState() const
+{
+    return m_linkedCollectionItemId > 0 ? m_collectionStateCombo->currentData().toInt() : 0;
 }

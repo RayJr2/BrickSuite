@@ -6,6 +6,7 @@
 
 #include <QObject>
 #include <QThread>
+#include <QStringList>
 #include <atomic>
 #include <functional>
 
@@ -32,6 +33,9 @@ public:
     void listWorkspaces(QObject* context,
                         std::function<void(const QList<Workspace>&)> completion,
                         ErrorCallback failure = {});
+    void listManufacturerNames(QObject* context,
+        std::function<void(const QStringList&)> completion,
+        ErrorCallback failure = {});
     void getWorkspace(int workspaceId, QObject* context,
                       std::function<void(const std::optional<Workspace>&)> completion,
                       ErrorCallback failure = {});
@@ -73,6 +77,9 @@ public:
         ErrorCallback failure = {});
     void getBuildPortable(int workspaceId, int buildId, QObject* context,
         std::function<void(const std::optional<RemoteReadDto::BuildDetail>&)> completion,
+        ErrorCallback failure = {});
+    void buildCancellationReturnsPortable(int workspaceId, int buildId, QObject* context,
+        std::function<void(const std::optional<QList<RemoteReadDto::BuildCancellationReturnRow>>&)> completion,
         ErrorCallback failure = {});
     void pullingView(int buildId, QObject* context,
                      std::function<void(const BuildPullingService::PullingView&)> completion,

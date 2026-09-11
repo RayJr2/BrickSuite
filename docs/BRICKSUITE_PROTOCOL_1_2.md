@@ -1,5 +1,13 @@
 # BrickSuite Protocol 1.2
 
+## Manufacturer choices
+
+The authenticated `manufacturers.list` read takes no payload and returns the active Manufacturer
+display names owned by the Host. Remote Build forms use these portable names for choices and send
+the selected name in the existing mutation contract; Client-local Manufacturer row IDs never cross
+the wire. The current value from an authoritative Build is retained in Edit even when it is no
+longer present in the active list.
+
 ## Storage reads and mutations
 
 Protocol 1.2 adds authenticated `storage.get` and `storage.types.list` reads with matching exact
@@ -323,3 +331,44 @@ under the same mutation ID. Only timeout or disconnection has an unknown client 
 A newly committed mutation sends its correlated response before publishing one `Collection`
 invalidation. Receipt replay publishes no second invalidation, and Collection writes do not emit
 synthetic Inventory or Build invalidations.
+
+## Build metadata and lifecycle mutations
+
+Authenticated Protocol 1.2 Hosts advertise `builds.add`, `builds.edit`,
+`builds.setActive`, `builds.complete`, and `builds.cancel` as independent exact
+capabilities. They do not imply requirement, allocation, disassembly, spare-storage,
+or generic status-write access. `builds.pulling.write` remains independent.
+
+`builds.add` accepts Set or MOC portable references, `Stock` or applicable
+`CompleteSet` inventory mode, a Host-resolved Manufacturer name when applicable,
+name, notes, and only the safe initial `Planned` state. The Host resolves its own
+catalog and Manufacturer identities; Client-local primary keys are never authority.
+The authoritative result contains the stable Build ID, Workspace, metadata, lifecycle
+state, catalog-link indication, and UTC timestamps.
+
+Existing-Build requests carry the complete prior authoritative Build snapshot as
+expected state: `modifiedUtc`, active and lifecycle state, immutable type/reference/
+inventory mode, Manufacturer display identity, name, and notes. `builds.edit` can
+change only name, applicable Manufacturer, and notes. Completion, cancellation, and
+archive/reactivation use their semantic operations; there is no `builds.setStatus`.
+The Host rejects stale snapshots before mutation.
+
+Cancellation is one atomic operation. When pieces have been pulled, its bounded
+return plan identifies the Build requirement, Host-resolved Manufacturer name,
+destination Storage ID, quantity, and spare state for every returned provenance row.
+The Host revalidates all rows and performs Inventory returns, history/provenance
+updates, allocation release, linked Collection synchronization, Build cancellation,
+and the durable receipt in one transaction. Closing the Client selection dialog before
+submission changes nothing.
+
+Standard receipt behavior applies to every Build operation: same mutation ID and
+payload returns the original authoritative result without a second mutation or
+invalidation; changed payload returns `IDEMPOTENCY_CONFLICT`. Only timeout or
+disconnection is an unknown outcome, for which the Client retains the exact mutation
+ID and logical payload for `Retry Safely`.
+
+Add, edit, and active-state changes invalidate Builds. Completion additionally
+invalidates Build Requirements, Missing Parts, and Pulling. Cancellation invalidates
+those projections and adds Inventory/Inventory History and Collection only when the
+committed result changed those domains. The correlated response is handed to the send
+path before post-commit invalidation and Host-local refresh.

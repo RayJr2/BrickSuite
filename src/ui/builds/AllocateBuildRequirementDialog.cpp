@@ -30,6 +30,7 @@
 
 #include "../../repositories/BuildAllocationRepository.h"
 #include "../../repositories/BuildRequirementRepository.h"
+#include "../../services/builds/BuildAllocationMutationService.h"
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
 #include "../../repositories/PartRepository.h"
@@ -366,112 +367,20 @@ void AllocateBuildRequirementDialog::saveAllocations()
         return;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
-
-    if (!database.transaction()) {
-        QMessageBox::critical(this,
-                              "Allocate Requirement",
-                              "Unable to start the allocation "
-                              "transaction.");
-        return;
-    }
-
-    BuildAllocationRepository allocationRepository;
-
+    QList<BuildAllocation> requested;
     for (const AllocationRow& row : m_rows) {
         const int proposedQuantity = row.allocationSpin->value();
-
-        const QList<BuildAllocation> allocations =
-            allocationRepository.getByInventoryRecord(row.inventoryRecordId);
-
-        std::optional<BuildAllocation> existingAllocation;
-
-        for (const BuildAllocation& allocation : allocations) {
-            if (allocation.buildId() == m_buildId
-                && allocation.buildRequirementId() == m_requirementId) {
-                existingAllocation = allocation;
-                break;
-            }
-        }
-
-        if (existingAllocation && proposedQuantity == 0) {
-            if (!allocationRepository.remove(existingAllocation->id())) {
-                database.rollback();
-
-                QMessageBox::critical(this,
-                                      "Allocate Requirement",
-                                      "Unable to remove an existing "
-                                      "Build allocation.");
-                return;
-            }
-
-            continue;
-        }
-
-        if (existingAllocation) {
-            if (existingAllocation->quantityAllocated() == proposedQuantity) {
-                continue;
-            }
-
-            existingAllocation->setQuantityAllocated(proposedQuantity);
-
-            if (!allocationRepository.update(*existingAllocation)) {
-                database.rollback();
-
-                QMessageBox::critical(this,
-                                      "Allocate Requirement",
-                                      "Unable to update an existing "
-                                      "Build allocation.");
-                return;
-            }
-
-            continue;
-        }
-
         if (proposedQuantity == 0)
             continue;
-
-        const std::optional<InventoryRecord> inventoryRecord =
-            InventoryRecordRepository().getById(row.inventoryRecordId);
-
-        if (!inventoryRecord) {
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Allocate Requirement",
-                                  "Unable to reload the inventory "
-                                  "record being allocated.");
-            return;
-        }
-
         BuildAllocation allocation;
-
-        allocation.setBuildId(m_buildId);
-        allocation.setBuildRequirementId(m_requirementId);
         allocation.setInventoryRecordId(row.inventoryRecordId);
-        allocation.setPartId(m_partId);
-        allocation.setColorId(m_colorId);
-        allocation.setStorageLocationId(inventoryRecord->storageLocationId());
         allocation.setQuantityAllocated(proposedQuantity);
-
-        if (!allocationRepository.create(allocation)) {
-            database.rollback();
-
-            QMessageBox::critical(this,
-                                  "Allocate Requirement",
-                                  "Unable to create the Build "
-                                  "allocation.");
-            return;
-        }
+        requested.append(allocation);
     }
-
-    if (!database.commit()) {
-        database.rollback();
-
-        QMessageBox::critical(this,
-                              "Allocate Requirement",
-                              "Unable to commit the Build "
-                              "allocation.");
+    const auto result = BuildAllocationMutationService().replaceForRequirement(
+        m_requirementId, requested);
+    if (!result.success) {
+        QMessageBox::critical(this, "Allocate Requirement", result.message);
         return;
     }
 

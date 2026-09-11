@@ -21,6 +21,7 @@
 #pragma once
 
 #include "../../services/application/dto/RemoteReadDtos.h"
+#include "../../services/application/dto/RemoteBuildMutationDtos.h"
 #include "../common/SingleInstanceWindowRegistry.h"
 #include <QWidget>
 #include <optional>
@@ -31,6 +32,7 @@ class BuildApplicationService;
 class RemoteReadApplicationServices;
 class RemotePullingApplicationService;
 class RemoteCollectionMutationApplicationService;
+class RemoteBuildMutationApplicationService;
 class PartExternalIdEnrichmentService;
 
 class QComboBox;
@@ -60,7 +62,8 @@ public:
         RemoteReadApplicationServices* remoteReads = nullptr,
         PartExternalIdEnrichmentService* enrichmentService = nullptr,
         RemotePullingApplicationService* remotePulling = nullptr,
-        RemoteCollectionMutationApplicationService* remoteCollection = nullptr);
+        RemoteCollectionMutationApplicationService* remoteCollection = nullptr,
+        RemoteBuildMutationApplicationService* remoteBuildMutations = nullptr);
 
     void refresh();
     void refreshRemoteBuildsPreservingSelection();
@@ -106,7 +109,16 @@ private:
     void showRemoteDetails(int buildId);
     void showRemotePulling(int buildId);
     void addRemoteBuildToCollection(const RemoteReadDto::BuildSummary& build);
+    void editRemoteBuild(const RemoteReadDto::BuildSummary& build);
+    void submitRemoteBuildMutation(const QString& operation,
+                                   const RemoteReadDto::BuildSummary& build,
+                                   bool desiredActive = true);
+    void openRemoteBuildMutationDialog(const QString& operation,
+                                       const RemoteReadDto::BuildSummary& build,
+                                       bool desiredActive,
+                                       const QList<RemoteBuildMutationDto::ReturnRow>& returns = {});
     void loadManufacturers();
+    void loadRemoteManufacturerChoices();
     void updateUiState();
 
     void loadRequirements();
@@ -127,9 +139,14 @@ private:
     PartExternalIdEnrichmentService* m_enrichmentService = nullptr;
     RemotePullingApplicationService* m_remotePulling = nullptr;
     RemoteCollectionMutationApplicationService* m_remoteCollection = nullptr;
+    RemoteBuildMutationApplicationService* m_remoteBuildMutations = nullptr;
+    bool m_remoteSessionConnected = false;
+    std::optional<RemoteBuildMutationDto::Request> m_pendingRemoteAddRequest;
     QList<RemoteReadDto::BuildRequirement> m_remoteRequirements;
     quint64 m_buildListGeneration = 0;
     quint64 m_requirementGeneration = 0;
+    quint64 m_manufacturerGeneration = 0;
+    QStringList m_remoteManufacturerNames;
     SingleInstanceWindowRegistry<int, QDialog> m_remotePullingDialogs;
     bool m_remoteMode = false;
     int m_restoreSelectedBuildId = 0;

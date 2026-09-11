@@ -14,6 +14,7 @@ public:
         Inventory,
         BuildMetadata,
         BuildRequirements,
+        BuildCancellation,
         Pulling,
         Collection,
         PartReferenceCustomization
@@ -26,14 +27,20 @@ public:
         std::optional<qint64> storageLocationId;
         std::optional<qint64> collectionItemId;
         QString partNumber;
+        bool inventoryChanged = false;
+        bool collectionChanged = false;
     };
 
     using Sink = std::function<void(const OperationalInvalidation&)>;
 
     explicit HostMutationPublicationService(Sink sink = {});
 
-    bool publish(Workflow workflow, const Scope& scope = {}, QString* error = nullptr) const;
-    static OperationalInvalidation invalidationFor(Workflow workflow, const Scope& scope = {});
+    bool publish(Workflow workflow, const Scope& scope, QString* error = nullptr) const;
+    bool publish(Workflow workflow, QString* error = nullptr) const
+    { return publish(workflow, Scope{}, error); }
+    static OperationalInvalidation invalidationFor(Workflow workflow, const Scope& scope);
+    static OperationalInvalidation invalidationFor(Workflow workflow)
+    { return invalidationFor(workflow, Scope{}); }
 
 private:
     Sink m_sink;

@@ -78,6 +78,19 @@ int main(int argc, char** argv)
     ok &= require(RemoteReadJson::pageRequest({{"page",1},{"pageSize",500}}, &paging), "valid paging rejected");
     ok &= require(!RemoteReadJson::pageRequest({{"page",0},{"pageSize",501}}, &paging), "invalid paging accepted");
 
+    RemoteReadDto::BuildSummary build;
+    build.buildId=9;build.workspaceId=2;build.buildType="Set";build.name="Set Build";
+    build.setNumber="1000-1";build.inventoryMode="Stock";build.status="Planned";
+    build.createdUtc=QDateTime::currentDateTimeUtc();build.modifiedUtc=build.createdUtc;
+    RemoteReadDto::BuildSummary decodedBuild;
+    QJsonObject buildJson=RemoteReadJson::toJson(build);
+    ok &= require(RemoteReadJson::fromJson(buildJson,&decodedBuild,&decodeError)
+        && decodedBuild.modifiedUtc.isValid(),"Build concurrency timestamp round trip failed");
+    buildJson.remove(QStringLiteral("createdUtc"));
+    buildJson.remove(QStringLiteral("modifiedUtc"));
+    ok &= require(RemoteReadJson::fromJson(buildJson,&decodedBuild,&decodeError),
+        "Protocol 1.2 Build read without G1 timestamps lost compatibility");
+
     RemoteReadDto::BuildRequirement requirement;
     requirement.requirementId=70; requirement.buildId=9; requirement.partNumber="3001";
     requirement.partNameFallback="Brick 2 x 4"; requirement.rebrickableColorId=4;
@@ -109,6 +122,23 @@ int main(int argc, char** argv)
     RemoteReadDto::PullingRow decodedPulling;
     ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(pulling),
         &decodedPulling,&decodeError),"Pulling DTO round trip failed");
+    RemoteReadDto::BuildCancellationReturnRow cancellationReturn;
+    cancellationReturn.requirementId=70;cancellationReturn.partNumber="3001";
+    cancellationReturn.partNameFallback="Brick 2 x 4";
+    cancellationReturn.colorNameFallback="Red";cancellationReturn.manufacturerDisplay="LEGO";
+    cancellationReturn.quantityPulled=3;cancellationReturn.spare=false;
+    RemoteReadDto::BuildCancellationReturnRow decodedCancellationReturn;
+    ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(cancellationReturn),
+        &decodedCancellationReturn,&decodeError)
+        && decodedCancellationReturn.requirementId==70
+        && decodedCancellationReturn.manufacturerDisplay==QStringLiteral("LEGO")
+        && decodedCancellationReturn.quantityPulled==3,
+        "Build cancellation return DTO round trip failed");
+    QJsonObject invalidCancellationReturn=RemoteReadJson::toJson(cancellationReturn);
+    invalidCancellationReturn[QStringLiteral("quantityPulled")]=0;
+    ok &= require(!RemoteReadJson::fromJson(invalidCancellationReturn,
+        &decodedCancellationReturn,&decodeError),
+        "Build cancellation return DTO accepted a non-positive pulled quantity");
 
     QElapsedTimer serializationTimer; serializationTimer.start();
     QJsonArray inventoryRows; for(int i=0;i<250;++i){row.inventoryRecordId=i+1;inventoryRows.append(RemoteReadJson::toJson(row));}

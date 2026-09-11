@@ -13,7 +13,40 @@
 #include <QSqlDatabase>
 #include <QSqlError>
 
+SetBuildCreationService::SetBuildCreationService()
+    : SetBuildCreationService(DatabaseManager::instance().database()) {}
+
+SetBuildCreationService::SetBuildCreationService(const QSqlDatabase& database)
+    : m_connectionName(database.connectionName()) {}
+
+QSqlDatabase SetBuildCreationService::database() const
+{
+    return QSqlDatabase::database(m_connectionName, false);
+}
+
 SetBuildCreationService::Result SetBuildCreationService::create(
+    int workspaceId, int setCatalogId, const QString& buildName) const
+{
+    QSqlDatabase db = database();
+    if (!db.transaction()) {
+        Result result;
+        result.message = QStringLiteral("Unable to begin the Set Build creation transaction.");
+        return result;
+    }
+    Result result = createInCurrentTransaction(workspaceId, setCatalogId, buildName);
+    if (!result.success) {
+        db.rollback();
+        return result;
+    }
+    if (!db.commit()) {
+        db.rollback();
+        result.success = false;
+        result.message = QStringLiteral("Unable to commit the Set Build creation transaction.");
+    }
+    return result;
+}
+
+SetBuildCreationService::Result SetBuildCreationService::createInCurrentTransaction(
     int workspaceId, int setCatalogId, const QString& buildName) const
 {
     Result result;
@@ -23,27 +56,20 @@ SetBuildCreationService::Result SetBuildCreationService::create(
         return result;
     }
 
-    QSqlDatabase database = DatabaseManager::instance().database();
-    if (!database.transaction()) {
-        result.message = QStringLiteral("Unable to begin the Set Build creation transaction.");
-        return result;
-    }
-    if (workspaceId <= 0 || !WorkspaceRepository().getById(workspaceId)) {
-        database.rollback();
+    QSqlDatabase db = database();
+    if (workspaceId <= 0 || !WorkspaceRepository(db).getById(workspaceId)) {
         result.message = QStringLiteral("Select a valid workspace before creating the Set Build.");
         return result;
     }
-    const auto set = SetCatalogRepository().getById(setCatalogId);
+    const auto set = SetCatalogRepository(db).getById(setCatalogId);
     if (setCatalogId <= 0 || !set) {
-        database.rollback();
         result.message = QStringLiteral("The selected Set catalog record is unavailable.");
         return result;
     }
 
     QList<EffectiveSetCompositionPart> requiredParts;
-    const auto composition = EffectiveSetCompositionRepository(database).forSet(setCatalogId, true);
+    const auto composition = EffectiveSetCompositionRepository(db).forSet(setCatalogId, true);
     if (!composition.success) {
-        database.rollback();
         result.message = QStringLiteral("Unable to load effective Set composition: ") + composition.message;
         return result;
     }
@@ -54,7 +80,6 @@ SetBuildCreationService::Result SetBuildCreationService::create(
             requiredParts.append(part);
     }
     if (requiredParts.isEmpty()) {
-        database.rollback();
         result.message = QStringLiteral("Get or import a Set parts list before creating a Build from Stock.");
         return result;
     }
@@ -67,13 +92,12 @@ SetBuildCreationService::Result SetBuildCreationService::create(
     build.setName(name);
     build.setInventoryMode(QStringLiteral("Stock"));
     build.setStatus(QStringLiteral("Planned"));
-    if (!BuildRepository().create(build)) {
-        database.rollback();
+    if (!BuildRepository(db).create(build)) {
         result.message = QStringLiteral("Unable to create the Set Build.");
         return result;
     }
 
-    BuildRequirementRepository requirements;
+    BuildRequirementRepository requirements(db);
     // Both persisted composition sources guarantee one logical row per exact
     // Part+Color+spare identity, so no cross-row aggregation is necessary.
     for (const EffectiveSetCompositionPart& part : requiredParts) {
@@ -88,8 +112,7 @@ SetBuildCreationService::Result SetBuildCreationService::create(
         requirement.setQuantityReleased(0);
         requirement.setIsSpare(false);
         if (!requirements.create(requirement)) {
-            const QString error = database.lastError().text();
-            database.rollback();
+            const QString error = db.lastError().text();
             result.message = error.isEmpty()
                 ? QStringLiteral("Unable to create a Set Build requirement.")
                 : QStringLiteral("Unable to create a Set Build requirement: ") + error;
@@ -99,11 +122,6 @@ SetBuildCreationService::Result SetBuildCreationService::create(
         result.requiredPieces += part.quantity;
     }
 
-    if (!database.commit()) {
-        database.rollback();
-        result.message = QStringLiteral("Unable to commit the Set Build creation transaction.");
-        return result;
-    }
     result.success = true;
     result.buildId = build.id();
     result.message = QStringLiteral("Set Build created.");

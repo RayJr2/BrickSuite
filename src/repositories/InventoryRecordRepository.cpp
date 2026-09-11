@@ -207,6 +207,14 @@ QList<InventoryRecord> InventoryRecordRepository::getByStorageLocation(int works
 
 std::optional<InventoryRecord> InventoryRecordRepository::getById(int id) const
 {
+    std::optional<InventoryRecord> record;
+    return tryGetById(id, record) ? record : std::nullopt;
+}
+
+bool InventoryRecordRepository::tryGetById(
+    int id, std::optional<InventoryRecord>& record) const
+{
+    record.reset();
     QSqlDatabase database = repositoryDatabase();
 
     QSqlQuery query(database);
@@ -233,13 +241,14 @@ std::optional<InventoryRecord> InventoryRecordRepository::getById(int id) const
     if (!query.exec()) {
         qCritical() << "Unable to retrieve inventory record:" << query.lastError().text();
 
-        return std::nullopt;
+        return false;
     }
 
     if (!query.next())
-        return std::nullopt;
+        return true;
 
-    return inventoryRecordFromQuery(query);
+    record = inventoryRecordFromQuery(query);
+    return true;
 }
 
 bool InventoryRecordRepository::updateQuantity(int inventoryRecordId, int quantity)

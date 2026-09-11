@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QSqlDatabase>
 
 class MinifigBuildCreationService
 {
@@ -14,5 +15,12 @@ public:
         QString message;
     };
 
+    MinifigBuildCreationService();
+    explicit MinifigBuildCreationService(const QSqlDatabase& database);
     Result create(int workspaceId, int minifigCatalogId, const QString& buildName) const;
+    Result createInCurrentTransaction(int workspaceId, int minifigCatalogId,
+                                      const QString& buildName) const;
+private:
+    QSqlDatabase database() const;
+    QString m_connectionName;
 };

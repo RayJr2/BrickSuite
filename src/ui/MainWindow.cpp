@@ -351,7 +351,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                                       m_remoteReads,
                                       m_partExternalIdEnrichmentService,
                                       m_networkManager.remotePulling(),
-                                      m_networkManager.remoteCollectionMutations());
+                                      m_networkManager.remoteCollectionMutations(),
+                                      m_networkManager.remoteBuildMutations());
     connect(&m_networkManager, &BrickSuiteNetworkManager::remotePullingMutationCommitted,
             this, [this](int workspaceId, int buildId) {
         if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
@@ -364,6 +365,13 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
         m_myInventoryWidget->refresh();
         m_buildsWidget->refresh();
+    });
+    connect(&m_networkManager, &BrickSuiteNetworkManager::remoteBuildMutationCommitted,
+            this, [this](int workspaceId, int) {
+        if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+        m_buildsWidget->refresh();
+        m_myInventoryWidget->refresh();
+        m_myCollectionWidget->refresh();
     });
 
     if (m_remoteReads)

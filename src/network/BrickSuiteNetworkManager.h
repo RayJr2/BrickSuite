@@ -15,6 +15,7 @@ class RemoteInventoryMutationApplicationService;
 class RemoteStorageMutationApplicationService;
 class RemotePartReferenceMutationApplicationService;
 class RemoteCollectionMutationApplicationService;
+class RemoteBuildMutationApplicationService;
 class HostMutationProtocolService;
 class RemoteSessionState;
 class OperationalInvalidationPublisher;
@@ -39,6 +40,7 @@ public:
     RemoteStorageMutationApplicationService* remoteStorageMutations() const;
     RemotePartReferenceMutationApplicationService* remotePartReferenceMutations() const;
     RemoteCollectionMutationApplicationService* remoteCollectionMutations() const;
+    RemoteBuildMutationApplicationService* remoteBuildMutations() const;
     RemoteSessionState* remoteSession() const;
     OperationalInvalidationPublisher* invalidationPublisher() const;
     BrickSuiteConnectionStatus connectionStatus() const;
@@ -55,6 +57,7 @@ signals:
     void remoteStorageMutationCommitted(int workspaceId, int storageId);
     void remotePartReferenceMutationCommitted(const QString& partNumber);
     void remoteCollectionMutationCommitted(int workspaceId, int collectionItemId);
+    void remoteBuildMutationCommitted(int workspaceId, int buildId);
 
 private:
     BrickSuiteWebSocketServer* m_server = nullptr;
@@ -69,6 +72,7 @@ private:
     std::unique_ptr<RemoteStorageMutationApplicationService> m_remoteStorageMutations;
     std::unique_ptr<RemotePartReferenceMutationApplicationService> m_remotePartReferenceMutations;
     std::unique_ptr<RemoteCollectionMutationApplicationService> m_remoteCollectionMutations;
+    std::unique_ptr<RemoteBuildMutationApplicationService> m_remoteBuildMutations;
     std::unique_ptr<RemoteSessionState> m_remoteSession;
     std::unique_ptr<OperationalInvalidationPublisher> m_invalidationPublisher;
 };

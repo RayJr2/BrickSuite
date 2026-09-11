@@ -18,7 +18,9 @@ public:
 
     bool create(BuildRequirement& requirement);
     std::optional<BuildRequirement> getById(int id) const;
+    bool tryGetById(int id, std::optional<BuildRequirement>& requirement) const;
     QList<BuildRequirement> getByBuild(int buildId) const;
+    bool tryGetByBuild(int buildId, QList<BuildRequirement>& requirements) const;
     bool update(BuildRequirement& requirement);
     bool remove(int requirementId);
     bool removeAllForBuild(int buildId);

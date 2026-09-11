@@ -106,6 +106,16 @@ int main(int argc, char** argv)
                     "Build requirement mapping is incorrect"))
         return 1;
 
+    scope.inventoryChanged = true;
+    scope.collectionChanged = true;
+    const auto cancellation = Service::invalidationFor(Service::Workflow::BuildCancellation, scope);
+    if (!require(has(cancellation, D::Builds) && has(cancellation, D::BuildRequirements)
+                     && has(cancellation, D::MissingParts) && has(cancellation, D::Pulling)
+                     && has(cancellation, D::Inventory) && has(cancellation, D::InventoryHistory)
+                     && has(cancellation, D::Collection),
+                 "Build cancellation compound domains are incomplete"))
+        return 1;
+
     scope = {};
     scope.workspaceId = 4;
     scope.collectionItemId = 15;

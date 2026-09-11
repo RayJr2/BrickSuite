@@ -79,6 +79,7 @@ public:
     QList<InventoryRecord> getByStorageLocation(int workspaceId, int storageLocationId) const;
 
     std::optional<InventoryRecord> getById(int id) const;
+    bool tryGetById(int id, std::optional<InventoryRecord>& record) const;
 
     bool updateQuantity(int inventoryRecordId, int quantity);
 

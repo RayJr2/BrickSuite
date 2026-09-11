@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QSqlDatabase>
 
 class SetBuildCreationService
 {
@@ -15,5 +16,14 @@ public:
         QString message;
     };
 
+    SetBuildCreationService();
+    explicit SetBuildCreationService(const QSqlDatabase& database);
+
     Result create(int workspaceId, int setCatalogId, const QString& buildName) const;
+    Result createInCurrentTransaction(int workspaceId, int setCatalogId,
+                                      const QString& buildName) const;
+
+private:
+    QSqlDatabase database() const;
+    QString m_connectionName;
 };

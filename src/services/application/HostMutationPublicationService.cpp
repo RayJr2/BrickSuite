@@ -36,6 +36,16 @@ OperationalInvalidation HostMutationPublicationService::invalidationFor(
         result.workspaceId = scope.workspaceId;
         result.buildId = scope.buildId;
         break;
+    case Workflow::BuildCancellation:
+        result.domains = {D::Builds, D::BuildRequirements, D::MissingParts, D::Pulling};
+        if (scope.inventoryChanged) {
+            result.domains.append(D::Inventory);
+            result.domains.append(D::InventoryHistory);
+        }
+        if (scope.collectionChanged) result.domains.append(D::Collection);
+        result.workspaceId = scope.workspaceId;
+        result.buildId = scope.buildId;
+        break;
     case Workflow::Pulling:
         result.domains = {D::Inventory, D::InventoryHistory, D::Builds,
                           D::BuildRequirements, D::MissingParts, D::Pulling};

@@ -6,6 +6,9 @@
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/LostInventoryRepository.h"
+#include "../../repositories/BuildRequirementRepository.h"
+#include "../../repositories/BuildAllocationRepository.h"
+#include "../../repositories/ManufacturerRepository.h"
 #include "../parts/PartReferenceManifest.h"
 #include "../builds/BuildRequirementAvailabilityService.h"
 
@@ -167,6 +170,20 @@ void HostReadExecutor::shutdown()
 void HostReadExecutor::listWorkspaces(QObject* context,
     std::function<void(const QList<Workspace>&)> completion, ErrorCallback failure)
 { HOST_READ_METHOD_BODY("workspace.list", services.workspaces().list(), QList<Workspace>); }
+void HostReadExecutor::listManufacturerNames(QObject* context,
+    std::function<void(const QStringList&)> completion, ErrorCallback failure)
+{
+    QPointer<QObject> guard(context);
+    enqueue(QStringLiteral("manufacturers.list"),
+        [guard, completion=std::move(completion)](ApplicationServices&, const QSqlDatabase& database) mutable {
+            QStringList result;
+            for (const Manufacturer& manufacturer : ManufacturerRepository(database).getAll(true))
+                result.append(manufacturer.name());
+            if (guard) QMetaObject::invokeMethod(guard, [guard, completion, result=std::move(result)]() mutable {
+                if (guard) completion(result);
+            }, Qt::QueuedConnection);
+        }, context, std::move(failure));
+}
 void HostReadExecutor::getWorkspace(int id, QObject* context,
     std::function<void(const std::optional<Workspace>&)> completion, ErrorCallback failure)
 { HOST_READ_METHOD_BODY("workspace.get", services.workspaces().get(id), std::optional<Workspace>); }
@@ -332,6 +349,7 @@ void HostReadExecutor::listBuildsPortable(int workspaceId, bool archived, QObjec
             if (build.inventoryMode() == QStringLiteral("CompleteSet"))
                 value.manufacturerDisplay = manufacturerName(db, build.manufacturerId());
             value.status = build.status(); value.notes = build.notes(); value.active = build.isActive();
+            value.createdUtc = build.createdUtc(); value.modifiedUtc = build.modifiedUtc();
             result.append(value);
         }
         if (guard) QMetaObject::invokeMethod(guard,
@@ -361,6 +379,7 @@ void HostReadExecutor::getBuildPortable(int workspaceId, int buildId, QObject* c
             if (build->inventoryMode() == QStringLiteral("CompleteSet"))
                 value.manufacturerDisplay = manufacturerName(db, build->manufacturerId());
             value.status = build->status(); value.notes = build->notes(); value.active = build->isActive();
+            value.createdUtc = build->createdUtc(); value.modifiedUtc = build->modifiedUtc();
             result = value;
         }
         if (guard) QMetaObject::invokeMethod(guard,
@@ -368,6 +387,43 @@ void HostReadExecutor::getBuildPortable(int workspaceId, int buildId, QObject* c
                 if (guard) completion(result);
             }, Qt::QueuedConnection);
     }, context, std::move(failure));
+}
+
+void HostReadExecutor::buildCancellationReturnsPortable(int workspaceId, int buildId,
+    QObject* context,
+    std::function<void(const std::optional<QList<RemoteReadDto::BuildCancellationReturnRow>>&)> completion,
+    ErrorCallback failure)
+{
+    QPointer<QObject> guard(context);
+    enqueue(QStringLiteral("builds.cancelReturns"), [=, completion=std::move(completion)]
+        (ApplicationServices& services, const QSqlDatabase& db) mutable {
+        std::optional<QList<RemoteReadDto::BuildCancellationReturnRow>> result;
+        const auto build=services.builds().get(buildId);
+        if(build&&build->workspaceId()==workspaceId){
+            QList<RemoteReadDto::BuildCancellationReturnRow> rows;
+            BuildAllocationRepository allocations(db); ManufacturerRepository manufacturers(db);
+            for(const auto& requirement:BuildRequirementRepository(db).getByBuild(buildId)){
+                if(requirement.quantityPulled()<=0)continue;
+                const auto part=PartRepository(db).getById(requirement.partId());
+                const auto color=ColorRepository(db).getById(requirement.colorId());
+                int total=0;
+                for(const auto& provenance:allocations.pulledManufacturerProvenance(
+                        buildId,requirement.partId(),requirement.colorId())){
+                    const auto manufacturer=manufacturers.getById(provenance.manufacturerId);
+                    if(!manufacturer)continue;
+                    RemoteReadDto::BuildCancellationReturnRow row;
+                    row.requirementId=requirement.id();row.partNumber=part?part->partNumber():QString::number(requirement.partId());
+                    row.partNameFallback=part?part->name():QString();row.colorNameFallback=color?color->name():QString::number(requirement.colorId());
+                    row.manufacturerDisplay=manufacturer->name();row.quantityPulled=provenance.quantityPulled;row.spare=requirement.isSpare();
+                    total+=row.quantityPulled;rows.append(row);
+                }
+                if(total!=requirement.quantityPulled()){ result=std::nullopt; goto done; }
+            }
+            result=rows;
+        }
+done:
+        if(guard)QMetaObject::invokeMethod(guard,[guard,completion,result=std::move(result)]()mutable{if(guard)completion(result);},Qt::QueuedConnection);
+    },context,std::move(failure));
 }
 
 void HostReadExecutor::searchInventoryPortable(const RemoteReadDto::InventorySearchRequest&r,QObject*context,std::function<void(const InventoryApplicationService::Page&)>completion,ErrorCallback failure)

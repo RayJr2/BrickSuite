@@ -29,18 +29,6 @@
 #include <QSqlQuery>
 #include <QVariant>
 
-namespace
-{
-int normalizedManufacturerId(int manufacturerId)
-{
-    if (manufacturerId > 0)
-        return manufacturerId;
-
-    ManufacturerRepository repository;
-    return repository.legoManufacturerId();
-}
-}
-
 bool BuildRepository::create(Build& build)
 {
     if (build.workspaceId() <= 0 || build.name().trimmed().isEmpty()) {
@@ -84,7 +72,9 @@ bool BuildRepository::create(Build& build)
         return false;
     }
 
-    const int manufacturerId = normalizedManufacturerId(build.manufacturerId());
+    QSqlDatabase database = repositoryDatabase();
+    const int manufacturerId = build.manufacturerId() > 0
+        ? build.manufacturerId() : ManufacturerRepository(database).legoManufacturerId();
 
     if (manufacturerId <= 0) {
         qCritical() << "Build create failed: default LEGO manufacturer unavailable.";
@@ -92,8 +82,6 @@ bool BuildRepository::create(Build& build)
     }
 
     build.setManufacturerId(manufacturerId);
-
-    QSqlDatabase database = repositoryDatabase();
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
@@ -384,7 +372,9 @@ bool BuildRepository::update(Build& build)
         return false;
     }
 
-    const int manufacturerId = normalizedManufacturerId(build.manufacturerId());
+    QSqlDatabase database = repositoryDatabase();
+    const int manufacturerId = build.manufacturerId() > 0
+        ? build.manufacturerId() : ManufacturerRepository(database).legoManufacturerId();
 
     if (manufacturerId <= 0) {
         qCritical() << "Build update failed: default LEGO manufacturer unavailable.";
@@ -392,8 +382,6 @@ bool BuildRepository::update(Build& build)
     }
 
     build.setManufacturerId(manufacturerId);
-
-    QSqlDatabase database = repositoryDatabase();
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
 

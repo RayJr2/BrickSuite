@@ -1,7 +1,5 @@
 #include "MinifigCatalogPartRepository.h"
 
-#include "../database/DatabaseManager.h"
-
 #include <QDateTime>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -10,7 +8,7 @@ QList<MinifigCatalogPart> MinifigCatalogPartRepository::listForMinifig(
     int minifigCatalogId) const
 {
     QList<MinifigCatalogPart> parts;
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT mcp.id, mcp.minifig_catalog_id, mcp.part_id, mcp.color_id,
                mcp.quantity_required, mcp.is_spare, p.part_number, p.name,
@@ -53,7 +51,7 @@ bool MinifigCatalogPartRepository::replaceForMinifig(
     const QList<MinifigCatalogPart>& parts,
     QString& errorMessage) const
 {
-    QSqlDatabase database = DatabaseManager::instance().database();
+    QSqlDatabase database = repositoryDatabase();
     QSqlQuery remove(database);
     remove.prepare("DELETE FROM minifig_catalog_part WHERE minifig_catalog_id = :id");
     remove.bindValue(":id", minifigCatalogId);

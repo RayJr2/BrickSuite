@@ -78,8 +78,16 @@ bool BuildRequirementRepository::create(BuildRequirement& requirement)
 
 std::optional<BuildRequirement> BuildRequirementRepository::getById(int id) const
 {
+    std::optional<BuildRequirement> requirement;
+    return tryGetById(id, requirement) ? requirement : std::nullopt;
+}
+
+bool BuildRequirementRepository::tryGetById(
+    int id, std::optional<BuildRequirement>& requirement) const
+{
+    requirement.reset();
     if (id <= 0)
-        return std::nullopt;
+        return true;
 
     QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
@@ -94,18 +102,27 @@ std::optional<BuildRequirement> BuildRequirementRepository::getById(int id) cons
 
     if (!query.exec()) {
         qCritical() << "Unable to retrieve build requirement:" << query.lastError().text();
-        return std::nullopt;
+        return false;
     }
     if (!query.next())
-        return std::nullopt;
-    return requirementFromQuery(query);
+        return true;
+    requirement = requirementFromQuery(query);
+    return true;
 }
 
 QList<BuildRequirement> BuildRequirementRepository::getByBuild(int buildId) const
 {
     QList<BuildRequirement> requirements;
+    tryGetByBuild(buildId, requirements);
+    return requirements;
+}
+
+bool BuildRequirementRepository::tryGetByBuild(
+    int buildId, QList<BuildRequirement>& requirements) const
+{
+    requirements.clear();
     if (buildId <= 0)
-        return requirements;
+        return true;
 
     QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
@@ -121,11 +138,11 @@ QList<BuildRequirement> BuildRequirementRepository::getByBuild(int buildId) cons
 
     if (!query.exec()) {
         qCritical() << "Unable to retrieve build requirements:" << query.lastError().text();
-        return requirements;
+        return false;
     }
     while (query.next())
         requirements.append(requirementFromQuery(query));
-    return requirements;
+    return true;
 }
 
 bool BuildRequirementRepository::update(BuildRequirement& requirement)

@@ -68,7 +68,7 @@ struct BuildSummary {
     qint64 buildId = 0; qint64 workspaceId = 0; QString buildType;
     QString name; QString setNumber; QString minifigNumber;
     QString inventoryMode; QString manufacturerDisplay; QString status;
-    QString notes; bool active = true;
+    QString notes; bool active = true; QDateTime createdUtc; QDateTime modifiedUtc;
 };
 using BuildDetail = BuildSummary;
 struct BuildRequirement {
@@ -93,6 +93,11 @@ struct PullingRow {
       int quantityRequired = 0; int quantityPulled = 0; int quantityAllocated = 0;
       int inventoryQuantity = 0;
     bool substitution = false;
+};
+struct BuildCancellationReturnRow {
+    qint64 requirementId = 0;
+    QString partNumber; QString partNameFallback; QString colorNameFallback;
+    QString manufacturerDisplay; int quantityPulled = 0; bool spare = false;
 };
 
 struct CollectionSearchRequest {

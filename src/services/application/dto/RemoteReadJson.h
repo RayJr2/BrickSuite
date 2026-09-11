@@ -31,6 +31,8 @@ QJsonObject toJson(const RemoteReadDto::MissingPart&);
 bool fromJson(const QJsonObject&, RemoteReadDto::MissingPart*, DecodeError* = nullptr);
 QJsonObject toJson(const RemoteReadDto::PullingRow&);
 bool fromJson(const QJsonObject&, RemoteReadDto::PullingRow*, DecodeError* = nullptr);
+QJsonObject toJson(const RemoteReadDto::BuildCancellationReturnRow&);
+bool fromJson(const QJsonObject&, RemoteReadDto::BuildCancellationReturnRow*, DecodeError* = nullptr);
 QJsonObject toJson(const RemoteReadDto::CollectionSummary&);
 bool fromJson(const QJsonObject&, RemoteReadDto::CollectionSummary*, DecodeError* = nullptr);
 QJsonObject toJson(const RemoteReadDto::CollectionDetail&);

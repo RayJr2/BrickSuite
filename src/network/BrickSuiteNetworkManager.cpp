@@ -20,6 +20,8 @@
 #include "../services/application/RemoteCollectionMutationApplicationService.h"
 #include "../services/application/HostPartReferenceMutationService.h"
 #include "../services/application/HostCollectionMutationService.h"
+#include "../services/application/HostBuildMutationService.h"
+#include "../services/application/RemoteBuildMutationApplicationService.h"
 #include "../services/application/HostMutationPublicationService.h"
 #include "../services/CredentialStore.h"
 #include "../settings/UserSettings.h"
@@ -50,6 +52,8 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
         std::make_unique<RemotePartReferenceMutationApplicationService>(*m_remoteMutations, this);
     m_remoteCollectionMutations =
         std::make_unique<RemoteCollectionMutationApplicationService>(*m_remoteMutations, this);
+    m_remoteBuildMutations =
+        std::make_unique<RemoteBuildMutationApplicationService>(*m_remoteMutations, this);
     m_hostReads = std::make_unique<HostReadProtocolService>(
         DatabaseManager::instance().databasePath(), this);
     m_hostReads->registerOperations(m_server->operationDispatcher());
@@ -78,6 +82,12 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
                 if (workflow == HostMutationPublicationService::Workflow::Collection
                     && scope.workspaceId && scope.collectionItemId)
                     emit remoteCollectionMutationCommitted(int(*scope.workspaceId),int(*scope.collectionItemId));
+                if ((workflow == HostMutationPublicationService::Workflow::BuildMetadata
+                     || workflow == HostMutationPublicationService::Workflow::BuildRequirements
+                     || workflow == HostMutationPublicationService::Workflow::Pulling
+                     || workflow == HostMutationPublicationService::Workflow::BuildCancellation)
+                    && scope.workspaceId && scope.buildId)
+                    emit remoteBuildMutationCommitted(int(*scope.workspaceId),int(*scope.buildId));
             }, Qt::QueuedConnection);
         }, this);
     m_hostMutations->registerOperation(m_server->operationDispatcher(),
@@ -100,6 +110,8 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     for(const QString&operation:partReferenceOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostPartReferenceMutationService::createMutation(operation,metadata,error);});
     const QStringList collectionOperations={QStringLiteral("collection.add"),QStringLiteral("collection.edit"),QStringLiteral("collection.setActive")};
     for(const QString&operation:collectionOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostCollectionMutationService::createMutation(operation,metadata,error);});
+    const QStringList buildOperations={QStringLiteral("builds.add"),QStringLiteral("builds.edit"),QStringLiteral("builds.setActive"),QStringLiteral("builds.complete"),QStringLiteral("builds.cancel")};
+    for(const QString&operation:buildOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostBuildMutationService::createMutation(operation,metadata,error);});
     connect(m_server, &BrickSuiteWebSocketServer::statusChanged,
             this, &BrickSuiteNetworkManager::statusChanged);
     connect(m_client, &BrickSuiteWebSocketClient::statusChanged,
@@ -198,6 +210,8 @@ RemotePartReferenceMutationApplicationService* BrickSuiteNetworkManager::remoteP
 { return m_remotePartReferenceMutations.get(); }
 RemoteCollectionMutationApplicationService* BrickSuiteNetworkManager::remoteCollectionMutations() const
 { return m_remoteCollectionMutations.get(); }
+RemoteBuildMutationApplicationService* BrickSuiteNetworkManager::remoteBuildMutations() const
+{ return m_remoteBuildMutations.get(); }
 RemoteSessionState* BrickSuiteNetworkManager::remoteSession() const
 { return m_remoteSession.get(); }
 OperationalInvalidationPublisher* BrickSuiteNetworkManager::invalidationPublisher() const

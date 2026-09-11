@@ -11,9 +11,10 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QStandardPaths>
+#include <cstdio>
 
 namespace {
-bool require(bool ok, const QString& text) { if (!ok) qCritical().noquote() << text; return ok; }
+bool require(bool ok, const QString& text) { if (!ok) { qCritical().noquote() << text; std::fprintf(stderr, "FAILED: %s\n", text.toUtf8().constData()); } return ok; }
 int scalar(QSqlDatabase db, const QString& sql) { QSqlQuery q(db); return q.exec(sql) && q.next() ? q.value(0).toInt() : -1; }
 class Cleanup { public: explicit Cleanup(QString p):path(std::move(p)){} ~Cleanup(){DatabaseManager::instance().close();QDir(path).removeRecursively();} QString path; };
 }
@@ -46,6 +47,17 @@ int main(int argc, char* argv[])
     auto requirements = BuildRequirementRepository().getByBuild(created.buildId);
     if (!require(requirements.size()==1 && requirements.first().partId()>0 && requirements.first().colorId()>0 && requirements.first().quantityRequired()==2 && requirements.first().quantityPulled()==0 && requirements.first().quantityReleased()==0 && !requirements.first().isSpare() && requirements.first().substitutePartId()==0 && requirements.first().substituteColorId()==0, "Requirement snapshot semantics are incorrect.")) return 1;
     const int snapPart=requirements.first().partId(), snapColor=requirements.first().colorId(), snapQuantity=requirements.first().quantityRequired();
+
+    const int callerOwnedBuildsBefore = scalar(db, "SELECT COUNT(*) FROM build");
+    const int callerOwnedRequirementsBefore = scalar(db, "SELECT COUNT(*) FROM build_requirement");
+    if (!require(db.transaction(), "Unable to begin caller-owned Set Build transaction.")) return 1;
+    const auto callerOwned = service.createInCurrentTransaction(workspaceId, setId, "Caller rollback");
+    if (!require(callerOwned.success && scalar(db, "SELECT COUNT(*) FROM build") == callerOwnedBuildsBefore + 1,
+                 "Set Build caller-owned seam did not mutate inside the transaction.")) return 1;
+    if (!require(db.rollback()
+                 && scalar(db, "SELECT COUNT(*) FROM build") == callerOwnedBuildsBefore
+                 && scalar(db, "SELECT COUNT(*) FROM build_requirement") == callerOwnedRequirementsBefore,
+                 "Caller rollback did not remove the Set Build snapshot.")) return 1;
 
     const int p1=scalar(db,"SELECT id FROM part WHERE part_number='p1'");
     const int p2=scalar(db,"SELECT id FROM part WHERE part_number='p2'");

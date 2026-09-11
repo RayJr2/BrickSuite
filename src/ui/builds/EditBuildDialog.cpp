@@ -23,6 +23,7 @@
 #include "../../models/Build.h"
 #include "../../repositories/BuildRepository.h"
 #include "../../repositories/ManufacturerRepository.h"
+#include "../../services/builds/BuildMutationService.h"
 
 #include <QDebug>
 #include <QComboBox>
@@ -55,21 +56,7 @@ EditBuildDialog::EditBuildDialog(int buildId, QWidget* parent)
 
     m_nameEdit = new QLineEdit(this);
 
-    m_statusCombo = new QComboBox(this);
-
     m_manufacturerCombo = new QComboBox(this);
-
-    //
-    // Match the status values already accepted by
-    // BuildRepository.
-    //
-    m_statusCombo->addItem("Planned", "Planned");
-
-    m_statusCombo->addItem("Pulling", "Pulling");
-
-    m_statusCombo->addItem("Complete", "Complete");
-
-    m_statusCombo->addItem("Disassembled", "Disassembled");
 
     m_notesEdit = new QTextEdit(this);
 
@@ -90,8 +77,6 @@ EditBuildDialog::EditBuildDialog(int buildId, QWidget* parent)
     formLayout->addRow("Manufacturer:", m_manufacturerCombo);
 
     formLayout->addRow("Name:", m_nameEdit);
-
-    formLayout->addRow("Status:", m_statusCombo);
 
     formLayout->addRow("Notes:", m_notesEdit);
 
@@ -156,12 +141,6 @@ bool EditBuildDialog::loadBuild()
 
     m_nameEdit->setText(build->name());
 
-    const int statusIndex = m_statusCombo->findData(build->status());
-
-    if (statusIndex >= 0) {
-        m_statusCombo->setCurrentIndex(statusIndex);
-    }
-
     m_notesEdit->setPlainText(build->notes());
 
     return true;
@@ -177,26 +156,12 @@ void EditBuildDialog::saveBuild()
         return;
     }
 
-    BuildRepository repository;
+    const auto result = BuildMutationService().updateMetadata(
+        m_buildId, name, m_manufacturerCombo->currentData().toInt(),
+        m_notesEdit->toPlainText());
 
-    std::optional<Build> build = repository.getById(m_buildId);
-
-    if (!build) {
-        QMessageBox::critical(this, "Edit Build", "Unable to reload the selected Build.");
-
-        return;
-    }
-
-    build->setName(name);
-
-    build->setManufacturerId(m_manufacturerCombo->currentData().toInt());
-
-    build->setStatus(m_statusCombo->currentData().toString());
-
-    build->setNotes(m_notesEdit->toPlainText().trimmed());
-
-    if (!repository.update(*build)) {
-        QMessageBox::critical(this, "Edit Build", "Unable to update the Build.");
+    if (!result.success) {
+        QMessageBox::critical(this, "Edit Build", result.message);
 
         return;
     }

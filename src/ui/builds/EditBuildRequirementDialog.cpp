@@ -22,6 +22,7 @@
 #include "../../repositories/BuildRequirementRepository.h"
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/PartRepository.h"
+#include "../../services/builds/BuildRequirementMutationService.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
 
@@ -279,46 +280,12 @@ void EditBuildRequirementDialog::saveRequirement()
     const int newSubstituteColorId =
         selectedColorId == requirement->colorId() ? 0 : selectedColorId;
 
-    const bool partOrColorChanged =
-        newSubstitutePartId != requirement->substitutePartId()
-        || newSubstituteColorId != requirement->substituteColorId();
+    const auto result = BuildRequirementMutationService().edit(
+        requirement->id(), newSubstitutePartId, newSubstituteColorId,
+        m_quantitySpin->value(), m_spareCheck->isChecked());
 
-    if (partOrColorChanged) {
-        BuildAllocationRepository allocationRepository;
-
-        //
-        // Phase 1 linkage is authoritative for new requirement-aware
-        // allocations. The part/color fallback also protects legacy
-        // schema-v21 allocations, whose build_requirement_id is NULL.
-        //
-        const int linkedAllocated =
-            allocationRepository.totalAllocatedForRequirement(requirement->id());
-
-        const int legacyOrBuildAllocated =
-            allocationRepository.totalAllocatedForPartColorForBuild(
-                requirement->buildId(),
-                requirement->effectivePartId(),
-                requirement->effectiveColorId());
-
-        if (linkedAllocated > 0 || legacyOrBuildAllocated > 0) {
-            QMessageBox::information(
-                this,
-                "Edit Build Requirement",
-                "This requirement already has inventory allocated to it.\n\n"
-                "Part or Color cannot be changed until the allocation-aware "
-                "substitution phase is implemented. Quantity and Spare may "
-                "still be edited without changing the substitution.");
-            return;
-        }
-    }
-
-    requirement->setSubstitutePartId(newSubstitutePartId);
-    requirement->setSubstituteColorId(newSubstituteColorId);
-    requirement->setQuantityRequired(m_quantitySpin->value());
-    requirement->setIsSpare(m_spareCheck->isChecked());
-
-    if (!repository.update(*requirement)) {
-        QMessageBox::critical(this, "BrickSuite", "Unable to update the build requirement.");
+    if (!result.success) {
+        QMessageBox::information(this, "Edit Build Requirement", result.message);
         return;
     }
 

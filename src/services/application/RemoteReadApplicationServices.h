@@ -5,6 +5,7 @@
 
 #include <QJsonObject>
 #include <QObject>
+#include <QStringList>
 
 class BrickSuiteWebSocketClient;
 class RemoteSessionState;
@@ -21,6 +22,8 @@ public:
 
     ReadRequestToken listWorkspaces(QObject* context,
         AsyncReadCompletion<QList<RemoteReadDto::WorkspaceSummary>> completion);
+    ReadRequestToken listManufacturerNames(QObject* context,
+        AsyncReadCompletion<QStringList> completion);
     ReadRequestToken listStorage(qint64 workspaceId, QObject* context,
         AsyncReadCompletion<QList<RemoteReadDto::StorageSummary>> completion);
     ReadRequestToken listStorage(qint64 workspaceId, bool includeInactive, QObject* context,
@@ -42,6 +45,8 @@ public:
         AsyncReadCompletion<QList<RemoteReadDto::BuildSummary>> completion);
     ReadRequestToken getBuild(qint64 workspaceId, qint64 buildId, QObject* context,
         AsyncReadCompletion<RemoteReadDto::BuildDetail> completion);
+    ReadRequestToken buildCancellationReturns(qint64 workspaceId, qint64 buildId, QObject* context,
+        AsyncReadCompletion<QList<RemoteReadDto::BuildCancellationReturnRow>> completion);
     ReadRequestToken buildRequirements(qint64 workspaceId, qint64 buildId, const RemoteReadDto::PageRequest& page,
         QObject* context, AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::BuildRequirement>> completion);
     ReadRequestToken missingParts(qint64 workspaceId, qint64 buildId,
@@ -62,7 +67,7 @@ private:
     template <typename T, typename Decoder>
     ReadRequestToken request(const QString& operation, const QJsonObject& payload,
                              QObject* context, AsyncReadCompletion<T> completion,
-                             Decoder decoder);
+                             Decoder decoder, bool hostGlobal = false);
     static AsyncReadError mapError(const QString& code);
     BrickSuiteWebSocketClient& m_client;
     RemoteSessionState* m_session = nullptr;
