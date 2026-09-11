@@ -73,6 +73,7 @@
 #include "../../services/application/RemoteBuildMutationApplicationService.h"
 #include "../../services/application/dto/RemoteBuildMutationDtos.h"
 #include "../../ui/procurement/ProcurementPreviewDialog.h"
+#include "../helpers/PartSearchCompleterHelper.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
 
@@ -162,6 +163,20 @@ RemoteBuildMutationDto::ExpectedState expectedState(
     value.status = build.status;
     value.notes = build.notes;
     value.active = build.active;
+    return value;
+}
+
+RemoteBuildMutationDto::RequirementExpectedState expectedRequirementState(
+    const RemoteReadDto::BuildRequirement& r)
+{
+    RemoteBuildMutationDto::RequirementExpectedState value;
+    value.requirementId=r.requirementId;value.buildId=r.buildId;
+    value.modifiedUtc=r.modifiedUtc.toUTC().toString(Qt::ISODateWithMs);
+    value.partNumber=r.partNumber;value.rebrickableColorId=r.rebrickableColorId;
+    value.substitutePartNumber=r.substitutePartNumber;
+    value.substituteRebrickableColorId=r.substituteRebrickableColorId;
+    value.quantityRequired=r.quantityRequired;value.quantityPulled=r.quantityPulled;
+    value.quantityReleased=r.quantityReleased;value.spare=r.spare;
     return value;
 }
 
@@ -315,12 +330,18 @@ BuildsWidget::BuildsWidget(
 
     m_partNumberEdit = new QLineEdit(requirementsGroup);
     m_partNumberEdit->setPlaceholderText("Example: 3001");
+    PartSearchCompleterHelper::install(
+        m_partNumberEdit, [this]() { updateRequirementUiState(); });
 
     m_colorCombo = new QComboBox(requirementsGroup);
+    connect(m_colorCombo, &QComboBox::currentIndexChanged,
+            this, &BuildsWidget::updateRequirementUiState);
 
     m_quantitySpin = new QSpinBox(requirementsGroup);
     m_quantitySpin->setRange(1, 99999);
     m_quantitySpin->setValue(1);
+    connect(m_quantitySpin, &QSpinBox::valueChanged,
+            this, &BuildsWidget::updateRequirementUiState);
 
     m_spareCheck = new QCheckBox("Spare", requirementsGroup);
     m_addRequirementButton = new QPushButton("Add Requirement", requirementsGroup);
@@ -551,6 +572,8 @@ void BuildsWidget::workspaceChanged(int workspaceId)
 
     if (m_remoteMode) {
         m_pendingRemoteAddRequest.reset();
+        m_pendingRemoteRequirementAdd.reset();
+        m_pendingRemoteAllocateAvailable.reset();
         m_addButton->setText(QStringLiteral("Add Build"));
         for (QDialog* dialog : findChildren<QDialog*>()) {
             if (dialog->objectName().startsWith(QStringLiteral("remoteBuild")))
@@ -670,6 +693,9 @@ void BuildsWidget::setRemoteSessionConnected(bool connected)
     else
         ++m_manufacturerGeneration;
     updateUiState();
+    updateRequirementUiState();
+    if (!m_remoteRequirements.isEmpty())
+        renderRemoteRequirements();
 }
 
 void BuildsWidget::reloadManufacturers()
@@ -2346,6 +2372,7 @@ void BuildsWidget::renderRemoteRequirements()
         colorNames.insert(color.rebrickableId(), color.name());
 
     m_requirementsTable->setRowCount(m_remoteRequirements.size());
+    const bool buildWritable = selectedRemoteBuildSupportsStockFulfillment();
     int staleRows = 0;
     for (int row = 0; row < m_remoteRequirements.size(); ++row) {
         const auto& requirement = m_remoteRequirements.at(row);
@@ -2385,11 +2412,129 @@ void BuildsWidget::renderRemoteRequirements()
         }
         m_requirementsTable->setItem(row, 11,
             new QTableWidgetItem(requirement.spare ? QStringLiteral("Yes") : QStringLiteral("No")));
-        m_requirementsTable->setItem(row, 12, new QTableWidgetItem(QStringLiteral("Read-only")));
+        auto* actions=new QComboBox(m_requirementsTable);actions->addItem(QStringLiteral("Actions..."));
+        const auto capability=[this](const char* name){return m_remoteBuildMutations&&m_remoteBuildMutations->isAvailableFor(QLatin1String(name));};
+        const bool hasPulledOrReleased=requirement.quantityPulled>0||requirement.quantityReleased>0;
+        const auto eligibility=BuildActionEligibility::remoteRequirementActions(m_remoteSessionConnected,buildWritable,false,false,capability("builds.requirements.edit"),capability("builds.requirements.remove"),capability("builds.allocations.set"),false,requirement.spare,hasPulledOrReleased,requirement.thisRequirementAllocated>0);
+        if(eligibility.canEdit)actions->addItem(QStringLiteral("Edit"),QStringLiteral("edit"));
+        if(eligibility.canRemove)actions->addItem(QStringLiteral("Delete"),QStringLiteral("delete"));
+        if(eligibility.canSetAllocations)actions->addItem(QStringLiteral("Allocate..."),QStringLiteral("allocate"));
+        if(!eligibility.canEdit&&!eligibility.canRemove&&!eligibility.canSetAllocations){actions->clear();actions->addItem(QStringLiteral("Read-only"));actions->setEnabled(false);}
+        connect(actions,&QComboBox::currentIndexChanged,this,[this,actions,requirement](int index){
+            if(index<=0)return;const QString action=actions->itemData(index).toString();actions->setCurrentIndex(0);
+            if(action==QStringLiteral("allocate")){openRemoteAllocationDialog(requirement);return;}
+            if(action==QStringLiteral("delete")){
+                auto* prompt=new QMessageBox(QMessageBox::Warning,QStringLiteral("Delete Build Requirement"),QStringLiteral("Delete this requirement from the Build?"),QMessageBox::Yes|QMessageBox::No,this);prompt->setAttribute(Qt::WA_DeleteOnClose);prompt->setDefaultButton(QMessageBox::No);
+                connect(prompt,&QMessageBox::finished,this,[this,prompt,requirement](int result){if(result!=QMessageBox::Yes)return;RemoteBuildMutationDto::Request request;request.workspaceId=m_workspaceContext.currentWorkspaceId();request.requirementId=requirement.requirementId;request.mutationId=RemoteMutationDto::newMutationId();request.expectedRequirement=expectedRequirementState(requirement);m_remoteBuildMutations->submit(QStringLiteral("builds.requirements.remove"),request,this,[this](const RemoteBuildMutationDto::Result&){loadRequirements();},[this](const RemoteMutationDto::Error&e){QMessageBox::warning(this,"Delete Build Requirement",e.message);loadRequirements();});});prompt->open();return;
+            }
+            auto* dialog = new QDialog(this);
+            dialog->setAttribute(Qt::WA_DeleteOnClose);
+            dialog->setWindowTitle(QStringLiteral("Edit Build Requirement"));
+            auto* form = new QFormLayout(dialog);
+            auto* original = new QLabel(
+                QStringLiteral("%1 / Rebrickable color %2")
+                    .arg(requirement.partNumber)
+                    .arg(requirement.rebrickableColorId), dialog);
+            auto* part = new QLineEdit(
+                requirement.substitutePartNumber.isEmpty()
+                    ? requirement.partNumber : requirement.substitutePartNumber,
+                dialog);
+            PartSearchCompleterHelper::install(part);
+            auto* color = new QComboBox(dialog);
+            for (const auto& catalogColor : ColorRepository().getAll())
+                color->addItem(catalogColor.name(), catalogColor.rebrickableId());
+            const int colorIndex = color->findData(
+                requirement.substitutePartNumber.isEmpty()
+                    ? requirement.rebrickableColorId
+                    : requirement.substituteRebrickableColorId);
+            if (colorIndex >= 0)
+                color->setCurrentIndex(colorIndex);
+            auto* quantity = new QSpinBox(dialog);
+            quantity->setRange(1, 99999);
+            quantity->setValue(requirement.quantityRequired);
+            auto* spare = new QCheckBox(QStringLiteral("Spare part"), dialog);
+            spare->setChecked(requirement.spare);
+            auto* buttons = new QDialogButtonBox(
+                QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
+            form->addRow(QStringLiteral("Original:"), original);
+            form->addRow(QStringLiteral("Use Part:"), part);
+            form->addRow(QStringLiteral("Use Color:"), color);
+            form->addRow(QStringLiteral("Qty Required:"), quantity);
+            form->addRow(QString(), spare);
+            form->addRow(buttons);
+            connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+            connect(buttons, &QDialogButtonBox::accepted, dialog,
+                    [this, dialog, part, color, quantity, spare, buttons, requirement]() {
+                const auto selected = PartRepository().getByPartNumber(
+                    PartSearchCompleterHelper::canonicalPartNumber(part));
+                if (!selected) {
+                    QMessageBox::warning(
+                        dialog, "Edit Build Requirement",
+                        "The selected Part is unavailable in the Client catalog.");
+                    return;
+                }
+                RemoteBuildMutationDto::Request request;
+                request.workspaceId = m_workspaceContext.currentWorkspaceId();
+                request.requirementId = requirement.requirementId;
+                request.mutationId = RemoteMutationDto::newMutationId();
+                request.expectedRequirement = expectedRequirementState(requirement);
+                const bool originalIdentity =
+                    selected->partNumber() == requirement.partNumber
+                    && color->currentData().toInt() == requirement.rebrickableColorId;
+                if (!originalIdentity) {
+                    request.substitutePartNumber = selected->partNumber();
+                    request.substituteRebrickableColorId = color->currentData().toInt();
+                }
+                request.quantityRequired = quantity->value();
+                request.spare = spare->isChecked();
+                buttons->setEnabled(false);
+                m_remoteBuildMutations->submit(
+                    QStringLiteral("builds.requirements.edit"), request, dialog,
+                    [this, dialog](const RemoteBuildMutationDto::Result&) {
+                        dialog->close();
+                        loadRequirements();
+                    },
+                    [this, dialog, buttons](const RemoteMutationDto::Error& error) {
+                        if (error.code == QStringLiteral("STALE_VERSION")) {
+                            dialog->close();
+                            loadRequirements();
+                            QMessageBox::warning(
+                                this, "Edit Build Requirement",
+                                "The requirement changed on the Host. The latest values "
+                                "have been reloaded. Please edit it again.");
+                            return;
+                        }
+                        buttons->setEnabled(true);
+                        QMessageBox::warning(dialog, "Edit Build Requirement", error.message);
+                    });
+            });
+            dialog->open();
+        });
+        m_requirementsTable->setCellWidget(row,12,actions);
     }
-    m_requirementsLabel->setText(QString("%1 Host requirement(s). Remote requirements are read-only.%2")
+    m_requirementsLabel->setText(QString("%1 Host requirement(s).%2")
         .arg(m_remoteRequirements.size())
         .arg(staleRows > 0 ? QStringLiteral(" Some rows use Host fallback catalog text.") : QString()));
+}
+
+void BuildsWidget::openRemoteAllocationDialog(const RemoteReadDto::BuildRequirement& requirement)
+{
+    if(!m_remoteReads||!m_remoteBuildMutations)return;
+    const int workspace=m_workspaceContext.currentWorkspaceId();
+    const QString effectivePart=requirement.substitutePartNumber.isEmpty()?requirement.partNumber:requirement.substitutePartNumber;
+    const int effectiveColor=requirement.substituteRebrickableColorId>=0?requirement.substituteRebrickableColorId:requirement.rebrickableColorId;
+    RemoteReadDto::InventorySearchRequest search;search.workspaceId=workspace;search.text=effectivePart;search.rebrickableColorId=effectiveColor;search.paging={1,RemoteReadDto::MaximumPageSize};
+    m_remoteReads->searchInventory(search,this,[this,workspace,requirement,effectivePart,effectiveColor](AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::InventoryRow>> inventoryResult){
+        if(workspace!=m_workspaceContext.currentWorkspaceId()||!inventoryResult.succeeded()){if(!inventoryResult.succeeded())QMessageBox::warning(this,"Allocate Requirement",inventoryResult.message);return;}
+        QList<RemoteReadDto::InventoryRow> candidates;for(const auto&r:inventoryResult.value->rows)if(r.partNumber==effectivePart&&r.rebrickableColorId==effectiveColor)candidates.append(r);
+        m_remoteReads->pulling(workspace,requirement.buildId,{1,RemoteReadDto::MaximumPageSize},this,[this,workspace,requirement,candidates](AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::PullingRow>> pullingResult){
+            if(workspace!=m_workspaceContext.currentWorkspaceId()||!pullingResult.succeeded()){if(!pullingResult.succeeded())QMessageBox::warning(this,"Allocate Requirement",pullingResult.message);return;}
+            QHash<qint64,RemoteReadDto::PullingRow> existing;for(const auto&r:pullingResult.value->rows)if(r.requirementId==requirement.requirementId)existing.insert(r.inventoryRecordId,r);
+            auto* dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setWindowTitle(QStringLiteral("Allocate Build Requirement"));dialog->resize(700,420);auto* layout=new QVBoxLayout(dialog);auto* table=new QTableWidget(candidates.size(),4,dialog);table->setHorizontalHeaderLabels({"Storage","Owned","Allocated","Desired"});table->horizontalHeader()->setSectionResizeMode(0,QHeaderView::Stretch);table->setEditTriggers(QAbstractItemView::NoEditTriggers);auto editors=std::make_shared<QList<QSpinBox*>>();
+            for(int i=0;i<candidates.size();++i){const auto&row=candidates[i];const auto old=existing.value(row.inventoryRecordId);table->setItem(i,0,new QTableWidgetItem(row.storagePath));table->setItem(i,1,new QTableWidgetItem(QString::number(row.quantity)));table->setItem(i,2,new QTableWidgetItem(QString::number(old.quantityAllocated)));auto* spin=new QSpinBox(table);spin->setRange(0,qMin(row.quantity,qMax(requirement.quantityRequired-requirement.quantityPulled,0)));spin->setValue(old.quantityAllocated);table->setCellWidget(i,3,spin);editors->append(spin);}
+            auto* buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel,dialog);layout->addWidget(table);layout->addWidget(buttons);connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::close);connect(buttons,&QDialogButtonBox::accepted,dialog,[this,dialog,buttons,workspace,requirement,candidates,existing,editors](){RemoteBuildMutationDto::Request request;request.workspaceId=workspace;request.requirementId=requirement.requirementId;request.mutationId=RemoteMutationDto::newMutationId();request.expectedRequirement=expectedRequirementState(requirement);for(int i=0;i<candidates.size();++i){const auto&candidate=candidates[i];const auto old=existing.value(candidate.inventoryRecordId);RemoteBuildMutationDto::AllocationRow row;row.allocationId=old.allocationId;row.inventoryRecordId=candidate.inventoryRecordId;row.quantity=editors->at(i)->value();row.expectedQuantity=old.quantityAllocated;row.inventoryQuantity=candidate.quantity;request.allocations.append(row);}buttons->setEnabled(false);m_remoteBuildMutations->submit(QStringLiteral("builds.allocations.set"),request,dialog,[this,dialog](const RemoteBuildMutationDto::Result&){dialog->close();loadRequirements();},[this,dialog,buttons](const RemoteMutationDto::Error&e){buttons->setEnabled(true);QMessageBox::warning(dialog,"Allocate Requirement",e.message);loadRequirements();});});dialog->open();
+        });
+    });
 }
 
 void BuildsWidget::showRemoteDetails(int buildId)
@@ -2712,6 +2857,22 @@ void BuildsWidget::addRequirement()
         return;
     }
 
+    if (m_remoteMode) {
+        if (!m_remoteBuildMutations
+            || !m_remoteBuildMutations->isAvailableFor(QStringLiteral("builds.requirements.add")))
+            return;
+        const QString number=PartSearchCompleterHelper::canonicalPartNumber(m_partNumberEdit);
+        const auto part=PartRepository().getByPartNumber(number);
+        const auto color=ColorRepository().getById(m_colorCombo->currentData().toInt());
+        if(!part||!color){QMessageBox::warning(this,"BrickSuite","Select a valid catalog Part and Color.");return;}
+        RemoteBuildMutationDto::Request request;if(m_pendingRemoteRequirementAdd)request=*m_pendingRemoteRequirementAdd;else{request.workspaceId=m_workspaceContext.currentWorkspaceId();request.buildId=m_selectedBuildId;request.mutationId=RemoteMutationDto::newMutationId();request.partNumber=part->partNumber();request.rebrickableColorId=color->rebrickableId();request.quantityRequired=m_quantitySpin->value();request.spare=m_spareCheck->isChecked();m_pendingRemoteRequirementAdd=request;}
+        m_addRequirementButton->setEnabled(false);
+        m_remoteBuildMutations->submit(QStringLiteral("builds.requirements.add"),request,this,
+            [this](const RemoteBuildMutationDto::Result&){m_pendingRemoteRequirementAdd.reset();m_addRequirementButton->setText("Add Requirement");m_partNumberEdit->clear();m_quantitySpin->setValue(1);m_spareCheck->setChecked(false);loadRequirements();},
+            [this](const RemoteMutationDto::Error&e){if(e.outcome==RemoteMutationDto::Outcome::Unknown)m_addRequirementButton->setText("Retry Safely");else{m_pendingRemoteRequirementAdd.reset();m_addRequirementButton->setText("Add Requirement");}QMessageBox::warning(this,"Add Build Requirement",e.message);updateRequirementUiState();});
+        return;
+    }
+
     BuildRepository buildRepository;
 
     const std::optional<Build> build =
@@ -2734,7 +2895,8 @@ void BuildsWidget::addRequirement()
         return;
     }
 
-    const QString partNumber = m_partNumberEdit->text().trimmed();
+    const QString partNumber =
+        PartSearchCompleterHelper::canonicalPartNumber(m_partNumberEdit);
 
     if (partNumber.isEmpty()) {
         QMessageBox::warning(this, "BrickSuite", "Enter a part number.");
@@ -2792,6 +2954,20 @@ void BuildsWidget::allocateAvailable()
     if (!m_workspaceContext.hasCurrentWorkspace() || m_selectedBuildId <= 0) {
         QMessageBox::warning(this, "Allocate Available", "Select a Build first.");
         return;
+    }
+
+    if(m_remoteMode){
+        if(!m_remoteReads||!m_remoteBuildMutations||!m_remoteBuildMutations->isAvailableFor(QStringLiteral("builds.allocateAvailable")))return;
+        const int workspace=m_workspaceContext.currentWorkspaceId(),buildId=m_selectedBuildId;
+        m_allocateAvailableButton->setEnabled(false);
+        m_remoteReads->getBuild(workspace,buildId,this,[this,workspace,buildId](AsyncReadResult<RemoteReadDto::BuildDetail> result){
+            if(workspace!=m_workspaceContext.currentWorkspaceId()||buildId!=m_selectedBuildId)return;
+            if(!result.succeeded()){QMessageBox::warning(this,"Allocate Available",result.message);updateRequirementUiState();return;}
+            RemoteBuildMutationDto::Request request;if(m_pendingRemoteAllocateAvailable)request=*m_pendingRemoteAllocateAvailable;else{request.workspaceId=workspace;request.buildId=buildId;request.mutationId=RemoteMutationDto::newMutationId();request.expected=expectedState(*result.value);m_pendingRemoteAllocateAvailable=request;}
+            m_remoteBuildMutations->submit(QStringLiteral("builds.allocateAvailable"),request,this,
+                [this](const RemoteBuildMutationDto::Result&r){m_pendingRemoteAllocateAvailable.reset();m_allocateAvailableButton->setText("Allocate Available");QMessageBox::information(this,"Allocate Available",QString("BrickSuite Host allocated %1 additional piece(s).").arg(r.effects.value("piecesAdded").toInt()));loadRequirements();},
+                [this](const RemoteMutationDto::Error&e){if(e.outcome==RemoteMutationDto::Outcome::Unknown)m_allocateAvailableButton->setText("Retry Safely");else{m_pendingRemoteAllocateAvailable.reset();m_allocateAvailableButton->setText("Allocate Available");}QMessageBox::warning(this,"Allocate Available",e.message);loadRequirements();});
+        });return;
     }
 
     BuildRepository buildRepository;
@@ -3014,36 +3190,49 @@ void BuildsWidget::allocateAvailable()
 }
 
 
+bool BuildsWidget::selectedRemoteBuildSupportsStockFulfillment() const
+{
+    if (m_selectedBuildId <= 0)
+        return false;
+
+    for (int row = 0; row < m_buildsTable->rowCount(); ++row) {
+        const QTableWidgetItem* item = m_buildsTable->item(row, 4);
+        if (!item || item->data(Qt::UserRole).toInt() != m_selectedBuildId)
+            continue;
+
+        return BuildActionEligibility::supportsStockFulfillment(
+            item->data(Qt::UserRole + 3).toBool(),
+            item->data(Qt::UserRole + 1).toString(),
+            item->data(Qt::UserRole + 2).toString());
+    }
+
+    return false;
+}
+
 void BuildsWidget::updateRequirementUiState()
 {
     const bool enabled =
         m_workspaceContext.hasCurrentWorkspace() && m_selectedBuildId > 0;
 
     if (m_remoteMode) {
-        bool supportsStockFulfillment = false;
-        const int selectedRow = m_buildsTable->currentRow();
-
-        if (enabled && selectedRow >= 0) {
-            const QTableWidgetItem* nameItem = m_buildsTable->item(selectedRow, 4);
-
-            if (nameItem) {
-                supportsStockFulfillment =
-                    BuildActionEligibility::supportsStockFulfillment(
-                        nameItem->data(Qt::UserRole + 3).toBool(),
-                        nameItem->data(Qt::UserRole + 1).toString(),
-                        nameItem->data(Qt::UserRole + 2).toString());
-            }
-        }
-
-        m_partNumberEdit->setEnabled(false);
-        m_colorCombo->setEnabled(false);
-        m_quantitySpin->setEnabled(false);
-        m_spareCheck->setEnabled(false);
-        m_addRequirementButton->setEnabled(false);
+        const bool supportsStockFulfillment = enabled
+            && selectedRemoteBuildSupportsStockFulfillment();
+        const auto capability=[this](const char* name){return m_remoteBuildMutations&&m_remoteBuildMutations->isAvailableFor(QLatin1String(name));};
+        const auto eligibility=BuildActionEligibility::remoteRequirementActions(m_remoteSessionConnected,supportsStockFulfillment,m_pendingRemoteRequirementAdd.has_value(),capability("builds.requirements.add"),false,false,false,capability("builds.allocateAvailable"));
+        m_partNumberEdit->setEnabled(eligibility.canAdd);
+        m_colorCombo->setEnabled(eligibility.canAdd);
+        m_quantitySpin->setEnabled(eligibility.canAdd);
+        m_spareCheck->setEnabled(eligibility.canAdd);
+        m_addRequirementButton->setEnabled(
+            BuildActionEligibility::canSubmitRequirement(
+                eligibility.canAdd,
+                PartSearchCompleterHelper::hasResolvablePart(m_partNumberEdit),
+                m_colorCombo->currentData().toInt() > 0,
+                m_quantitySpin->value() > 0));
         m_requirementsTable->setEnabled(enabled);
         m_loadSetFromRebrickableButton->setEnabled(false);
         m_importMocPartsButton->setEnabled(false);
-        m_allocateAvailableButton->setEnabled(false);
+        m_allocateAvailableButton->setEnabled(eligibility.canAllocateAvailable&&!m_pendingRemoteAllocateAvailable.has_value());
         m_exportPullListButton->setEnabled(false);
         m_importPullListButton->setEnabled(false);
         m_interactivePullButton->setEnabled(supportsStockFulfillment && m_remoteReads
@@ -3084,7 +3273,12 @@ void BuildsWidget::updateRequirementUiState()
     m_colorCombo->setEnabled(canManuallyEditRequirements);
     m_quantitySpin->setEnabled(canManuallyEditRequirements);
     m_spareCheck->setEnabled(canManuallyEditRequirements);
-    m_addRequirementButton->setEnabled(canManuallyEditRequirements);
+    m_addRequirementButton->setEnabled(
+        BuildActionEligibility::canSubmitRequirement(
+            canManuallyEditRequirements,
+            PartSearchCompleterHelper::hasResolvablePart(m_partNumberEdit),
+            m_colorCombo->currentData().toInt() > 0,
+            m_quantitySpin->value() > 0));
 
     m_requirementsTable->setEnabled(enabled);
 

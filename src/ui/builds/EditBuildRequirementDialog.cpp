@@ -25,6 +25,7 @@
 #include "../../services/builds/BuildRequirementMutationService.h"
 
 #include "../../ui/helpers/ColorComboHelper.h"
+#include "../../ui/helpers/PartSearchCompleterHelper.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -68,6 +69,7 @@ EditBuildRequirementDialog::EditBuildRequirementDialog(int requirementId, QWidge
 
     m_usePartEdit = new QLineEdit(useGroup);
     m_usePartEdit->setPlaceholderText("Part number");
+    PartSearchCompleterHelper::install(m_usePartEdit);
 
     m_useColorCombo = new QComboBox(useGroup);
 
@@ -240,7 +242,8 @@ void EditBuildRequirementDialog::saveRequirement()
         return;
     }
 
-    const QString partNumber = m_usePartEdit->text().trimmed();
+    const QString partNumber =
+        PartSearchCompleterHelper::canonicalPartNumber(m_usePartEdit);
 
     if (partNumber.isEmpty()) {
         QMessageBox::warning(this,

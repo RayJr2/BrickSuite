@@ -76,7 +76,8 @@ struct BuildRequirement {
     QString partNumber; QString partNameFallback;
     int rebrickableColorId = -1; QString colorNameFallback;
       QString substitutePartNumber; int substituteRebrickableColorId = -1;
-      int quantityRequired = 0; int quantityPulled = 0; bool spare = false;
+      int quantityRequired = 0; int quantityPulled = 0; int quantityReleased = 0;
+      bool spare = false; QDateTime modifiedUtc;
       int owned = -1; int thisRequirementAllocated = -1; int otherAllocated = -1;
       int available = -1; int missing = -1;
 };
@@ -92,6 +93,7 @@ struct PullingRow {
     QString partNameFallback; int rebrickableColorId = -1; QString colorNameFallback;
       int quantityRequired = 0; int quantityPulled = 0; int quantityAllocated = 0;
       int inventoryQuantity = 0;
+      QDateTime allocationModifiedUtc;
     bool substitution = false;
 };
 struct BuildCancellationReturnRow {

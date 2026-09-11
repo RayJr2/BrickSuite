@@ -106,6 +106,7 @@ private:
     void renderRemoteBuilds(const QList<RemoteReadDto::BuildSummary>& builds);
     void loadRemoteRequirements(int page = 1);
     void renderRemoteRequirements();
+    void openRemoteAllocationDialog(const RemoteReadDto::BuildRequirement& requirement);
     void showRemoteDetails(int buildId);
     void showRemotePulling(int buildId);
     void addRemoteBuildToCollection(const RemoteReadDto::BuildSummary& build);
@@ -124,6 +125,7 @@ private:
     void loadRequirements();
     void loadColors();
     void updateRequirementUiState();
+    bool selectedRemoteBuildSupportsStockFulfillment() const;
     void exportPullList();
     void importPullList();
     void interactivePulling();
@@ -142,6 +144,8 @@ private:
     RemoteBuildMutationApplicationService* m_remoteBuildMutations = nullptr;
     bool m_remoteSessionConnected = false;
     std::optional<RemoteBuildMutationDto::Request> m_pendingRemoteAddRequest;
+    std::optional<RemoteBuildMutationDto::Request> m_pendingRemoteRequirementAdd;
+    std::optional<RemoteBuildMutationDto::Request> m_pendingRemoteAllocateAvailable;
     QList<RemoteReadDto::BuildRequirement> m_remoteRequirements;
     quint64 m_buildListGeneration = 0;
     quint64 m_requirementGeneration = 0;

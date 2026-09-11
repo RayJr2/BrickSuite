@@ -70,6 +70,31 @@ int main(int argc, char** argv)
     ok &= require(!RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.complete"),
         stale, &decoded, &error), "Invalid optimistic-concurrency timestamp was accepted");
 
+    RemoteBuildMutationDto::Request requirement;
+    requirement.workspaceId=4;requirement.buildId=9;requirement.mutationId=RemoteMutationDto::newMutationId();
+    requirement.partNumber=QStringLiteral("3001");requirement.rebrickableColorId=5;
+    requirement.substitutePartNumber=QStringLiteral("3001old");requirement.substituteRebrickableColorId=1;
+    requirement.quantityRequired=7;requirement.spare=true;
+    ok &= require(RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.requirements.add"),RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.requirements.add"),requirement),&decoded,&error)&&decoded.partNumber==requirement.partNumber&&decoded.rebrickableColorId==5&&decoded.quantityRequired==7&&decoded.spare,"Requirement Add portable identity did not round-trip");
+    requirement.requirementId=21;requirement.expectedRequirement={21,9,QStringLiteral("2026-09-11T12:30:00.000Z"),QStringLiteral("3001"),5,QStringLiteral("3001old"),1,7,0,0,true};
+    ok &= require(RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.requirements.edit"),RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.requirements.edit"),requirement),&decoded,&error)&&decoded.expectedRequirement.requirementId==21&&decoded.substitutePartNumber==QStringLiteral("3001old"),"Requirement Edit expected state did not round-trip");
+    auto noSubstitution=requirement;
+    noSubstitution.substitutePartNumber.clear();noSubstitution.substituteRebrickableColorId=-1;
+    noSubstitution.expectedRequirement.substitutePartNumber.clear();
+    noSubstitution.expectedRequirement.substituteRebrickableColorId=-1;
+    ok &= require(RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.requirements.edit"),RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.requirements.edit"),noSubstitution),&decoded,&error)
+        && decoded.expectedRequirement.modifiedUtc==noSubstitution.expectedRequirement.modifiedUtc
+        && decoded.expectedRequirement.substitutePartNumber.isEmpty()
+        && decoded.expectedRequirement.substituteRebrickableColorId==-1,
+        "Unsubstituted requirement expected state did not preserve its canonical sentinel");
+    ok &= require(RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.requirements.remove"),RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.requirements.remove"),requirement),&decoded,&error),"Requirement Remove expected state did not round-trip");
+    requirement.allocations={{31,41,3,2,QStringLiteral("2026-09-11T12:31:00.000Z"),QStringLiteral("2026-09-11T12:32:00.000Z"),10},{0,42,1,0,QString(),QStringLiteral("2026-09-11T12:32:00.000Z"),5}};
+    ok &= require(RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.allocations.set"),RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.allocations.set"),requirement),&decoded,&error)&&decoded.allocations.size()==2&&decoded.allocations.first().expectedQuantity==2,"Allocation-set state did not round-trip");
+    auto duplicateAlloc=RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.allocations.set"),requirement);auto allocationRows=duplicateAlloc.mutation.value("allocations").toArray();allocationRows.append(allocationRows.first());duplicateAlloc.mutation["allocations"]=allocationRows;
+    ok &= require(!RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.allocations.set"),duplicateAlloc,&decoded,&error),"Duplicate allocation Inventory row was accepted");
+    auto automatic=existingRequest();automatic.preferredStorageId=12;
+    ok &= require(RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.allocateAvailable"),RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.allocateAvailable"),automatic),&decoded,&error)&&decoded.preferredStorageId==12,"Allocate Available request did not round-trip");
+
     qInfo() << "Remote Build mutation DTO tests passed.";
     return ok ? 0 : 1;
 }

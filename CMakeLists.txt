@@ -369,6 +369,7 @@ qt_add_executable(BrickSuite
     src/ui/parts/PartResolverTestDialog.h
     src/ui/parts/PartResolverTestDialog.cpp
     src/ui/helpers/ColorComboHelper.cpp src/ui/helpers/ColorComboHelper.h
+    src/ui/helpers/PartSearchCompleterHelper.cpp src/ui/helpers/PartSearchCompleterHelper.h
     src/ui/helpers/LargeViewLoadingGuard.h
     src/models/Build.h
     src/models/Build.cpp
@@ -1092,13 +1093,23 @@ if(BUILD_TESTING)
         src/models/Build.h src/models/Build.cpp
         src/models/BuildRequirement.h src/models/BuildRequirement.cpp
         src/models/BuildAllocation.h src/models/BuildAllocation.cpp
+        src/models/Part.h src/models/Part.cpp
+        src/models/Color.h src/models/Color.cpp
+        src/models/InventoryRecord.h src/models/InventoryRecord.cpp
+        src/models/InventoryMovement.h src/models/InventoryMovement.cpp
         src/models/Manufacturer.h
         src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
         src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
         src/repositories/BuildRequirementRepository.h src/repositories/BuildRequirementRepository.cpp
         src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
         src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
+        src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
+        src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
         src/services/builds/BuildMutationService.h src/services/builds/BuildMutationService.cpp
+        src/services/builds/BuildRequirementMutationService.h src/services/builds/BuildRequirementMutationService.cpp
+        src/services/builds/BuildAllocationMutationService.h src/services/builds/BuildAllocationMutationService.cpp
     )
     target_link_libraries(BuildMutationTransactionSeamsTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME BuildMutationTransactionSeams COMMAND BuildMutationTransactionSeamsTest)
@@ -1126,6 +1137,21 @@ if(BUILD_TESTING)
     )
     target_link_libraries(ColorComboHelperTest PRIVATE Qt6::Widgets)
     add_test(NAME ColorComboHelper COMMAND ColorComboHelperTest -platform offscreen)
+    qt_add_executable(PartSearchCompleterHelperTest EXCLUDE_FROM_ALL
+        tests/PartSearchCompleterHelperTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Part.h src/models/Part.cpp
+        src/models/PartSearchCriteria.h src/models/PartSearchResult.h
+        src/repositories/RepositoryConnection.h
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/ui/helpers/PartSearchCompleterHelper.h src/ui/helpers/PartSearchCompleterHelper.cpp
+    )
+    target_link_libraries(PartSearchCompleterHelperTest PRIVATE
+        Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql)
+    add_test(NAME PartSearchCompleterHelper COMMAND PartSearchCompleterHelperTest)
+    set_tests_properties(PartSearchCompleterHelper PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     qt_add_executable(PartReferenceCustomizationTest EXCLUDE_FROM_ALL
         tests/PartReferenceCustomizationTest.cpp
         resources/resources.qrc

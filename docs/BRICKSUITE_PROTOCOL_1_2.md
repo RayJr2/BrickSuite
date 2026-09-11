@@ -372,3 +372,36 @@ invalidates Build Requirements, Missing Parts, and Pulling. Cancellation invalid
 those projections and adds Inventory/Inventory History and Collection only when the
 committed result changed those domains. The correlated response is handed to the send
 path before post-commit invalidation and Host-local refresh.
+
+## Build requirement and allocation mutations
+
+Protocol 1.2 advertises the exact capabilities `builds.requirements.add`,
+`builds.requirements.edit`, `builds.requirements.remove`, `builds.allocations.set`,
+and `builds.allocateAvailable`. These capabilities are independent of Build metadata,
+Pulling, disassembly, and spare-storage access.
+
+Requirement Add identifies original and optional substitute Parts by canonical Part number
+and Colors by Rebrickable Color ID; Client-local catalog row IDs are never sent. Edit and
+Remove carry a complete expected requirement snapshot including stable requirement/Build IDs,
+UTC modification time, original and substitute identities, quantities, and spare state. The
+Host resolves identities without creating reference data, verifies Workspace/Build ownership,
+and rejects stale or lifecycle-ineligible mutations. A substitution cannot change after an
+allocation exists, and quantity cannot be reduced below pulled plus allocated pieces.
+
+`builds.allocations.set` supplies the complete desired allocation set for one requirement,
+bounded to 500 rows. Host Inventory record IDs are valid operational identities because they
+come from Host reads. Each row carries its observed allocation identity/quantity and Inventory
+quantity/version data. The Host revalidates Workspace ownership, effective Part/Color,
+availability, duplicates, totals, and expected state before atomically replacing the set.
+Allocation reserves Inventory but does not consume it or emit Inventory invalidation.
+
+`builds.allocateAvailable` sends only the Build expected snapshot and optional preferred Host
+Storage ID. Candidate selection and allocation occur once on the Host under the existing local
+allocator policy. The authoritative result records the resulting allocation rows and totals.
+Receipt replay returns that stored result and never recalculates against newer Inventory.
+
+Requirement and allocation commits invalidate Builds, Build Requirements, Missing Parts, and
+Pulling. The correlated response precedes invalidation and Host-local refresh. Same mutation ID
+and payload replays the stored outcome without another mutation or invalidation; a changed
+payload conflicts. Only timeout or disconnect is an unknown outcome and requires retrying the
+exact retained request.

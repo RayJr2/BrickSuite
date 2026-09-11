@@ -3,6 +3,7 @@
 #include "RemoteMutationDtos.h"
 
 #include <QList>
+#include <QJsonArray>
 
 namespace RemoteBuildMutationDto {
 
@@ -26,6 +27,30 @@ struct ReturnRow {
     bool spare = false;
 };
 
+struct RequirementExpectedState {
+    qint64 requirementId = 0;
+    qint64 buildId = 0;
+    QString modifiedUtc;
+    QString partNumber;
+    int rebrickableColorId = 0;
+    QString substitutePartNumber;
+    int substituteRebrickableColorId = -1;
+    int quantityRequired = 0;
+    int quantityPulled = 0;
+    int quantityReleased = 0;
+    bool spare = false;
+};
+
+struct AllocationRow {
+    qint64 allocationId = 0;
+    qint64 inventoryRecordId = 0;
+    int quantity = 0;
+    int expectedQuantity = 0;
+    QString modifiedUtc;
+    QString inventoryModifiedUtc;
+    int inventoryQuantity = 0;
+};
+
 struct Request {
     qint64 workspaceId = 0;
     qint64 buildId = 0;
@@ -41,6 +66,16 @@ struct Request {
     QString linkedCollectionState = QStringLiteral("Unassembled");
     ExpectedState expected;
     QList<ReturnRow> returns;
+    qint64 requirementId = 0;
+    QString partNumber;
+    int rebrickableColorId = 0;
+    QString substitutePartNumber;
+    int substituteRebrickableColorId = -1;
+    int quantityRequired = 0;
+    bool spare = false;
+    qint64 preferredStorageId = 0;
+    RequirementExpectedState expectedRequirement;
+    QList<AllocationRow> allocations;
 };
 
 struct Result {
@@ -49,6 +84,8 @@ struct Result {
     bool replayed = false;
     QJsonObject build;
     QJsonObject effects;
+    QJsonObject requirement;
+    QJsonArray allocations;
 };
 
 RemoteMutationDto::Metadata toMetadata(const QString& operation, const Request& request);

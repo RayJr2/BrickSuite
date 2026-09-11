@@ -45,7 +45,12 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
                                          QStringLiteral("builds.edit"),
                                          QStringLiteral("builds.setActive"),
                                          QStringLiteral("builds.complete"),
-                                         QStringLiteral("builds.cancel")})
+                                         QStringLiteral("builds.cancel"),
+                                         QStringLiteral("builds.requirements.add"),
+                                         QStringLiteral("builds.requirements.edit"),
+                                         QStringLiteral("builds.requirements.remove"),
+                                         QStringLiteral("builds.allocations.set"),
+                                         QStringLiteral("builds.allocateAvailable")})
             addCapability(operation, operation);
         const bool sharedReads = m_operations.contains(QStringLiteral("workspace.list"));
         return QJsonObject{

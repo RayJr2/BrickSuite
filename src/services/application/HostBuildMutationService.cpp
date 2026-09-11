@@ -3,12 +3,19 @@
 #include "dto/RemoteBuildMutationDtos.h"
 #include "../builds/BuildLifecycleService.h"
 #include "../builds/BuildMutationService.h"
+#include "../builds/BuildRequirementMutationService.h"
+#include "../builds/BuildAllocationMutationService.h"
+#include "../../repositories/BuildAllocationRepository.h"
 #include "../../repositories/BuildRepository.h"
 #include "../../repositories/BuildRequirementRepository.h"
 #include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/SetCatalogRepository.h"
+#include "../../repositories/PartRepository.h"
+#include "../../repositories/ColorRepository.h"
+#include "../../repositories/InventoryRecordRepository.h"
 
 #include <QJsonArray>
+#include <algorithm>
 
 namespace {
 HostWriteExecutor::MutationOutcome failure(const QString& code, const QString& message,
@@ -52,6 +59,24 @@ bool matches(const QSqlDatabase& db,const Build& build,
         && build.isActive()==expected.active;
 }
 
+QJsonObject requirementJson(const QSqlDatabase&db,const BuildRequirement&r)
+{
+    const auto part=PartRepository(db).getById(r.partId());const auto color=ColorRepository(db).getById(r.colorId());
+    const auto subPart=PartRepository(db).getById(r.substitutePartId());const auto subColor=ColorRepository(db).getById(r.substituteColorId());
+    return{{"requirementId",r.id()},{"buildId",r.buildId()},{"partNumber",part?part->partNumber():QString()},{"rebrickableColorId",color?color->rebrickableId():0},{"substitutePartNumber",subPart?subPart->partNumber():QString()},{"substituteRebrickableColorId",subColor?subColor->rebrickableId():-1},{"effectivePartNumber",subPart?subPart->partNumber():(part?part->partNumber():QString())},{"effectiveRebrickableColorId",subColor?subColor->rebrickableId():(color?color->rebrickableId():0)},{"quantityRequired",r.quantityRequired()},{"quantityPulled",r.quantityPulled()},{"quantityReleased",r.quantityReleased()},{"spare",r.isSpare()},{"modifiedUtc",r.modifiedUtc().toUTC().toString(Qt::ISODateWithMs)}};
+}
+QJsonObject allocationJson(const BuildAllocation&a){return{{"allocationId",a.id()},{"buildId",a.buildId()},{"requirementId",a.buildRequirementId()},{"inventoryRecordId",a.inventoryRecordId()},{"quantity",a.quantityAllocated()},{"modifiedUtc",a.modifiedUtc().toUTC().toString(Qt::ISODateWithMs)}};}
+bool requirementMatches(const QSqlDatabase&db,const BuildRequirement&r,const RemoteBuildMutationDto::RequirementExpectedState&e)
+{
+    const auto j=requirementJson(db,r);return r.id()==e.requirementId&&r.buildId()==e.buildId&&j["modifiedUtc"].toString()==e.modifiedUtc&&j["partNumber"].toString()==e.partNumber&&j["rebrickableColorId"].toInt()==e.rebrickableColorId&&j["substitutePartNumber"].toString()==e.substitutePartNumber&&j["substituteRebrickableColorId"].toInt()==e.substituteRebrickableColorId&&r.quantityRequired()==e.quantityRequired&&r.quantityPulled()==e.quantityPulled&&r.quantityReleased()==e.quantityReleased&&r.isSpare()==e.spare;
+}
+bool resolveIdentity(const QSqlDatabase&db,const QString&partNumber,int colorId,int*part,int*color)
+{const auto p=PartRepository(db).getByPartNumber(partNumber.trimmed());const auto c=ColorRepository(db).getByRebrickableId(colorId);if(!p||!c)return false;*part=p->id();*color=c->id();return true;}
+HostWriteExecutor::MutationOutcome requirementResult(const QSqlDatabase&db,const BuildRequirementMutationService::Result&r,qint64 workspaceId)
+{if(!r.success){const QString code=r.error==BuildRequirementMutationService::Error::NotFound?"NOT_FOUND":r.error==BuildRequirementMutationService::Error::DatabaseFailure?"INTERNAL_ERROR":r.error==BuildRequirementMutationService::Error::InvalidState?"CONFLICT":"INVALID_ARGUMENT";return failure(code,r.message,code=="CONFLICT");}HostWriteExecutor::MutationOutcome out;out.success=true;out.authoritative={{"requirement",requirementJson(db,r.requirement)}};out.publicationWorkflow=HostMutationPublicationService::Workflow::BuildRequirements;out.publicationScope.workspaceId=workspaceId;out.publicationScope.buildId=r.requirement.buildId();return out;}
+HostWriteExecutor::MutationOutcome allocationResult(const QSqlDatabase&db,const BuildAllocationMutationService::Result&r,const Build&build)
+{if(!r.success){const QString code=r.error==BuildAllocationMutationService::Error::NotFound?"NOT_FOUND":r.error==BuildAllocationMutationService::Error::DatabaseFailure?"INTERNAL_ERROR":r.error==BuildAllocationMutationService::Error::InvalidState?"CONFLICT":"INVALID_ARGUMENT";return failure(code,r.message,code=="CONFLICT");}QJsonArray rows;for(const auto&a:r.allocations)rows.append(allocationJson(a));HostWriteExecutor::MutationOutcome out;out.success=true;out.authoritative={{"build",buildJson(db,build)},{"allocations",rows},{"effects",QJsonObject{{"piecesAdded",r.piecesAdded},{"allocationsCreated",r.allocationsCreated},{"allocationsUpdated",r.allocationsUpdated}}}};out.publicationWorkflow=HostMutationPublicationService::Workflow::BuildRequirements;out.publicationScope.workspaceId=build.workspaceId();out.publicationScope.buildId=build.id();return out;}
+
 int manufacturerId(const QSqlDatabase& db,const QString& name,bool required,QString* error)
 {
     ManufacturerRepository repository(db);
@@ -80,6 +105,38 @@ HostWriteExecutor::Mutation HostBuildMutationService::createMutation(
     if(!RemoteBuildMutationDto::fromMetadata(operation,metadata,&request,error))return {};
     return [operation,request](const QSqlDatabase& db) {
         BuildMutationService mutations(db);
+        const bool requirementOperation=operation.startsWith(QStringLiteral("builds.requirements."));
+        if(requirementOperation||operation==QStringLiteral("builds.allocations.set")){
+            std::optional<BuildRequirement> requirement;
+            if(operation!=QStringLiteral("builds.requirements.add")){
+                if(!BuildRequirementRepository(db).tryGetById(int(request.requirementId),requirement))return failure("INTERNAL_ERROR","The Host could not load the requirement.");
+                if(!requirement)return failure("NOT_FOUND","The requirement was not found.");
+                const auto build=BuildRepository(db).getById(requirement->buildId());if(!build||build->workspaceId()!=request.workspaceId||request.expectedRequirement.buildId!=build->id())return failure("NOT_FOUND","The requirement was not found in this Workspace.");
+                if(!requirementMatches(db,*requirement,request.expectedRequirement))return failure("STALE_VERSION","The requirement changed on the Host. Refresh and try again.",true);
+            }
+            if(operation==QStringLiteral("builds.requirements.add")){
+                const auto build=BuildRepository(db).getById(int(request.buildId));if(!build||build->workspaceId()!=request.workspaceId)return failure("NOT_FOUND","The Build was not found in this Workspace.");
+                int part=0,color=0,subPart=0,subColor=0;if(!resolveIdentity(db,request.partNumber,request.rebrickableColorId,&part,&color))return failure("NOT_FOUND","The original Part or Color is unavailable on the Host.");if(!request.substitutePartNumber.isEmpty()){const auto p=PartRepository(db).getByPartNumber(request.substitutePartNumber.trimmed());if(!p)return failure("NOT_FOUND","The substitute Part is unavailable on the Host.");subPart=p->id();}if(request.substituteRebrickableColorId>=0){const auto c=ColorRepository(db).getByRebrickableId(request.substituteRebrickableColorId);if(!c)return failure("NOT_FOUND","The substitute Color is unavailable on the Host.");subColor=c->id();}BuildRequirement r;r.setBuildId(build->id());r.setPartId(part);r.setColorId(color);r.setSubstitutePartId(subPart);r.setSubstituteColorId(subColor);r.setQuantityRequired(request.quantityRequired);r.setIsSpare(request.spare);return requirementResult(db,BuildRequirementMutationService(db).addInCurrentTransaction(r),request.workspaceId);
+            }
+            if(operation==QStringLiteral("builds.requirements.remove"))return requirementResult(db,BuildRequirementMutationService(db).removeInCurrentTransaction(requirement->id()),request.workspaceId);
+            if(operation==QStringLiteral("builds.requirements.edit")){
+                int subPart=0,subColor=0;if(!request.substitutePartNumber.isEmpty()){const auto p=PartRepository(db).getByPartNumber(request.substitutePartNumber.trimmed());if(!p)return failure("NOT_FOUND","The substitute Part is unavailable on the Host.");subPart=p->id();}if(request.substituteRebrickableColorId>=0){const auto c=ColorRepository(db).getByRebrickableId(request.substituteRebrickableColorId);if(!c)return failure("NOT_FOUND","The substitute Color is unavailable on the Host.");subColor=c->id();}if(subPart==requirement->partId())subPart=0;if(subColor==requirement->colorId())subColor=0;return requirementResult(db,BuildRequirementMutationService(db).editInCurrentTransaction(requirement->id(),subPart,subColor,request.quantityRequired,request.spare),request.workspaceId);
+            }
+            BuildAllocationRepository allocationRepository(db);const auto current=allocationRepository.getByRequirement(requirement->id());
+            if(current.size()!=std::count_if(request.allocations.cbegin(),request.allocations.cend(),[](const auto&r){return r.allocationId>0;}))return failure("STALE_VERSION","Allocations changed on the Host. Refresh and try again.",true);
+            QList<BuildAllocation> desired;
+            for(const auto&row:request.allocations){
+                const auto inventory=InventoryRecordRepository(db).getById(int(row.inventoryRecordId));if(!inventory||inventory->workspaceId()!=request.workspaceId)return failure("NOT_FOUND","An Inventory record was not found in this Workspace.");
+                if(inventory->quantity()!=row.inventoryQuantity||(!row.inventoryModifiedUtc.isEmpty()&&inventory->modifiedUtc().toUTC().toString(Qt::ISODateWithMs)!=row.inventoryModifiedUtc))return failure("STALE_VERSION","Inventory changed on the Host. Refresh and try again.",true);
+                const auto old=std::find_if(current.cbegin(),current.cend(),[&](const auto&a){return a.id()==row.allocationId&&a.inventoryRecordId()==row.inventoryRecordId;});
+                if((row.allocationId>0&&(old==current.cend()||old->quantityAllocated()!=row.expectedQuantity||(!row.modifiedUtc.isEmpty()&&old->modifiedUtc().toUTC().toString(Qt::ISODateWithMs)!=row.modifiedUtc)))||(row.allocationId==0&&std::any_of(current.cbegin(),current.cend(),[&](const auto&a){return a.inventoryRecordId()==row.inventoryRecordId;})))return failure("STALE_VERSION","Allocations changed on the Host. Refresh and try again.",true);
+                if(row.quantity>0){BuildAllocation a;a.setInventoryRecordId(int(row.inventoryRecordId));a.setQuantityAllocated(row.quantity);desired.append(a);}
+            }
+            const auto build=BuildRepository(db).getById(requirement->buildId());return allocationResult(db,BuildAllocationMutationService(db).replaceForRequirementInCurrentTransaction(requirement->id(),desired),*build);
+        }
+        if(operation==QStringLiteral("builds.allocateAvailable")){
+            const auto build=BuildRepository(db).getById(int(request.buildId));if(!build||build->workspaceId()!=request.workspaceId)return failure("NOT_FOUND","The Build was not found in this Workspace.");if(!matches(db,*build,request.expected))return failure("STALE_VERSION","The Build changed on the Host. Refresh and try again.",true);return allocationResult(db,BuildAllocationMutationService(db).allocateAvailableInCurrentTransaction(build->id(),int(request.preferredStorageId)),*build);
+        }
         if(operation==QStringLiteral("builds.add")){
             if((request.buildType!="Set"&&request.buildType!="MOC")
                 ||(request.inventoryMode!="Stock"&&request.inventoryMode!="CompleteSet")
