@@ -10,11 +10,13 @@
 
 #include "../../models/PartReferenceEntry.h"
 #include "../../services/parts/PartReferenceManifest.h"
+#include "../../services/application/dto/RemotePartReferenceMutationDtos.h"
 
 #include <QDialog>
 #include <QHash>
 #include <QList>
 #include <QPair>
+#include <QPointer>
 #include <QSet>
 #include <QStringList>
 
@@ -32,6 +34,9 @@ class PartImageService;
 class RebrickableApiClient;
 class SharedPartReferenceCustomizationService;
 class RemoteReadApplicationServices;
+class RemotePartReferenceMutationApplicationService;
+class RemoteSessionState;
+class AddPartReferenceDialog;
 
 class PartReferenceDialog : public QDialog
 {
@@ -40,6 +45,8 @@ class PartReferenceDialog : public QDialog
 public:
     explicit PartReferenceDialog(SharedPartReferenceCustomizationService& customizationService,
                                  RemoteReadApplicationServices* remoteReads = nullptr,
+                                 RemotePartReferenceMutationApplicationService* remoteMutations = nullptr,
+                                 RemoteSessionState* remoteSession = nullptr,
                                  QWidget* parent = nullptr);
     ~PartReferenceDialog() override;
 
@@ -156,6 +163,13 @@ private:
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
     SharedPartReferenceCustomizationService& m_customizationService;
     RemoteReadApplicationServices* m_remoteReads = nullptr;
+    RemotePartReferenceMutationApplicationService* m_remoteMutations = nullptr;
+    RemoteSessionState* m_remoteSession = nullptr;
+    bool m_remoteMutationPending = false;
+    quint64 m_loadedSessionGeneration = 0;
+    quint64 m_loadedWorkspaceGeneration = 0;
+    RemotePartReferenceMutationDto::Request m_pendingRemoveRequest;
+    QPointer<AddPartReferenceDialog> m_addDialog;
     quint64 m_customizationRequestToken = 0;
 
     static constexpr int ImageBatchSize = 20;

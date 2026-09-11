@@ -44,6 +44,29 @@ QList<UserPartReferenceEntry> UserPartReferenceRepository::getAll(bool* ok) cons
     return result;
 }
 
+std::optional<UserPartReferenceEntry> UserPartReferenceRepository::getById(int id, bool* ok) const
+{
+    if (ok) *ok = false;
+    QSqlQuery query(repositoryDatabase());
+    query.prepare("SELECT id,part_id,catalog,section,anchor_part_number,placement_mode,"
+                  "created_utc,modified_utc FROM user_part_reference_entry WHERE id=?");
+    query.addBindValue(id);
+    if (!query.exec()) {
+        qCritical() << "Unable to load user Part Reference entry:" << query.lastError().text();
+        return std::nullopt;
+    }
+    if (ok) *ok = true;
+    if (!query.next()) return std::nullopt;
+    UserPartReferenceEntry entry;
+    entry.id = query.value(0).toInt(); entry.partId = query.value(1).toInt();
+    entry.catalog = query.value(2).toString(); entry.section = query.value(3).toString();
+    entry.anchorPartNumber = query.value(4).toString();
+    entry.placement = placementFromName(query.value(5).toString());
+    entry.createdUtc = QDateTime::fromString(query.value(6).toString(), Qt::ISODateWithMs);
+    entry.modifiedUtc = QDateTime::fromString(query.value(7).toString(), Qt::ISODateWithMs);
+    return entry;
+}
+
 bool UserPartReferenceRepository::create(UserPartReferenceEntry& entry, QString* errorMessage) const
 {
     const QDateTime now = QDateTime::currentDateTimeUtc();

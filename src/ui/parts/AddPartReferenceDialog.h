@@ -7,6 +7,8 @@
 
 class QComboBox; class QLabel; class QLineEdit; class QListWidget; class QPushButton;
 class SharedPartReferenceCustomizationService;
+class RemotePartReferenceMutationApplicationService;
+class RemoteSessionState;
 
 class AddPartReferenceDialog : public QDialog
 {
@@ -15,6 +17,8 @@ public:
     explicit AddPartReferenceDialog(SharedPartReferenceCustomizationService& customizationService,
                                     int initialPartId = 0,
                                     const PartReferenceEntry* anchor = nullptr,
+                                    RemotePartReferenceMutationApplicationService* remoteMutations = nullptr,
+                                    RemoteSessionState* remoteSession = nullptr,
                                     QWidget* parent = nullptr);
     bool customizationAdded() const { return m_added; }
 private:
@@ -36,5 +40,11 @@ private:
     QString m_defaultSection;
     QString m_defaultAnchor;
     bool m_added = false;
+    bool m_pending = false;
+    QString m_mutationId;
     SharedPartReferenceCustomizationService& m_customizationService;
+    RemotePartReferenceMutationApplicationService* m_remoteMutations = nullptr;
+    RemoteSessionState* m_remoteSession = nullptr;
+    quint64 m_sessionGeneration = 0;
+    quint64 m_workspaceGeneration = 0;
 };

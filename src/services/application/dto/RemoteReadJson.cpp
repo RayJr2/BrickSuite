@@ -144,14 +144,17 @@ bool fromJson(const QJsonObject& o, RemoteReadDto::CollectionSummary* v, DecodeE
 QJsonObject toJson(const RemoteReadDto::CollectionDetail&v){QJsonObject o=toJson(static_cast<const RemoteReadDto::CollectionSummary&>(v));o["notes"]=v.notes;o["createdUtc"]=utc(v.createdUtc);o["modifiedUtc"]=utc(v.modifiedUtc);return o;}
 bool fromJson(const QJsonObject&o,RemoteReadDto::CollectionDetail*v,DecodeError*e){return fromJson(o,static_cast<RemoteReadDto::CollectionSummary*>(v),e)&&textField(o,"notes",&v->notes,false)&&parseUtc(o.value("createdUtc"),&v->createdUtc)&&parseUtc(o.value("modifiedUtc"),&v->modifiedUtc);}
 QJsonObject toJson(const RemoteReadDto::PartReferenceCustomization& v)
-{ return {{"customizationId",double(v.customizationId)},{"partNumber",v.partNumber},{"partNameFallback",v.partNameFallback},{"catalog",v.catalog},{"section",v.section},{"displayOrder",v.displayOrder},{"representativeFor",v.representativeFor},{"notes",v.notes}}; }
+{ return {{"customizationId",double(v.customizationId)},{"partNumber",v.partNumber},{"partNameFallback",v.partNameFallback},{"catalog",v.catalog},{"section",v.section},{"displayOrder",v.displayOrder},{"representativeFor",v.representativeFor},{"notes",v.notes},{"placement",v.placement},{"anchorPartNumber",v.anchorPartNumber},{"createdUtc",utc(v.createdUtc)},{"modifiedUtc",utc(v.modifiedUtc)}}; }
 bool fromJson(const QJsonObject& o, RemoteReadDto::PartReferenceCustomization* v, DecodeError* e)
 {
     qint64 order=0;
     if (!integer(o,"customizationId",1,9007199254740991LL,&v->customizationId) || !integer(o,"displayOrder",0,INT_MAX,&order)
         || !textField(o,"partNumber",&v->partNumber) || !textField(o,"partNameFallback",&v->partNameFallback,false)
         || !textField(o,"catalog",&v->catalog) || !textField(o,"section",&v->section)
-        || !textField(o,"representativeFor",&v->representativeFor,false) || !textField(o,"notes",&v->notes,false))
+        || !textField(o,"representativeFor",&v->representativeFor,false) || !textField(o,"notes",&v->notes,false)
+        || !textField(o,"placement",&v->placement,false) || !textField(o,"anchorPartNumber",&v->anchorPartNumber,false)
+        || (!o.value("createdUtc").isUndefined() && !parseUtc(o.value("createdUtc"),&v->createdUtc))
+        || (!o.value("modifiedUtc").isUndefined() && !parseUtc(o.value("modifiedUtc"),&v->modifiedUtc)))
         return fail(e,QStringLiteral("Invalid Part Reference customization.")); v->displayOrder=int(order); return true;
 }
 } // namespace RemoteReadJson

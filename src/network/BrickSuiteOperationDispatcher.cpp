@@ -37,6 +37,10 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
         addCapability(QStringLiteral("collection.search"), QStringLiteral("collection.read"));
         addCapability(QStringLiteral("partReference.customizations"),
                       QStringLiteral("partReference.customizations.read"));
+        addCapability(QStringLiteral("partReference.customizations.add"),
+                      QStringLiteral("partReference.customizations.add"));
+        addCapability(QStringLiteral("partReference.customizations.remove"),
+                      QStringLiteral("partReference.customizations.remove"));
         const bool sharedReads = m_operations.contains(QStringLiteral("workspace.list"));
         return QJsonObject{
             {QStringLiteral("brickSuiteVersion"), QStringLiteral(BRICKSUITE_VERSION)},

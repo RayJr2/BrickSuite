@@ -193,9 +193,37 @@ An authenticated `FullBrickSuiteClient` may invoke only an explicitly registered
 operation supported by its negotiated protocol. A broad write marker, if ever added,
 must not authorize an operation by itself.
 
-Production Protocol 1.2 mutation capabilities currently cover interactive Pulling, Inventory, and
-the three Storage operations documented above. General Builds, Collection, and Part Reference
-remain read-only.
+Production Protocol 1.2 mutation capabilities currently cover interactive Pulling, Inventory,
+Storage, and the Part Reference customization operations documented below. General Builds and
+Collection remain read-only.
+
+## Part Reference customization mutations
+
+Authenticated Hosts advertise `partReference.customizations.add` and
+`partReference.customizations.remove` as independent exact capabilities. Built-in Part Reference
+content remains Client-local and immutable; only the Host-global user customization overlay is
+mutated. The common envelope continues to carry an active `workspaceId` for mutation infrastructure
+and receipt identity, but customization ownership is Host-global and the value is neither persisted
+on nor used to own a customization.
+
+Add carries canonical `partNumber`, built-in `catalog` and `section` names, `placement` (`Append`,
+`Before`, or `After`), and an `anchorPartNumber` for relative placement. Append requires an empty
+anchor. The Host resolves the Part against its catalog and independently validates the built-in
+manifest destination and effective anchor context; Client Part IDs, row indexes, and display
+positions are never authoritative. Existing local duplicate semantics apply: a Part already present
+as either a built-in or user entry cannot be added again.
+
+Remove carries the positive Host customization ID and an expected snapshot containing
+`modifiedUtc`, Part number, catalog, section, placement, and anchor identity. The Host removes only
+a stored user entry. A changed expected snapshot returns `STALE_VERSION`; built-in entries have no
+removable Host customization identity.
+
+Both authoritative results return the customization ID and identity snapshot, including creation
+and modification UTC timestamps. The customization change and durable receipt commit atomically.
+Same-ID/same-payload retry replays the stored result without another mutation or invalidation;
+changed payload returns `IDEMPOTENCY_CONFLICT`. Only timeout or disconnect has unknown outcome.
+For a new commit, the correlated response precedes one Host-global `PartReferenceCustomizations`
+invalidation and Host-local overlay refresh. Replay and failure publish nothing.
 
 ## Interactive Pulling mutation
 

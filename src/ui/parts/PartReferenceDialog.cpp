@@ -14,6 +14,8 @@
 #include "../../services/parts/PartReferenceCustomizationService.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
+#include "../../services/application/RemotePartReferenceMutationApplicationService.h"
+#include "../../network/RemoteSessionState.h"
 #include "../../repositories/PartRepository.h"
 #include "../../settings/UserSettings.h"
 #include "../help/HelpManager.h"
@@ -60,8 +62,11 @@ QString viewModeName(bool dimensionGrid)
 
 PartReferenceDialog::PartReferenceDialog(
     SharedPartReferenceCustomizationService& customizationService,
-    RemoteReadApplicationServices* remoteReads, QWidget* parent)
-    : QDialog(parent), m_customizationService(customizationService), m_remoteReads(remoteReads)
+    RemoteReadApplicationServices* remoteReads,
+    RemotePartReferenceMutationApplicationService* remoteMutations,
+    RemoteSessionState* remoteSession,QWidget* parent)
+    : QDialog(parent), m_customizationService(customizationService), m_remoteReads(remoteReads),
+      m_remoteMutations(remoteMutations),m_remoteSession(remoteSession)
 {
     setWindowTitle(tr("Part Reference"));
     setWindowFlag(Qt::Window, true);
@@ -126,6 +131,8 @@ void PartReferenceDialog::setAddInventoryAvailable(bool available)
 void PartReferenceDialog::refreshCustomizations()
 {
     if (m_remoteReads) {
+        if(m_addReferenceButton)m_addReferenceButton->setEnabled(m_remoteMutations&&m_remoteMutations->isAvailableFor(QStringLiteral("partReference.customizations.add")));
+        if(m_removeReferenceButton)m_removeReferenceButton->setEnabled(false);
         m_effectiveEntries = m_manifest.entries();
         if (m_contentStack) {
             m_cardsByPartNumber.clear(); m_pagesByKey.clear(); m_searchPage = nullptr;
@@ -154,9 +161,14 @@ void PartReferenceDialog::refreshCustomizations()
                     entry.partNumber = part->partNumber(); entry.partName = part->name();
                     entry.catalog = remote.catalog; entry.section = remote.section;
                     entry.representativeFor = remote.representativeFor; entry.notes = remote.notes;
+                    if(remote.placement==QStringLiteral("Before"))entry.placement=PartReferencePlacement::Before;
+                    else if(remote.placement==QStringLiteral("After"))entry.placement=PartReferencePlacement::After;
+                    entry.anchorPartNumber=remote.anchorPartNumber;
+                    entry.createdUtc=remote.createdUtc; entry.modifiedUtc=remote.modifiedUtc;
                     effective.insert(qBound(0, remote.displayOrder, effective.size()), entry);
                 }
                 m_effectiveEntries = std::move(effective);
+                if(m_remoteSession){m_loadedSessionGeneration=m_remoteSession->sessionGeneration();m_loadedWorkspaceGeneration=m_remoteSession->workspaceGeneration();}
                 m_cardsByPartNumber.clear(); m_pagesByKey.clear(); m_searchPage = nullptr;
                 while (m_contentStack->count() > 0) { QWidget* page=m_contentStack->widget(0); m_contentStack->removeWidget(page); delete page; }
                 showCurrentCatalogPage();
@@ -268,10 +280,11 @@ void PartReferenceDialog::initializeUi()
     m_sendButton->setEnabled(false);
     m_removeReferenceButton->setEnabled(false);
     if (m_remoteReads) {
-        m_addReferenceButton->setEnabled(false);
+        m_addReferenceButton->setEnabled(m_remoteMutations && m_remoteMutations->isAvailableFor(
+            QStringLiteral("partReference.customizations.add")));
         m_removeReferenceButton->setEnabled(false);
-        m_addReferenceButton->setToolTip(tr("Part Reference customizations are read-only when connected to a BrickSuite Host."));
-        m_removeReferenceButton->setToolTip(m_addReferenceButton->toolTip());
+        m_addReferenceButton->setToolTip(tr("Add a shared user customization stored by the BrickSuite Host."));
+        m_removeReferenceButton->setToolTip(tr("Only Host-backed user customizations can be removed."));
     }
 
     selectedRow->addWidget(m_selectedLabel, 1);
@@ -842,8 +855,10 @@ QToolButton* PartReferenceDialog::createPartCard(QWidget* parent, const PartRefe
                 QAction* sendAction = menu.addAction(tr("Send to Add Inventory"));
                 sendAction->setEnabled(m_sendButton && m_sendButton->isEnabled());
                 QAction* addAction = menu.addAction(tr("Add Part to Reference..."));
+                addAction->setEnabled(!m_remoteReads || (m_remoteMutations && m_remoteMutations->isAvailableFor(QStringLiteral("partReference.customizations.add"))));
                 QAction* removeAction = menu.addAction(tr("Remove from Part Reference"));
-                removeAction->setEnabled(entry.origin == PartReferenceEntry::Origin::User);
+                removeAction->setEnabled(entry.origin == PartReferenceEntry::Origin::User
+                    && (!m_remoteReads || (m_remoteMutations && m_remoteMutations->isAvailableFor(QStringLiteral("partReference.customizations.remove")))));
 
                 QAction* chosen = menu.exec(button->mapToGlobal(pos));
                 if (chosen == copyAction)
@@ -937,7 +952,8 @@ void PartReferenceDialog::selectPart(const QString& partNumber, const QString& p
     const PartReferenceEntry* selected = findEffectiveEntry(m_selectedPartNumber);
     m_selectedUserEntryId = selected ? selected->userEntryId : 0;
     if (m_removeReferenceButton)
-        m_removeReferenceButton->setEnabled(!m_remoteReads && m_selectedUserEntryId > 0);
+        m_removeReferenceButton->setEnabled(!m_remoteMutationPending && m_selectedUserEntryId > 0
+            && (!m_remoteReads || (m_remoteMutations && m_remoteMutations->isAvailableFor(QStringLiteral("partReference.customizations.remove")))));
 }
 
 void PartReferenceDialog::setCardSelected(QToolButton* card, bool selected)
@@ -996,9 +1012,18 @@ const PartReferenceEntry* PartReferenceDialog::findEffectiveEntry(const QString&
 
 void PartReferenceDialog::addPartToReference()
 {
-    if (m_remoteReads) return;
     const PartReferenceEntry* anchor = findEffectiveEntry(m_selectedPartNumber);
-    AddPartReferenceDialog dialog(m_customizationService, 0, anchor, this);
+    if (m_remoteReads) {
+        if(!m_remoteMutations || !m_remoteMutations->isAvailableFor(QStringLiteral("partReference.customizations.add")))return;
+        if(m_addDialog){m_addDialog->show();m_addDialog->raise();m_addDialog->activateWindow();return;}
+        auto* dialog=new AddPartReferenceDialog(m_customizationService,0,anchor,m_remoteMutations,m_remoteSession,this);
+        m_addDialog=dialog;
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dialog,&QDialog::accepted,this,&PartReferenceDialog::refreshCustomizations);
+        connect(dialog,&QObject::destroyed,this,[this]{m_addDialog=nullptr;});
+        dialog->open(); return;
+    }
+    AddPartReferenceDialog dialog(m_customizationService, 0, anchor, nullptr, nullptr, this);
     if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded()) {
         refreshCustomizations();
         // The dialog may add a different Part than the current anchor. Do not
@@ -1009,12 +1034,31 @@ void PartReferenceDialog::addPartToReference()
 
 void PartReferenceDialog::removeSelectedCustomization()
 {
-    if (m_remoteReads) return;
     if (m_selectedUserEntryId <= 0) return;
     if (QMessageBox::question(this, tr("Remove from Part Reference"),
                               tr("Remove %1 from your Part Reference customizations?\n\n"
                                  "The catalog Part and inventory will not be changed.")
                                   .arg(m_selectedPartNumber)) != QMessageBox::Yes) return;
+    if(m_remoteReads){
+        if(!m_remoteMutations||!m_remoteSession||m_remoteMutationPending)return;
+        if(m_remoteSession->sessionGeneration()!=m_loadedSessionGeneration
+            || m_remoteSession->workspaceGeneration()!=m_loadedWorkspaceGeneration){
+            QMessageBox::warning(this,tr("Part Reference"),tr("The Host session or Workspace changed. Refresh and try again."));return;
+        }
+        const PartReferenceEntry* selected=findEffectiveEntry(m_selectedPartNumber);if(!selected)return;
+        RemotePartReferenceMutationDto::Request request;
+        if(m_pendingRemoveRequest.customizationId==selected->userEntryId&&!m_pendingRemoveRequest.mutationId.isEmpty())request=m_pendingRemoveRequest;
+        else{request.workspaceId=m_remoteSession->workspaceId();request.mutationId=RemoteMutationDto::newMutationId();request.customizationId=selected->userEntryId;
+            request.expected.modifiedUtc=selected->modifiedUtc.toUTC().toString(Qt::ISODateWithMs);
+            request.expected.partNumber=selected->partNumber;request.expected.catalog=selected->catalog;
+            request.expected.section=selected->section;request.expected.placement=selected->placement;
+            request.expected.anchorPartNumber=selected->anchorPartNumber;}
+        m_remoteMutationPending=true;
+        m_removeReferenceButton->setEnabled(false);
+        m_remoteMutations->remove(request,this,[this](const auto&){m_remoteMutationPending=false;m_pendingRemoveRequest={};m_selectedPartNumber.clear();m_selectedPartName.clear();m_selectedUserEntryId=0;m_selectedLabel->setText(tr("Selected: None"));m_copyButton->setEnabled(false);m_sendButton->setEnabled(false);refreshCustomizations();},
+            [this,request](const RemoteMutationDto::Error&error){m_remoteMutationPending=false;if(error.outcome==RemoteMutationDto::Outcome::Unknown)m_pendingRemoveRequest=request;else m_pendingRemoveRequest={};selectPart(m_selectedPartNumber,m_selectedPartName);QMessageBox::warning(this,tr("Part Reference"),error.outcome==RemoteMutationDto::Outcome::Unknown?tr("The outcome is unknown. Retry safely to check the same removal."):error.message);});
+        return;
+    }
     const auto result = m_customizationService.remove(m_manifest, m_selectedUserEntryId);
     if (!result.success) { QMessageBox::warning(this, tr("Part Reference"), result.message); return; }
     const QString removedPartNumber = m_selectedPartNumber;

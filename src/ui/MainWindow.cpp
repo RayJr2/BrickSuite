@@ -75,6 +75,7 @@
 #include "../services/storage/SessionStorageSelectionService.h"
 #include "../services/application/ApplicationServices.h"
 #include "../services/application/RemoteReadApplicationServices.h"
+#include "../services/application/RemotePartReferenceMutationApplicationService.h"
 #include "../network/BrickSuiteNetworkManager.h"
 #include "../network/BrickSuiteWebSocketClient.h"
 #include "../network/BrickSuiteHostIdentity.h"
@@ -471,12 +472,21 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             this,
             [this](int partId) {
                 if (m_remoteReads) {
-                    QMessageBox::information(this, "Part Reference",
-                        "Part Reference customizations are read-only when connected to a BrickSuite Host.");
+                    auto* mutations=m_networkManager.remotePartReferenceMutations();
+                    if(!mutations||!mutations->isAvailableFor(QStringLiteral("partReference.customizations.add"))){
+                        QMessageBox::information(this,"Part Reference","The connected Host does not permit adding Part Reference customizations.");return;
+                    }
+                    auto* dialog=new AddPartReferenceDialog(
+                        m_applicationServices.partReferenceCustomizations(),partId,nullptr,
+                        mutations,m_networkManager.remoteSession(),this);
+                    dialog->setAttribute(Qt::WA_DeleteOnClose);
+                    connect(dialog,&QDialog::accepted,this,[this]{if(m_partReferenceDialog)m_partReferenceDialog->refreshCustomizations();});
+                    dialog->open();
                     return;
                 }
                 AddPartReferenceDialog dialog(
-                    m_applicationServices.partReferenceCustomizations(), partId, nullptr, this);
+                    m_applicationServices.partReferenceCustomizations(), partId, nullptr,
+                    nullptr, nullptr, this);
                 if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded()
                     ) {
                     if (m_partReferenceDialog)
@@ -910,7 +920,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     connect(partReferenceAction, &QAction::triggered, this, [this]() {
         if (!m_partReferenceDialog) {
             m_partReferenceDialog = new PartReferenceDialog(
-                m_applicationServices.partReferenceCustomizations(), m_remoteReads, this);
+                m_applicationServices.partReferenceCustomizations(), m_remoteReads,
+                m_networkManager.remotePartReferenceMutations(),
+                m_networkManager.remoteSession(), this);
             m_partReferenceDialog->setAddInventoryAvailable(
                 m_myInventoryWidget && m_myInventoryWidget->hasActiveAddInventoryDialog());
             connect(m_partReferenceDialog,
@@ -921,6 +933,13 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                 m_hostMutationPublications->publish(
                     HostMutationPublicationService::Workflow::PartReferenceCustomization,
                     scope);
+            });
+            connect(&m_networkManager,
+                    &BrickSuiteNetworkManager::remotePartReferenceMutationCommitted,
+                    m_partReferenceDialog,
+                    [this](const QString&) {
+                if (m_partReferenceDialog && !m_remoteReads)
+                    m_partReferenceDialog->refreshCustomizations();
             });
 
             connect(m_partReferenceDialog,

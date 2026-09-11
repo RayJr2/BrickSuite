@@ -112,6 +112,8 @@ struct PartReferenceCustomization {
     qint64 customizationId = 0; QString partNumber; QString partNameFallback;
     QString catalog; QString section; int displayOrder = 0;
     QString representativeFor; QString notes;
+    QString placement; QString anchorPartNumber;
+    QDateTime createdUtc; QDateTime modifiedUtc;
 };
 
 } // namespace RemoteReadDto

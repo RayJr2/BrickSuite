@@ -87,6 +87,8 @@ qt_add_executable(BrickSuite
     src/services/application/dto/RemoteInventoryMutationDtos.cpp
     src/services/application/dto/RemoteStorageMutationDtos.h
     src/services/application/dto/RemoteStorageMutationDtos.cpp
+    src/services/application/dto/RemotePartReferenceMutationDtos.h
+    src/services/application/dto/RemotePartReferenceMutationDtos.cpp
     src/services/application/HostPullingMutationService.h
     src/services/application/HostPullingMutationService.cpp
     src/services/application/HostInventoryMutationService.h
@@ -95,12 +97,16 @@ qt_add_executable(BrickSuite
     src/services/application/HostStorageProtocolMutationService.cpp
     src/services/application/HostStorageMutationService.h
     src/services/application/HostStorageMutationService.cpp
+    src/services/application/HostPartReferenceMutationService.h
+    src/services/application/HostPartReferenceMutationService.cpp
     src/services/application/RemotePullingApplicationService.h
     src/services/application/RemotePullingApplicationService.cpp
     src/services/application/RemoteInventoryMutationApplicationService.h
     src/services/application/RemoteInventoryMutationApplicationService.cpp
     src/services/application/RemoteStorageMutationApplicationService.h
     src/services/application/RemoteStorageMutationApplicationService.cpp
+    src/services/application/RemotePartReferenceMutationApplicationService.h
+    src/services/application/RemotePartReferenceMutationApplicationService.cpp
 
     src/database/DatabaseManager.h
     src/database/DatabaseManager.cpp
@@ -1013,6 +1019,23 @@ if(BUILD_TESTING)
     )
     target_link_libraries(PartReferenceCustomizationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME PartReferenceCustomization COMMAND PartReferenceCustomizationTest)
+    qt_add_executable(PartReferenceRemoteMutationTest EXCLUDE_FROM_ALL
+        tests/PartReferenceRemoteMutationTest.cpp resources/resources.qrc
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Part.h src/models/Part.cpp src/models/PartReferenceEntry.h src/models/UserPartReferenceEntry.h
+        src/models/PartSearchCriteria.h src/models/PartSearchResult.h
+        src/repositories/RepositoryConnection.h
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/UserPartReferenceRepository.h src/repositories/UserPartReferenceRepository.cpp
+        src/services/parts/PartReferenceManifest.h src/services/parts/PartReferenceManifest.cpp
+        src/services/parts/PartReferenceCustomizationService.h src/services/parts/PartReferenceCustomizationService.cpp
+        src/services/application/HostPartReferenceMutationService.h src/services/application/HostPartReferenceMutationService.cpp
+        src/services/application/HostWriteExecutor.h src/services/application/HostMutationPublicationService.h
+        src/services/application/dto/RemoteMutationDtos.h src/services/application/dto/RemoteMutationDtos.cpp
+        src/services/application/dto/RemotePartReferenceMutationDtos.h src/services/application/dto/RemotePartReferenceMutationDtos.cpp)
+    target_link_libraries(PartReferenceRemoteMutationTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME PartReferenceRemoteMutation COMMAND PartReferenceRemoteMutationTest)
     qt_add_executable(PagingProjectionTest EXCLUDE_FROM_ALL
         tests/PagingProjectionTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp

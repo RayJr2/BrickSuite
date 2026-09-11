@@ -3,6 +3,8 @@
 #include "../../repositories/PartRepository.h"
 #include "../../services/parts/PartReferenceCustomizationService.h"
 #include "../../services/application/ApplicationServices.h"
+#include "../../services/application/RemotePartReferenceMutationApplicationService.h"
+#include "../../network/RemoteSessionState.h"
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -17,10 +19,18 @@ AddPartReferenceDialog::AddPartReferenceDialog(
                                                SharedPartReferenceCustomizationService& customizationService,
                                                int initialPartId,
                                                const PartReferenceEntry* anchor,
+                                               RemotePartReferenceMutationApplicationService* remoteMutations,
+                                               RemoteSessionState* remoteSession,
                                                QWidget* parent)
     : QDialog(parent), m_initialPartId(initialPartId),
-      m_customizationService(customizationService)
+      m_customizationService(customizationService), m_remoteMutations(remoteMutations),
+      m_remoteSession(remoteSession)
 {
+    if (m_remoteSession) {
+        const auto snapshot=m_remoteSession->snapshot();
+        m_sessionGeneration=snapshot.sessionGeneration;
+        m_workspaceGeneration=snapshot.workspaceGeneration;
+    }
     setWindowTitle(tr("Add Part to Reference")); resize(620, 520);
     if (anchor) { m_defaultCatalog = anchor->catalog; m_defaultSection = anchor->section;
                   m_defaultAnchor = anchor->partNumber; }
@@ -106,12 +116,32 @@ void AddPartReferenceDialog::destinationChanged()
 
 void AddPartReferenceDialog::save()
 {
+    if (m_pending) return;
     const int partId = selectedPartId();
     if (partId <= 0) { QMessageBox::warning(this, windowTitle(), tr("Select a catalog Part.")); return; }
     const QString partNumber = m_results->currentItem()->data(Qt::UserRole + 1).toString();
     const QStringList destination = m_destination->currentData().toStringList();
     if (destination.size() != 2) return;
     const auto placement = static_cast<PartReferencePlacement>(m_placement->currentData().toInt());
+    if (m_remoteMutations) {
+        if (!m_remoteSession || !m_remoteSession->isAuthenticated()
+            || m_remoteSession->sessionGeneration()!=m_sessionGeneration
+            || m_remoteSession->workspaceGeneration()!=m_workspaceGeneration) {
+            QMessageBox::warning(this,windowTitle(),tr("The Host session or Workspace changed. Close this dialog and try again.")); return;
+        }
+        RemotePartReferenceMutationDto::Request request;
+        request.workspaceId=m_remoteSession->workspaceId();
+        request.mutationId=m_mutationId.isEmpty()?RemoteMutationDto::newMutationId():m_mutationId;
+        request.partNumber=partNumber; request.catalog=destination.at(0); request.section=destination.at(1);
+        request.placement=placement; request.anchorPartNumber=placement==PartReferencePlacement::Append?QString():m_anchor->currentData().toString();
+        m_mutationId=request.mutationId; m_pending=true; m_save->setEnabled(false);
+        m_remoteMutations->add(request,this,[this](const auto&){m_pending=false;m_mutationId.clear();m_added=true;accept();},
+            [this](const RemoteMutationDto::Error& error){m_pending=false;m_save->setEnabled(true);
+                if(error.outcome!=RemoteMutationDto::Outcome::Unknown)m_mutationId.clear();
+                QMessageBox::warning(this,windowTitle(),error.outcome==RemoteMutationDto::Outcome::Unknown
+                    ?tr("The outcome is unknown. Retry safely to check the same customization.") : error.message);});
+        return;
+    }
     const auto result = m_customizationService.add(
         m_manifest, partNumber, destination.at(0), destination.at(1), placement,
         m_anchor->currentData().toString());

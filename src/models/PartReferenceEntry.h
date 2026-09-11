@@ -8,7 +8,9 @@
 
 #pragma once
 
+#include <QDateTime>
 #include <QString>
+#include "UserPartReferenceEntry.h"
 
 struct PartReferenceEntry
 {
@@ -27,4 +29,8 @@ struct PartReferenceEntry
     QString material;
     QString representativeFor;
     QString notes;
+    PartReferencePlacement placement = PartReferencePlacement::Append;
+    QString anchorPartNumber;
+    QDateTime createdUtc;
+    QDateTime modifiedUtc;
 };

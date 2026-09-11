@@ -16,6 +16,8 @@
 #include "../services/application/RemotePullingApplicationService.h"
 #include "../services/application/RemoteInventoryMutationApplicationService.h"
 #include "../services/application/RemoteStorageMutationApplicationService.h"
+#include "../services/application/RemotePartReferenceMutationApplicationService.h"
+#include "../services/application/HostPartReferenceMutationService.h"
 #include "../services/application/HostMutationPublicationService.h"
 #include "../services/CredentialStore.h"
 #include "../settings/UserSettings.h"
@@ -42,6 +44,8 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
         std::make_unique<RemoteInventoryMutationApplicationService>(*m_remoteMutations, this);
     m_remoteStorageMutations =
         std::make_unique<RemoteStorageMutationApplicationService>(*m_remoteMutations, this);
+    m_remotePartReferenceMutations =
+        std::make_unique<RemotePartReferenceMutationApplicationService>(*m_remoteMutations, this);
     m_hostReads = std::make_unique<HostReadProtocolService>(
         DatabaseManager::instance().databasePath(), this);
     m_hostReads->registerOperations(m_server->operationDispatcher());
@@ -65,6 +69,8 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
                 if (workflow == HostMutationPublicationService::Workflow::Storage
                     && scope.workspaceId && scope.storageLocationId)
                     emit remoteStorageMutationCommitted(int(*scope.workspaceId),int(*scope.storageLocationId));
+                if (workflow == HostMutationPublicationService::Workflow::PartReferenceCustomization)
+                    emit remotePartReferenceMutationCommitted(scope.partNumber);
             }, Qt::QueuedConnection);
         }, this);
     m_hostMutations->registerOperation(m_server->operationDispatcher(),
@@ -83,6 +89,8 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     }
     const QStringList storageOperations={QStringLiteral("storage.add"),QStringLiteral("storage.edit"),QStringLiteral("storage.setActive")};
     for(const QString&operation:storageOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostStorageProtocolMutationService::createMutation(operation,metadata,error);});
+    const QStringList partReferenceOperations={QStringLiteral("partReference.customizations.add"),QStringLiteral("partReference.customizations.remove")};
+    for(const QString&operation:partReferenceOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostPartReferenceMutationService::createMutation(operation,metadata,error);});
     connect(m_server, &BrickSuiteWebSocketServer::statusChanged,
             this, &BrickSuiteNetworkManager::statusChanged);
     connect(m_client, &BrickSuiteWebSocketClient::statusChanged,
@@ -177,6 +185,8 @@ RemoteInventoryMutationApplicationService* BrickSuiteNetworkManager::remoteInven
 { return m_remoteInventoryMutations.get(); }
 RemoteStorageMutationApplicationService* BrickSuiteNetworkManager::remoteStorageMutations() const
 { return m_remoteStorageMutations.get(); }
+RemotePartReferenceMutationApplicationService* BrickSuiteNetworkManager::remotePartReferenceMutations() const
+{ return m_remotePartReferenceMutations.get(); }
 RemoteSessionState* BrickSuiteNetworkManager::remoteSession() const
 { return m_remoteSession.get(); }
 OperationalInvalidationPublisher* BrickSuiteNetworkManager::invalidationPublisher() const

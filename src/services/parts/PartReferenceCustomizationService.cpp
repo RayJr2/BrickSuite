@@ -95,6 +95,10 @@ QList<PartReferenceEntry> PartReferenceCustomizationService::effectiveEntries(QS
         entry.partNumber = part->partNumber(); entry.partName = part->name();
         entry.catalog = storedEntry.catalog; entry.section = storedEntry.section;
         entry.material = part->material();
+        entry.placement = storedEntry.placement;
+        entry.anchorPartNumber = storedEntry.anchorPartNumber;
+        entry.createdUtc = storedEntry.createdUtc;
+        entry.modifiedUtc = storedEntry.modifiedUtc;
         usersByDestination[destinationKey(entry.catalog, entry.section)].append(entry);
         placementByPart.insert(key(entry.partNumber), storedEntry);
     }
