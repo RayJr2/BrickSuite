@@ -185,16 +185,58 @@ int main(int argc, char** argv)
                 && !identity.privateKey.isNull()
                 && BrickSuiteHostIdentity::normalizedFingerprint(identity.fingerprint).size() == 64,
                 "ephemeral EC certificate/key generation");
+    const auto secondIdentity = BrickSuiteHostIdentity::generateEphemeral();
+    const auto mismatchedIdentity = BrickSuiteHostIdentity::validate(
+        identity.certificate, secondIdentity.privateKey);
+    ok &= check(!mismatchedIdentity.success
+                    && mismatchedIdentity.error.contains(QStringLiteral("do not match")),
+                "certificate/private-key mismatch rejected");
+    const auto expiredIdentity = BrickSuiteHostIdentity::generateEphemeralForTesting(-7200, -3600);
+    ok &= check(!expiredIdentity.success
+                    && expiredIdentity.error.contains(QStringLiteral("expired")),
+                "expired certificate rejected deterministically");
+    const auto futureIdentity = BrickSuiteHostIdentity::generateEphemeralForTesting(3600, 7200);
+    ok &= check(!futureIdentity.success
+                    && futureIdentity.error.contains(QStringLiteral("not yet valid")),
+                "not-yet-valid certificate rejected deterministically");
+    ok &= check(!BrickSuiteHostIdentity::validate(QSslCertificate(), identity.privateKey).success,
+                "malformed certificate rejected");
+    ok &= check(!BrickSuiteHostIdentity::validate(identity.certificate, QSslKey()).success,
+                "malformed private key rejected");
 
     const auto persistedIdentity = BrickSuiteHostIdentity::loadOrCreate();
     const auto reloadedIdentity = BrickSuiteHostIdentity::loadOrCreate();
     ok &= check(persistedIdentity.success && reloadedIdentity.success
                 && persistedIdentity.fingerprint == reloadedIdentity.fingerprint,
                 "persisted Host identity survives restart simulation");
+    const QString hostTokenCredential =
+        QStringLiteral("BrickSuiteHostAccessToken.Test.SecureHostFoundationTest");
+    QString credentialError;
+    const QString retainedToken = BrickSuiteAuthentication::generateAccessToken(&credentialError);
+    ok &= check(CredentialStore::write(hostTokenCredential, retainedToken, &credentialError),
+                "Host token fixture stored securely");
     const auto regeneratedIdentity = BrickSuiteHostIdentity::regenerate();
     ok &= check(regeneratedIdentity.success
                 && regeneratedIdentity.fingerprint != persistedIdentity.fingerprint,
                 "explicit regeneration changes Host fingerprint");
+    const auto tokenAfterRegeneration = CredentialStore::read(hostTokenCredential);
+    ok &= check(tokenAfterRegeneration.success && tokenAfterRegeneration.found
+                    && tokenAfterRegeneration.value == retainedToken,
+                "Host identity regeneration does not rotate Host token");
+    const QString identityCredential =
+        QStringLiteral("BrickSuiteHostTlsIdentity.Test.SecureHostFoundationTest");
+    ok &= check(CredentialStore::write(identityCredential, QStringLiteral("not-a-certificate"),
+                                        &credentialError)
+                    && !BrickSuiteHostIdentity::loadOrCreate().success,
+                "malformed persisted certificate fails without silent regeneration");
+    const QString certificateWithoutKey = QString::fromLatin1(
+        regeneratedIdentity.certificate.toPem()) + QStringLiteral("\nnot-a-private-key");
+    ok &= check(CredentialStore::write(identityCredential, certificateWithoutKey,
+                                        &credentialError)
+                    && !BrickSuiteHostIdentity::loadOrCreate().success,
+                "malformed persisted private key fails without silent regeneration");
+    ok &= check(BrickSuiteHostIdentity::regenerate().success,
+                "explicit regeneration recovers an invalid persisted identity");
 
     BrickSuiteWebSocketServer server;
     server.operationDispatcher().registerOperation(QStringLiteral("test.operational"), true,
@@ -414,10 +456,38 @@ int main(int argc, char** argv)
                 "an actual transport close schedules exactly one reconnect attempt");
     reconnectClient.disconnectFromHost();
 
+    const QString replacementToken = BrickSuiteAuthentication::generateAccessToken(&credentialError);
+    ok &= check(!replacementToken.isEmpty() && replacementToken != token,
+                "rotated Host token is independently random");
+    BrickSuiteWebSocketServer rotatedServer;
+    ok &= check(rotatedServer.startWithIdentity(QHostAddress::LocalHost, 0, replacementToken,
+                                                identity, &serverError),
+                "Host starts with replacement token");
+    BrickSuiteWebSocketClient oldTokenClient;
+    success = true;
+    oldTokenClient.configure(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(rotatedServer.serverPort())),
+        identity.fingerprint, token, false);
+    oldTokenClient.connectToHost();
+    ok &= check(waitForResult(oldTokenClient, &success, &resultMessage) && !success,
+                "old token rejected after rotated credential is active");
+    BrickSuiteWebSocketClient replacementTokenClient;
+    success = false;
+    replacementTokenClient.configure(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(rotatedServer.serverPort())),
+        identity.fingerprint, replacementToken, false);
+    replacementTokenClient.connectToHost();
+    ok &= check(waitForResult(replacementTokenClient, &success, &resultMessage) && success
+                    && rotatedServer.fingerprint() == identity.fingerprint,
+                "replacement token authenticates without changing Host fingerprint");
+    replacementTokenClient.disconnectFromHost();
+    rotatedServer.stop();
+
     QString cleanupError;
     ok &= check(CredentialStore::remove(
-                    QStringLiteral("BrickSuiteHostTlsIdentity.Test.SecureHostFoundationTest"),
+                    identityCredential,
                     &cleanupError), "test Host identity credential cleanup");
+    CredentialStore::remove(hostTokenCredential, &cleanupError);
     QFile::remove(BrickSuiteHostIdentity::certificatePath());
     return ok ? 0 : 1;
 }

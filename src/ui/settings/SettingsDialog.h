@@ -70,6 +70,7 @@ private slots:
     void testBrickSuiteHostConnection();
     void generateOrRotateServerToken();
     void regenerateHostIdentity();
+    void forgetBrickSuiteHost();
     void updateNetworkPresentation();
     void enterHostMaintenance();
     void leaveHostMaintenance();
@@ -154,6 +155,9 @@ private:
     int m_originalServerPort = 0;
     QLabel* m_serverStatusLabel = nullptr;
     QLabel* m_serverFingerprintLabel = nullptr;
+    QLabel* m_serverIdentityStatusLabel = nullptr;
+    QLabel* m_serverIdentityValidFromLabel = nullptr;
+    QLabel* m_serverIdentityExpiresLabel = nullptr;
     QPushButton* m_serverTokenButton = nullptr;
     QLabel* m_maintenanceStateLabel = nullptr;
     QLabel* m_maintenanceCountersLabel = nullptr;
@@ -165,6 +169,7 @@ private:
     QCheckBox* m_hostReconnectCheck = nullptr;
     QLabel* m_hostConnectionStatusLabel = nullptr;
     QPushButton* m_hostTestButton = nullptr;
+    QPushButton* m_forgetHostButton = nullptr;
 
     QDialogButtonBox* m_buttonBox = nullptr;
 };

@@ -774,6 +774,10 @@ void SettingsDialog::buildServerTab()
     m_serverFingerprintLabel = new QLabel(tr("Not generated"), serverGroup);
     m_serverFingerprintLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_serverFingerprintLabel->setWordWrap(true);
+    m_serverIdentityStatusLabel = new QLabel(serverGroup);
+    m_serverIdentityStatusLabel->setWordWrap(true);
+    m_serverIdentityValidFromLabel = new QLabel(serverGroup);
+    m_serverIdentityExpiresLabel = new QLabel(serverGroup);
     m_serverTokenButton = new QPushButton(tr("Generate / Rotate Access Token..."), serverGroup);
     auto* regenerateButton = new QPushButton(tr("Regenerate Host Identity..."), serverGroup);
     serverForm->addRow(QString(), m_serverEnabledCheck);
@@ -781,6 +785,9 @@ void SettingsDialog::buildServerTab()
     serverForm->addRow(tr("Port:"), m_serverPortSpin);
     serverForm->addRow(tr("Status:"), m_serverStatusLabel);
     serverForm->addRow(tr("Certificate fingerprint:"), m_serverFingerprintLabel);
+    serverForm->addRow(tr("Identity status:"), m_serverIdentityStatusLabel);
+    serverForm->addRow(tr("Certificate valid from:"), m_serverIdentityValidFromLabel);
+    serverForm->addRow(tr("Certificate expires:"), m_serverIdentityExpiresLabel);
     serverForm->addRow(QString(), m_serverTokenButton);
     serverForm->addRow(QString(), regenerateButton);
     m_maintenanceStateLabel = new QLabel(serverGroup);
@@ -815,12 +822,14 @@ void SettingsDialog::buildServerTab()
     m_hostConnectionStatusLabel = new QLabel(tr("Not tested"), clientGroup);
     m_hostConnectionStatusLabel->setWordWrap(true);
     m_hostTestButton = new QPushButton(tr("Test Connection"), clientGroup);
+    m_forgetHostButton = new QPushButton(tr("Forget Host..."), clientGroup);
     clientForm->addRow(tr("Secure endpoint:"), m_hostEndpointEdit);
     clientForm->addRow(tr("Trusted fingerprint:"), m_hostFingerprintEdit);
     clientForm->addRow(tr("Access token:"), m_hostTokenEdit);
     clientForm->addRow(QString(), m_hostReconnectCheck);
     clientForm->addRow(tr("Connection status:"), m_hostConnectionStatusLabel);
     clientForm->addRow(QString(), m_hostTestButton);
+    clientForm->addRow(QString(), m_forgetHostButton);
     layout->addWidget(clientGroup);
     layout->addStretch();
     m_tabWidget->addTab(tab, tr("Server"));
@@ -831,6 +840,8 @@ void SettingsDialog::buildServerTab()
             this, &SettingsDialog::regenerateHostIdentity);
     connect(m_hostTestButton, &QPushButton::clicked,
             this, &SettingsDialog::testBrickSuiteHostConnection);
+    connect(m_forgetHostButton, &QPushButton::clicked,
+            this, &SettingsDialog::forgetBrickSuiteHost);
     connect(m_enterMaintenanceButton, &QPushButton::clicked,
             this, &SettingsDialog::enterHostMaintenance);
     connect(m_leaveMaintenanceButton, &QPushButton::clicked,
@@ -854,13 +865,34 @@ void SettingsDialog::updateNetworkPresentation()
     m_serverTokenButton->setEnabled(local);
     m_serverStatusLabel->setText(local ? m_networkManager.serverStatusText()
                                       : tr("Unavailable in BrickSuite Host client mode."));
-    const QString fingerprint = m_networkManager.server()->fingerprint();
-    m_serverFingerprintLabel->setText(fingerprint.isEmpty() ? tr("Not generated") : fingerprint);
+    BrickSuiteHostIdentity::Result identity;
+    if (local) identity = BrickSuiteHostIdentity::loadOrCreate();
+    m_serverFingerprintLabel->setText(identity.success ? identity.fingerprint : tr("Unavailable"));
+    if (identity.success) {
+        // Six months is ample time for an administrator to schedule an explicit identity
+        // regeneration while avoiding warnings through most of a ten-year certificate lifetime.
+        const qint64 daysRemaining = QDateTime::currentDateTimeUtc().daysTo(identity.expiresUtc);
+        m_serverIdentityStatusLabel->setText(daysRemaining <= 180
+            ? tr("Healthy — expires in %1 day(s); plan an explicit regeneration.").arg(daysRemaining)
+            : tr("Healthy"));
+        m_serverIdentityValidFromLabel->setText(
+            QLocale().toString(identity.validFrom.toLocalTime(), QLocale::ShortFormat));
+        m_serverIdentityExpiresLabel->setText(
+            QLocale().toString(identity.expiresUtc.toLocalTime(), QLocale::ShortFormat));
+    } else {
+        m_serverIdentityStatusLabel->setText(local ? identity.error
+                                                   : tr("Unavailable in Host client mode."));
+        m_serverIdentityValidFromLabel->setText(tr("Unavailable"));
+        m_serverIdentityExpiresLabel->setText(tr("Unavailable"));
+    }
     m_hostEndpointEdit->setEnabled(!local);
     m_hostFingerprintEdit->setEnabled(!local);
     m_hostTokenEdit->setEnabled(!local);
     m_hostReconnectCheck->setEnabled(!local);
     m_hostTestButton->setEnabled(!local);
+    m_forgetHostButton->setEnabled(!local
+        && (!m_hostFingerprintEdit->text().trimmed().isEmpty()
+            || !m_hostTokenEdit->text().isEmpty()));
     if (!local) m_hostConnectionStatusLabel->setText(m_networkManager.connectionStatus().message);
     if (auto* maintenance = m_networkManager.maintenanceCoordinator()) {
         m_maintenanceStateLabel->setText(maintenance->stateText());
@@ -897,7 +929,10 @@ void SettingsDialog::leaveHostMaintenance()
 void SettingsDialog::generateOrRotateServerToken()
 {
     if (QMessageBox::warning(this, tr("Generate / Rotate Access Token"),
-        tr("Generating a new token invalidates the token used by existing clients. Continue?"),
+        tr("This replaces the shared Protocol 1.2 access token and restarts a listening Host. "
+           "Current Remote sessions will be disconnected, the old token will no longer "
+           "authenticate, and every Remote installation will need the new token. The Host "
+           "certificate, database, and data epoch are unchanged. Continue?"),
         QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
         return;
     QString error;
@@ -916,14 +951,18 @@ void SettingsDialog::generateOrRotateServerToken()
         if (!m_networkManager.restartServer(&restartError))
             QMessageBox::warning(this, tr("BrickSuite Server"), restartError);
     }
+    qInfo() << "BrickSuite Host shared access token rotated.";
     updateNetworkPresentation();
 }
 
 void SettingsDialog::regenerateHostIdentity()
 {
     if (QMessageBox::warning(this, tr("Regenerate Host Identity"),
-        tr("Previously paired clients will reject this Host until they explicitly trust the new "
-           "certificate fingerprint. Continue?"), QMessageBox::Yes | QMessageBox::Cancel,
+        tr("This creates a new Host certificate and private key, changes the fingerprint, and "
+           "restarts a listening Host. Current Remote sessions will disconnect, and existing "
+           "Remotes will reject the Host until the new fingerprint is explicitly trusted. "
+           "The BrickSuite database, data epoch, and shared access token are unchanged. Continue?"),
+        QMessageBox::Yes | QMessageBox::Cancel,
         QMessageBox::Cancel) != QMessageBox::Yes)
         return;
     const auto identity = BrickSuiteHostIdentity::regenerate();
@@ -935,6 +974,35 @@ void SettingsDialog::regenerateHostIdentity()
     QString error;
     if (m_networkManager.server()->isListening() && !m_networkManager.restartServer(&error))
         QMessageBox::warning(this, tr("BrickSuite Server"), error);
+    qInfo() << "BrickSuite Host TLS identity explicitly regenerated; fingerprint changed.";
+    updateNetworkPresentation();
+}
+
+void SettingsDialog::forgetBrickSuiteHost()
+{
+    if (QMessageBox::warning(this, tr("Forget BrickSuite Host"),
+        tr("This removes the trusted Host fingerprint, the stored access token, the remembered "
+           "Host Workspace, and retained data-epoch state for this Host. Other preferences and "
+           "local data are unchanged. The next connection requires a new fingerprint trust "
+           "decision and a valid access token. Continue?"),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
+    m_networkManager.client()->disconnectFromHost();
+    QString error;
+    if (!m_networkManager.saveClientToken(QString(), &error)) {
+        QMessageBox::critical(this, tr("Forget BrickSuite Host"),
+            tr("BrickSuite could not remove the stored Host access token securely.\n\n%1")
+                .arg(error));
+        return;
+    }
+    UserSettings& settings = UserSettings::instance();
+    settings.clearBrickSuiteHostTrustState(settings.brickSuiteHostEndpoint(),
+                                            settings.brickSuiteTrustedFingerprint());
+    m_hostFingerprintEdit->clear();
+    m_hostTokenEdit->clear();
+    m_hostConnectionStatusLabel->setText(tr("Host trust and stored credential removed."));
+    qInfo() << "BrickSuite Remote forgot its configured Host trust and credential.";
+    updateNetworkPresentation();
 }
 
 void SettingsDialog::testBrickSuiteHostConnection()

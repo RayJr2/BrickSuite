@@ -75,6 +75,34 @@ int main(int argc, char** argv)
     ok &= check(settings.rememberedHostWorkspaceId("wss://host-a:47826|fingerprint-a") == 0
                 && settings.rememberedHostWorkspaceId("wss://host-b:47826|fingerprint-b") == 7,
                 "clearing one Host Workspace does not affect another Host");
+    const QString trustedFingerprint(64, 'A');
+    const QString configuredIdentity = QStringLiteral("wss://example.invalid:50001|")
+        + trustedFingerprint.toLower();
+    settings.setBrickSuiteTrustedFingerprint(trustedFingerprint);
+    settings.setRememberedHostWorkspace(configuredIdentity, 9, "Configured Workshop");
+    {
+        QSettings raw;
+        raw.beginGroup("BrickSuiteNetwork/RetainedDataEpoch");
+        raw.setValue(trustedFingerprint, "11111111-1111-1111-1111-111111111111");
+        raw.endGroup();
+        raw.beginGroup("Appearance");
+        raw.setValue("Theme", "dark");
+    }
+    settings.clearBrickSuiteHostTrustState("wss://example.invalid:50001",
+                                           trustedFingerprint);
+    ok &= check(settings.brickSuiteTrustedFingerprint().isEmpty()
+                    && settings.rememberedHostWorkspaceId(configuredIdentity) == 0,
+                "Forget Host clears pinned trust and remembered Host Workspace");
+    {
+        QSettings raw;
+        raw.beginGroup("BrickSuiteNetwork/RetainedDataEpoch");
+        const bool retainedEpochRemoved = !raw.contains(trustedFingerprint);
+        raw.endGroup();
+        raw.beginGroup("Appearance");
+        const bool unrelatedPreferencePreserved = raw.value("Theme").toString() == "dark";
+        ok &= check(retainedEpochRemoved && unrelatedPreferencePreserved,
+                    "Forget Host clears retained epoch without unrelated preferences");
+    }
     {
         QSettings raw;
         raw.beginGroup("General");

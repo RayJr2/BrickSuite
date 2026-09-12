@@ -51,6 +51,8 @@ public:
     void setBrickSuiteHostEndpoint(const QString& endpoint);
     QString brickSuiteTrustedFingerprint() const;
     void setBrickSuiteTrustedFingerprint(const QString& fingerprint);
+    void clearBrickSuiteHostTrustState(const QString& endpoint,
+                                       const QString& fingerprint);
     bool brickSuiteReconnectAutomatically() const;
     void setBrickSuiteReconnectAutomatically(bool enabled);
     int rememberedHostWorkspaceId(const QString& hostIdentity) const;

@@ -257,6 +257,25 @@ void UserSettings::setBrickSuiteTrustedFingerprint(const QString& fingerprint)
     settings.endGroup();
 }
 
+void UserSettings::clearBrickSuiteHostTrustState(const QString& endpoint,
+                                                  const QString& fingerprint)
+{
+    QString normalized;
+    for (const QChar character : fingerprint) {
+        const QChar upper = character.toUpper();
+        if (character.isDigit() || (upper >= QLatin1Char('A') && upper <= QLatin1Char('F')))
+            normalized.append(upper);
+    }
+    if (normalized.size() != 64) normalized.clear();
+    clearRememberedHostWorkspace(endpoint.trimmed().toLower()
+                                 + QLatin1Char('|') + fingerprint.trimmed().toLower());
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.remove(kTrustedFingerprintKey);
+    settings.beginGroup(QStringLiteral("RetainedDataEpoch"));
+    if (!normalized.isEmpty()) settings.remove(normalized);
+}
+
 bool UserSettings::brickSuiteReconnectAutomatically() const
 {
     QSettings settings;

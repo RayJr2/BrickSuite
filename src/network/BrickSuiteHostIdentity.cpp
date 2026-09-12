@@ -34,6 +34,7 @@ QString identityCredentialName()
 
 template<typename T, void (*Free)(T*)>
 using OpenSslPtr = std::unique_ptr<T, decltype(Free)>;
+using BioPtr = std::unique_ptr<BIO, decltype(&BIO_free)>;
 
 QByteArray bioBytes(BIO* bio)
 {
@@ -56,25 +57,77 @@ bool addExtension(X509* certificate, int nid, const char* value)
 BrickSuiteHostIdentity::Result load(const QByteArray& certificatePem,
                                     const QByteArray& privateKeyPem)
 {
-    BrickSuiteHostIdentity::Result result;
     const auto certificates = QSslCertificate::fromData(certificatePem, QSsl::Pem);
     if (certificates.size() != 1) {
+        BrickSuiteHostIdentity::Result result;
         result.error = QStringLiteral("The stored Host certificate is invalid.");
         return result;
     }
     const QSslKey key(privateKeyPem, QSsl::Ec, QSsl::Pem, QSsl::PrivateKey);
     if (key.isNull()) {
+        BrickSuiteHostIdentity::Result result;
         result.error = QStringLiteral("The stored Host private key is invalid.");
         return result;
     }
-    result.success = true;
-    result.certificate = certificates.first();
-    result.privateKey = key;
-    result.fingerprint = BrickSuiteHostIdentity::fingerprint(result.certificate);
-    return result;
+    return BrickSuiteHostIdentity::validate(certificates.first(), key);
 }
 
 } // namespace
+
+BrickSuiteHostIdentity::Result BrickSuiteHostIdentity::validate(
+    const QSslCertificate& certificate, const QSslKey& privateKey)
+{
+    Result result;
+    result.certificate = certificate;
+    result.privateKey = privateKey;
+    if (certificate.isNull()) {
+        result.error = QStringLiteral("The stored Host certificate is invalid.");
+        return result;
+    }
+    if (privateKey.isNull()) {
+        result.error = QStringLiteral("The stored Host private key is invalid.");
+        return result;
+    }
+    result.validFrom = certificate.effectiveDate().toUTC();
+    result.expiresUtc = certificate.expiryDate().toUTC();
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    if (!result.validFrom.isValid() || !result.expiresUtc.isValid()
+        || result.validFrom > now) {
+        result.error = QStringLiteral("The stored Host certificate is not yet valid.");
+        return result;
+    }
+    if (result.expiresUtc <= now) {
+        result.error = QStringLiteral("The stored Host certificate has expired.");
+        return result;
+    }
+
+    const QByteArray certificateDer = certificate.toDer();
+    const QByteArray keyPem = privateKey.toPem();
+    const unsigned char* der = reinterpret_cast<const unsigned char*>(certificateDer.constData());
+    OpenSslPtr<X509, X509_free> x509(d2i_X509(nullptr, &der, certificateDer.size()), X509_free);
+    BioPtr keyBio(BIO_new_mem_buf(keyPem.constData(), keyPem.size()), BIO_free);
+    OpenSslPtr<EVP_PKEY, EVP_PKEY_free> key(
+        keyBio ? PEM_read_bio_PrivateKey(keyBio.get(), nullptr, nullptr, nullptr) : nullptr,
+        EVP_PKEY_free);
+    if (!x509 || !key || EVP_PKEY_base_id(key.get()) != EVP_PKEY_EC) {
+        result.error = QStringLiteral("The stored Host identity does not use the expected EC key.");
+        return result;
+    }
+    char groupName[80]{};
+    size_t groupNameLength = 0;
+    if (EVP_PKEY_get_group_name(key.get(), groupName, sizeof(groupName), &groupNameLength) != 1
+        || OBJ_txt2nid(groupName) != NID_X9_62_prime256v1) {
+        result.error = QStringLiteral("The stored Host identity does not use the expected P-256 key.");
+        return result;
+    }
+    if (X509_check_private_key(x509.get(), key.get()) != 1) {
+        result.error = QStringLiteral("The stored Host certificate and private key do not match.");
+        return result;
+    }
+    result.success = true;
+    result.fingerprint = fingerprint(certificate);
+    return result;
+}
 
 QString BrickSuiteHostIdentity::certificatePath()
 {
@@ -108,19 +161,26 @@ BrickSuiteHostIdentity::Result BrickSuiteHostIdentity::generateEphemeral()
     return generate(false);
 }
 
+#ifdef BRICKSUITE_TESTING
+BrickSuiteHostIdentity::Result BrickSuiteHostIdentity::generateEphemeralForTesting(
+    qint64 notBeforeOffsetSeconds, qint64 notAfterOffsetSeconds)
+{
+    return generate(false, notBeforeOffsetSeconds, notAfterOffsetSeconds);
+}
+#endif
+
 BrickSuiteHostIdentity::Result BrickSuiteHostIdentity::createAndPersist()
 {
     return generate(true);
 }
 
-BrickSuiteHostIdentity::Result BrickSuiteHostIdentity::generate(bool persist)
+BrickSuiteHostIdentity::Result BrickSuiteHostIdentity::generate(
+    bool persist, qint64 notBeforeOffsetSeconds, qint64 notAfterOffsetSeconds)
 {
     Result result;
     using KeyCtxPtr = OpenSslPtr<EVP_PKEY_CTX, EVP_PKEY_CTX_free>;
     using KeyPtr = OpenSslPtr<EVP_PKEY, EVP_PKEY_free>;
     using CertPtr = OpenSslPtr<X509, X509_free>;
-    using BioPtr = std::unique_ptr<BIO, decltype(&BIO_free)>;
-
     KeyCtxPtr context(EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr), EVP_PKEY_CTX_free);
     EVP_PKEY* generated = nullptr;
     if (!context || EVP_PKEY_keygen_init(context.get()) != 1
@@ -142,8 +202,8 @@ BrickSuiteHostIdentity::Result BrickSuiteHostIdentity::generate(bool persist)
     OpenSslPtr<ASN1_INTEGER, ASN1_INTEGER_free> asnSerial(
         serialNumber ? BN_to_ASN1_INTEGER(serialNumber.get(), nullptr) : nullptr, ASN1_INTEGER_free);
     if (!asnSerial || X509_set_serialNumber(certificate.get(), asnSerial.get()) != 1
-        || !X509_gmtime_adj(X509_getm_notBefore(certificate.get()), -300)
-        || !X509_gmtime_adj(X509_getm_notAfter(certificate.get()), 10L * 365L * 24L * 60L * 60L)
+        || !X509_gmtime_adj(X509_getm_notBefore(certificate.get()), notBeforeOffsetSeconds)
+        || !X509_gmtime_adj(X509_getm_notAfter(certificate.get()), notAfterOffsetSeconds)
         || X509_set_pubkey(certificate.get(), key.get()) != 1) {
         result.error = QStringLiteral("Unable to initialize the Host TLS certificate.");
         return result;
