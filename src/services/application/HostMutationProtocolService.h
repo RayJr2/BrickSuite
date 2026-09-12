@@ -14,6 +14,7 @@ class HostMutationProtocolService : public QObject
 public:
     explicit HostMutationProtocolService(const QString& databasePath,
                                           HostWriteExecutor::Publisher publisher = {},
+                                          const QString& dataEpoch = QString(),
                                           QObject* parent = nullptr);
     HostWriteExecutor& executor();
 
@@ -27,4 +28,5 @@ public:
 
 private:
     HostWriteExecutor m_executor;
+    QString m_dataEpoch;
 };

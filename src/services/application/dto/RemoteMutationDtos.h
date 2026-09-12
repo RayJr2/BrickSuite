@@ -14,6 +14,7 @@ struct Metadata {
     QString mutationId;
     QJsonObject expected;
     QJsonObject mutation;
+    QString dataEpoch;
 };
 
 struct RequestContext {

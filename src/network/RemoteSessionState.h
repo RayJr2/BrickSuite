@@ -21,6 +21,8 @@ public:
     explicit RemoteSessionState(QObject* parent = nullptr);
 
     QString hostIdentity() const;
+    QString dataEpoch() const;
+    bool dataEpochSupported() const;
     quint64 sessionGeneration() const;
     quint64 workspaceGeneration() const;
     int workspaceId() const;
@@ -34,6 +36,8 @@ public:
 
 public slots:
     void authenticated(const QString& verifiedFingerprint);
+    void authenticatedWithEpoch(const QString& verifiedFingerprint,
+                                const QString& dataEpoch, bool epochSupported);
     void disconnected();
     void setWorkspaceId(int workspaceId);
     void markCurrent();
@@ -47,12 +51,15 @@ signals:
     void dataStateChanged(RemoteSessionState::DataState state);
     void operationalStateMustClear();
     void operationalStateShouldRefresh();
+    void dataEpochChanged();
 
 private:
     void setDataState(DataState state);
     void advanceWorkspaceGeneration(int workspaceId);
 
     QString m_hostIdentity;
+    QString m_dataEpoch;
+    bool m_dataEpochSupported = false;
     quint64 m_sessionGeneration = 0;
     quint64 m_workspaceGeneration = 0;
     int m_workspaceId = 0;

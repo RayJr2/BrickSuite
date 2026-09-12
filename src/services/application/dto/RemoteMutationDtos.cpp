@@ -39,22 +39,28 @@ bool parseMetadata(const QJsonObject& payload, Metadata* result, Error* error)
         "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"));
     const double workspace = payload.value(QStringLiteral("workspaceId")).toDouble(-1);
     const QString mutationId = payload.value(QStringLiteral("mutationId")).toString();
-    bool fieldsValid = payload.size() == 4;
+    const bool epochPresent = payload.contains(QStringLiteral("dataEpoch"));
+    const QString dataEpoch = payload.value(QStringLiteral("dataEpoch")).toString();
+    bool fieldsValid = payload.size() == (epochPresent ? 5 : 4);
     for (auto it = payload.constBegin(); it != payload.constEnd(); ++it)
         fieldsValid = fieldsValid && (it.key() == QStringLiteral("workspaceId")
             || it.key() == QStringLiteral("mutationId")
+            || it.key() == QStringLiteral("dataEpoch")
             || it.key() == QStringLiteral("expected")
             || it.key() == QStringLiteral("mutation"));
     if (!result || !fieldsValid || workspace < 1 || workspace > 9007199254740991.0
         || workspace != std::floor(workspace) || !uuid.match(mutationId).hasMatch()
         || !payload.value(QStringLiteral("expected")).isObject()
-        || !payload.value(QStringLiteral("mutation")).isObject()) {
+        || !payload.value(QStringLiteral("mutation")).isObject()
+        || (epochPresent && (!payload.value(QStringLiteral("dataEpoch")).isString()
+                             || !uuid.match(dataEpoch).hasMatch()))) {
         if (error) *error = {QStringLiteral("INVALID_ARGUMENT"),
             QStringLiteral("The mutation metadata is invalid."), false};
         return false;
     }
     result->workspaceId = static_cast<qint64>(workspace);
     result->mutationId = mutationId.toLower();
+    result->dataEpoch = dataEpoch.toLower();
     result->expected = payload.value(QStringLiteral("expected")).toObject();
     result->mutation = payload.value(QStringLiteral("mutation")).toObject();
     return true;

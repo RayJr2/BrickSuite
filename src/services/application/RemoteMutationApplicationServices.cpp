@@ -20,6 +20,19 @@ QString RemoteMutationApplicationServices::submit(
     std::function<void(const RemoteMutationDto::Result&)> completion,
     std::function<void(const RemoteMutationDto::Error&)> failure)
 {
+    const QString epoch = m_client.dataEpochSupported() ? m_client.dataEpoch() : QString();
+    const auto retainedEpoch = m_epochByUnknownMutation.constFind(metadata.mutationId);
+    if (retainedEpoch != m_epochByUnknownMutation.constEnd() && *retainedEpoch != epoch) {
+        if (failure) {
+            RemoteMutationDto::Error error{
+                QStringLiteral("STALE_DATA_EPOCH"),
+                QStringLiteral("The Host database has changed. This uncertain request cannot be retried safely."),
+                false, RemoteMutationDto::Outcome::DefinitiveFailure};
+            error.mutationId = metadata.mutationId;
+            failure(error);
+        }
+        return {};
+    }
     if (!isAvailableFor(operation, capability)) {
         if (failure) {
             const bool maintenance = m_client.status().state
@@ -36,12 +49,14 @@ QString RemoteMutationApplicationServices::submit(
         }
         return {};
     }
-    const QJsonObject payload{{QStringLiteral("workspaceId"), metadata.workspaceId},
+    m_epochByUnknownMutation.insert(metadata.mutationId, epoch);
+    QJsonObject payload{{QStringLiteral("workspaceId"), metadata.workspaceId},
                               {QStringLiteral("mutationId"), metadata.mutationId},
                               {QStringLiteral("expected"), metadata.expected},
                               {QStringLiteral("mutation"), metadata.mutation}};
+    if (!epoch.isEmpty()) payload.insert(QStringLiteral("dataEpoch"), epoch);
     return m_client.sendRequest(operation, payload, context,
-        [operation, mutationId=metadata.mutationId, completion, failure](const QJsonObject& json) {
+        [this, operation, mutationId=metadata.mutationId, completion, failure](const QJsonObject& json) {
             qDebug() << "Remote mutation response received" << operation << mutationId.left(8);
             RemoteMutationDto::Result result;
             RemoteMutationDto::Error error;
@@ -60,15 +75,17 @@ QString RemoteMutationApplicationServices::submit(
                            << operation << mutationId.left(8);
                 if (failure) failure(error);
             } else {
+                m_epochByUnknownMutation.remove(mutationId);
                 qDebug() << "Remote mutation response decoded" << operation
                          << mutationId.left(8) << "replayed" << result.replayed;
                 if (completion) completion(result);
             }
         },
-        [operation, failure, mutationId=metadata.mutationId](const BrickSuiteProtocol::Error& error) {
-            if (!failure) return;
+        [this, operation, failure, mutationId=metadata.mutationId](const BrickSuiteProtocol::Error& error) {
             const bool unknown = error.code == QStringLiteral("TIMEOUT")
                                  || error.code == QStringLiteral("DISCONNECTED");
+            if (!unknown) m_epochByUnknownMutation.remove(mutationId);
+            if (!failure) return;
             RemoteMutationDto::Error mapped{error.code, error.message, error.retryable,
                 unknown ? RemoteMutationDto::Outcome::Unknown
                         : RemoteMutationDto::Outcome::DefinitiveFailure};

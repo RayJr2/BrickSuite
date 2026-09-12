@@ -72,6 +72,8 @@
 #include "reference/ReferenceDataDialog.h"
 #include "database/DatabaseStatusDialog.h"
 #include "../services/database/AutomaticBackupService.h"
+#include "../services/database/DatabaseFileValidator.h"
+#include "../services/database/DatabaseRestoreCoordinator.h"
 #include "../services/storage/SessionStorageSelectionService.h"
 #include "../services/application/ApplicationServices.h"
 #include "../services/application/RemoteReadApplicationServices.h"
@@ -81,6 +83,7 @@
 #include "../network/BrickSuiteWebSocketClient.h"
 #include "../network/BrickSuiteHostIdentity.h"
 #include "../network/RemoteSessionState.h"
+#include "../network/HostDataEpoch.h"
 #include "../services/application/RemoteRefreshCoordinator.h"
 #include "../services/application/HostMutationPublicationService.h"
 #include "../network/OperationalInvalidationPublisher.h"
@@ -88,6 +91,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDebug>
@@ -200,6 +204,12 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             m_workspaceList->clear();
             m_workspaceList->addItem(QStringLiteral("Select a Workspace from the new BrickSuite Host."));
             m_workspaceList->setEnabled(false);
+        });
+        connect(session, &RemoteSessionState::dataEpochChanged, this, [this, session] {
+            UserSettings::instance().clearRememberedHostWorkspace(session->hostIdentity());
+            statusBar()->showMessage(
+                QStringLiteral("The BrickSuite Host database was restored or replaced. Shared data is being reloaded."),
+                15000);
         });
     }
 
@@ -781,6 +791,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     });
 
     connect(m_restoreDatabaseAction, &QAction::triggered, this, [this]() {
+        if (!m_databaseRestoreCoordinator || m_databaseRestoreCoordinator->isRunning())
+            return;
         const QString backupPath = QFileDialog::getOpenFileName(this,
                                                                 "Restore BrickSuite Database",
                                                                 QString(),
@@ -793,14 +805,17 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         // Verify the selected backup before asking
         // the user to confirm the restore.
         //
-        QString verificationError;
-
-        if (!DatabaseManager::instance().verifyDatabaseBackup(backupPath, &verificationError)) {
+        const auto validation = DatabaseFileValidator::validate(backupPath);
+        const QString restoreStateDirectory = HostDataEpoch::storageDirectory();
+        if (!validation.valid || DatabaseRestoreTransaction::isControlledRestoreArtifact(
+                backupPath, DatabaseManager::instance().databasePath(), restoreStateDirectory)) {
             QMessageBox::critical(this,
                                   "BrickSuite Database Restore",
                                   QString("The selected backup is not a valid "
                                           "BrickSuite database.\n\n%1")
-                                      .arg(verificationError));
+                                      .arg(validation.valid
+                                          ? QStringLiteral("The current live database or a BrickSuite-controlled Restore artifact cannot be selected.")
+                                          : validation.message));
 
             return;
         }
@@ -822,76 +837,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         if (response != QMessageBox::Yes)
             return;
 
-        //
-        // Clear the current workspace before replacing
-        // the underlying database.
-        //
-        m_workspaceContext.clearCurrentWorkspace();
-        m_sessionStorageSelectionService.clearAll();
-
-        QString restoreError;
-
-        if (!DatabaseManager::instance().restoreDatabase(backupPath, &restoreError)) {
-            //
-            // Reload the workspace list from whichever
-            // database DatabaseManager recovered to.
-            //
-            loadWorkspaces();
-
-            QMessageBox::critical(this,
-                                  "BrickSuite Database Restore",
-                                  QString("The database could not be restored.\n\n%1")
-                                      .arg(restoreError));
-
-            return;
-        }
-
-        //
-        // The restored database is now open.
-        //
-        // Clear any details left from the old workspace
-        // before reloading the workspace list.
-        //
-        m_nameEdit->clear();
-        m_descriptionEdit->clear();
-
-        loadWorkspaces();
-
-        //
-        // loadWorkspaces() may select the user's saved
-        // default workspace or the only workspace.
-        //
-        // That selection will cause workspaceSelected()
-        // to update WorkspaceContext, which in turn
-        // refreshes widgets listening to
-        // currentWorkspaceChanged().
-        //
-        if (!m_workspaceList->currentItem()) {
-            m_workspaceContext.clearCurrentWorkspace();
-
-            //
-            // Explicit refresh for widgets that do not
-            // depend solely on workspace selection.
-            //
-            if (m_partsCatalogWidget) {
-                m_partsCatalogWidget->settingsChanged();
-            }
-
-            if (m_myInventoryWidget) {
-                m_myInventoryWidget->refresh();
-            }
-        }
-
-        QMessageBox::information(this,
-                                 "BrickSuite Database Restore",
-                                 QString("Database restored successfully.\n\n"
-                                         "Source backup:\n%1")
-                                     .arg(backupPath));
-
-        statusBar()->showMessage("Database restored successfully.", 5000);
-
-        if (m_databaseStatusDialog)
-            m_databaseStatusDialog->close();
+        setEnabled(false);
+        statusBar()->showMessage(QStringLiteral("Preparing database Restore..."));
+        m_databaseRestoreCoordinator->start(backupPath);
     });
 
     // Edit menu
@@ -1995,6 +1943,50 @@ void MainWindow::setAutomaticBackupService(AutomaticBackupService* service)
                     "Database backup completed and verified, but retention cleanup was incomplete. "
                     "See Settings or Application Log.", 15000);
             });
+}
+
+void MainWindow::setDatabaseRestoreCoordinator(DatabaseRestoreCoordinator* coordinator)
+{
+    m_databaseRestoreCoordinator = coordinator;
+    if (!coordinator) return;
+    connect(coordinator, &DatabaseRestoreCoordinator::phaseChanged, this,
+            [this](const QString& message) { statusBar()->showMessage(message); });
+    connect(coordinator, &DatabaseRestoreCoordinator::localQuiesceRequired, this, [this] {
+        m_workspaceContext.clearCurrentWorkspace();
+        m_sessionStorageSelectionService.clearAll();
+        if (m_backgroundPartColorImageCacheService)
+            m_backgroundPartColorImageCacheService->stop();
+        if (m_partExternalIdEnrichmentService) {
+            delete m_partExternalIdEnrichmentService;
+            m_partExternalIdEnrichmentService = nullptr;
+        }
+        if (m_databaseStatusDialog) m_databaseStatusDialog->close();
+    });
+    connect(coordinator, &DatabaseRestoreCoordinator::finished, this,
+            [this](const DatabaseRestoreTransaction::Result& result) {
+        if (result.success) {
+            QMessageBox::information(
+                this, QStringLiteral("BrickSuite Database Restore"),
+                QStringLiteral("Restore completed successfully. BrickSuite must restart before the restored database can be used.\n\nSafety backup:\n%1")
+                    .arg(result.safetyBackupPath));
+        } else if (result.restartRequired) {
+            QMessageBox::critical(
+                this, QStringLiteral("BrickSuite Database Restore"),
+                QStringLiteral("The database Restore did not complete. BrickSuite will close so database services cannot continue in an uncertain generation.\n\n%1\n\nSafety backup:\n%2")
+                    .arg(result.error, result.safetyBackupPath));
+        } else {
+            QMessageBox::critical(
+                this, QStringLiteral("BrickSuite Database Restore"),
+                QStringLiteral("The database Restore was not started. The current database remains in use.\n\n%1")
+                    .arg(result.error));
+        }
+        if (result.success || result.restartRequired) {
+            QCoreApplication::quit();
+        } else {
+            setEnabled(true);
+            statusBar()->showMessage(QStringLiteral("Database Restore was not started."), 5000);
+        }
+    });
 }
 
 void MainWindow::initializeProviderStatuses()

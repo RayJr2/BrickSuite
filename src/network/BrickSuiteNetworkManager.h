@@ -3,6 +3,7 @@
 #include "BrickSuiteConnectionState.h"
 
 #include <QObject>
+#include <functional>
 #include <memory>
 
 class BrickSuiteWebSocketClient;
@@ -32,6 +33,7 @@ public:
     void startConfiguredMode();
     bool restartServer(QString* error = nullptr);
     void stop();
+    void quiesceForDatabaseRestore(std::function<void(bool, const QString&)> completion);
     BrickSuiteWebSocketServer* server() const;
     BrickSuiteWebSocketClient* client() const;
     RemoteReadApplicationServices* remoteReads() const;

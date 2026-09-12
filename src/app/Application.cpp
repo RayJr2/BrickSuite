@@ -24,6 +24,9 @@
 #include "WorkspaceContext.h"
 
 #include "../database/DatabaseManager.h"
+#include "../network/HostDataEpoch.h"
+#include "../services/database/DatabaseRestoreTransaction.h"
+#include "../services/database/DatabaseRestoreCoordinator.h"
 #include "../services/ReferenceDataSeeder.h"
 #include "../services/database/AutomaticBackupService.h"
 #include "../services/storage/SessionStorageSelectionService.h"
@@ -34,6 +37,7 @@
 
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QMessageBox>
 
 Application::Application() = default;
@@ -50,6 +54,24 @@ bool Application::initialize(const StartupProgress& progress)
         if (progress) progress(stage, message);
     };
     report(1, QStringLiteral("Initializing database..."));
+    const QString epochDirectory = HostDataEpoch::storageDirectory();
+    if (QFile::exists(DatabaseRestoreTransaction::journalPath(epochDirectory))) {
+        const auto recovery = DatabaseRestoreTransaction::recoverAtStartup(
+            DatabaseManager::instance().databasePath(), epochDirectory, epochDirectory);
+        if (!recovery.success) {
+            QMessageBox::critical(nullptr, "BrickSuite Database Recovery",
+                                  QStringLiteral("BrickSuite cannot safely open the database because an interrupted Restore could not be resolved.\n\n%1")
+                                      .arg(recovery.error));
+            return false;
+        }
+    }
+    const HostDataEpoch::LoadResult epoch = HostDataEpoch::loadOrBootstrap(epochDirectory);
+    if (!epoch.success) {
+        QMessageBox::critical(nullptr, "BrickSuite",
+                              QStringLiteral("Unable to establish the Host database identity.\n\n%1")
+                                  .arg(epoch.error));
+        return false;
+    }
     if (!DatabaseManager::instance().initialize())
     {
         QMessageBox::critical(
@@ -108,6 +130,9 @@ bool Application::initialize(const StartupProgress& progress)
     phaseTimer.restart();
     m_automaticBackupService = std::make_unique<AutomaticBackupService>();
     m_mainWindow->setAutomaticBackupService(m_automaticBackupService.get());
+    m_databaseRestoreCoordinator = std::make_unique<DatabaseRestoreCoordinator>(
+        *m_networkManager, *m_automaticBackupService);
+    m_mainWindow->setDatabaseRestoreCoordinator(m_databaseRestoreCoordinator.get());
     m_mainWindow->show();
 
     m_automaticBackupService->start();

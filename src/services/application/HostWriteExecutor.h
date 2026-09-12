@@ -42,6 +42,7 @@ public:
     bool isIdle() const;
     void stopAccepting();
     void startAccepting();
+    void closeConnectionAsync(std::function<void(bool, const QString&)> completion);
     QString connectionName() const;
     void enqueue(const RemoteMutationDto::RequestContext& context, const QString& requestHash,
                  Mutation mutation, QObject* callbackContext,
@@ -51,6 +52,7 @@ public:
 signals:
     void activityChanged();
     void drained();
+    void connectionClosed(bool success, const QString& error);
 
 private:
     class Worker;

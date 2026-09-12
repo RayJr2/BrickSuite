@@ -5,6 +5,7 @@
 #include "BrickSuiteWebSocketServer.h"
 #include "RemoteSessionState.h"
 #include "OperationalInvalidationPublisher.h"
+#include "HostDataEpoch.h"
 #include "../database/DatabaseManager.h"
 #include "../services/application/HostReadProtocolService.h"
 #include "../services/application/RemoteReadApplicationServices.h"
@@ -24,6 +25,8 @@
 #include "../services/application/RemoteBuildMutationApplicationService.h"
 #include "../services/application/HostMutationPublicationService.h"
 #include "../services/application/HostMaintenanceCoordinator.h"
+#include "../services/application/HostReadExecutor.h"
+#include "../services/application/HostWriteExecutor.h"
 #include "../services/CredentialStore.h"
 #include "../settings/UserSettings.h"
 
@@ -39,6 +42,13 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     , m_server(new BrickSuiteWebSocketServer(this))
     , m_client(new BrickSuiteWebSocketClient(this))
 {
+    const HostDataEpoch::LoadResult epoch = HostDataEpoch::loadExisting();
+    if (epoch.success) {
+        m_server->operationDispatcher().setDataEpoch(epoch.epoch);
+    } else {
+        m_serverError = epoch.error;
+        qCritical().noquote() << "BrickSuite Host disabled:" << m_serverError;
+    }
     m_remoteSession = std::make_unique<RemoteSessionState>(this);
     m_invalidationPublisher = std::make_unique<OperationalInvalidationPublisher>(*m_server, this);
     m_remoteReads = std::make_unique<RemoteReadApplicationServices>(*m_client,
@@ -94,7 +104,7 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
                         scope.inventoryChanged, scope.collectionChanged,
                         workflow != HostMutationPublicationService::Workflow::BuildMetadata);
             }, Qt::QueuedConnection);
-        }, this);
+        }, epoch.success ? epoch.epoch : QString(), this);
     m_hostMutations->registerOperation(m_server->operationDispatcher(),
         QStringLiteral("builds.pulling.record"), QStringLiteral("builds.pulling.write"),
         &HostPullingMutationService::createMutation);
@@ -123,8 +133,8 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
             this, &BrickSuiteNetworkManager::statusChanged);
     connect(m_client, &BrickSuiteWebSocketClient::statusChanged,
             this, [this](const BrickSuiteConnectionStatus&) { emit statusChanged(); });
-    connect(m_client, &BrickSuiteWebSocketClient::authenticatedSessionEstablished,
-            m_remoteSession.get(), &RemoteSessionState::authenticated);
+    connect(m_client, &BrickSuiteWebSocketClient::authenticatedSessionEstablishedWithEpoch,
+            m_remoteSession.get(), &RemoteSessionState::authenticatedWithEpoch);
     connect(m_client, &BrickSuiteWebSocketClient::authenticatedSessionLost,
             m_remoteSession.get(), &RemoteSessionState::disconnected);
     connect(m_client, &BrickSuiteWebSocketClient::invalidationReceived, this,
@@ -166,6 +176,13 @@ bool BrickSuiteNetworkManager::restartServer(QString* error)
 {
     UserSettings& settings = UserSettings::instance();
     m_server->stop();
+    const HostDataEpoch::LoadResult epoch = HostDataEpoch::loadExisting();
+    if (!epoch.success) {
+        m_serverError = epoch.error;
+        if (error) *error = m_serverError;
+        return false;
+    }
+    m_server->operationDispatcher().setDataEpoch(epoch.epoch);
     m_serverError.clear();
     if (!settings.brickSuiteServerEnabled()) return true;
     if (settings.sharedDataSource() != SharedDataSource::ThisComputer) {
@@ -200,6 +217,60 @@ void BrickSuiteNetworkManager::stop()
     if (m_maintenanceCoordinator) m_maintenanceCoordinator->beginShutdown();
     m_client->disconnectFromHost();
     m_server->stop();
+}
+
+void BrickSuiteNetworkManager::quiesceForDatabaseRestore(
+    std::function<void(bool, const QString&)> completion)
+{
+    if (!m_maintenanceCoordinator || !m_hostReads || !m_hostMutations) {
+        if (completion) completion(false, QStringLiteral("Host database services are unavailable."));
+        return;
+    }
+    auto closeWorkers = [this, completion = std::move(completion)]() mutable {
+        m_maintenanceCoordinator->beginShutdown();
+        m_client->disconnectFromHost();
+        m_server->stop();
+        struct State { int remaining = 2; bool success = true; QStringList errors; };
+        auto state = std::make_shared<State>();
+        auto closed = [state, completion](bool success, const QString& error) mutable {
+            state->success = state->success && success;
+            if (!error.isEmpty()) state->errors.append(error);
+            if (--state->remaining == 0 && completion)
+                completion(state->success, state->errors.join(QLatin1Char('\n')));
+        };
+        m_hostReads->executor().closeConnectionAsync(closed);
+        m_hostMutations->executor().closeConnectionAsync(closed);
+    };
+
+    if (m_maintenanceCoordinator->state() == HostMaintenanceCoordinator::State::Maintenance) {
+        closeWorkers();
+        return;
+    }
+    if (m_maintenanceCoordinator->state() != HostMaintenanceCoordinator::State::Normal) {
+        if (completion) completion(false, QStringLiteral("Host Maintenance is already changing state."));
+        return;
+    }
+    auto connection = std::make_shared<QMetaObject::Connection>();
+    *connection = connect(m_maintenanceCoordinator.get(),
+                          &HostMaintenanceCoordinator::stateChanged, this,
+                          [this, connection, closeWorkers](HostMaintenanceCoordinator::State state) mutable {
+        if (state != HostMaintenanceCoordinator::State::Maintenance) return;
+        disconnect(*connection);
+        closeWorkers();
+    });
+    auto failureConnection = std::make_shared<QMetaObject::Connection>();
+    *failureConnection = connect(m_maintenanceCoordinator.get(),
+        &HostMaintenanceCoordinator::maintenanceEntryFailed, this,
+        [this, connection, failureConnection, completion](const QString& error) mutable {
+            disconnect(*connection);
+            disconnect(*failureConnection);
+            if (completion) completion(false, error);
+        });
+    if (!m_maintenanceCoordinator->requestEnterMaintenance()) {
+        disconnect(*connection);
+        disconnect(*failureConnection);
+        if (completion) completion(false, QStringLiteral("Host Maintenance could not be started."));
+    }
 }
 
 BrickSuiteWebSocketServer* BrickSuiteNetworkManager::server() const { return m_server; }

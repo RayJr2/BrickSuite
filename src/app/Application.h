@@ -33,6 +33,7 @@ class AutomaticBackupService;
 class SessionStorageSelectionService;
 class ApplicationServices;
 class BrickSuiteNetworkManager;
+class DatabaseRestoreCoordinator;
 
 class Application
 {
@@ -52,4 +53,5 @@ private:
     std::unique_ptr<MainWindow> m_mainWindow;
     std::unique_ptr<AutomaticBackupService> m_automaticBackupService;
     std::unique_ptr<BrickSuiteNetworkManager> m_networkManager;
+    std::unique_ptr<DatabaseRestoreCoordinator> m_databaseRestoreCoordinator;
 };

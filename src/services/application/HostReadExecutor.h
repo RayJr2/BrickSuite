@@ -31,6 +31,7 @@ public:
     bool isIdle() const;
     void stopAccepting();
     void startAccepting();
+    void closeConnectionAsync(std::function<void(bool, const QString&)> completion);
     void shutdown();
 
     using ErrorCallback = std::function<void(const QString&)>;
@@ -132,6 +133,7 @@ public:
 signals:
     void activityChanged();
     void drained();
+    void connectionClosed(bool success, const QString& error);
 
 private:
     class Worker;

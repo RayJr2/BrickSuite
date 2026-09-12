@@ -3,6 +3,8 @@
 
 #include <QCoreApplication>
 #include <QDebug>
+#include <QSettings>
+#include <QTemporaryDir>
 
 namespace {
 bool check(bool condition, const char* message)
@@ -15,6 +17,10 @@ bool check(bool condition, const char* message)
 int main(int argc, char* argv[])
 {
     QCoreApplication application(argc, argv);
+    QTemporaryDir settingsDirectory;
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDirectory.path());
+    QSettings().clear();
     RemoteSessionState state;
     int restored = 0;
     int clears = 0;
@@ -83,6 +89,33 @@ int main(int argc, char* argv[])
     state.setWorkspaceId(10);
     ok &= check(!state.accepts(workspaceNine),
                 "An obsolete Workspace result must not be accepted.");
+
+    RemoteSessionState epochState;
+    int epochClears = 0;
+    int epochChanges = 0;
+    QObject::connect(&epochState, &RemoteSessionState::operationalStateMustClear,
+                     [&] { ++epochClears; });
+    QObject::connect(&epochState, &RemoteSessionState::dataEpochChanged,
+                     [&] { ++epochChanges; });
+    const QString epochA = QStringLiteral("11111111-1111-4111-8111-111111111111");
+    const QString epochB = QStringLiteral("22222222-2222-4222-8222-222222222222");
+    epochState.authenticatedWithEpoch(hostA, epochA, true);
+    epochState.setWorkspaceId(21);
+    epochState.disconnected();
+    epochState.authenticatedWithEpoch(hostA, epochA, true);
+    ok &= check(epochState.workspaceId() == 21 && epochClears == 1
+                    && epochChanges == 0 && epochState.dataEpoch() == epochA,
+                "First epoch-aware bootstrap clears legacy context and same-epoch reconnect preserves it.");
+    epochState.disconnected();
+    epochState.authenticatedWithEpoch(hostA, epochB, true);
+    ok &= check(epochState.workspaceId() == 0 && epochClears == 2
+                    && epochChanges == 1 && epochState.dataEpoch() == epochB,
+                "Same Host with changed epoch clears all operational identity context.");
+
+    RemoteSessionState legacyState;
+    legacyState.authenticatedWithEpoch(hostA, QString(), false);
+    ok &= check(!legacyState.dataEpochSupported() && legacyState.isAuthenticated(),
+                "Protocol 1.2 Host without data epoch remains a supported legacy session.");
 
     WorkspaceContext context;
     const quint64 initialWorkspaceGeneration = context.generation();

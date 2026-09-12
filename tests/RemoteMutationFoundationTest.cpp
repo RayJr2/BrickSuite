@@ -235,7 +235,8 @@ int main(int argc, char** argv)
 
     // Exercise the actual protocol registration gate; production registers no mutation operation yet.
     {
-        HostMutationProtocolService protocol(path);
+        const QString hostEpoch = QStringLiteral("11111111-1111-4111-8111-111111111111");
+        HostMutationProtocolService protocol(path, {}, hostEpoch);
         BrickSuiteOperationDispatcher dispatcher;
         protocol.registerInternalOperation(dispatcher, QStringLiteral("test.mutation"),
             QStringLiteral("test.mutation.write"), mutation);
@@ -259,6 +260,13 @@ int main(int argc, char** argv)
         dispatcher.dispatchAsync(request, true, [&](auto value){ response=value; });
         if (!check(response.error.code==QStringLiteral("FORBIDDEN"),
                    "protocol 1.1 mutation rejected")) return 1;
+        request.protocolMinor = 2;
+        request.payload.insert(QStringLiteral("dataEpoch"),
+                               QStringLiteral("22222222-2222-4222-8222-222222222222"));
+        dispatcher.dispatchAsync(request, true, [&](auto value){ response=value; });
+        if (!check(response.error.code == QStringLiteral("STALE_DATA_EPOCH")
+                       && !response.error.retryable,
+                   "stale data epoch is rejected before mutation execution")) return 1;
     }
 
     // A Host-local exclusive writer causes a bounded, retryable BUSY result.

@@ -1,6 +1,7 @@
 #include "RemoteSessionState.h"
 
 #include <QDebug>
+#include <QSettings>
 
 namespace {
 QString normalizedFingerprint(const QString& value)
@@ -18,6 +19,8 @@ QString normalizedFingerprint(const QString& value)
 RemoteSessionState::RemoteSessionState(QObject* parent) : QObject(parent) {}
 
 QString RemoteSessionState::hostIdentity() const { return m_hostIdentity; }
+QString RemoteSessionState::dataEpoch() const { return m_dataEpoch; }
+bool RemoteSessionState::dataEpochSupported() const { return m_dataEpochSupported; }
 quint64 RemoteSessionState::sessionGeneration() const { return m_sessionGeneration; }
 quint64 RemoteSessionState::workspaceGeneration() const { return m_workspaceGeneration; }
 int RemoteSessionState::workspaceId() const { return m_workspaceId; }
@@ -52,24 +55,45 @@ bool RemoteSessionState::acceptsEvent(
 
 void RemoteSessionState::authenticated(const QString& verifiedFingerprint)
 {
+    authenticatedWithEpoch(verifiedFingerprint, QString(), false);
+}
+
+void RemoteSessionState::authenticatedWithEpoch(const QString& verifiedFingerprint,
+                                                const QString& dataEpoch,
+                                                bool epochSupported)
+{
     const QString identity = normalizedFingerprint(verifiedFingerprint);
     if (identity.isEmpty()) return;
 
     const bool hadSession = m_hadAuthenticatedSession;
     const bool sameHost = !m_hostIdentity.isEmpty() && identity == m_hostIdentity;
     const bool changedHost = !m_hostIdentity.isEmpty() && !sameHost;
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("BrickSuiteNetwork/RetainedDataEpoch"));
+    const bool retainedPresent = settings.contains(identity);
+    const QString retainedEpoch = settings.value(identity).toString();
+    const bool changedEpoch = epochSupported
+        && (!retainedPresent || retainedEpoch != dataEpoch);
+    const bool lostEpochSupport = !epochSupported && !retainedEpoch.isEmpty();
+    if (epochSupported) settings.setValue(identity, dataEpoch);
+    settings.endGroup();
     ++m_sessionGeneration;
     m_authenticated = true;
     m_hadAuthenticatedSession = true;
 
-    if (changedHost) {
+    if (changedHost || changedEpoch || lostEpochSupport) {
         m_hostIdentity = identity;
+        m_dataEpoch = dataEpoch;
+        m_dataEpochSupported = epochSupported;
         advanceWorkspaceGeneration(0);
         setDataState(DataState::NeverLoaded);
         emit hostIdentityChanged();
         emit operationalStateMustClear();
+        if (changedEpoch && retainedPresent) emit dataEpochChanged();
     } else {
         m_hostIdentity = identity;
+        m_dataEpoch = dataEpoch;
+        m_dataEpochSupported = epochSupported;
     }
 
     qDebug().noquote() << "Remote session generation" << m_sessionGeneration
@@ -77,7 +101,7 @@ void RemoteSessionState::authenticated(const QString& verifiedFingerprint)
                        << m_hostIdentity.left(12);
 
     emit authenticatedSessionEstablished(sameHost);
-    if (hadSession && sameHost) {
+    if (hadSession && sameHost && !changedEpoch && !lostEpochSupport) {
         emit sameHostSessionRestored();
         emit operationalStateShouldRefresh();
     }

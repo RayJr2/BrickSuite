@@ -11,6 +11,7 @@
 #include <QSslConfiguration>
 #include <QSslError>
 #include <QThread>
+#include <QUuid>
 
 BrickSuiteWebSocketClient::BrickSuiteWebSocketClient(QObject* parent)
     : QObject(parent)
@@ -73,6 +74,8 @@ void BrickSuiteWebSocketClient::connectToHost()
         return;
     }
     m_explicitDisconnect = false;
+    m_dataEpoch.clear();
+    m_dataEpochSupported = false;
     m_reconnectTimer.stop();
     m_connectTimer.start();
     qInfo().noquote() << "Connecting to BrickSuite Host" << m_endpoint.host()
@@ -357,7 +360,18 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
                   QStringLiteral("Authentication succeeded; loading capabilities..."));
         sendRequest(QStringLiteral("system.capabilities"));
     } else if (operation == QStringLiteral("system.capabilities")) {
+        const bool epochPresent = message.payload.contains(QStringLiteral("dataEpoch"));
+        const QString epoch = message.payload.value(QStringLiteral("dataEpoch")).toString();
+        if (epochPresent && (epoch.isEmpty() || QUuid(epoch).isNull()
+            || QUuid(epoch).toString(QUuid::WithoutBraces).compare(epoch, Qt::CaseInsensitive) != 0)) {
+            setStatus(BrickSuiteConnectionState::Error,
+                      QStringLiteral("The Host returned an invalid data epoch."));
+            m_socket.abort();
+            return;
+        }
         m_capabilities = message.payload;
+        m_dataEpochSupported = epochPresent;
+        m_dataEpoch = epoch.toLower();
         m_reconnectAttempt = 0;
         const QSslCertificate certificate = m_socket.sslConfiguration().peerCertificate();
         m_presentedFingerprint = BrickSuiteHostIdentity::fingerprint(certificate);
@@ -372,6 +386,9 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
         qDebug() << "BrickSuite Host secure connection and authentication completed in"
                  << m_connectTimer.elapsed() << "ms.";
         emit authenticatedSessionEstablished(m_presentedFingerprint);
+        emit authenticatedSessionEstablishedWithEpoch(m_presentedFingerprint,
+                                                       m_dataEpoch,
+                                                       m_dataEpochSupported);
         emit testConnectionCompleted(true, m_status.message);
     }
 }

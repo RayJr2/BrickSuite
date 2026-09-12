@@ -52,6 +52,7 @@ class ApplicationServices;
 class BrickSuiteNetworkManager;
 class RemoteReadApplicationServices;
 class RemoteRefreshCoordinator;
+class DatabaseRestoreCoordinator;
 
 class MainWindow : public QMainWindow
 {
@@ -64,6 +65,7 @@ public:
                         BrickSuiteNetworkManager& networkManager,
                         QWidget* parent = nullptr);
     void setAutomaticBackupService(AutomaticBackupService* service);
+    void setDatabaseRestoreCoordinator(DatabaseRestoreCoordinator* coordinator);
 
 signals:
     void remoteWorkspacesRefreshFinished(bool succeeded);
@@ -123,4 +125,5 @@ private:
     QAction* m_applicationLogAction = nullptr;
     AutomaticBackupService* m_automaticBackupService = nullptr;
     PartExternalIdEnrichmentService* m_partExternalIdEnrichmentService = nullptr;
+    DatabaseRestoreCoordinator* m_databaseRestoreCoordinator = nullptr;
 };

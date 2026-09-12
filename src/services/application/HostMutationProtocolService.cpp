@@ -3,8 +3,10 @@
 #include <QDebug>
 
 HostMutationProtocolService::HostMutationProtocolService(
-    const QString& databasePath, HostWriteExecutor::Publisher publisher, QObject* parent)
-    : QObject(parent), m_executor(databasePath, std::move(publisher), this) {}
+    const QString& databasePath, HostWriteExecutor::Publisher publisher,
+    const QString& dataEpoch, QObject* parent)
+    : QObject(parent), m_executor(databasePath, std::move(publisher), this),
+      m_dataEpoch(dataEpoch) {}
 
 HostWriteExecutor& HostMutationProtocolService::executor() { return m_executor; }
 
@@ -26,6 +28,12 @@ void HostMutationProtocolService::registerInternalOperation(
             if (!RemoteMutationDto::parseMetadata(request.payload, &metadata, &error)) {
                 completion(BrickSuiteProtocol::errorResponse(request, error.code, error.message,
                                                               error.retryable));
+                return;
+            }
+            if (!metadata.dataEpoch.isEmpty() && metadata.dataEpoch != m_dataEpoch) {
+                completion(BrickSuiteProtocol::errorResponse(request,
+                    QStringLiteral("STALE_DATA_EPOCH"),
+                    QStringLiteral("The Host database changed before this request could execute.")));
                 return;
             }
             RemoteMutationDto::RequestContext context{operation, metadata.workspaceId,
@@ -66,6 +74,12 @@ void HostMutationProtocolService::registerOperation(
             if (!RemoteMutationDto::parseMetadata(request.payload, &metadata, &error)) {
                 completion(BrickSuiteProtocol::errorResponse(request, error.code, error.message,
                                                               error.retryable));
+                return;
+            }
+            if (!metadata.dataEpoch.isEmpty() && metadata.dataEpoch != m_dataEpoch) {
+                completion(BrickSuiteProtocol::errorResponse(request,
+                    QStringLiteral("STALE_DATA_EPOCH"),
+                    QStringLiteral("The Host database changed before this request could execute.")));
                 return;
             }
             HostWriteExecutor::Mutation mutation = factory(metadata, &error);

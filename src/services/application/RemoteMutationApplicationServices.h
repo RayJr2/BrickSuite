@@ -3,6 +3,7 @@
 #include "dto/RemoteMutationDtos.h"
 
 #include <QObject>
+#include <QHash>
 #include <functional>
 
 class BrickSuiteWebSocketClient;
@@ -20,4 +21,5 @@ public:
 
 private:
     BrickSuiteWebSocketClient& m_client;
+    QHash<QString, QString> m_epochByUnknownMutation;
 };

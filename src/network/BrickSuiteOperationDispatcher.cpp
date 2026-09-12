@@ -55,7 +55,7 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
                                          QStringLiteral("builds.allocateAvailable")})
             addCapability(operation, operation);
         const bool sharedReads = m_operations.contains(QStringLiteral("workspace.list"));
-        return QJsonObject{
+        QJsonObject result{
             {QStringLiteral("brickSuiteVersion"), QStringLiteral(BRICKSUITE_VERSION)},
             {QStringLiteral("protocolMajor"), BrickSuiteProtocol::Major},
             {QStringLiteral("protocolMinor"), BrickSuiteProtocol::Minor},
@@ -65,6 +65,9 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
             {QStringLiteral("catalogStatusAvailable"), false},
             {QStringLiteral("capabilities"), capabilities},
             {QStringLiteral("operations"), names}};
+        if (!m_dataEpoch.isEmpty())
+            result.insert(QStringLiteral("dataEpoch"), m_dataEpoch);
+        return result;
     });
     registerOperation(QStringLiteral("system.ping"), true,
         [](const QJsonObject&) {

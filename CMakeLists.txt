@@ -131,6 +131,9 @@ qt_add_executable(BrickSuite
     src/database/DatabaseSchema.h
     src/database/DatabaseSchema.cpp
 
+    src/network/HostDataEpoch.h
+    src/network/HostDataEpoch.cpp
+
     src/models/Workspace.h
     src/models/Workspace.cpp
 
@@ -179,6 +182,12 @@ qt_add_executable(BrickSuite
     src/services/ReferenceDataSeeder.h
     src/services/database/DatabaseStatusService.h
     src/services/database/DatabaseStatusService.cpp
+    src/services/database/DatabaseFileValidator.h
+    src/services/database/DatabaseFileValidator.cpp
+    src/services/database/DatabaseRestoreTransaction.h
+    src/services/database/DatabaseRestoreTransaction.cpp
+    src/services/database/DatabaseRestoreCoordinator.h
+    src/services/database/DatabaseRestoreCoordinator.cpp
     src/services/database/AutomaticBackupPolicy.h
     src/services/database/AutomaticBackupPolicy.cpp
     src/services/database/AutomaticBackupService.h
@@ -785,7 +794,6 @@ if(BUILD_TESTING)
         src/services/application/HostStorageMutationService.cpp
         src/services/application/HostStorageProtocolMutationService.h
         src/services/application/HostStorageProtocolMutationService.cpp
-        src/services/application/HostWriteExecutor.h
         src/services/application/HostMutationPublicationService.h
         src/services/application/dto/RemoteMutationDtos.h
         src/services/application/dto/RemoteMutationDtos.cpp
@@ -1185,7 +1193,7 @@ if(BUILD_TESTING)
         src/services/parts/PartReferenceManifest.h src/services/parts/PartReferenceManifest.cpp
         src/services/parts/PartReferenceCustomizationService.h src/services/parts/PartReferenceCustomizationService.cpp
         src/services/application/HostPartReferenceMutationService.h src/services/application/HostPartReferenceMutationService.cpp
-        src/services/application/HostWriteExecutor.h src/services/application/HostMutationPublicationService.h
+        src/services/application/HostMutationPublicationService.h
         src/services/application/dto/RemoteMutationDtos.h src/services/application/dto/RemoteMutationDtos.cpp
         src/services/application/dto/RemotePartReferenceMutationDtos.h src/services/application/dto/RemotePartReferenceMutationDtos.cpp)
     target_link_libraries(PartReferenceRemoteMutationTest PRIVATE Qt6::Core Qt6::Sql)
@@ -1621,6 +1629,20 @@ if(BUILD_TESTING)
         src/services/Logger.h src/services/Logger.cpp)
     target_link_libraries(LoggerLevelTest PRIVATE Qt6::Core)
     add_test(NAME LoggerLevel COMMAND LoggerLevelTest)
+
+    qt_add_executable(DatabaseRestoreHardeningTest EXCLUDE_FROM_ALL
+        tests/DatabaseRestoreHardeningTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/network/HostDataEpoch.h src/network/HostDataEpoch.cpp
+        src/services/database/DatabaseFileValidator.h
+        src/services/database/DatabaseFileValidator.cpp
+        src/services/database/DatabaseRestoreTransaction.h
+        src/services/database/DatabaseRestoreTransaction.cpp
+        src/services/database/AutomaticBackupPolicy.h
+        src/services/database/AutomaticBackupPolicy.cpp)
+    target_link_libraries(DatabaseRestoreHardeningTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME DatabaseRestoreHardening COMMAND DatabaseRestoreHardeningTest)
 endif()
 
 if(WIN32)

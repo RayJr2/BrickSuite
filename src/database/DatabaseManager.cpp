@@ -22,6 +22,7 @@
 
 #include "DatabaseManager.h"
 #include "DatabaseSchema.h"
+#include "../services/database/DatabaseFileValidator.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -289,105 +290,16 @@ bool DatabaseManager::verifyDatabaseBackup(const QString& backupPath, QString* e
 
 bool DatabaseManager::verifyBackup(const QString& backupPath, QString* errorMessage)
 {
-    auto setError = [errorMessage](const QString& message) {
-        if (errorMessage)
-            *errorMessage = message;
-    };
-
-    const QString trimmedPath = backupPath.trimmed();
-
-    if (trimmedPath.isEmpty()) {
-        setError("No backup file was specified.");
-
+    const DatabaseFileValidator::Result result = DatabaseFileValidator::validate(backupPath);
+    if (!result.valid) {
+        QString message = result.message;
+        if (!result.diagnostics.isEmpty())
+            message += QStringLiteral("\n\n") + result.diagnostics.join(QLatin1Char('\n'));
+        if (errorMessage) *errorMessage = message;
+        qWarning() << "Database backup verification failed:" << backupPath << result.message;
         return false;
     }
-
-    if (!QFile::exists(trimmedPath)) {
-        setError(QString("The backup file does not exist:\n%1").arg(trimmedPath));
-        qWarning() << "Database backup verification rejected: file does not exist:"
-                   << trimmedPath;
-
-        return false;
-    }
-
-    const QString connectionName = QString("BrickSuiteBackupVerify_%1")
-                                       .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
-
-    bool verified = false;
-
-    QString verificationError;
-
-    {
-        QSqlDatabase backupDatabase = QSqlDatabase::addDatabase("QSQLITE", connectionName);
-
-        backupDatabase.setDatabaseName(trimmedPath);
-
-        if (!backupDatabase.open()) {
-            verificationError = QString("Unable to open the backup database.\n\n%1")
-                                    .arg(backupDatabase.lastError().text());
-        } else {
-            //
-            // SQLite integrity check.
-            //
-            QSqlQuery integrityQuery(backupDatabase);
-
-            if (!integrityQuery.exec("PRAGMA integrity_check")) {
-                verificationError = QString("Unable to run SQLite integrity check.\n\n%1")
-                                        .arg(integrityQuery.lastError().text());
-            } else if (!integrityQuery.next()) {
-                verificationError = "SQLite integrity check returned no result.";
-            } else if (integrityQuery.value(0).toString().compare("ok", Qt::CaseInsensitive) != 0) {
-                verificationError = QString("SQLite integrity check failed.\n\n%1")
-                                        .arg(integrityQuery.value(0).toString());
-            } else {
-                //
-                // Check BrickSuite schema version.
-                //
-                QSqlQuery versionQuery(backupDatabase);
-
-                if (!versionQuery.exec("SELECT version "
-                                       "FROM schema_version "
-                                       "LIMIT 1")) {
-                    verificationError = QString("Unable to read the backup schema version.\n\n%1")
-                                            .arg(versionQuery.lastError().text());
-                } else if (!versionQuery.next()) {
-                    verificationError = "The backup does not contain a schema version.";
-                } else {
-                    const int version = versionQuery.value(0).toInt();
-
-                    if (version != DatabaseSchema::CurrentSchemaVersion) {
-                        verificationError = QString("Backup schema version %1 "
-                                                    "does not match BrickSuite "
-                                                    "schema version %2.")
-                                                .arg(version)
-                                                .arg(DatabaseSchema::CurrentSchemaVersion);
-                    } else {
-                        verified = true;
-                    }
-                }
-            }
-
-            backupDatabase.close();
-        }
-    }
-
-    //
-    // All QSqlDatabase / QSqlQuery objects that used
-    // the connection are now out of scope.
-    //
-    QSqlDatabase::removeDatabase(connectionName);
-
-    if (!verified) {
-        setError(verificationError);
-        qWarning() << "Database backup verification failed:"
-                   << trimmedPath
-                   << verificationError;
-
-        return false;
-    }
-
-    qInfo() << "Database backup verified:" << trimmedPath;
-
+    qInfo() << "Database backup verified:" << backupPath;
     return true;
 }
 
@@ -452,6 +364,13 @@ QString DatabaseManager::databasePath() const
 
 bool DatabaseManager::restoreDatabase(const QString& backupPath, QString* errorMessage)
 {
+    Q_UNUSED(backupPath)
+    if (errorMessage) {
+        *errorMessage = QStringLiteral(
+            "Database Restore must be coordinated through the application maintenance boundary.");
+    }
+    return false;
+#if 0
     auto setError = [errorMessage](const QString& message) {
         if (errorMessage)
             *errorMessage = message;
@@ -661,4 +580,5 @@ bool DatabaseManager::restoreDatabase(const QString& backupPath, QString* errorM
     qInfo() << "Pre-restore safety backup:" << safetyBackupPath;
 
     return true;
+#endif
 }

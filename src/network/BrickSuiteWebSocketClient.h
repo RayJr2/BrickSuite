@@ -36,6 +36,8 @@ public:
     bool supportsOperation(const QString& operation) const;
     bool supportsCapability(const QString& capability) const;
     quint64 authenticatedSessionGeneration() const;
+    QString dataEpoch() const { return m_dataEpoch; }
+    bool dataEpochSupported() const { return m_dataEpochSupported; }
 #ifdef BRICKSUITE_TESTING
     void sendProtocolEventForTesting(const OperationalInvalidation& invalidation);
     int pendingRequestCountForTesting() const { return m_pending.size(); }
@@ -54,6 +56,9 @@ signals:
     void requestFailed(const QString& requestId, const BrickSuiteProtocol::Error& error);
     void testConnectionCompleted(bool success, const QString& message);
     void authenticatedSessionEstablished(const QString& verifiedFingerprint);
+    void authenticatedSessionEstablishedWithEpoch(const QString& verifiedFingerprint,
+                                                   const QString& dataEpoch,
+                                                   bool epochSupported);
     void authenticatedSessionLost();
     void invalidationReceived(const OperationalInvalidation& invalidation,
                               quint64 authenticatedSessionGeneration);
@@ -97,6 +102,8 @@ private:
     QElapsedTimer m_connectTimer;
     bool m_authenticated = false;
     quint64 m_authenticatedSessionGeneration = 0;
+    QString m_dataEpoch;
+    bool m_dataEpochSupported = false;
 #ifdef BRICKSUITE_TESTING
     int m_reconnectScheduleCount = 0;
     int m_transportDisconnectCount = 0;

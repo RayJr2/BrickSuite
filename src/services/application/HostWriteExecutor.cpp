@@ -10,6 +10,7 @@
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QTimer>
 #include <QUuid>
 
 namespace {
@@ -186,7 +187,8 @@ public:
     {
         if (m_database.isValid()) m_database.close();
         m_database = {};
-        QSqlDatabase::removeDatabase(m_name);
+        if (QSqlDatabase::contains(m_name))
+            QSqlDatabase::removeDatabase(m_name);
     }
 
     void notifyActivity()
@@ -226,6 +228,29 @@ bool HostWriteExecutor::isIdle() const
 void HostWriteExecutor::stopAccepting() { m_accepting = false; }
 void HostWriteExecutor::startAccepting()
 { if (m_thread.isRunning() && m_worker) m_accepting = true; }
+void HostWriteExecutor::closeConnectionAsync(
+    std::function<void(bool, const QString&)> completion)
+{
+    stopAccepting();
+    if (!isIdle() || !m_worker || !m_thread.isRunning()) {
+        const QString error = !isIdle()
+            ? QStringLiteral("Host write operations have not drained.") : QString();
+        QTimer::singleShot(0, this, [this, completion = std::move(completion), error] {
+            emit connectionClosed(error.isEmpty(), error);
+            if (completion) completion(error.isEmpty(), error);
+        });
+        return;
+    }
+    QPointer<HostWriteExecutor> guard(this);
+    QMetaObject::invokeMethod(m_worker, [this, guard, completion = std::move(completion)]() mutable {
+        m_worker->close();
+        QMetaObject::invokeMethod(this, [this, guard, completion = std::move(completion)]() mutable {
+            if (!guard) return;
+            emit connectionClosed(true, {});
+            if (completion) completion(true, {});
+        }, Qt::QueuedConnection);
+    }, Qt::QueuedConnection);
+}
 QString HostWriteExecutor::connectionName() const { return m_connectionName; }
 
 void HostWriteExecutor::enqueue(const RemoteMutationDto::RequestContext& context,

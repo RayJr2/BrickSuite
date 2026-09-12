@@ -13,6 +13,7 @@ public:
     using AsyncHandler = std::function<void(const BrickSuiteProtocol::Message&, Completion)>;
 
     BrickSuiteOperationDispatcher();
+    void setDataEpoch(const QString& epoch) { m_dataEpoch = epoch; }
     void registerOperation(const QString& name, bool authenticationRequired,
                            Handler handler);
     void registerAsyncOperation(const QString& name, bool authenticationRequired,
@@ -35,4 +36,5 @@ private:
         QString capability;
     };
     QHash<QString, Registration> m_operations;
+    QString m_dataEpoch;
 };
