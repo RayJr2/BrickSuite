@@ -72,6 +72,8 @@ qt_add_executable(BrickSuite
     src/network/HostRequestContext.h
     src/network/HostRequestAdmissionController.h
     src/network/HostRequestAdmissionController.cpp
+    src/network/HostOutboundPolicy.h
+    src/network/HostOutboundPolicy.cpp
     src/network/BrickSuiteWebSocketServer.h
     src/network/BrickSuiteWebSocketServer.cpp
     src/network/BrickSuiteWebSocketClient.h
@@ -1348,6 +1350,7 @@ if(BUILD_TESTING)
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
         src/network/HostRequestContext.h
         src/network/HostRequestAdmissionController.h src/network/HostRequestAdmissionController.cpp
+        src/network/HostOutboundPolicy.h src/network/HostOutboundPolicy.cpp
         src/network/HostAuthenticationThrottle.h src/network/HostAuthenticationThrottle.cpp
         src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
         src/services/CredentialStore.h src/services/CredentialStore.cpp
@@ -1372,6 +1375,14 @@ if(BUILD_TESTING)
     )
     target_link_libraries(HostRequestAdmissionControllerTest PRIVATE Qt6::Core)
     add_test(NAME HostRequestAdmissionController COMMAND HostRequestAdmissionControllerTest)
+
+    qt_add_executable(HostOutboundPolicyTest EXCLUDE_FROM_ALL
+        tests/HostOutboundPolicyTest.cpp
+        src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
+        src/network/HostOutboundPolicy.h src/network/HostOutboundPolicy.cpp
+    )
+    target_link_libraries(HostOutboundPolicyTest PRIVATE Qt6::Core)
+    add_test(NAME HostOutboundPolicy COMMAND HostOutboundPolicyTest)
 
     qt_add_executable(HostReadExecutorTest EXCLUDE_FROM_ALL
         tests/HostReadExecutorTest.cpp
@@ -1443,6 +1454,7 @@ if(BUILD_TESTING)
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
         src/network/HostRequestContext.h
         src/network/HostRequestAdmissionController.h src/network/HostRequestAdmissionController.cpp
+        src/network/HostOutboundPolicy.h src/network/HostOutboundPolicy.cpp
         src/network/HostAuthenticationThrottle.h src/network/HostAuthenticationThrottle.cpp
         src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
         src/services/CredentialStore.h src/services/CredentialStore.cpp
@@ -1601,6 +1613,7 @@ if(BUILD_TESTING)
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
         src/network/HostRequestContext.h
         src/network/HostRequestAdmissionController.h src/network/HostRequestAdmissionController.cpp
+        src/network/HostOutboundPolicy.h src/network/HostOutboundPolicy.cpp
         src/network/HostAuthenticationThrottle.h src/network/HostAuthenticationThrottle.cpp
         src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
         src/services/application/HostMutationProtocolService.h src/services/application/HostMutationProtocolService.cpp

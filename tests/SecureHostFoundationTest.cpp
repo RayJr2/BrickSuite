@@ -252,6 +252,13 @@ int main(int argc, char** argv)
     BrickSuiteWebSocketServer server;
     server.operationDispatcher().registerOperation(QStringLiteral("test.operational"), true,
         [](const QJsonObject&) { return QJsonObject{{QStringLiteral("accepted"), true}}; });
+    server.operationDispatcher().registerAsyncOperation(QStringLiteral("test.oversized"), true,
+        [](const BrickSuiteProtocol::Message& request,
+           BrickSuiteOperationDispatcher::Completion completion) {
+            completion(BrickSuiteProtocol::response(request,
+                {{QStringLiteral("data"), QString(int(BrickSuiteProtocol::MaximumMessageBytes),
+                                                  QLatin1Char('x'))}}));
+        });
     QString serverError;
     const QString token = QStringLiteral("test-token-with-at-least-256-bits-not-required-for-fixture");
     ok &= check(server.startWithIdentity(QHostAddress::LocalHost, 0, token,
@@ -331,6 +338,23 @@ int main(int argc, char** argv)
                 "M26.3 does not advertise shared business operations");
     ok &= check(client.supportsCapability(OperationalInvalidation::Capability),
                 "Host advertises invalidation capability");
+    bool oversizedRejected = false;
+    BrickSuiteProtocol::Error oversizedError;
+    client.sendRequest(QStringLiteral("test.oversized"), {}, &client, {},
+        [&](const BrickSuiteProtocol::Error& error) {
+            oversizedError = error;
+            oversizedRejected = true;
+        });
+    ok &= check(waitUntil([&] { return oversizedRejected; })
+                    && oversizedError.code == QStringLiteral("RESULT_TOO_LARGE")
+                    && !oversizedError.retryable
+                    && client.socketStateForTesting() == QAbstractSocket::ConnectedState,
+                "oversized Host result becomes a structured non-fatal error");
+    bool postOversizedPing = false;
+    client.sendRequest(QStringLiteral("system.ping"), {}, &client,
+        [&](const QJsonObject&) { postOversizedPing = true; });
+    ok &= check(waitUntil([&] { return postOversizedPing; }),
+                "connection remains usable after oversized result rejection");
 
     BrickSuiteWebSocketClient secondClient;
     secondClient.configure(QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),

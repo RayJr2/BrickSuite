@@ -7,6 +7,7 @@
 namespace RemoteReadDto {
 
 constexpr int MaximumPageSize = 500;
+constexpr int MaximumUnpagedRows = 10000;
 constexpr int MaximumStorageLocations = 10000;
 constexpr int MaximumLostInventoryRows = 10000;
 constexpr int MaximumTextLength = 512;

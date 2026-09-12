@@ -8,6 +8,7 @@
 #include "BrickSuitePairingService.h"
 #include "HostAuthenticationThrottle.h"
 #include "HostRequestAdmissionController.h"
+#include "HostOutboundPolicy.h"
 
 #include <QHash>
 #include <QHostAddress>
@@ -74,12 +75,16 @@ private:
         int protocolMinor = 0;
         QString deviceId;
         bool legacySharedToken = false;
+        QTimer* backpressureTimer = nullptr;
+        bool underBackpressure = false;
+        qint64 maximumBufferedBytes = 0;
     };
 
     void acceptConnection();
     void receiveText(QWebSocket* socket, const QString& text);
     void dispatch(QWebSocket* socket, const BrickSuiteProtocol::Message& request);
-    void send(QWebSocket* socket, const BrickSuiteProtocol::Message& message);
+    bool send(QWebSocket* socket, const BrickSuiteProtocol::Message& message);
+    void updateBackpressure(QWebSocket* socket);
     void closeSession(QWebSocket* socket);
     void reject(QWebSocket* socket, const BrickSuiteProtocol::Message& request,
                 const QString& code, const QString& message, bool retryable = false);
@@ -96,4 +101,7 @@ private:
     HostAuthenticationThrottle m_authenticationThrottle;
     QElapsedTimer m_authenticationClock;
     HostRequestAdmissionController m_admission;
+    quint64 m_oversizedResponseCount = 0;
+    quint64 m_oversizedEventCount = 0;
+    quint64 m_slowClientDisconnectCount = 0;
 };

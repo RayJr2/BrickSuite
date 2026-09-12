@@ -244,6 +244,21 @@ void BrickSuiteWebSocketServer::acceptConnection()
                           QStringLiteral("Authentication timed out."));
         });
         session.authenticationTimer->start(BrickSuiteProtocol::AuthenticationTimeoutMs);
+        session.backpressureTimer = new QTimer(socket);
+        session.backpressureTimer->setSingleShot(true);
+        connect(session.backpressureTimer, &QTimer::timeout, socket, [this, socket] {
+            const auto it = m_sessions.constFind(socket);
+            if (it == m_sessions.cend()) return;
+            if (socket->bytesToWrite() >= HostOutboundPolicy::HighWaterBytes) {
+                ++m_slowClientDisconnectCount;
+                qWarning() << "BrickSuite Host disconnected a persistently slow client; buffered bytes"
+                           << socket->bytesToWrite();
+                socket->close(QWebSocketProtocol::CloseCodeGoingAway,
+                              QStringLiteral("Client is not consuming Host responses."));
+            } else {
+                updateBackpressure(socket);
+            }
+        });
         m_sessions.insert(socket, session);
         socket->setMaxAllowedIncomingMessageSize(BrickSuiteProtocol::MaximumMessageBytes);
         socket->setMaxAllowedIncomingFrameSize(BrickSuiteProtocol::MaximumMessageBytes);
@@ -255,6 +270,8 @@ void BrickSuiteWebSocketServer::acceptConnection()
         });
         connect(socket, &QWebSocket::disconnected, this,
                 [this, socket]() { closeSession(socket); });
+        connect(socket, &QWebSocket::bytesWritten, this,
+                [this, socket](qint64) { updateBackpressure(socket); });
         qInfo() << "BrickSuite Server client connected.";
         emit statusChanged();
     }
@@ -551,16 +568,86 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
         });
 }
 
-void BrickSuiteWebSocketServer::send(QWebSocket* socket,
+bool BrickSuiteWebSocketServer::send(QWebSocket* socket,
                                      const BrickSuiteProtocol::Message& message)
 {
-    const qint64 queuedBytes = socket->sendTextMessage(
-        QString::fromUtf8(BrickSuiteProtocol::serialize(message)));
+    if (!socket || !m_sessions.contains(socket)) return false;
+    bool replacedOversizedResponse = false;
+    bool rejectedOversizedEvent = false;
+    const QByteArray serialized = HostOutboundPolicy::serializeForSend(
+        message, &replacedOversizedResponse, &rejectedOversizedEvent);
+    if (rejectedOversizedEvent) {
+        ++m_oversizedEventCount;
+        if (m_oversizedEventCount == 1 || (m_oversizedEventCount & (m_oversizedEventCount - 1)) == 0)
+            qWarning() << "BrickSuite Host rejected oversized outbound event; count"
+                       << m_oversizedEventCount;
+        return false;
+    }
+    if (replacedOversizedResponse) {
+        ++m_oversizedResponseCount;
+        if (m_oversizedResponseCount == 1
+            || (m_oversizedResponseCount & (m_oversizedResponseCount - 1)) == 0)
+            qWarning() << "BrickSuite Host replaced oversized response with RESULT_TOO_LARGE; count"
+                       << m_oversizedResponseCount;
+    }
+    if (serialized.isEmpty()) return false;
+    const qint64 buffered = socket->bytesToWrite();
+    auto it = m_sessions.find(socket);
+    if (it == m_sessions.end()) return false;
+    it->maximumBufferedBytes = qMax(it->maximumBufferedBytes, buffered);
+    const auto decision = HostOutboundPolicy::evaluate(buffered, serialized.size());
+    if (decision == HostOutboundPolicy::Decision::Disconnect) {
+        ++m_slowClientDisconnectCount;
+        qWarning() << "BrickSuite Host disconnected a slow client at the outbound hard limit; buffered bytes"
+                   << buffered;
+        socket->close(QWebSocketProtocol::CloseCodeGoingAway,
+                      QStringLiteral("Client outbound buffer limit reached."));
+        return false;
+    }
+    if (decision == HostOutboundPolicy::Decision::EnterBackpressure
+        && !it->underBackpressure) {
+        it->underBackpressure = true;
+        qWarning() << "BrickSuite Host client entered outbound backpressure; buffered bytes"
+                   << buffered;
+        it->backpressureTimer->start(HostOutboundPolicy::SustainedBackpressureMs);
+    }
+    const qint64 queuedBytes = socket->sendTextMessage(QString::fromUtf8(serialized));
+    updateBackpressure(socket);
     if (message.operation.startsWith(QStringLiteral("inventory.")))
         qDebug() << "BrickSuite Host WebSocket sendTextMessage completed"
                  << message.operation << message.requestId.left(8)
                  << "queuedBytes" << queuedBytes
                  << "socketThreadCurrent" << (socket->thread() == QThread::currentThread());
+    return queuedBytes >= 0;
+}
+
+void BrickSuiteWebSocketServer::updateBackpressure(QWebSocket* socket)
+{
+    auto it = m_sessions.find(socket);
+    if (it == m_sessions.end()) return;
+    const qint64 buffered = socket->bytesToWrite();
+    it->maximumBufferedBytes = qMax(it->maximumBufferedBytes, buffered);
+    if (buffered > HostOutboundPolicy::HardLimitBytes) {
+        ++m_slowClientDisconnectCount;
+        qWarning() << "BrickSuite Host disconnected a slow client after its outbound buffer exceeded the hard limit; buffered bytes"
+                   << buffered;
+        socket->close(QWebSocketProtocol::CloseCodeGoingAway,
+                      QStringLiteral("Client outbound buffer limit reached."));
+        return;
+    }
+    if (!it->underBackpressure && buffered >= HostOutboundPolicy::HighWaterBytes) {
+        it->underBackpressure = true;
+        qWarning() << "BrickSuite Host client entered outbound backpressure; buffered bytes"
+                   << buffered;
+        it->backpressureTimer->start(HostOutboundPolicy::SustainedBackpressureMs);
+        return;
+    }
+    if (it->underBackpressure && buffered < HostOutboundPolicy::HighWaterBytes) {
+        it->underBackpressure = false;
+        it->backpressureTimer->stop();
+        qInfo() << "BrickSuite Host client recovered from outbound backpressure; buffered bytes"
+                << buffered;
+    }
 }
 
 void BrickSuiteWebSocketServer::reject(QWebSocket* socket,
