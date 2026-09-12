@@ -4,11 +4,14 @@
 #include "BrickSuiteProtocol.h"
 #include "BrickSuiteOperationDispatcher.h"
 #include "OperationalInvalidation.h"
+#include "PairedDeviceRegistry.h"
+#include "BrickSuitePairingService.h"
 
 #include <QHash>
 #include <QHostAddress>
 #include <QObject>
 #include <QTimer>
+#include <memory>
 
 class QWebSocket;
 class QWebSocketServer;
@@ -31,11 +34,17 @@ public:
     quint16 serverPort() const;
     QString fingerprint() const;
     int authenticatedClientCount() const;
+    BrickSuitePairingService* pairingService() const { return m_pairing.get(); }
+    PairedDeviceRegistry* pairedDeviceRegistry() const { return m_registry.get(); }
     BrickSuiteOperationDispatcher& operationDispatcher();
     int broadcastInvalidation(OperationalInvalidation invalidation);
     void setOperationalAdmissionOpen(bool open);
     bool operationalAdmissionOpen() const { return m_operationalAdmissionOpen; }
     void broadcastFullOperationalInvalidation();
+#ifdef BRICKSUITE_TESTING
+    QStringList authenticatedDeviceIdsForTesting() const;
+    int legacyAuthenticatedClientCountForTesting() const;
+#endif
 
 signals:
     void statusChanged();
@@ -54,6 +63,8 @@ private:
         qint64 nextAuthenticationAllowedMs = 0;
         QTimer* authenticationTimer = nullptr;
         int protocolMinor = 0;
+        QString deviceId;
+        bool legacySharedToken = false;
     };
 
     void acceptConnection();
@@ -71,4 +82,6 @@ private:
     BrickSuiteOperationDispatcher m_dispatcher;
     quint64 m_nextInvalidationSequence = 1;
     bool m_operationalAdmissionOpen = true;
+    std::unique_ptr<PairedDeviceRegistry> m_registry;
+    std::unique_ptr<BrickSuitePairingService> m_pairing;
 };

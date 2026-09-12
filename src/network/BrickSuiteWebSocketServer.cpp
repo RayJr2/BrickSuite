@@ -1,6 +1,7 @@
 #include "BrickSuiteWebSocketServer.h"
 
 #include "BrickSuiteAuthentication.h"
+#include "../services/CredentialStore.h"
 
 #include <QDateTime>
 #include <QJsonArray>
@@ -12,6 +13,8 @@
 
 BrickSuiteWebSocketServer::BrickSuiteWebSocketServer(QObject* parent)
     : QObject(parent)
+    , m_registry(std::make_unique<PairedDeviceRegistry>())
+    , m_pairing(std::make_unique<BrickSuitePairingService>(*m_registry))
 {
 }
 
@@ -49,6 +52,11 @@ bool BrickSuiteWebSocketServer::startWithIdentity(
         if (error) *error = QStringLiteral("A valid Host identity and access token are required.");
         return false;
     }
+    QString registryError;
+    if (!m_registry->load(&registryError)) {
+        if (error) *error = registryError;
+        return false;
+    }
     m_identity = identity;
     m_server = new QWebSocketServer(QStringLiteral("BrickSuite"),
                                     QWebSocketServer::SecureMode, this);
@@ -75,6 +83,7 @@ bool BrickSuiteWebSocketServer::startWithIdentity(
 
 void BrickSuiteWebSocketServer::stop()
 {
+    if (m_pairing) m_pairing->cancel();
     if (!m_server) return;
     m_server->close();
     const auto sockets = m_sessions.keys();
@@ -100,6 +109,25 @@ int BrickSuiteWebSocketServer::authenticatedClientCount() const
     for (const Session& session : m_sessions) count += session.authenticated ? 1 : 0;
     return count;
 }
+
+#ifdef BRICKSUITE_TESTING
+QStringList BrickSuiteWebSocketServer::authenticatedDeviceIdsForTesting() const
+{
+    QStringList ids;
+    for (const Session& session : m_sessions) {
+        if (session.authenticated && !session.deviceId.isEmpty()) ids.append(session.deviceId);
+    }
+    return ids;
+}
+
+int BrickSuiteWebSocketServer::legacyAuthenticatedClientCountForTesting() const
+{
+    int count = 0;
+    for (const Session& session : m_sessions)
+        if (session.authenticated && session.legacySharedToken) ++count;
+    return count;
+}
+#endif
 
 int BrickSuiteWebSocketServer::broadcastInvalidation(OperationalInvalidation invalidation)
 {
@@ -259,10 +287,13 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
                           QStringLiteral("Authentication replay rejected."));
             return;
         }
-        if (request.payload.size() != 3
+        const bool pairedProtocol = session.protocolMinor >= 3;
+        const int expectedFields = pairedProtocol ? 4 : 3;
+        if (request.payload.size() != expectedFields
             || !request.payload.value(QStringLiteral("sessionId")).isString()
             || !request.payload.value(QStringLiteral("clientNonce")).isString()
-            || !request.payload.value(QStringLiteral("proof")).isString()) {
+            || !request.payload.value(QStringLiteral("proof")).isString()
+            || (pairedProtocol && !request.payload.value(QStringLiteral("deviceId")).isString())) {
             reject(socket, request, QStringLiteral("INVALID_REQUEST"),
                    QStringLiteral("The authentication payload is invalid."));
             return;
@@ -279,9 +310,22 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
             && challengeId == session.id && clientNonce.size() == 32 && proof.size() == 32;
         session.challengeConsumed = true;
         QString hmacError;
-        const QByteArray expected = challengeUsable
+        QString authenticationSecret = m_accessToken;
+        std::optional<PairedDeviceRecord> pairedDevice;
+        if (pairedProtocol) {
+            const QString deviceId = request.payload.value(QStringLiteral("deviceId")).toString();
+            pairedDevice = m_registry->find(deviceId);
+            if (pairedDevice && pairedDevice->active) {
+                const auto credential = CredentialStore::read(pairedDevice->credentialReference);
+                if (credential.success && credential.found) authenticationSecret = credential.value;
+                else authenticationSecret.clear();
+            } else {
+                authenticationSecret.clear();
+            }
+        }
+        const QByteArray expected = challengeUsable && !authenticationSecret.isEmpty()
             ? BrickSuiteAuthentication::hmacSha256(
-                  m_accessToken.toUtf8(), BrickSuiteAuthentication::authenticationInput(
+                  authenticationSecret.toUtf8(), BrickSuiteAuthentication::authenticationInput(
                       session.challenge, clientNonce, session.id,
                       BrickSuiteProtocol::Major,
                       qMin(request.protocolMinor, BrickSuiteProtocol::Minor)), &hmacError)
@@ -300,14 +344,59 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
             return;
         }
         session.authenticated = true;
+        session.legacySharedToken = !pairedProtocol;
+        if (pairedProtocol) {
+            session.deviceId = pairedDevice->deviceId;
+            QString lastSeenError;
+            if (!m_registry->updateLastSeen(session.deviceId, QDateTime::currentDateTimeUtc(),
+                                            &lastSeenError))
+                qWarning().noquote() << "Unable to update paired-device last seen:" << lastSeenError;
+        }
         session.authenticationTimer->stop();
         send(socket, BrickSuiteProtocol::response(request,
             {{QStringLiteral("authenticated"), true},
-             {QStringLiteral("role"), QStringLiteral("FullBrickSuiteClient")}}));
+             {QStringLiteral("role"), QStringLiteral("FullBrickSuiteClient")},
+             {QStringLiteral("authenticationKind"), pairedProtocol
+                  ? QStringLiteral("PairedDevice") : QStringLiteral("LegacySharedToken")},
+             {QStringLiteral("deviceId"), session.deviceId}}));
         qInfo() << "BrickSuite Server client authenticated in"
                 << (QDateTime::currentMSecsSinceEpoch() - session.connectedMs)
                 << "ms; authenticated clients:" << authenticatedClientCount();
         emit statusChanged();
+        return;
+    }
+    if (request.operation == QStringLiteral("system.pair")) {
+        if (session.protocolMinor < 3) {
+            reject(socket, request, QStringLiteral("FORBIDDEN"),
+                   QStringLiteral("Pairing requires BrickSuite Protocol 1.3."));
+            return;
+        }
+        if (session.authenticated || request.payload.size() != 4
+            || !request.payload.value(QStringLiteral("code")).isString()
+            || !request.payload.value(QStringLiteral("friendlyName")).isString()
+            || !request.payload.value(QStringLiteral("clientVersion")).isString()
+            || !request.payload.value(QStringLiteral("platform")).isString()) {
+            reject(socket, request, QStringLiteral("INVALID_REQUEST"),
+                   QStringLiteral("The pairing request is invalid."));
+            return;
+        }
+        const auto paired = m_pairing->pair(
+            request.payload.value(QStringLiteral("code")).toString(),
+            request.payload.value(QStringLiteral("friendlyName")).toString(),
+            request.payload.value(QStringLiteral("clientVersion")).toString(),
+            request.payload.value(QStringLiteral("platform")).toString());
+        if (!paired.success) {
+            reject(socket, request, paired.errorCode, paired.error,
+                   paired.errorCode == QStringLiteral("PAIRING_RATE_LIMITED"));
+            return;
+        }
+        send(socket, BrickSuiteProtocol::response(request, {
+            {QStringLiteral("deviceId"), paired.deviceId},
+            {QStringLiteral("credential"), paired.credential}}));
+        QTimer::singleShot(0, socket, [socket] {
+            socket->close(QWebSocketProtocol::CloseCodeNormal,
+                          QStringLiteral("Pairing completed; reconnect to authenticate."));
+        });
         return;
     }
     if (request.protocolMinor > session.protocolMinor) {

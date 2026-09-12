@@ -54,6 +54,10 @@ qt_add_executable(BrickSuite
     src/network/BrickSuiteAuthentication.cpp
     src/network/BrickSuiteHostIdentity.h
     src/network/BrickSuiteHostIdentity.cpp
+    src/network/PairedDeviceRegistry.h
+    src/network/PairedDeviceRegistry.cpp
+    src/network/BrickSuitePairingService.h
+    src/network/BrickSuitePairingService.cpp
     src/network/BrickSuiteConnectionState.h
     src/network/OperationalInvalidation.h
     src/network/OperationalInvalidation.cpp
@@ -1329,6 +1333,8 @@ if(BUILD_TESTING)
         src/network/OperationalInvalidationPublisher.h src/network/OperationalInvalidationPublisher.cpp
         src/network/BrickSuiteAuthentication.h src/network/BrickSuiteAuthentication.cpp
         src/network/BrickSuiteHostIdentity.h src/network/BrickSuiteHostIdentity.cpp
+        src/network/PairedDeviceRegistry.h src/network/PairedDeviceRegistry.cpp
+        src/network/BrickSuitePairingService.h src/network/BrickSuitePairingService.cpp
         src/network/BrickSuiteConnectionState.h
         src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
@@ -1411,6 +1417,8 @@ if(BUILD_TESTING)
         src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
         src/network/BrickSuiteAuthentication.h src/network/BrickSuiteAuthentication.cpp
         src/network/BrickSuiteHostIdentity.h src/network/BrickSuiteHostIdentity.cpp
+        src/network/PairedDeviceRegistry.h src/network/PairedDeviceRegistry.cpp
+        src/network/BrickSuitePairingService.h src/network/BrickSuitePairingService.cpp
         src/network/BrickSuiteConnectionState.h
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
         src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
@@ -1563,6 +1571,8 @@ if(BUILD_TESTING)
         src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
         src/network/BrickSuiteAuthentication.h src/network/BrickSuiteAuthentication.cpp
         src/network/BrickSuiteHostIdentity.h src/network/BrickSuiteHostIdentity.cpp
+        src/network/PairedDeviceRegistry.h src/network/PairedDeviceRegistry.cpp
+        src/network/BrickSuitePairingService.h src/network/BrickSuitePairingService.cpp
         src/network/BrickSuiteConnectionState.h
         src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
@@ -1643,6 +1653,20 @@ if(BUILD_TESTING)
         src/services/database/AutomaticBackupPolicy.cpp)
     target_link_libraries(DatabaseRestoreHardeningTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME DatabaseRestoreHardening COMMAND DatabaseRestoreHardeningTest)
+
+    qt_add_executable(PairingFoundationTest EXCLUDE_FROM_ALL
+        tests/PairingFoundationTest.cpp
+        src/network/BrickSuiteAuthentication.h src/network/BrickSuiteAuthentication.cpp
+        src/network/PairedDeviceRegistry.h src/network/PairedDeviceRegistry.cpp
+        src/network/BrickSuitePairingService.h src/network/BrickSuitePairingService.cpp
+        src/services/CredentialStore.h src/services/CredentialStore.cpp)
+    target_link_libraries(PairingFoundationTest PRIVATE Qt6::Core OpenSSL::Crypto)
+    if(WIN32)
+        target_link_libraries(PairingFoundationTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(PairingFoundationTest PRIVATE "-framework Security")
+    endif()
+    add_test(NAME PairingFoundation COMMAND PairingFoundationTest)
 endif()
 
 if(WIN32)

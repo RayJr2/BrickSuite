@@ -35,6 +35,7 @@
 namespace {
 constexpr auto kHostTokenCredential = "BrickSuiteHostAccessToken";
 constexpr auto kClientTokenCredential = "BrickSuiteClientAccessToken";
+constexpr auto kPairedClientCredential = "BrickSuiteClientPairedCredential";
 }
 
 BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
@@ -164,10 +165,20 @@ void BrickSuiteNetworkManager::startConfiguredMode()
         qWarning() << "BrickSuite Server is configured but suppressed in BrickSuite Host client mode.";
     }
     QString credentialError;
-    const QString token = clientToken(&credentialError);
-    m_client->configure(QUrl(settings.brickSuiteHostEndpoint()),
-                        settings.brickSuiteTrustedFingerprint(), token,
-                        settings.brickSuiteReconnectAutomatically());
+    const QString pairedCredential = pairedClientCredential(&credentialError);
+    const QString pairedFingerprint = settings.brickSuitePairedHostFingerprint();
+    if (!settings.brickSuitePairedDeviceId().isEmpty() && !pairedCredential.isEmpty()
+        && BrickSuiteHostIdentity::normalizedFingerprint(pairedFingerprint)
+            == BrickSuiteHostIdentity::normalizedFingerprint(settings.brickSuiteTrustedFingerprint())) {
+        m_client->configurePairedDevice(QUrl(settings.brickSuiteHostEndpoint()),
+            settings.brickSuiteTrustedFingerprint(), settings.brickSuitePairedDeviceId(),
+            pairedCredential, settings.brickSuiteReconnectAutomatically());
+    } else {
+        const QString token = clientToken(&credentialError);
+        m_client->configure(QUrl(settings.brickSuiteHostEndpoint()),
+                            settings.brickSuiteTrustedFingerprint(), token,
+                            settings.brickSuiteReconnectAutomatically());
+    }
     if (settings.brickSuiteReconnectAutomatically())
         m_client->connectToHost();
 }
@@ -329,4 +340,25 @@ QString BrickSuiteNetworkManager::clientToken(QString* error) const
         return {};
     }
     return result.found ? result.value : QString();
+}
+
+bool BrickSuiteNetworkManager::savePairedClientCredential(const QString& credential,
+                                                           QString* error)
+{
+    return CredentialStore::write(QString::fromLatin1(kPairedClientCredential), credential, error);
+}
+
+QString BrickSuiteNetworkManager::pairedClientCredential(QString* error) const
+{
+    const auto result = CredentialStore::read(QString::fromLatin1(kPairedClientCredential));
+    if (!result.success) {
+        if (error) *error = result.error;
+        return {};
+    }
+    return result.found ? result.value : QString();
+}
+
+BrickSuitePairingService* BrickSuiteNetworkManager::pairingService() const
+{
+    return m_server->pairingService();
 }

@@ -69,6 +69,14 @@ int main(int argc, char** argv)
     QStandardPaths::setTestModeEnabled(true);
     bool ok = true;
 
+    PairedDeviceRegistry previousRegistry;
+    QString previousRegistryError;
+    if (previousRegistry.load(&previousRegistryError)) {
+        for (const auto& device : previousRegistry.devices())
+            CredentialStore::remove(device.credentialReference, nullptr);
+    }
+    QFile::remove(PairedDeviceRegistry::defaultPath());
+
     const auto request = BrickSuiteProtocol::request(
         QStringLiteral("system.ping"), {{QStringLiteral("value"), 7}});
     const auto parsedRequest = BrickSuiteProtocol::parse(
@@ -298,6 +306,97 @@ int main(int argc, char** argv)
     bool secondSuccess = false;
     ok &= check(waitForResult(secondClient, &secondSuccess, &resultMessage) && secondSuccess,
                 "second authenticated Client connects");
+    ok &= check(server.legacyAuthenticatedClientCountForTesting() == 2
+                    && server.authenticatedDeviceIdsForTesting().isEmpty(),
+                "Protocol 1.2 clients remain distinct legacy shared-token sessions");
+
+    const auto pairingAttempt = server.pairingService()->start(&serverError);
+    BrickSuiteWebSocketClient pairingClient;
+    QString pairedDeviceId;
+    QString pairedCredential;
+    QObject::connect(&pairingClient, &BrickSuiteWebSocketClient::pairingCompleted,
+                     [&](const QString& deviceId, const QString& credential) {
+        pairedDeviceId = deviceId;
+        pairedCredential = credential;
+    });
+    pairingClient.beginPairing(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, pairingAttempt.code, QStringLiteral("Protocol 1.3 test device"));
+    pairingClient.connectToHost();
+    ok &= check(waitUntil([&] { return !pairedDeviceId.isEmpty(); })
+                    && !pairedCredential.isEmpty() && !server.pairingService()->attempt().active,
+                "Protocol 1.3 pairs over pinned WSS and consumes the one-time code");
+    pairingClient.disconnectFromHost();
+
+    BrickSuiteWebSocketClient pairedClient;
+    pairedClient.configurePairedDevice(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, pairedDeviceId, pairedCredential, false);
+    pairedClient.connectToHost();
+    bool pairedSuccess = false;
+    ok &= check(waitForResult(pairedClient, &pairedSuccess, &resultMessage) && pairedSuccess,
+                "Protocol 1.3 authenticates with its per-device credential");
+    ok &= check(server.authenticatedDeviceIdsForTesting().contains(pairedDeviceId),
+                "authenticated Protocol 1.3 session is bound to the Host-issued device ID");
+
+    BrickSuiteWebSocketClient wrongPairedCredentialClient;
+    wrongPairedCredentialClient.configurePairedDevice(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, pairedDeviceId, QStringLiteral("wrong-device-credential"), false);
+    wrongPairedCredentialClient.connectToHost();
+    bool wrongPairedSuccess = true;
+    ok &= check(waitForResult(wrongPairedCredentialClient, &wrongPairedSuccess, &resultMessage)
+                    && !wrongPairedSuccess,
+                "Protocol 1.3 rejects a wrong per-device credential");
+
+    const auto secondPairingAttempt = server.pairingService()->start(&serverError);
+    BrickSuiteWebSocketClient secondPairingClient;
+    QString secondPairedDeviceId;
+    QString secondPairedCredential;
+    QObject::connect(&secondPairingClient, &BrickSuiteWebSocketClient::pairingCompleted,
+                     [&](const QString& deviceId, const QString& credential) {
+        secondPairedDeviceId = deviceId;
+        secondPairedCredential = credential;
+    });
+    secondPairingClient.beginPairing(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, secondPairingAttempt.code,
+        QStringLiteral("Protocol 1.3 test device"));
+    secondPairingClient.connectToHost();
+    ok &= check(waitUntil([&] { return !secondPairedDeviceId.isEmpty(); })
+                    && secondPairedDeviceId != pairedDeviceId
+                    && secondPairedCredential != pairedCredential,
+                "second device receives a distinct identity and credential");
+    secondPairingClient.disconnectFromHost();
+    BrickSuiteWebSocketClient secondPairedClient;
+    secondPairedClient.configurePairedDevice(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, secondPairedDeviceId, secondPairedCredential, false);
+    secondPairedClient.connectToHost();
+    bool secondPairedSuccess = false;
+    ok &= check(waitForResult(secondPairedClient, &secondPairedSuccess, &resultMessage)
+                    && secondPairedSuccess
+                    && server.authenticatedDeviceIdsForTesting().contains(pairedDeviceId)
+                    && server.authenticatedDeviceIdsForTesting().contains(secondPairedDeviceId),
+                "two paired devices connect simultaneously with distinct session identities");
+    BrickSuiteWebSocketClient crossCredentialClient;
+    crossCredentialClient.configurePairedDevice(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, pairedDeviceId, secondPairedCredential, false);
+    crossCredentialClient.connectToHost();
+    bool crossSuccess = true;
+    ok &= check(waitForResult(crossCredentialClient, &crossSuccess, &resultMessage) && !crossSuccess,
+                "one device credential cannot authenticate as another device");
+    BrickSuiteWebSocketClient unknownDeviceClient;
+    unknownDeviceClient.configurePairedDevice(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, QUuid::createUuid().toString(QUuid::WithoutBraces),
+        pairedCredential, false);
+    unknownDeviceClient.connectToHost();
+    bool unknownSuccess = true;
+    ok &= check(waitForResult(unknownDeviceClient, &unknownSuccess, &resultMessage) && !unknownSuccess,
+                "unknown Protocol 1.3 device ID fails closed");
+    secondPairedClient.disconnectFromHost();
 
     QWebSocket unauthenticatedSocket;
     QSslConfiguration unauthenticatedSsl = QSslConfiguration::defaultConfiguration();
@@ -320,7 +419,7 @@ int main(int argc, char** argv)
     OperationalInvalidation broadcast;
     broadcast.domains = {OperationalInvalidationDomain::Inventory};
     broadcast.workspaceId = 7;
-    ok &= check(server.broadcastInvalidation(broadcast) == 2,
+    ok &= check(server.broadcastInvalidation(broadcast) == 3,
                 "broadcast targets authenticated compatible Clients only");
     ok &= check(waitUntil([&]() { return firstEvents == 1 && secondEvents == 1; }),
                 "two authenticated Clients each receive one invalidation");
@@ -391,7 +490,7 @@ int main(int argc, char** argv)
 
     const int firstEventsBeforeDisconnectedBroadcast = firstEvents;
     const int secondEventsBeforeDisconnectedBroadcast = secondEvents;
-    ok &= check(server.broadcastInvalidation(broadcast) == 1,
+    ok &= check(server.broadcastInvalidation(broadcast) == 2,
                 "disconnected Client is removed from broadcast recipients");
     ok &= check(waitUntil([&]() {
                     return secondEvents == secondEventsBeforeDisconnectedBroadcast + 1;
@@ -403,7 +502,7 @@ int main(int argc, char** argv)
     success = false;
     ok &= check(waitForResult(client, &success, &resultMessage) && success,
                 "reconnected Client establishes a new authenticated session");
-    ok &= check(server.broadcastInvalidation(broadcast) == 2,
+    ok &= check(server.broadcastInvalidation(broadcast) == 3,
                 "reconnected Client rejoins authenticated broadcasts");
     ok &= check(waitUntil([&]() {
         return firstEvents == firstEventsBeforeDisconnectedBroadcast + 1
@@ -411,6 +510,7 @@ int main(int argc, char** argv)
     }), "new-session invalidation is accepted after reconnect");
 
     secondClient.disconnectFromHost();
+    pairedClient.disconnectFromHost();
     unauthenticatedSocket.close();
 
     BrickSuiteWebSocketClient wrongTokenClient;
@@ -463,6 +563,16 @@ int main(int argc, char** argv)
     ok &= check(rotatedServer.startWithIdentity(QHostAddress::LocalHost, 0, replacementToken,
                                                 identity, &serverError),
                 "Host starts with replacement token");
+    BrickSuiteWebSocketClient restartedPairedClient;
+    restartedPairedClient.configurePairedDevice(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(rotatedServer.serverPort())),
+        identity.fingerprint, pairedDeviceId, pairedCredential, false);
+    restartedPairedClient.connectToHost();
+    bool restartedPairedSuccess = false;
+    ok &= check(waitForResult(restartedPairedClient, &restartedPairedSuccess, &resultMessage)
+                    && restartedPairedSuccess,
+                "Host restart preserves paired-device registry and credential authentication");
+    restartedPairedClient.disconnectFromHost();
     BrickSuiteWebSocketClient oldTokenClient;
     success = true;
     oldTokenClient.configure(
@@ -488,6 +598,13 @@ int main(int argc, char** argv)
                     identityCredential,
                     &cleanupError), "test Host identity credential cleanup");
     CredentialStore::remove(hostTokenCredential, &cleanupError);
+    if (!pairedDeviceId.isEmpty())
+        CredentialStore::remove(BrickSuitePairingService::credentialReference(pairedDeviceId),
+                                &cleanupError);
+    if (!secondPairedDeviceId.isEmpty())
+        CredentialStore::remove(BrickSuitePairingService::credentialReference(secondPairedDeviceId),
+                                &cleanupError);
+    QFile::remove(PairedDeviceRegistry::defaultPath());
     QFile::remove(BrickSuiteHostIdentity::certificatePath());
     return ok ? 0 : 1;
 }

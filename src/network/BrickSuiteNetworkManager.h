@@ -21,6 +21,7 @@ class HostMutationProtocolService;
 class HostMaintenanceCoordinator;
 class RemoteSessionState;
 class OperationalInvalidationPublisher;
+class BrickSuitePairingService;
 struct OperationalInvalidation;
 
 class BrickSuiteNetworkManager : public QObject
@@ -52,6 +53,9 @@ public:
     QString generateOrRotateHostToken(QString* error = nullptr);
     bool saveClientToken(const QString& token, QString* error = nullptr);
     QString clientToken(QString* error = nullptr) const;
+    bool savePairedClientCredential(const QString& credential, QString* error = nullptr);
+    QString pairedClientCredential(QString* error = nullptr) const;
+    BrickSuitePairingService* pairingService() const;
 
 signals:
     void statusChanged();

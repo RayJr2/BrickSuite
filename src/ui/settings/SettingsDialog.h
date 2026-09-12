@@ -71,6 +71,9 @@ private slots:
     void generateOrRotateServerToken();
     void regenerateHostIdentity();
     void forgetBrickSuiteHost();
+    void startHostPairing();
+    void cancelHostPairing();
+    void pairWithBrickSuiteHost();
     void updateNetworkPresentation();
     void enterHostMaintenance();
     void leaveHostMaintenance();
@@ -159,6 +162,9 @@ private:
     QLabel* m_serverIdentityValidFromLabel = nullptr;
     QLabel* m_serverIdentityExpiresLabel = nullptr;
     QPushButton* m_serverTokenButton = nullptr;
+    QLabel* m_pairingStatusLabel = nullptr;
+    QPushButton* m_startPairingButton = nullptr;
+    QPushButton* m_cancelPairingButton = nullptr;
     QLabel* m_maintenanceStateLabel = nullptr;
     QLabel* m_maintenanceCountersLabel = nullptr;
     QPushButton* m_enterMaintenanceButton = nullptr;
@@ -170,6 +176,10 @@ private:
     QLabel* m_hostConnectionStatusLabel = nullptr;
     QPushButton* m_hostTestButton = nullptr;
     QPushButton* m_forgetHostButton = nullptr;
+    QLineEdit* m_pairingCodeEdit = nullptr;
+    QLineEdit* m_pairingDeviceNameEdit = nullptr;
+    QLabel* m_remotePairingStatusLabel = nullptr;
+    QPushButton* m_pairDeviceButton = nullptr;
 
     QDialogButtonBox* m_buttonBox = nullptr;
 };

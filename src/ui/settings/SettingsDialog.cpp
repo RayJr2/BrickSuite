@@ -30,6 +30,7 @@
 #include "../../network/BrickSuiteWebSocketClient.h"
 #include "../../network/BrickSuiteWebSocketServer.h"
 #include "../../network/BrickSuiteHostIdentity.h"
+#include "../../network/BrickSuitePairingService.h"
 #include "../../api/brickset/BricksetService.h"
 #include "../../api/ApiProviderStatusRegistry.h"
 #include "../../settings/ThemeManager.h"
@@ -133,9 +134,7 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
         if (choice == QMessageBox::Yes) {
             m_hostFingerprintEdit->setText(fingerprint);
             UserSettings::instance().setBrickSuiteTrustedFingerprint(fingerprint);
-            m_networkManager.client()->configure(QUrl(m_hostEndpointEdit->text().trimmed()),
-                                                  fingerprint,
-                                                  m_hostTokenEdit->text(), false);
+            m_networkManager.client()->setTrustedFingerprint(fingerprint);
             m_networkManager.client()->connectToHost();
         } else {
             m_hostTestButton->setEnabled(true);
@@ -145,6 +144,31 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
             this, [this](bool, const QString& message) {
         m_hostConnectionStatusLabel->setText(message);
         m_hostTestButton->setEnabled(true);
+    });
+    connect(m_networkManager.client(), &BrickSuiteWebSocketClient::pairingCompleted,
+            this, [this](const QString& deviceId, const QString& credential) {
+        QString error;
+        if (!m_networkManager.savePairedClientCredential(credential, &error)) {
+            m_remotePairingStatusLabel->setText(
+                tr("Pairing reached the Host, but this device could not store its credential securely."));
+            QMessageBox::critical(this, tr("Pair BrickSuite Device"), error);
+            return;
+        }
+        UserSettings::instance().setBrickSuitePairedDevice(
+            deviceId, m_hostFingerprintEdit->text());
+        m_remotePairingStatusLabel->setText(
+            tr("Paired as device %1. Reconnecting securely...").arg(deviceId));
+        m_networkManager.client()->configurePairedDevice(
+            QUrl(m_hostEndpointEdit->text().trimmed()), m_hostFingerprintEdit->text(),
+            deviceId, credential, false);
+        QTimer::singleShot(100, m_networkManager.client(), [client = m_networkManager.client()] {
+            client->connectToHost();
+        });
+        updateNetworkPresentation();
+    });
+    connect(m_networkManager.client(), &BrickSuiteWebSocketClient::pairingFailed,
+            this, [this](const QString& message) {
+        m_remotePairingStatusLabel->setText(message);
     });
 
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::saveSettings);
@@ -790,6 +814,19 @@ void SettingsDialog::buildServerTab()
     serverForm->addRow(tr("Certificate expires:"), m_serverIdentityExpiresLabel);
     serverForm->addRow(QString(), m_serverTokenButton);
     serverForm->addRow(QString(), regenerateButton);
+    m_pairingStatusLabel = new QLabel(tr("Pairing disabled"), serverGroup);
+    m_pairingStatusLabel->setWordWrap(true);
+    m_pairingStatusLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_startPairingButton = new QPushButton(tr("Pair New Device..."), serverGroup);
+    m_cancelPairingButton = new QPushButton(tr("Cancel Pairing"), serverGroup);
+    auto* pairingButtons = new QWidget(serverGroup);
+    auto* pairingButtonsLayout = new QHBoxLayout(pairingButtons);
+    pairingButtonsLayout->setContentsMargins(0, 0, 0, 0);
+    pairingButtonsLayout->addWidget(m_startPairingButton);
+    pairingButtonsLayout->addWidget(m_cancelPairingButton);
+    pairingButtonsLayout->addStretch();
+    serverForm->addRow(tr("Device pairing:"), m_pairingStatusLabel);
+    serverForm->addRow(QString(), pairingButtons);
     m_maintenanceStateLabel = new QLabel(serverGroup);
     m_maintenanceCountersLabel = new QLabel(serverGroup);
     m_enterMaintenanceButton = new QPushButton(tr("Enter Maintenance..."), serverGroup);
@@ -823,12 +860,30 @@ void SettingsDialog::buildServerTab()
     m_hostConnectionStatusLabel->setWordWrap(true);
     m_hostTestButton = new QPushButton(tr("Test Connection"), clientGroup);
     m_forgetHostButton = new QPushButton(tr("Forget Host..."), clientGroup);
+    m_pairingCodeEdit = new QLineEdit(clientGroup);
+    m_pairingCodeEdit->setPlaceholderText(tr("XXXX-XXXX-XXXX-XXXX"));
+    m_pairingDeviceNameEdit = new QLineEdit(clientGroup);
+#if defined(Q_OS_WIN)
+    m_pairingDeviceNameEdit->setText(tr("BrickSuite on Windows"));
+#elif defined(Q_OS_MACOS) || defined(Q_OS_MAC)
+    m_pairingDeviceNameEdit->setText(tr("BrickSuite on macOS"));
+#else
+    m_pairingDeviceNameEdit->setText(tr("BrickSuite on Linux"));
+#endif
+    m_pairingDeviceNameEdit->setMaxLength(80);
+    m_remotePairingStatusLabel = new QLabel(clientGroup);
+    m_remotePairingStatusLabel->setWordWrap(true);
+    m_pairDeviceButton = new QPushButton(tr("Pair This Device"), clientGroup);
     clientForm->addRow(tr("Secure endpoint:"), m_hostEndpointEdit);
     clientForm->addRow(tr("Trusted fingerprint:"), m_hostFingerprintEdit);
-    clientForm->addRow(tr("Access token:"), m_hostTokenEdit);
+    clientForm->addRow(tr("Legacy 1.2 access token:"), m_hostTokenEdit);
     clientForm->addRow(QString(), m_hostReconnectCheck);
     clientForm->addRow(tr("Connection status:"), m_hostConnectionStatusLabel);
     clientForm->addRow(QString(), m_hostTestButton);
+    clientForm->addRow(tr("Pairing code:"), m_pairingCodeEdit);
+    clientForm->addRow(tr("Device name:"), m_pairingDeviceNameEdit);
+    clientForm->addRow(QString(), m_pairDeviceButton);
+    clientForm->addRow(tr("Pairing status:"), m_remotePairingStatusLabel);
     clientForm->addRow(QString(), m_forgetHostButton);
     layout->addWidget(clientGroup);
     layout->addStretch();
@@ -842,6 +897,12 @@ void SettingsDialog::buildServerTab()
             this, &SettingsDialog::testBrickSuiteHostConnection);
     connect(m_forgetHostButton, &QPushButton::clicked,
             this, &SettingsDialog::forgetBrickSuiteHost);
+    connect(m_startPairingButton, &QPushButton::clicked,
+            this, &SettingsDialog::startHostPairing);
+    connect(m_cancelPairingButton, &QPushButton::clicked,
+            this, &SettingsDialog::cancelHostPairing);
+    connect(m_pairDeviceButton, &QPushButton::clicked,
+            this, &SettingsDialog::pairWithBrickSuiteHost);
     connect(m_enterMaintenanceButton, &QPushButton::clicked,
             this, &SettingsDialog::enterHostMaintenance);
     connect(m_leaveMaintenanceButton, &QPushButton::clicked,
@@ -863,6 +924,17 @@ void SettingsDialog::updateNetworkPresentation()
     m_serverBindCombo->setEnabled(local);
     m_serverPortSpin->setEnabled(local);
     m_serverTokenButton->setEnabled(local);
+    const auto pairing = m_networkManager.pairingService()->attempt();
+    if (pairing.active) {
+        m_pairingStatusLabel->setText(tr("Code %1 — expires %2 (one use)")
+            .arg(pairing.code, QLocale().toString(pairing.expiresUtc.toLocalTime(),
+                                                  QLocale::ShortFormat)));
+    } else {
+        m_pairingStatusLabel->setText(tr("Pairing disabled"));
+    }
+    const bool listening = local && m_networkManager.server()->isListening();
+    m_startPairingButton->setEnabled(listening && !pairing.active);
+    m_cancelPairingButton->setEnabled(listening && pairing.active);
     m_serverStatusLabel->setText(local ? m_networkManager.serverStatusText()
                                       : tr("Unavailable in BrickSuite Host client mode."));
     BrickSuiteHostIdentity::Result identity;
@@ -890,6 +962,12 @@ void SettingsDialog::updateNetworkPresentation()
     m_hostTokenEdit->setEnabled(!local);
     m_hostReconnectCheck->setEnabled(!local);
     m_hostTestButton->setEnabled(!local);
+    m_pairingCodeEdit->setEnabled(!local);
+    m_pairingDeviceNameEdit->setEnabled(!local);
+    m_pairDeviceButton->setEnabled(!local);
+    const QString pairedDeviceId = UserSettings::instance().brickSuitePairedDeviceId();
+    if (!local && !pairedDeviceId.isEmpty())
+        m_remotePairingStatusLabel->setText(tr("Paired device %1").arg(pairedDeviceId));
     m_forgetHostButton->setEnabled(!local
         && (!m_hostFingerprintEdit->text().trimmed().isEmpty()
             || !m_hostTokenEdit->text().isEmpty()));
@@ -900,7 +978,6 @@ void SettingsDialog::updateNetworkPresentation()
             tr("Reads: %1 queued, %2 active; Writes: %3 queued, %4 active")
                 .arg(maintenance->queuedReads()).arg(maintenance->activeReads())
                 .arg(maintenance->queuedWrites()).arg(maintenance->activeWrites()));
-        const bool listening = local && m_networkManager.server()->isListening();
         m_enterMaintenanceButton->setEnabled(listening
             && maintenance->state() == HostMaintenanceCoordinator::State::Normal);
         m_leaveMaintenanceButton->setEnabled(listening
@@ -981,10 +1058,11 @@ void SettingsDialog::regenerateHostIdentity()
 void SettingsDialog::forgetBrickSuiteHost()
 {
     if (QMessageBox::warning(this, tr("Forget BrickSuite Host"),
-        tr("This removes the trusted Host fingerprint, the stored access token, the remembered "
+        tr("This removes the trusted Host fingerprint, stored legacy and paired-device credentials, the remembered "
            "Host Workspace, and retained data-epoch state for this Host. Other preferences and "
            "local data are unchanged. The next connection requires a new fingerprint trust "
-           "decision and a valid access token. Continue?"),
+           "decision and new authentication setup. The Host-side device record is not revoked "
+           "and can be managed later by the Host administrator. Continue?"),
         QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
         return;
     m_networkManager.client()->disconnectFromHost();
@@ -992,6 +1070,12 @@ void SettingsDialog::forgetBrickSuiteHost()
     if (!m_networkManager.saveClientToken(QString(), &error)) {
         QMessageBox::critical(this, tr("Forget BrickSuite Host"),
             tr("BrickSuite could not remove the stored Host access token securely.\n\n%1")
+                .arg(error));
+        return;
+    }
+    if (!m_networkManager.savePairedClientCredential(QString(), &error)) {
+        QMessageBox::critical(this, tr("Forget BrickSuite Host"),
+            tr("BrickSuite could not remove the paired-device credential securely.\n\n%1")
                 .arg(error));
         return;
     }
@@ -1005,14 +1089,58 @@ void SettingsDialog::forgetBrickSuiteHost()
     updateNetworkPresentation();
 }
 
+void SettingsDialog::startHostPairing()
+{
+    QString error;
+    const auto attempt = m_networkManager.pairingService()->start(&error);
+    if (!attempt.active) QMessageBox::critical(this, tr("Pair New Device"), error);
+    else QTimer::singleShot((BrickSuitePairingService::ExpirationSeconds + 1) * 1000,
+                            this, &SettingsDialog::updateNetworkPresentation);
+    updateNetworkPresentation();
+}
+
+void SettingsDialog::cancelHostPairing()
+{
+    m_networkManager.pairingService()->cancel();
+    updateNetworkPresentation();
+}
+
+void SettingsDialog::pairWithBrickSuiteHost()
+{
+    bool codeValid = false;
+    const QString pairingCode = BrickSuitePairingService::normalizedCode(
+        m_pairingCodeEdit->text(), &codeValid);
+    if (!codeValid || m_pairingDeviceNameEdit->text().trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Pair BrickSuite Device"),
+                             codeValid
+                                 ? tr("Enter a device name.")
+                                 : tr("Enter the 16-digit hexadecimal pairing code, with or without its display hyphens."));
+        return;
+    }
+    m_remotePairingStatusLabel->setText(tr("Connecting securely to pair this device..."));
+    m_networkManager.client()->disconnectFromHost();
+    m_networkManager.client()->beginPairing(
+        QUrl(m_hostEndpointEdit->text().trimmed()), m_hostFingerprintEdit->text(),
+        pairingCode, m_pairingDeviceNameEdit->text());
+    m_networkManager.client()->connectToHost();
+}
+
 void SettingsDialog::testBrickSuiteHostConnection()
 {
     m_hostTestButton->setEnabled(false);
     m_hostConnectionStatusLabel->setText(tr("Testing secure connection..."));
     m_networkManager.client()->disconnectFromHost();
-    m_networkManager.client()->configure(QUrl(m_hostEndpointEdit->text().trimmed()),
-                                          m_hostFingerprintEdit->text().trimmed(),
-                                          m_hostTokenEdit->text(), false);
+    QString credentialError;
+    const QString pairedCredential = m_networkManager.pairedClientCredential(&credentialError);
+    const QString deviceId = UserSettings::instance().brickSuitePairedDeviceId();
+    if (!deviceId.isEmpty() && !pairedCredential.isEmpty())
+        m_networkManager.client()->configurePairedDevice(
+            QUrl(m_hostEndpointEdit->text().trimmed()), m_hostFingerprintEdit->text().trimmed(),
+            deviceId, pairedCredential, false);
+    else
+        m_networkManager.client()->configure(QUrl(m_hostEndpointEdit->text().trimmed()),
+                                              m_hostFingerprintEdit->text().trimmed(),
+                                              m_hostTokenEdit->text(), false);
     m_networkManager.client()->connectToHost();
 }
 

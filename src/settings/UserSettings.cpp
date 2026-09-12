@@ -49,6 +49,8 @@ constexpr auto kServerPortKey = "ServerPort";
 constexpr auto kHostEndpointKey = "HostEndpoint";
 constexpr auto kTrustedFingerprintKey = "TrustedFingerprint";
 constexpr auto kReconnectAutomaticallyKey = "ReconnectAutomatically";
+constexpr auto kPairedDeviceIdKey = "PairedDeviceId";
+constexpr auto kPairedHostFingerprintKey = "PairedHostFingerprint";
 constexpr auto kRememberedHostWorkspacesGroup = "RememberedHostWorkspaces";
 
 constexpr auto kRebrickableApiKey = "ApiKey";
@@ -274,6 +276,47 @@ void UserSettings::clearBrickSuiteHostTrustState(const QString& endpoint,
     settings.remove(kTrustedFingerprintKey);
     settings.beginGroup(QStringLiteral("RetainedDataEpoch"));
     if (!normalized.isEmpty()) settings.remove(normalized);
+    settings.endGroup();
+    settings.remove(kPairedDeviceIdKey);
+    settings.remove(kPairedHostFingerprintKey);
+    settings.endGroup();
+}
+
+QString UserSettings::brickSuitePairedDeviceId() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    const QString value = settings.value(kPairedDeviceIdKey).toString().trimmed().toLower();
+    settings.endGroup();
+    return value;
+}
+
+QString UserSettings::brickSuitePairedHostFingerprint() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    const QString value = settings.value(kPairedHostFingerprintKey).toString().trimmed();
+    settings.endGroup();
+    return value;
+}
+
+void UserSettings::setBrickSuitePairedDevice(const QString& deviceId,
+                                              const QString& hostFingerprint)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.setValue(kPairedDeviceIdKey, deviceId.trimmed().toLower());
+    settings.setValue(kPairedHostFingerprintKey, hostFingerprint.trimmed());
+    settings.endGroup();
+}
+
+void UserSettings::clearBrickSuitePairedDevice()
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.remove(kPairedDeviceIdKey);
+    settings.remove(kPairedHostFingerprintKey);
+    settings.endGroup();
 }
 
 bool UserSettings::brickSuiteReconnectAutomatically() const

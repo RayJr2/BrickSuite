@@ -56,6 +56,46 @@ void BrickSuiteWebSocketClient::configure(const QUrl& endpoint,
     m_trustedFingerprint = BrickSuiteHostIdentity::normalizedFingerprint(trustedFingerprint);
     m_accessToken = accessToken;
     m_reconnectAutomatically = reconnectAutomatically;
+    m_deviceId.clear();
+    m_pairing = false;
+    m_pairingCode.clear();
+    m_pairingFriendlyName.clear();
+    m_requestedProtocolMinor = 2;
+}
+
+void BrickSuiteWebSocketClient::configurePairedDevice(
+    const QUrl& endpoint, const QString& trustedFingerprint, const QString& deviceId,
+    const QString& credential, bool reconnectAutomatically)
+{
+    m_endpoint = endpoint;
+    m_trustedFingerprint = BrickSuiteHostIdentity::normalizedFingerprint(trustedFingerprint);
+    m_deviceId = deviceId.trimmed().toLower();
+    m_accessToken = credential;
+    m_reconnectAutomatically = reconnectAutomatically;
+    m_pairing = false;
+    m_pairingCode.clear();
+    m_pairingFriendlyName.clear();
+    m_requestedProtocolMinor = 3;
+}
+
+void BrickSuiteWebSocketClient::beginPairing(
+    const QUrl& endpoint, const QString& trustedFingerprint, const QString& code,
+    const QString& friendlyName)
+{
+    m_endpoint = endpoint;
+    m_trustedFingerprint = BrickSuiteHostIdentity::normalizedFingerprint(trustedFingerprint);
+    m_accessToken.clear();
+    m_deviceId.clear();
+    m_pairingCode = code.trimmed().toUpper();
+    m_pairingFriendlyName = friendlyName.trimmed();
+    m_reconnectAutomatically = false;
+    m_pairing = true;
+    m_requestedProtocolMinor = 3;
+}
+
+void BrickSuiteWebSocketClient::setTrustedFingerprint(const QString& fingerprint)
+{
+    m_trustedFingerprint = BrickSuiteHostIdentity::normalizedFingerprint(fingerprint);
 }
 
 void BrickSuiteWebSocketClient::connectToHost()
@@ -161,6 +201,8 @@ QString BrickSuiteWebSocketClient::enqueueRequest(
     if (m_pending.size() >= BrickSuiteProtocol::MaximumOutstandingRequests)
         return {};
     const auto message = BrickSuiteProtocol::request(operation, payload);
+    auto versionedMessage = message;
+    versionedMessage.protocolMinor = m_requestedProtocolMinor;
     Pending pending;
     pending.operation = operation;
     pending.context = context;
@@ -182,11 +224,11 @@ QString BrickSuiteWebSocketClient::enqueueRequest(
         emit testConnectionCompleted(false, error.message);
     });
     pending.timer->start(qBound(1, timeoutMs, BrickSuiteProtocol::RequestTimeoutMs));
-    m_pending.insert(message.requestId, pending);
+    m_pending.insert(versionedMessage.requestId, pending);
     qDebug() << "BrickSuite request queued" << operation << message.requestId.left(8)
              << "pending" << m_pending.size();
-    m_socket.sendTextMessage(QString::fromUtf8(BrickSuiteProtocol::serialize(message)));
-    return message.requestId;
+    m_socket.sendTextMessage(QString::fromUtf8(BrickSuiteProtocol::serialize(versionedMessage)));
+    return versionedMessage.requestId;
 }
 
 void BrickSuiteWebSocketClient::setStatus(BrickSuiteConnectionState state,
@@ -347,6 +389,7 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
                       QStringLiteral("Host Maintenance — shared operations are temporarily unavailable."));
         }
         emit requestFailed(message.requestId, message.error);
+        if (operation == QStringLiteral("system.pair")) emit pairingFailed(message.error.message);
         if (pending.context && pending.failure) pending.failure(message.error);
         emit testConnectionCompleted(false, message.error.message);
         return;
@@ -354,7 +397,24 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
     emit requestCompleted(message.requestId, message.payload);
     if (pending.context && pending.completion) pending.completion(message.payload);
     if (operation == QStringLiteral("system.hello")) {
-        sendAuthentication(message);
+        if (m_pairing) sendPairing();
+        else sendAuthentication(message);
+    } else if (operation == QStringLiteral("system.pair")) {
+        const QString deviceId = message.payload.value(QStringLiteral("deviceId")).toString();
+        const QString credential = message.payload.value(QStringLiteral("credential")).toString();
+        if (deviceId.isEmpty() || credential.isEmpty()) {
+            setStatus(BrickSuiteConnectionState::Error,
+                      QStringLiteral("The Host returned an invalid pairing result."));
+            m_socket.abort();
+            return;
+        }
+        m_pairing = false;
+        m_pairingCode.clear();
+        m_pairingFriendlyName.clear();
+        m_explicitDisconnect = true;
+        m_socket.close(QWebSocketProtocol::CloseCodeNormal,
+                       QStringLiteral("Pairing completed; reconnecting to authenticate."));
+        emit pairingCompleted(deviceId, credential);
     } else if (operation == QStringLiteral("system.authenticate")) {
         setStatus(BrickSuiteConnectionState::Authenticating,
                   QStringLiteral("Authentication succeeded; loading capabilities..."));
@@ -425,10 +485,30 @@ void BrickSuiteWebSocketClient::sendAuthentication(const BrickSuiteProtocol::Mes
     }
     setStatus(BrickSuiteConnectionState::Authenticating,
               QStringLiteral("Authenticating with BrickSuite Host..."));
-    sendRequest(QStringLiteral("system.authenticate"), {
+    QJsonObject payload{
         {QStringLiteral("sessionId"), QString::fromLatin1(sessionId.toBase64())},
         {QStringLiteral("clientNonce"), QString::fromLatin1(nonce.toBase64())},
         {QStringLiteral("proof"), QString::fromLatin1(proof.toBase64())}
+    };
+    if (m_requestedProtocolMinor >= 3) payload.insert(QStringLiteral("deviceId"), m_deviceId);
+    sendRequest(QStringLiteral("system.authenticate"), payload);
+}
+
+void BrickSuiteWebSocketClient::sendPairing()
+{
+    setStatus(BrickSuiteConnectionState::Authenticating,
+              QStringLiteral("Pairing this device with BrickSuite Host..."));
+    sendRequest(QStringLiteral("system.pair"), {
+        {QStringLiteral("code"), m_pairingCode},
+        {QStringLiteral("friendlyName"), m_pairingFriendlyName},
+        {QStringLiteral("clientVersion"), QStringLiteral(BRICKSUITE_VERSION)},
+#if defined(Q_OS_WIN)
+        {QStringLiteral("platform"), QStringLiteral("Windows")}
+#elif defined(Q_OS_MACOS) || defined(Q_OS_MAC)
+        {QStringLiteral("platform"), QStringLiteral("macOS")}
+#else
+        {QStringLiteral("platform"), QStringLiteral("Linux")}
+#endif
     });
 }
 
@@ -442,6 +522,7 @@ void BrickSuiteWebSocketClient::failPending(const QString& code,
         pending.timer->deleteLater();
         const BrickSuiteProtocol::Error error{code, message, retryable};
         emit requestFailed(id, error);
+        if (pending.operation == QStringLiteral("system.pair")) emit pairingFailed(message);
         if (pending.context && pending.failure) pending.failure(error);
     }
 }

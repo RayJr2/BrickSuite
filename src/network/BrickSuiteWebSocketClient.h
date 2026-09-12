@@ -22,6 +22,12 @@ public:
 
     void configure(const QUrl& endpoint, const QString& trustedFingerprint,
                    const QString& accessToken, bool reconnectAutomatically);
+    void configurePairedDevice(const QUrl& endpoint, const QString& trustedFingerprint,
+                               const QString& deviceId, const QString& credential,
+                               bool reconnectAutomatically);
+    void beginPairing(const QUrl& endpoint, const QString& trustedFingerprint,
+                      const QString& code, const QString& friendlyName);
+    void setTrustedFingerprint(const QString& fingerprint);
     void connectToHost();
     void disconnectFromHost();
     BrickSuiteConnectionStatus status() const;
@@ -52,6 +58,8 @@ public:
 signals:
     void statusChanged(const BrickSuiteConnectionStatus& status);
     void trustRequired(const QString& fingerprint);
+    void pairingCompleted(const QString& deviceId, const QString& credential);
+    void pairingFailed(const QString& message);
     void requestCompleted(const QString& requestId, const QJsonObject& payload);
     void requestFailed(const QString& requestId, const BrickSuiteProtocol::Error& error);
     void testConnectionCompleted(bool success, const QString& message);
@@ -83,6 +91,7 @@ private:
     void scheduleReconnect();
     void sendHello();
     void sendAuthentication(const BrickSuiteProtocol::Message& hello);
+    void sendPairing();
     QString enqueueRequest(const QString& operation, const QJsonObject& payload,
                            QObject* context, Completion completion, Failure failure,
                            int timeoutMs);
@@ -91,6 +100,9 @@ private:
     QUrl m_endpoint;
     QString m_trustedFingerprint;
     QString m_accessToken;
+    QString m_deviceId;
+    QString m_pairingCode;
+    QString m_pairingFriendlyName;
     QString m_presentedFingerprint;
     BrickSuiteConnectionStatus m_status;
     QHash<QString, Pending> m_pending;
@@ -104,6 +116,8 @@ private:
     quint64 m_authenticatedSessionGeneration = 0;
     QString m_dataEpoch;
     bool m_dataEpochSupported = false;
+    int m_requestedProtocolMinor = 2;
+    bool m_pairing = false;
 #ifdef BRICKSUITE_TESTING
     int m_reconnectScheduleCount = 0;
     int m_transportDisconnectCount = 0;

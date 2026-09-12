@@ -79,6 +79,12 @@ int main(int argc, char** argv)
     const QString configuredIdentity = QStringLiteral("wss://example.invalid:50001|")
         + trustedFingerprint.toLower();
     settings.setBrickSuiteTrustedFingerprint(trustedFingerprint);
+    settings.setBrickSuitePairedDevice(QStringLiteral("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"),
+                                       trustedFingerprint);
+    ok &= check(settings.brickSuitePairedDeviceId()
+                        == QStringLiteral("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+                    && settings.brickSuitePairedHostFingerprint() == trustedFingerprint,
+                "paired device identity persists as Host-fingerprint-bound non-secret state");
     settings.setRememberedHostWorkspace(configuredIdentity, 9, "Configured Workshop");
     {
         QSettings raw;
@@ -91,8 +97,10 @@ int main(int argc, char** argv)
     settings.clearBrickSuiteHostTrustState("wss://example.invalid:50001",
                                            trustedFingerprint);
     ok &= check(settings.brickSuiteTrustedFingerprint().isEmpty()
+                    && settings.brickSuitePairedDeviceId().isEmpty()
+                    && settings.brickSuitePairedHostFingerprint().isEmpty()
                     && settings.rememberedHostWorkspaceId(configuredIdentity) == 0,
-                "Forget Host clears pinned trust and remembered Host Workspace");
+                "Forget Host clears trust, paired identity, and remembered Host Workspace");
     {
         QSettings raw;
         raw.beginGroup("BrickSuiteNetwork/RetainedDataEpoch");
