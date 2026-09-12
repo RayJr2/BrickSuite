@@ -5,6 +5,7 @@
 #include "../src/network/BrickSuiteOperationDispatcher.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QEventLoop>
 #include <QFileInfo>
 #include <QJsonObject>
@@ -72,6 +73,42 @@ int main(int argc, char** argv)
         || !check(seed.exec(QStringLiteral("CREATE TABLE mutation_probe(value INTEGER NOT NULL)")), "probe table")
         || !check(seed.exec(QStringLiteral("INSERT INTO mutation_probe VALUES(0)")), "seed probe")) return 1;
     database.close(); database = {}; QSqlDatabase::removeDatabase(connection);
+
+    // Startup cleanup catches up across several bounded batches while keeping
+    // the complete 90-day replay window intact.
+    {
+        const QString cleanupConnection = QStringLiteral("receipt-cleanup-seed");
+        QSqlDatabase cleanupDb = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), cleanupConnection);
+        cleanupDb.setDatabaseName(path);
+        if (!check(cleanupDb.open(), "open receipt cleanup seed database")) return 1;
+        QSqlQuery insert(cleanupDb);
+        insert.prepare(QStringLiteral("INSERT INTO remote_mutation_receipt "
+            "(mutation_id,operation,workspace_id,request_hash,result_code,result_json,committed_utc,client_identity) "
+            "VALUES(:id,'test.mutation',1,'hash','SUCCESS','{}',:utc,'test')"));
+        const QString expired = QDateTime::currentDateTimeUtc().addDays(-91).toString(Qt::ISODateWithMs);
+        for (int i = 0; i < 601; ++i) {
+            insert.bindValue(QStringLiteral(":id"), QStringLiteral("expired-%1").arg(i));
+            insert.bindValue(QStringLiteral(":utc"), expired);
+            if (!check(insert.exec(), "seed expired receipt")) return 1;
+        }
+        insert.bindValue(QStringLiteral(":id"), QStringLiteral("retained-boundary"));
+        insert.bindValue(QStringLiteral(":utc"),
+                         QDateTime::currentDateTimeUtc().addDays(-90).addSecs(2).toString(Qt::ISODateWithMs));
+        if (!check(insert.exec(), "seed retained receipt")) return 1;
+        cleanupDb.close(); cleanupDb = {}; QSqlDatabase::removeDatabase(cleanupConnection);
+        { HostWriteExecutor cleanupExecutor(path); }
+        QSqlDatabase verifyCleanup = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), cleanupConnection);
+        verifyCleanup.setDatabaseName(path);
+        QSqlQuery verifyQuery(verifyCleanup);
+        if (!check(verifyCleanup.open()
+                   && verifyQuery.exec(QStringLiteral("SELECT mutation_id FROM remote_mutation_receipt"))
+                   && verifyQuery.next()
+                   && verifyQuery.value(0).toString() == QStringLiteral("retained-boundary")
+                   && !verifyQuery.next(),
+                   "cleanup removes more than 250 expired receipts and preserves retention window")) return 1;
+        verifyCleanup.close(); verifyCleanup = {};
+        QSqlDatabase::removeDatabase(cleanupConnection);
+    }
 
     RemoteMutationDto::Metadata first{1, RemoteMutationDto::newMutationId(),
                                       {{QStringLiteral("prior"), 0}}, {{QStringLiteral("amount"), 1}}};

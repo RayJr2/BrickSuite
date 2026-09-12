@@ -59,6 +59,7 @@ public:
 signals:
     void statusChanged();
     void serverError(const QString& message);
+    void sessionDisconnected(const QString& sessionId);
 
 private:
     struct Session {

@@ -14,10 +14,27 @@
 #include <QUuid>
 
 namespace {
+constexpr int ReceiptCleanupMaximumBatches = 20;
+
 bool isBusyError(const QString& text)
 {
     return text.contains(QStringLiteral("locked"), Qt::CaseInsensitive)
            || text.contains(QStringLiteral("busy"), Qt::CaseInsensitive);
+}
+
+int cleanExpiredReceipts(RemoteMutationReceiptRepository& receipts, QString* error)
+{
+    const QDateTime cutoff = QDateTime::currentDateTimeUtc().addDays(
+        -HostWriteExecutor::ReceiptRetentionDays);
+    int total = 0;
+    for (int batch = 0; batch < ReceiptCleanupMaximumBatches; ++batch) {
+        const int removed = receipts.removeCommittedBefore(
+            cutoff, HostWriteExecutor::ReceiptCleanupBatch, error);
+        if (removed < 0) return -1;
+        total += removed;
+        if (removed < HostWriteExecutor::ReceiptCleanupBatch) break;
+    }
+    return total;
 }
 }
 
@@ -41,8 +58,12 @@ public:
             m_error = QStringLiteral("Host write database configuration failed.");
         if (m_error.isEmpty()) {
             RemoteMutationReceiptRepository receipts(m_database);
-            receipts.removeCommittedBefore(QDateTime::currentDateTimeUtc().addDays(-ReceiptRetentionDays),
-                                           ReceiptCleanupBatch);
+            QString cleanupError;
+            const int removed = cleanExpiredReceipts(receipts, &cleanupError);
+            if (removed < 0)
+                qWarning().noquote() << "Expired mutation receipt cleanup failed:" << cleanupError;
+            else if (removed > 0)
+                qInfo() << "Expired mutation receipt cleanup removed" << removed << "row(s).";
         }
     }
 
@@ -281,7 +302,17 @@ void HostWriteExecutor::enqueue(const RemoteMutationDto::RequestContext& context
 void HostWriteExecutor::shutdown()
 {
     m_accepting = false;
+    QElapsedTimer timer;
+    timer.start();
+    qInfo() << "Host write executor shutdown started; queued" << queuedMutationCount()
+            << "active" << activeMutationCount();
     if (m_worker && m_thread.isRunning())
         QMetaObject::invokeMethod(m_worker, [this]{ m_worker->close(); }, Qt::BlockingQueuedConnection);
-    m_thread.quit(); m_thread.wait(); delete m_worker; m_worker = nullptr;
+    m_thread.quit();
+    if (!m_thread.wait(30000)) {
+        qWarning() << "Host write executor shutdown exceeded 30000 ms; waiting safely for the admitted mutation.";
+        m_thread.wait();
+    }
+    qInfo() << "Host write executor stopped cleanly in" << timer.elapsed() << "ms.";
+    delete m_worker; m_worker = nullptr;
 }

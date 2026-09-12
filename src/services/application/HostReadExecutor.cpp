@@ -1,4 +1,5 @@
 #include "HostReadExecutor.h"
+#include "../../network/HostRequestContext.h"
 
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../repositories/StorageLocationTypeRepository.h"
@@ -17,6 +18,7 @@
 #include <QHash>
 #include <QDateTime>
 #include <QPointer>
+#include <QMutexLocker>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QSet>
@@ -24,6 +26,17 @@
 #include <QStringList>
 #include <QUuid>
 #include <algorithm>
+
+struct HostReadExecutor::PendingRead
+{
+    QString label;
+    QString sessionId;
+    Task task;
+    QPointer<QObject> context;
+    ErrorCallback failure;
+    qint64 queuedAt = 0;
+    bool queued = true;
+};
 
 class HostReadExecutor::Worker : public QObject
 {
@@ -54,28 +67,26 @@ public:
         m_services = createConnectionBoundReadApplicationServices(m_database);
     }
 
-    void execute(const QString& label, const Task& task,
-                 QObject* context, const ErrorCallback& failure, qint64 queuedAt)
+    void execute(const std::shared_ptr<PendingRead>& read)
     {
         Q_ASSERT(QThread::currentThread() == thread());
-        const int remaining = --m_queued;
-        ++m_active;
-        notifyActivity();
+        if (!m_owner->beginRead(read)) return;
+        const int remaining = m_queued.load();
         struct ActiveGuard {
-            std::atomic_int& active;
-            Worker* worker;
-            ~ActiveGuard() { --active; worker->notifyActivity(); }
-        } activeGuard{m_active, this};
+            HostReadExecutor* owner;
+            std::shared_ptr<PendingRead> read;
+            ~ActiveGuard() { owner->finishRead(read); }
+        } activeGuard{m_owner, read};
         if (!m_services) {
-            deliverFailure(context, failure, m_error.isEmpty()
+            deliverFailure(read->context, read->failure, m_error.isEmpty()
                 ? QStringLiteral("The Host read executor is unavailable.") : m_error);
             return;
         }
         QElapsedTimer timer;
         timer.start();
-        task(*m_services, m_database);
-        qDebug().noquote() << "Host read" << label
-                           << "queueWaitMs=" << qMax<qint64>(0, timerReference() - queuedAt)
+        read->task(*m_services, m_database);
+        qDebug().noquote() << "Host read" << read->label
+                           << "queueWaitMs=" << qMax<qint64>(0, timerReference() - read->queuedAt)
                            << "executionMs=" << timer.elapsed()
                            << "queued=" << remaining;
     }
@@ -191,24 +202,123 @@ void HostReadExecutor::enqueue(const QString& label, Task task, QObject* context
         }
     } while (!m_queued.compare_exchange_weak(expected, expected + 1));
     emit activityChanged();
-    QPointer<QObject> guard(context);
-    const qint64 queuedAt = QDateTime::currentMSecsSinceEpoch();
+    auto read = std::make_shared<PendingRead>();
+    read->label = label;
+    read->task = std::move(task);
+    read->context = context;
+    read->failure = std::move(failure);
+    read->queuedAt = QDateTime::currentMSecsSinceEpoch();
+    if (const auto* request = HostRequestContext::current())
+        read->sessionId = request->sessionId;
+    {
+        QMutexLocker lock(&m_pendingMutex);
+        m_pendingReads.append(read);
+    }
     QMetaObject::invokeMethod(m_worker,
-        [worker = m_worker, label, task = std::move(task), guard,
-         failure = std::move(failure), queuedAt]() {
-            worker->execute(label, task, guard.data(), failure, queuedAt);
-        }, Qt::QueuedConnection);
+        [worker = m_worker, read] { worker->execute(read); }, Qt::QueuedConnection);
 }
+
+bool HostReadExecutor::beginRead(const std::shared_ptr<PendingRead>& read)
+{
+    QMutexLocker lock(&m_pendingMutex);
+    if (!read->queued) return false;
+    read->queued = false;
+    m_pendingReads.removeOne(read);
+    --m_queued;
+    ++m_active;
+    lock.unlock();
+    emit activityChanged();
+    return true;
+}
+
+void HostReadExecutor::finishRead(const std::shared_ptr<PendingRead>& read)
+{
+    Q_UNUSED(read);
+    --m_active;
+    emit activityChanged();
+    if (isIdle()) emit drained();
+}
+
+int HostReadExecutor::cancelQueuedReadsForSession(const QString& sessionId)
+{
+    if (sessionId.isEmpty()) return 0;
+    int cancelled = 0;
+    QMutexLocker lock(&m_pendingMutex);
+    for (auto it = m_pendingReads.begin(); it != m_pendingReads.end();) {
+        const auto& read = *it;
+        if (read->queued && read->sessionId == sessionId) {
+            read->queued = false;
+            read->task = {};
+            read->failure = {};
+            read->context.clear();
+            it = m_pendingReads.erase(it);
+            --m_queued;
+            ++cancelled;
+        } else ++it;
+    }
+    m_cancelled += cancelled;
+    lock.unlock();
+    if (cancelled) {
+        qInfo() << "BrickSuite Host cancelled queued reads for disconnected session:" << cancelled;
+        emit activityChanged();
+        if (isIdle()) emit drained();
+    }
+    return cancelled;
+}
+
+int HostReadExecutor::cancelAllQueuedReads()
+{
+    int cancelled = 0;
+    QMutexLocker lock(&m_pendingMutex);
+    for (const auto& read : std::as_const(m_pendingReads)) {
+        if (!read->queued) continue;
+        read->queued = false;
+        read->task = {};
+        read->failure = {};
+        read->context.clear();
+        --m_queued;
+        ++cancelled;
+    }
+    m_pendingReads.clear();
+    m_cancelled += cancelled;
+    lock.unlock();
+    if (cancelled) emit activityChanged();
+    if (isIdle()) emit drained();
+    return cancelled;
+}
+
+#ifdef BRICKSUITE_TESTING
+void HostReadExecutor::enqueueForTesting(const QString& sessionId, const QString& label,
+                                         std::function<void()> task, QObject* context,
+                                         ErrorCallback failure)
+{
+    HostRequestContext request;
+    request.sessionId = sessionId;
+    HostRequestContextScope scope(request);
+    enqueue(label, [task = std::move(task)](ApplicationServices&, const QSqlDatabase&) {
+        task();
+    }, context, std::move(failure));
+}
+#endif
 
 void HostReadExecutor::shutdown()
 {
     m_accepting = false;
+    const int cancelled = cancelAllQueuedReads();
+    QElapsedTimer timer;
+    timer.start();
+    qInfo() << "Host read executor shutdown started; queued" << queuedReadCount()
+            << "active" << activeReadCount() << "cancelled" << cancelled;
     if (m_thread.isRunning()) {
         QMetaObject::invokeMethod(m_worker, [worker = m_worker]() { worker->close(); },
                                   Qt::BlockingQueuedConnection);
         m_thread.quit();
-        m_thread.wait();
+        if (!m_thread.wait(30000)) {
+            qWarning() << "Host read executor shutdown exceeded 30000 ms; waiting safely for the active read.";
+            m_thread.wait();
+        }
     }
+    qInfo() << "Host read executor stopped cleanly in" << timer.elapsed() << "ms.";
     delete m_worker;
     m_worker = nullptr;
 }

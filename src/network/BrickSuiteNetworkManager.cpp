@@ -134,6 +134,8 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     for(const QString&operation:buildOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostBuildMutationService::createMutation(operation,metadata,error);});
     m_maintenanceCoordinator = std::make_unique<HostMaintenanceCoordinator>(
         *m_server, m_hostReads->executor(), m_hostMutations->executor(), this);
+    connect(m_server, &BrickSuiteWebSocketServer::sessionDisconnected,
+            &m_hostReads->executor(), &HostReadExecutor::cancelQueuedReadsForSession);
     connect(m_server, &BrickSuiteWebSocketServer::statusChanged,
             this, &BrickSuiteNetworkManager::statusChanged);
     connect(m_client, &BrickSuiteWebSocketClient::statusChanged,

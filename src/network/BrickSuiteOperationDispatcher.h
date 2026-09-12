@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BrickSuiteProtocol.h"
+#include "HostRequestContext.h"
 
 #include <QHash>
 #include <functional>
@@ -26,6 +27,8 @@ public:
         const BrickSuiteProtocol::Message& request, bool authenticated) const;
     void dispatchAsync(const BrickSuiteProtocol::Message& request, bool authenticated,
                        Completion completion) const;
+    void dispatchAsync(const BrickSuiteProtocol::Message& request, bool authenticated,
+                       const HostRequestContext& context, Completion completion) const;
     QStringList operations() const;
     QStringList operations(int negotiatedMinor) const;
     QStringList capabilities(int negotiatedMinor) const;

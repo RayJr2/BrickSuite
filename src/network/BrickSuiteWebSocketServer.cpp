@@ -94,6 +94,8 @@ void BrickSuiteWebSocketServer::stop()
     m_server->close();
     const auto sockets = m_sessions.keys();
     for (QWebSocket* socket : sockets) {
+        const QString sessionId = QString::fromLatin1(m_sessions.value(socket).id.toBase64());
+        if (!sessionId.isEmpty()) emit sessionDisconnected(sessionId);
         socket->close(QWebSocketProtocol::CloseCodeGoingAway,
                       QStringLiteral("BrickSuite is shutting down."));
         socket->deleteLater();
@@ -503,6 +505,7 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
         return;
     }
     std::shared_ptr<HostRequestAdmissionController::Lease> admissionLease;
+    std::optional<HostRequestContext> requestContext;
     const auto admissionKind = m_dispatcher.admissionKind(request.operation);
     if (session.authenticated && admissionKind != BrickSuiteOperationDispatcher::AdmissionKind::None) {
         HostRequestContext context;
@@ -530,10 +533,11 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
             return;
         }
         admissionLease = std::move(admitted.lease);
+        requestContext = context;
     }
     const QByteArray sessionId = session.id;
     QPointer<QWebSocket> guard(socket);
-    m_dispatcher.dispatchAsync(request, session.authenticated,
+    auto completion =
         [this, guard, sessionId, operation = request.operation,
          admissionLease = std::move(admissionLease)](BrickSuiteProtocol::Message response) mutable {
             admissionLease.reset();
@@ -565,7 +569,12 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
             qDebug() << "BrickSuite Host sending response" << operation
                      << response.requestId.left(8) << BrickSuiteProtocol::typeName(response.type);
             send(guard.data(), response);
-        });
+        };
+    if (requestContext)
+        m_dispatcher.dispatchAsync(request, session.authenticated, *requestContext,
+                                   std::move(completion));
+    else
+        m_dispatcher.dispatchAsync(request, session.authenticated, std::move(completion));
 }
 
 bool BrickSuiteWebSocketServer::send(QWebSocket* socket,
@@ -660,7 +669,11 @@ void BrickSuiteWebSocketServer::reject(QWebSocket* socket,
 
 void BrickSuiteWebSocketServer::closeSession(QWebSocket* socket)
 {
-    m_sessions.remove(socket);
+    const auto it = m_sessions.find(socket);
+    const QString sessionId = it == m_sessions.end()
+        ? QString() : QString::fromLatin1(it->id.toBase64());
+    if (it != m_sessions.end()) m_sessions.erase(it);
+    if (!sessionId.isEmpty()) emit sessionDisconnected(sessionId);
     socket->deleteLater();
     qInfo() << "BrickSuite Server client disconnected.";
     emit statusChanged();

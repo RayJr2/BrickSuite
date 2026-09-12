@@ -22,6 +22,7 @@
 #include <QElapsedTimer>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QSemaphore>
 #include <cstdio>
 #include <algorithm>
 
@@ -360,6 +361,32 @@ int main(int argc, char** argv)
         ok &= check(!executor.isAccepting(), "read admission can be stopped without shutdown");
         executor.startAccepting();
         ok &= check(executor.isAccepting(), "read admission can resume");
+
+        // A disconnected session loses only queued work. Its running read is
+        // allowed to finish, and another session retains FIFO progress.
+        QSemaphore entered;
+        QSemaphore release;
+        std::atomic_int ranA{0};
+        std::atomic_int ranB{0};
+        executor.enqueueForTesting(QStringLiteral("session-A"), QStringLiteral("running-A"),
+            [&] { entered.release(); release.acquire(); ++ranA; }, &app);
+        entered.acquire();
+        executor.enqueueForTesting(QStringLiteral("session-A"), QStringLiteral("queued-A-1"),
+            [&] { ++ranA; }, &app);
+        executor.enqueueForTesting(QStringLiteral("session-B"), QStringLiteral("queued-B"),
+            [&] { ++ranB; }, &app);
+        executor.enqueueForTesting(QStringLiteral("session-A"), QStringLiteral("queued-A-2"),
+            [&] { ++ranA; }, &app);
+        ok &= check(executor.queuedReadCount() == 3,
+                    "three reads remain queued behind the running read");
+        ok &= check(executor.cancelQueuedReadsForSession(QStringLiteral("session-A")) == 2,
+                    "disconnect cancels only session A queued reads");
+        ok &= check(executor.queuedReadCount() == 1 && executor.activeReadCount() == 1,
+                    "cancelled reads leave authoritative activity counts");
+        release.release();
+        ok &= check(waitUntil([&] { return executor.isIdle(); })
+                        && ranA.load() == 1 && ranB.load() == 1,
+                    "running A and queued B finish without executing cancelled A reads");
 
         executor.shutdown();
         ok &= check(!executor.isAccepting(), "shutdown stops task acceptance");

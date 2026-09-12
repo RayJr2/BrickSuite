@@ -8,6 +8,9 @@
 #include <QThread>
 #include <QStringList>
 #include <atomic>
+#include <memory>
+#include <QMutex>
+#include <QList>
 #include <functional>
 
 class PartReferenceManifest;
@@ -33,8 +36,14 @@ public:
     void startAccepting();
     void closeConnectionAsync(std::function<void(bool, const QString&)> completion);
     void shutdown();
-
+    int cancelQueuedReadsForSession(const QString& sessionId);
+    int cancelAllQueuedReads();
     using ErrorCallback = std::function<void(const QString&)>;
+#ifdef BRICKSUITE_TESTING
+    void enqueueForTesting(const QString& sessionId, const QString& label,
+                           std::function<void()> task, QObject* context,
+                           ErrorCallback failure = {});
+#endif
     void listWorkspaces(QObject* context,
                         std::function<void(const QList<Workspace>&)> completion,
                         ErrorCallback failure = {});
@@ -137,8 +146,11 @@ signals:
 
 private:
     class Worker;
+    struct PendingRead;
     using Task = std::function<void(ApplicationServices&, const QSqlDatabase&)>;
     void enqueue(const QString& label, Task task, QObject* context, ErrorCallback failure);
+    bool beginRead(const std::shared_ptr<PendingRead>& read);
+    void finishRead(const std::shared_ptr<PendingRead>& read);
     static void deliverFailure(QObject* context, const ErrorCallback& failure,
                                const QString& message);
 
@@ -147,5 +159,8 @@ private:
     std::atomic_bool m_accepting{true};
     std::atomic_int m_queued{0};
     std::atomic_int m_active{0};
+    mutable QMutex m_pendingMutex;
+    QList<std::shared_ptr<PendingRead>> m_pendingReads;
+    std::atomic_int m_cancelled{0};
     QString m_connectionName;
 };

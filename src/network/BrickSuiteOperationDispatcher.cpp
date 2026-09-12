@@ -149,6 +149,14 @@ void BrickSuiteOperationDispatcher::dispatchAsync(
     completion(BrickSuiteProtocol::response(request, it->handler(request.payload)));
 }
 
+void BrickSuiteOperationDispatcher::dispatchAsync(
+    const BrickSuiteProtocol::Message& request, bool authenticated,
+    const HostRequestContext& context, Completion completion) const
+{
+    HostRequestContextScope scope(context);
+    dispatchAsync(request, authenticated, std::move(completion));
+}
+
 QStringList BrickSuiteOperationDispatcher::operations() const
 {
     QStringList names = m_operations.keys();

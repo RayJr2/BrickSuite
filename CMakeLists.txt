@@ -1461,7 +1461,8 @@ if(BUILD_TESTING)
         resources/resources.qrc
     )
     target_compile_definitions(HostReadExecutorTest PRIVATE
-        BRICKSUITE_VERSION="${PROJECT_VERSION}")
+        BRICKSUITE_VERSION="${PROJECT_VERSION}"
+        BRICKSUITE_TESTING)
     target_link_libraries(HostReadExecutorTest PRIVATE
         Qt6::Core Qt6::Sql Qt6::Network Qt6::WebSockets OpenSSL::Crypto)
     if(WIN32)
