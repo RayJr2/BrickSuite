@@ -485,10 +485,41 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
                true);
         return;
     }
+    std::shared_ptr<HostRequestAdmissionController::Lease> admissionLease;
+    const auto admissionKind = m_dispatcher.admissionKind(request.operation);
+    if (session.authenticated && admissionKind != BrickSuiteOperationDispatcher::AdmissionKind::None) {
+        HostRequestContext context;
+        context.sessionId = QString::fromLatin1(session.id.toBase64());
+        context.requestId = request.requestId;
+        context.protocolMinor = session.protocolMinor;
+        context.authenticationKind = session.legacySharedToken
+            ? HostRequestContext::AuthenticationKind::LegacySharedToken
+            : HostRequestContext::AuthenticationKind::PairedDevice;
+        context.pairedDeviceId = session.deviceId;
+        const auto kind = admissionKind == BrickSuiteOperationDispatcher::AdmissionKind::Write
+            ? HostRequestAdmissionController::WorkKind::Write
+            : HostRequestAdmissionController::WorkKind::Read;
+        auto admitted = m_admission.admit(context, kind);
+        if (!admitted.accepted()) {
+            if (admitted.rejection == HostRequestAdmissionController::Rejection::DuplicateRequestId)
+                reject(socket, request, QStringLiteral("DUPLICATE_REQUEST"),
+                       QStringLiteral("This request ID is already in flight for this session."));
+            else
+                reject(socket, request, QStringLiteral("HOST_BUSY"),
+                       admitted.rejection == HostRequestAdmissionController::Rejection::OwnerLimit
+                           ? QStringLiteral("This client has too many outstanding Host operations. Try again shortly.")
+                           : QStringLiteral("The Host operation queue is full. Try again shortly."),
+                       true);
+            return;
+        }
+        admissionLease = std::move(admitted.lease);
+    }
     const QByteArray sessionId = session.id;
     QPointer<QWebSocket> guard(socket);
     m_dispatcher.dispatchAsync(request, session.authenticated,
-        [this, guard, sessionId, operation = request.operation](BrickSuiteProtocol::Message response) {
+        [this, guard, sessionId, operation = request.operation,
+         admissionLease = std::move(admissionLease)](BrickSuiteProtocol::Message response) mutable {
+            admissionLease.reset();
             if (!guard) return;
             auto it = m_sessions.find(guard.data());
             if (it == m_sessions.constEnd() || !it->authenticated || it->id != sessionId)

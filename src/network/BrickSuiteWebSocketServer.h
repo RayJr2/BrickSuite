@@ -7,6 +7,7 @@
 #include "PairedDeviceRegistry.h"
 #include "BrickSuitePairingService.h"
 #include "HostAuthenticationThrottle.h"
+#include "HostRequestAdmissionController.h"
 
 #include <QHash>
 #include <QHostAddress>
@@ -50,6 +51,8 @@ public:
 #ifdef BRICKSUITE_TESTING
     QStringList authenticatedDeviceIdsForTesting() const;
     int legacyAuthenticatedClientCountForTesting() const { return legacyAuthenticatedClientCount(); }
+    HostRequestAdmissionController::Snapshot admissionSnapshotForTesting() const
+    { return m_admission.snapshot(); }
 #endif
 
 signals:
@@ -92,4 +95,5 @@ private:
     std::unique_ptr<BrickSuitePairingService> m_pairing;
     HostAuthenticationThrottle m_authenticationThrottle;
     QElapsedTimer m_authenticationClock;
+    HostRequestAdmissionController m_admission;
 };

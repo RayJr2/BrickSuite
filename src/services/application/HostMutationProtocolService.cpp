@@ -53,7 +53,7 @@ void HostMutationProtocolService::registerInternalOperation(
                     completion(BrickSuiteProtocol::errorResponse(request, failure.code,
                         failure.message, failure.retryable));
                 });
-        }, 2, capability);
+        }, 2, capability, BrickSuiteOperationDispatcher::AdmissionKind::Write);
 }
 
 void HostMutationProtocolService::registerOperation(
@@ -108,5 +108,5 @@ void HostMutationProtocolService::registerOperation(
                     completion(BrickSuiteProtocol::errorResponse(request, failure.code,
                         failure.message, failure.retryable));
                 });
-        }, 2, capability);
+        }, 2, capability, BrickSuiteOperationDispatcher::AdmissionKind::Write);
 }

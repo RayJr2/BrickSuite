@@ -87,15 +87,23 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
 void BrickSuiteOperationDispatcher::registerOperation(
     const QString& name, bool authenticationRequired, Handler handler)
 {
-    m_operations.insert(name, {authenticationRequired, std::move(handler), {}, 0, {}});
+    m_operations.insert(name, {authenticationRequired, std::move(handler), {}, 0, {},
+                               AdmissionKind::None});
 }
 
 void BrickSuiteOperationDispatcher::registerAsyncOperation(
     const QString& name, bool authenticationRequired, AsyncHandler handler,
-    int minimumMinor, const QString& capability)
+    int minimumMinor, const QString& capability, AdmissionKind admissionKind)
 {
     m_operations.insert(name, {authenticationRequired, {}, std::move(handler),
-                               minimumMinor, capability});
+                               minimumMinor, capability, admissionKind});
+}
+
+BrickSuiteOperationDispatcher::AdmissionKind BrickSuiteOperationDispatcher::admissionKind(
+    const QString& operation) const
+{
+    const auto it = m_operations.constFind(operation);
+    return it == m_operations.cend() ? AdmissionKind::None : it->admissionKind;
 }
 
 BrickSuiteProtocol::Message BrickSuiteOperationDispatcher::dispatch(

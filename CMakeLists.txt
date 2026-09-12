@@ -69,6 +69,9 @@ qt_add_executable(BrickSuite
     src/network/OperationalInvalidationPublisher.cpp
     src/network/BrickSuiteOperationDispatcher.h
     src/network/BrickSuiteOperationDispatcher.cpp
+    src/network/HostRequestContext.h
+    src/network/HostRequestAdmissionController.h
+    src/network/HostRequestAdmissionController.cpp
     src/network/BrickSuiteWebSocketServer.h
     src/network/BrickSuiteWebSocketServer.cpp
     src/network/BrickSuiteWebSocketClient.h
@@ -1343,6 +1346,8 @@ if(BUILD_TESTING)
         src/network/BrickSuiteConnectionState.h
         src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
+        src/network/HostRequestContext.h
+        src/network/HostRequestAdmissionController.h src/network/HostRequestAdmissionController.cpp
         src/network/HostAuthenticationThrottle.h src/network/HostAuthenticationThrottle.cpp
         src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
         src/services/CredentialStore.h src/services/CredentialStore.cpp
@@ -1358,6 +1363,15 @@ if(BUILD_TESTING)
         target_link_libraries(SecureHostFoundationTest PRIVATE "-framework Security")
     endif()
     add_test(NAME SecureHostFoundation COMMAND SecureHostFoundationTest)
+
+    qt_add_executable(HostRequestAdmissionControllerTest EXCLUDE_FROM_ALL
+        tests/HostRequestAdmissionControllerTest.cpp
+        src/network/HostRequestContext.h
+        src/network/HostRequestAdmissionController.h
+        src/network/HostRequestAdmissionController.cpp
+    )
+    target_link_libraries(HostRequestAdmissionControllerTest PRIVATE Qt6::Core)
+    add_test(NAME HostRequestAdmissionController COMMAND HostRequestAdmissionControllerTest)
 
     qt_add_executable(HostReadExecutorTest EXCLUDE_FROM_ALL
         tests/HostReadExecutorTest.cpp
@@ -1427,6 +1441,8 @@ if(BUILD_TESTING)
         src/network/BrickSuitePairingService.h src/network/BrickSuitePairingService.cpp
         src/network/BrickSuiteConnectionState.h
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
+        src/network/HostRequestContext.h
+        src/network/HostRequestAdmissionController.h src/network/HostRequestAdmissionController.cpp
         src/network/HostAuthenticationThrottle.h src/network/HostAuthenticationThrottle.cpp
         src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
         src/services/CredentialStore.h src/services/CredentialStore.cpp
@@ -1583,6 +1599,8 @@ if(BUILD_TESTING)
         src/network/BrickSuiteConnectionState.h
         src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
+        src/network/HostRequestContext.h
+        src/network/HostRequestAdmissionController.h src/network/HostRequestAdmissionController.cpp
         src/network/HostAuthenticationThrottle.h src/network/HostAuthenticationThrottle.cpp
         src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
         src/services/application/HostMutationProtocolService.h src/services/application/HostMutationProtocolService.cpp
