@@ -37,6 +37,7 @@ private:
     RemoteCollectionMutationApplicationService& m_service;
     RemoteCollectionMutationDto::Request m_seed;
     QString m_mutationId;
+    std::optional<RemoteCollectionMutationDto::Request> m_retainedRequest;
     bool m_pending = false;
     QComboBox* m_state = nullptr;
     QComboBox* m_condition = nullptr;

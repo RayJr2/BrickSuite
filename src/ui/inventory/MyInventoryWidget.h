@@ -71,6 +71,7 @@ public:
     bool hasOpenRemoteHistory(const std::optional<qint64>& inventoryRecordId = std::nullopt) const;
     void refreshOpenRemoteHistory(const std::optional<qint64>& inventoryRecordId = std::nullopt);
     void refreshOpenHistoryAfterStorageChange();
+    void refreshOpenLostInventory();
     void settingsChanged();
     void reloadManufacturers();
     void setRemoteSessionConnected(bool connected);
@@ -113,6 +114,9 @@ private:
     void showLostInventory();
     void openRemoteMutationDialog(const QString& operation,
                                   const RemoteReadDto::InventoryDetail& detail);
+    void createRemoteMutationDialog(const QString& operation,
+                                    const RemoteReadDto::InventoryDetail& detail,
+                                    const QStringList& manufacturerNames);
 
     QString storagePathForId(int storageLocationId) const;
 

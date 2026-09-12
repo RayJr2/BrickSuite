@@ -78,6 +78,12 @@ void LostInventoryDialog::refreshRemoteStoragePaths(
     loadRemoteLostInventory();
 }
 
+void LostInventoryDialog::refreshAfterExternalCommit()
+{
+    if (m_remoteReads) loadRemoteLostInventory();
+    else loadLostInventory();
+}
+
 void LostInventoryDialog::initializeUi()
 {
     setWindowTitle("Lost Inventory");

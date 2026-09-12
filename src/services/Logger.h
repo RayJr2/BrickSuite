@@ -35,6 +35,7 @@ public:
     static QString logDirectoryPath();
 
     static bool clear(QString* errorMessage = nullptr);
+    static bool debugLoggingEnabled();
 
 private:
     static void messageHandler(QtMsgType type,
@@ -48,4 +49,5 @@ private:
     static QMutex s_logMutex;
     static QString s_logFilePath;
     static QtMessageHandler s_previousHandler;
+    static bool s_debugLoggingEnabled;
 };

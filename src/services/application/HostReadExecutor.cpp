@@ -331,15 +331,21 @@ void HostReadExecutor::getInventoryPortable(int workspaceId, int id, QObject* co
     },context,std::move(failure));
 }
 
-void HostReadExecutor::listBuildsPortable(int workspaceId, bool archived, QObject* context,
-    std::function<void(const QList<RemoteReadDto::BuildSummary>&)> completion,
+void HostReadExecutor::listBuildsPortable(int workspaceId, bool archived,
+    const RemoteReadDto::PageRequest& page, QObject* context,
+    std::function<void(const RemoteReadDto::Page<RemoteReadDto::BuildSummary>&)> completion,
     ErrorCallback failure)
 {
     QPointer<QObject> guard(context);
     enqueue(QStringLiteral("builds.list"), [=, completion=std::move(completion)]
         (ApplicationServices& services, const QSqlDatabase& db) mutable {
-        QList<RemoteReadDto::BuildSummary> result;
-        for (const Build& build : services.builds().list(workspaceId, archived)) {
+        RemoteReadDto::Page<RemoteReadDto::BuildSummary> result;
+        result.page=page.page; result.pageSize=page.pageSize;
+        const auto builds=services.builds().list(workspaceId, archived);
+        result.totalRows=builds.size();
+        const int begin=(page.page-1)*page.pageSize;
+        for (int i=begin;i<qMin(begin+page.pageSize,builds.size());++i) {
+            const Build& build=builds.at(i);
             RemoteReadDto::BuildSummary value;
             value.buildId = build.id(); value.workspaceId = build.workspaceId();
             value.buildType = build.buildType(); value.name = build.name();
@@ -351,7 +357,7 @@ void HostReadExecutor::listBuildsPortable(int workspaceId, bool archived, QObjec
                 value.manufacturerDisplay = manufacturerName(db, build.manufacturerId());
             value.status = build.status(); value.notes = build.notes(); value.active = build.isActive();
             value.createdUtc = build.createdUtc(); value.modifiedUtc = build.modifiedUtc();
-            result.append(value);
+            result.rows.append(value);
         }
         if (guard) QMetaObject::invokeMethod(guard,
             [guard, completion, result=std::move(result)]() mutable {

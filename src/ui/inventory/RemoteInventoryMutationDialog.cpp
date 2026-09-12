@@ -18,8 +18,10 @@
 
 RemoteInventoryMutationDialog::RemoteInventoryMutationDialog(const QString& operation,int workspaceId,
     RemoteInventoryMutationApplicationService& service,const QHash<int,QString>& storagePaths,
+    const QStringList& hostManufacturerNames,
     std::optional<RemoteReadDto::InventoryDetail> detail,QWidget* parent)
-    :QDialog(parent),m_operation(operation),m_workspaceId(workspaceId),m_service(service),m_detail(std::move(detail)){initialize(storagePaths);}
+    :QDialog(parent),m_operation(operation),m_workspaceId(workspaceId),m_service(service),
+     m_hostManufacturerNames(hostManufacturerNames),m_detail(std::move(detail)){initialize(storagePaths);}
 RemoteInventoryMutationDialog::RemoteInventoryMutationDialog(int workspaceId,RemoteInventoryMutationApplicationService& service,
     const QHash<int,QString>& storagePaths,const RemoteReadDto::LostInventoryRow& lost,QWidget* parent)
     :QDialog(parent),m_operation("inventory.markFound"),m_workspaceId(workspaceId),m_service(service),m_lost(lost){initialize(storagePaths);}
@@ -41,7 +43,7 @@ void RemoteInventoryMutationDialog::initialize(const QHash<int,QString>& paths)
     if(correct||remove||lost||found){m_notes=new QLineEdit(this);m_notes->setObjectName("notesEdit");m_notes->setPlaceholderText(found?"Optional note about where the part was found.":"Optional note");}
     if(edit){m_showAllColors=new QCheckBox("Show all colors",this);m_showAllColors->setObjectName("showAllColorsCheck");m_showAllColors->setChecked(true);}
     if(m_condition)m_condition->addItems({"Used","New"});if(m_ownership)m_ownership->addItem("Owned");
-    if(m_manufacturer)for(const auto& x:ManufacturerRepository().getAll(true))m_manufacturer->addItem(x.name(),x.name());
+    if(m_manufacturer)for(const QString& name:m_hostManufacturerNames)m_manufacturer->addItem(name,name);
     if(m_color)for(const auto& x:ColorRepository().getAll())ColorComboHelper::addColorItem(m_color,x.name(),x.id(),x.rgb());
     if(m_storage){QList<int> ids=paths.keys();std::sort(ids.begin(),ids.end());for(int id:ids)m_storage->addItem(paths.value(id),id);}
     QString number,name,colorName,storagePath,condition,ownership,manufacturer;int quantity=1,colorExternal=-1,storageId=0;

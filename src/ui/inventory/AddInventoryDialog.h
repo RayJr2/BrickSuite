@@ -24,6 +24,7 @@
 #include <QList>
 #include <QModelIndex>
 #include <QHash>
+#include <QStringList>
 
 #include "../../api/rebrickable/RebrickableService.h"
 #include "../../services/parts/BrickLinkCandidateDiscoveryService.h"
@@ -60,6 +61,7 @@ public:
                        SessionStorageSelectionService& sessionStorageSelectionService,
                        RemoteInventoryMutationApplicationService& remoteMutations,
                        const QHash<int, QString>& hostStoragePaths,
+                       const QStringList& hostManufacturerNames,
                        int preferredStorageLocationId,
                        QWidget* parent = nullptr);
 
@@ -156,6 +158,7 @@ private:
     int m_quickEntryColorId = 0;
     RemoteInventoryMutationApplicationService* m_remoteMutations = nullptr;
     QHash<int, QString> m_hostStoragePaths;
+    QStringList m_hostManufacturerNames;
     int m_preferredStorageLocationId = 0;
     QString m_remoteMutationId;
 };

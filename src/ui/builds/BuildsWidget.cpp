@@ -416,7 +416,24 @@ BuildsWidget::BuildsWidget(
     });
 
     m_statusLabel = new QLabel(this);
-    mainLayout->addWidget(m_statusLabel);
+    auto* pagingLayout = new QHBoxLayout;
+    pagingLayout->addWidget(m_statusLabel, 1);
+    m_previousBuildPageButton = new QPushButton(QStringLiteral("Previous"), this);
+    m_buildPageLabel = new QLabel(QStringLiteral("Page 1 of 1"), this);
+    m_nextBuildPageButton = new QPushButton(QStringLiteral("Next"), this);
+    m_previousBuildPageButton->setVisible(m_remoteMode);
+    m_buildPageLabel->setVisible(m_remoteMode);
+    m_nextBuildPageButton->setVisible(m_remoteMode);
+    pagingLayout->addWidget(m_previousBuildPageButton);
+    pagingLayout->addWidget(m_buildPageLabel);
+    pagingLayout->addWidget(m_nextBuildPageButton);
+    mainLayout->addLayout(pagingLayout);
+    connect(m_previousBuildPageButton, &QPushButton::clicked, this, [this] {
+        if (m_remoteMode && m_remoteBuildPage > 1) { --m_remoteBuildPage; loadRemoteBuilds(); }
+    });
+    connect(m_nextBuildPageButton, &QPushButton::clicked, this, [this] {
+        if (m_remoteMode) { ++m_remoteBuildPage; loadRemoteBuilds(); }
+    });
 
     connect(m_addButton, &QPushButton::clicked, this, &BuildsWidget::addBuild);
     connect(m_allocateAvailableButton,
@@ -493,6 +510,7 @@ BuildsWidget::BuildsWidget(
         UserSettings::instance().setShowArchivedBuilds(checked);
 
         m_selectedBuildId = 0;
+        m_remoteBuildPage = 1;
         loadBuilds();
         loadRequirements();
         updateRequirementUiState();
@@ -1415,6 +1433,8 @@ void BuildsWidget::loadRemoteBuilds()
     m_requirementsTable->setRowCount(0);
     updateRequirementUiState();
     m_showArchivedBuildsCheck->setEnabled(false);
+    m_previousBuildPageButton->setEnabled(false);
+    m_nextBuildPageButton->setEnabled(false);
 
     if (!m_workspaceContext.hasCurrentWorkspace()) {
         m_showArchivedBuildsCheck->setEnabled(true);
@@ -1432,8 +1452,9 @@ void BuildsWidget::loadRemoteBuilds()
     m_statusLabel->setText("Loading Builds from BrickSuite Host...");
     const int workspaceId = m_workspaceContext.currentWorkspaceId();
     const bool archived = m_showArchivedBuildsCheck->isChecked();
-    m_remoteReads->listBuilds(workspaceId, archived, this,
-        [this, generation, workspaceId](AsyncReadResult<QList<RemoteReadDto::BuildSummary>> result) {
+    RemoteReadDto::PageRequest page{m_remoteBuildPage, 250};
+    m_remoteReads->listBuilds(workspaceId, archived, page, this,
+        [this, generation, workspaceId](AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::BuildSummary>> result) {
             if (generation != m_buildListGeneration
                 || workspaceId != m_workspaceContext.currentWorkspaceId())
                 return;
@@ -1445,7 +1466,16 @@ void BuildsWidget::loadRemoteBuilds()
                 emit remoteBuildsRefreshFinished(false);
                 return;
             }
-            renderRemoteBuilds(*result.value);
+            m_remoteBuildPage=result.value->page;
+            m_remoteBuildTotalRows=result.value->totalRows;
+            const int pages=qMax(1,(m_remoteBuildTotalRows+result.value->pageSize-1)/result.value->pageSize);
+            if (m_remoteBuildPage > pages) { m_remoteBuildPage=pages; loadRemoteBuilds(); return; }
+            renderRemoteBuilds(result.value->rows);
+            m_buildPageLabel->setText(QStringLiteral("Page %1 of %2").arg(m_remoteBuildPage).arg(pages));
+            m_previousBuildPageButton->setEnabled(m_remoteBuildPage>1);
+            m_nextBuildPageButton->setEnabled(m_remoteBuildPage<pages);
+            m_statusLabel->setText(m_remoteBuildTotalRows==0 ? QStringLiteral("No builds have been created.")
+                : QStringLiteral("%1 build(s).").arg(m_remoteBuildTotalRows));
             emit remoteBuildsRefreshFinished(true);
         });
 }
@@ -1608,30 +1638,43 @@ void BuildsWidget::editRemoteBuild(const RemoteReadDto::BuildSummary& build)
             form->addRow(QStringLiteral("Notes:"), notes);
             form->addRow(status); form->addRow(buttons);
             connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
-            auto mutationId = std::make_shared<QString>();
+            auto retained = std::make_shared<std::optional<RemoteBuildMutationDto::Request>>();
             connect(buttons, &QDialogButtonBox::accepted, dialog,
                 [this, dialog, buttons, name, manufacturer, notes, status,
-                 authoritative, mutationId] {
-                    if (name->text().trimmed().isEmpty()) {
+                 authoritative, retained] {
+                    if (!*retained && name->text().trimmed().isEmpty()) {
                         status->setText(QStringLiteral("Enter a name for the Build.")); return;
                     }
                     RemoteBuildMutationDto::Request request;
-                    request.workspaceId = authoritative.workspaceId;
-                    request.buildId = authoritative.buildId;
-                    if (mutationId->isEmpty()) *mutationId = RemoteMutationDto::newMutationId();
-                    request.mutationId = *mutationId; request.expected = expectedState(authoritative);
-                    request.name = name->text().trimmed();
-                    request.manufacturer = manufacturer->currentText().trimmed();
-                    request.notes = notes->toPlainText().trimmed(); buttons->setEnabled(false);
+                    if (*retained) request = **retained;
+                    else {
+                        request.workspaceId = authoritative.workspaceId;
+                        request.buildId = authoritative.buildId;
+                        request.mutationId = RemoteMutationDto::newMutationId();
+                        request.expected = expectedState(authoritative);
+                        request.name = name->text().trimmed();
+                        request.manufacturer = manufacturer->currentText().trimmed();
+                        request.notes = notes->toPlainText().trimmed();
+                        *retained = request;
+                    }
+                    buttons->setEnabled(false);
+                    name->setEnabled(false); manufacturer->setEnabled(false); notes->setEnabled(false);
                     status->setText(QStringLiteral("Saving to BrickSuite Host..."));
                     m_remoteBuildMutations->submit(QStringLiteral("builds.edit"), request, dialog,
                         [this, dialog](const RemoteBuildMutationDto::Result&) {
                             dialog->accept(); refreshRemoteBuildsPreservingSelection();
-                        }, [this, buttons, status, mutationId](const RemoteMutationDto::Error& error) {
-                            buttons->setEnabled(true); status->setText(error.outcome == RemoteMutationDto::Outcome::Unknown
-                                ? QStringLiteral("The outcome is unknown. Retry Safely to check the same mutation.")
-                                : error.message);
-                            if (error.outcome != RemoteMutationDto::Outcome::Unknown) mutationId->clear();
+                        }, [this, buttons, name, manufacturer, notes, status, retained,
+                            authoritative](const RemoteMutationDto::Error& error) {
+                            buttons->setEnabled(true);
+                            if (error.outcome == RemoteMutationDto::Outcome::Unknown) {
+                                status->setText(QStringLiteral("The outcome is unknown. Retry Safely to check the same mutation."));
+                                buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("Retry Safely"));
+                            } else {
+                                retained->reset(); name->setEnabled(true); notes->setEnabled(true);
+                                manufacturer->setEnabled(authoritative.inventoryMode == QStringLiteral("CompleteSet"));
+                                buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("Save"));
+                                status->setText(error.message);
+                            }
                             if (error.code == QStringLiteral("STALE_VERSION"))
                                 refreshRemoteBuildsPreservingSelection();
                         });
@@ -2451,8 +2494,27 @@ void BuildsWidget::renderRemoteRequirements()
             if(action==QStringLiteral("store_spare")){storeRemoteSpare(requirement);return;}
             if(action==QStringLiteral("allocate")){openRemoteAllocationDialog(requirement);return;}
             if(action==QStringLiteral("delete")){
-                auto* prompt=new QMessageBox(QMessageBox::Warning,QStringLiteral("Delete Build Requirement"),QStringLiteral("Delete this requirement from the Build?"),QMessageBox::Yes|QMessageBox::No,this);prompt->setAttribute(Qt::WA_DeleteOnClose);prompt->setDefaultButton(QMessageBox::No);
-                connect(prompt,&QMessageBox::finished,this,[this,prompt,requirement](int result){if(result!=QMessageBox::Yes)return;RemoteBuildMutationDto::Request request;request.workspaceId=m_workspaceContext.currentWorkspaceId();request.requirementId=requirement.requirementId;request.mutationId=RemoteMutationDto::newMutationId();request.expectedRequirement=expectedRequirementState(requirement);m_remoteBuildMutations->submit(QStringLiteral("builds.requirements.remove"),request,this,[this](const RemoteBuildMutationDto::Result&){loadRequirements();},[this](const RemoteMutationDto::Error&e){QMessageBox::warning(this,"Delete Build Requirement",e.message);loadRequirements();});});prompt->open();return;
+                auto* dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);
+                dialog->setWindowTitle(QStringLiteral("Delete Build Requirement"));
+                auto* layout=new QVBoxLayout(dialog);
+                layout->addWidget(new QLabel(QStringLiteral("Delete this requirement from the Build?"),dialog));
+                auto* status=new QLabel(dialog);status->setWordWrap(true);layout->addWidget(status);
+                auto* buttons=new QDialogButtonBox(QDialogButtonBox::Yes|QDialogButtonBox::No,dialog);
+                layout->addWidget(buttons);connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
+                auto retained=std::make_shared<std::optional<RemoteBuildMutationDto::Request>>();
+                connect(buttons,&QDialogButtonBox::accepted,dialog,[this,dialog,status,buttons,requirement,retained]{
+                    RemoteBuildMutationDto::Request request;
+                    if(*retained)request=**retained;else{request.workspaceId=m_workspaceContext.currentWorkspaceId();request.requirementId=requirement.requirementId;request.mutationId=RemoteMutationDto::newMutationId();request.expectedRequirement=expectedRequirementState(requirement);*retained=request;}
+                    buttons->setEnabled(false);
+                    m_remoteBuildMutations->submit(QStringLiteral("builds.requirements.remove"),request,dialog,
+                        [this,dialog](const RemoteBuildMutationDto::Result&){dialog->accept();loadRequirements();},
+                        [this,dialog,status,buttons,retained](const RemoteMutationDto::Error&e){
+                            buttons->setEnabled(true);
+                            if(e.outcome==RemoteMutationDto::Outcome::Unknown){status->setText(QStringLiteral("The outcome is unknown. Retry Safely to check the same mutation."));buttons->button(QDialogButtonBox::Yes)->setText(QStringLiteral("Retry Safely"));}
+                            else{retained->reset();status->setText(e.message);buttons->button(QDialogButtonBox::Yes)->setText(QStringLiteral("Yes"));if(e.code==QStringLiteral("STALE_VERSION")){dialog->reject();loadRequirements();}}
+                        });
+                });
+                dialog->open();return;
             }
             auto* dialog = new QDialog(this);
             dialog->setAttribute(Qt::WA_DeleteOnClose);
@@ -2489,39 +2551,48 @@ void BuildsWidget::renderRemoteRequirements()
             form->addRow(QStringLiteral("Qty Required:"), quantity);
             form->addRow(QString(), spare);
             form->addRow(buttons);
+            auto retained = std::make_shared<std::optional<RemoteBuildMutationDto::Request>>();
             connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
             connect(buttons, &QDialogButtonBox::accepted, dialog,
-                    [this, dialog, part, color, quantity, spare, buttons, requirement]() {
-                const auto selected = PartRepository().getByPartNumber(
-                    PartSearchCompleterHelper::canonicalPartNumber(part));
-                if (!selected) {
-                    QMessageBox::warning(
-                        dialog, "Edit Build Requirement",
-                        "The selected Part is unavailable in the Client catalog.");
-                    return;
-                }
+                    [this, dialog, part, color, quantity, spare, buttons, requirement,
+                     retained]() {
                 RemoteBuildMutationDto::Request request;
-                request.workspaceId = m_workspaceContext.currentWorkspaceId();
-                request.requirementId = requirement.requirementId;
-                request.mutationId = RemoteMutationDto::newMutationId();
-                request.expectedRequirement = expectedRequirementState(requirement);
-                const bool originalIdentity =
-                    selected->partNumber() == requirement.partNumber
-                    && color->currentData().toInt() == requirement.rebrickableColorId;
-                if (!originalIdentity) {
-                    request.substitutePartNumber = selected->partNumber();
-                    request.substituteRebrickableColorId = color->currentData().toInt();
+                if (*retained) request = **retained;
+                else {
+                    const auto selected = PartRepository().getByPartNumber(
+                        PartSearchCompleterHelper::canonicalPartNumber(part));
+                    if (!selected) {
+                        QMessageBox::warning(
+                            dialog, "Edit Build Requirement",
+                            "The selected Part is unavailable in the Client catalog.");
+                        return;
+                    }
+                    request.workspaceId = m_workspaceContext.currentWorkspaceId();
+                    request.requirementId = requirement.requirementId;
+                    request.mutationId = RemoteMutationDto::newMutationId();
+                    request.expectedRequirement = expectedRequirementState(requirement);
+                    const bool originalIdentity =
+                        selected->partNumber() == requirement.partNumber
+                        && color->currentData().toInt() == requirement.rebrickableColorId;
+                    if (!originalIdentity) {
+                        request.substitutePartNumber = selected->partNumber();
+                        request.substituteRebrickableColorId = color->currentData().toInt();
+                    }
+                    request.quantityRequired = quantity->value();
+                    request.spare = spare->isChecked();
+                    *retained = request;
                 }
-                request.quantityRequired = quantity->value();
-                request.spare = spare->isChecked();
                 buttons->setEnabled(false);
+                part->setEnabled(false); color->setEnabled(false);
+                quantity->setEnabled(false); spare->setEnabled(false);
                 m_remoteBuildMutations->submit(
                     QStringLiteral("builds.requirements.edit"), request, dialog,
                     [this, dialog](const RemoteBuildMutationDto::Result&) {
                         dialog->close();
                         loadRequirements();
                     },
-                    [this, dialog, buttons](const RemoteMutationDto::Error& error) {
+                    [this, dialog, buttons, part, color, quantity, spare,
+                     retained](const RemoteMutationDto::Error& error) {
                         if (error.code == QStringLiteral("STALE_VERSION")) {
                             dialog->close();
                             loadRequirements();
@@ -2532,6 +2603,14 @@ void BuildsWidget::renderRemoteRequirements()
                             return;
                         }
                         buttons->setEnabled(true);
+                        if (error.outcome == RemoteMutationDto::Outcome::Unknown) {
+                            buttons->button(QDialogButtonBox::Save)->setText(
+                                QStringLiteral("Retry Safely"));
+                        } else {
+                            retained->reset(); part->setEnabled(true); color->setEnabled(true);
+                            quantity->setEnabled(true); spare->setEnabled(true);
+                            buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("Save"));
+                        }
                         QMessageBox::warning(dialog, "Edit Build Requirement", error.message);
                     });
             });
@@ -2563,12 +2642,13 @@ void BuildsWidget::storeRemoteSpare(const RemoteReadDto::BuildRequirement& requi
         auto*status=new QLabel(dialog);status->setWordWrap(true);auto*buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel,dialog);
         form->addRow(QStringLiteral("Available to Store:"),new QLabel(QString::number(remaining),dialog));form->addRow(QStringLiteral("Quantity:"),quantity);form->addRow(QStringLiteral("Storage:"),storage);form->addRow(status);form->addRow(buttons);
         if(storage->count()==0){status->setText(QStringLiteral("No active Host Inventory Storage destination is available."));buttons->button(QDialogButtonBox::Save)->setEnabled(false);}
-        connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::close);auto mutationId=std::make_shared<QString>();
-        connect(buttons,&QDialogButtonBox::accepted,dialog,[this,dialog,buttons,status,storage,quantity,workspace,requirement,mutationId]{
-            RemoteBuildMutationDto::Request request;request.workspaceId=workspace;request.buildId=requirement.buildId;request.requirementId=requirement.requirementId;
-            if(mutationId->isEmpty())*mutationId=RemoteMutationDto::newMutationId();request.mutationId=*mutationId;request.preferredStorageId=storage->currentData().toLongLong();request.quantity=quantity->value();request.expectedRequirement=expectedRequirementState(requirement);
-            buttons->setEnabled(false);status->setText(QStringLiteral("Storing spare on BrickSuite Host..."));
-            m_remoteBuildMutations->submit(QStringLiteral("builds.spare.store"),request,dialog,[this,dialog,workspace,storage](const RemoteBuildMutationDto::Result&){m_sessionStorageSelectionService.rememberDestination(workspace,storage->currentData().toInt());dialog->close();loadRequirements();},[this,dialog,buttons,status,mutationId](const RemoteMutationDto::Error&e){buttons->setEnabled(true);if(e.outcome==RemoteMutationDto::Outcome::Unknown){status->setText(QStringLiteral("The outcome is unknown. Retry Safely to check the same mutation."));buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("Retry Safely"));}else{mutationId->clear();status->setText(e.message);}if(e.code==QStringLiteral("STALE_VERSION")||e.code==QStringLiteral("CONFLICT")){dialog->close();loadRequirements();}});
+        connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::close);
+        auto retained=std::make_shared<std::optional<RemoteBuildMutationDto::Request>>();
+        connect(buttons,&QDialogButtonBox::accepted,dialog,[this,dialog,buttons,status,storage,quantity,workspace,requirement,retained]{
+            RemoteBuildMutationDto::Request request;
+            if(*retained)request=**retained;else{request.workspaceId=workspace;request.buildId=requirement.buildId;request.requirementId=requirement.requirementId;request.mutationId=RemoteMutationDto::newMutationId();request.preferredStorageId=storage->currentData().toLongLong();request.quantity=quantity->value();request.expectedRequirement=expectedRequirementState(requirement);*retained=request;}
+            buttons->setEnabled(false);storage->setEnabled(false);quantity->setEnabled(false);status->setText(QStringLiteral("Storing spare on BrickSuite Host..."));
+            m_remoteBuildMutations->submit(QStringLiteral("builds.spare.store"),request,dialog,[this,dialog,workspace,storage](const RemoteBuildMutationDto::Result&){m_sessionStorageSelectionService.rememberDestination(workspace,storage->currentData().toInt());dialog->close();loadRequirements();},[this,dialog,buttons,status,storage,quantity,retained](const RemoteMutationDto::Error&e){buttons->setEnabled(true);if(e.outcome==RemoteMutationDto::Outcome::Unknown){status->setText(QStringLiteral("The outcome is unknown. Retry Safely to check the same mutation."));buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("Retry Safely"));}else{retained->reset();storage->setEnabled(true);quantity->setEnabled(true);buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("Save"));status->setText(e.message);}if(e.code==QStringLiteral("STALE_VERSION")||e.code==QStringLiteral("CONFLICT")){dialog->close();loadRequirements();}});
         });
         connect(&m_workspaceContext,&WorkspaceContext::currentWorkspaceChanged,dialog,&QDialog::reject);dialog->open();
     });
@@ -2589,7 +2669,32 @@ void BuildsWidget::openRemoteAllocationDialog(const RemoteReadDto::BuildRequirem
             QHash<qint64,RemoteReadDto::PullingRow> existing;for(const auto&r:pullingResult.value->rows)if(r.requirementId==requirement.requirementId)existing.insert(r.inventoryRecordId,r);
             auto* dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setWindowTitle(QStringLiteral("Allocate Build Requirement"));dialog->resize(700,420);auto* layout=new QVBoxLayout(dialog);auto* table=new QTableWidget(candidates.size(),4,dialog);table->setHorizontalHeaderLabels({"Storage","Owned","Allocated","Desired"});table->horizontalHeader()->setSectionResizeMode(0,QHeaderView::Stretch);table->setEditTriggers(QAbstractItemView::NoEditTriggers);auto editors=std::make_shared<QList<QSpinBox*>>();
             for(int i=0;i<candidates.size();++i){const auto&row=candidates[i];const auto old=existing.value(row.inventoryRecordId);table->setItem(i,0,new QTableWidgetItem(row.storagePath));table->setItem(i,1,new QTableWidgetItem(QString::number(row.quantity)));table->setItem(i,2,new QTableWidgetItem(QString::number(old.quantityAllocated)));auto* spin=new QSpinBox(table);spin->setRange(0,qMin(row.quantity,qMax(requirement.quantityRequired-requirement.quantityPulled,0)));spin->setValue(old.quantityAllocated);table->setCellWidget(i,3,spin);editors->append(spin);}
-            auto* buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel,dialog);layout->addWidget(table);layout->addWidget(buttons);connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::close);connect(buttons,&QDialogButtonBox::accepted,dialog,[this,dialog,buttons,workspace,requirement,candidates,existing,editors](){RemoteBuildMutationDto::Request request;request.workspaceId=workspace;request.requirementId=requirement.requirementId;request.mutationId=RemoteMutationDto::newMutationId();request.expectedRequirement=expectedRequirementState(requirement);for(int i=0;i<candidates.size();++i){const auto&candidate=candidates[i];const auto old=existing.value(candidate.inventoryRecordId);RemoteBuildMutationDto::AllocationRow row;row.allocationId=old.allocationId;row.inventoryRecordId=candidate.inventoryRecordId;row.quantity=editors->at(i)->value();row.expectedQuantity=old.quantityAllocated;row.inventoryQuantity=candidate.quantity;request.allocations.append(row);}buttons->setEnabled(false);m_remoteBuildMutations->submit(QStringLiteral("builds.allocations.set"),request,dialog,[this,dialog](const RemoteBuildMutationDto::Result&){dialog->close();loadRequirements();},[this,dialog,buttons](const RemoteMutationDto::Error&e){buttons->setEnabled(true);QMessageBox::warning(dialog,"Allocate Requirement",e.message);loadRequirements();});});dialog->open();
+            auto* buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel,dialog);
+            layout->addWidget(table);layout->addWidget(buttons);
+            connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::close);
+            auto retained=std::make_shared<std::optional<RemoteBuildMutationDto::Request>>();
+            connect(buttons,&QDialogButtonBox::accepted,dialog,
+                [this,dialog,buttons,workspace,requirement,candidates,existing,editors,retained](){
+                    RemoteBuildMutationDto::Request request;
+                    if(*retained)request=**retained;else{
+                        request.workspaceId=workspace;request.requirementId=requirement.requirementId;
+                        request.mutationId=RemoteMutationDto::newMutationId();
+                        request.expectedRequirement=expectedRequirementState(requirement);
+                        for(int i=0;i<candidates.size();++i){const auto&candidate=candidates[i];const auto old=existing.value(candidate.inventoryRecordId);RemoteBuildMutationDto::AllocationRow row;row.allocationId=old.allocationId;row.inventoryRecordId=candidate.inventoryRecordId;row.quantity=editors->at(i)->value();row.expectedQuantity=old.quantityAllocated;row.inventoryQuantity=candidate.quantity;request.allocations.append(row);}
+                        *retained=request;
+                    }
+                    buttons->setEnabled(false);for(auto*editor:*editors)if(editor)editor->setEnabled(false);
+                    m_remoteBuildMutations->submit(QStringLiteral("builds.allocations.set"),request,dialog,
+                        [this,dialog](const RemoteBuildMutationDto::Result&){dialog->close();loadRequirements();},
+                        [this,dialog,buttons,editors,retained](const RemoteMutationDto::Error&e){
+                            buttons->setEnabled(true);
+                            if(e.outcome==RemoteMutationDto::Outcome::Unknown)
+                                buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("Retry Safely"));
+                            else{retained->reset();for(auto*editor:*editors)if(editor)editor->setEnabled(true);buttons->button(QDialogButtonBox::Save)->setText(QStringLiteral("Save"));loadRequirements();}
+                            QMessageBox::warning(dialog,"Allocate Requirement",e.message);
+                        });
+                });
+            dialog->open();
         });
     });
 }

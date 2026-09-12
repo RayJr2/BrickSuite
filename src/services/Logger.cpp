@@ -33,6 +33,7 @@ QFile Logger::s_logFile;
 QMutex Logger::s_logMutex;
 QString Logger::s_logFilePath;
 QtMessageHandler Logger::s_previousHandler = nullptr;
+bool Logger::s_debugLoggingEnabled = false;
 
 namespace
 {
@@ -43,6 +44,11 @@ const QString PreviousLogFileName = "BrickSuite.log.1";
 
 bool Logger::init()
 {
+#ifdef QT_DEBUG
+    s_debugLoggingEnabled = true;
+#else
+    s_debugLoggingEnabled = qEnvironmentVariableIntValue("BRICKSUITE_DEBUG_LOGGING") == 1;
+#endif
     const QString dataPath
         = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
 
@@ -69,7 +75,6 @@ bool Logger::init()
     s_previousHandler = qInstallMessageHandler(Logger::messageHandler);
 
     qInfo() << "BrickSuite application log started.";
-    qInfo() << "Log file:" << s_logFilePath;
 
     return true;
 }
@@ -103,6 +108,8 @@ QString Logger::logDirectoryPath()
 
     return QFileInfo(path).absolutePath();
 }
+
+bool Logger::debugLoggingEnabled() { return s_debugLoggingEnabled; }
 
 bool Logger::clear(QString* errorMessage)
 {
@@ -190,6 +197,11 @@ void Logger::messageHandler(QtMsgType type,
                             const QString& message)
 {
     Q_UNUSED(context);
+
+    // Filtering occurs before persistence so the normal user log stays Info+.
+    // Release diagnostics can be explicitly enabled with BRICKSUITE_DEBUG_LOGGING=1.
+    if (type == QtDebugMsg && !s_debugLoggingEnabled)
+        return;
 
     //
     // Keep known third-party image/platform noise out of the user-facing log.

@@ -57,7 +57,10 @@ signals:
     void remoteStorageMutationCommitted(int workspaceId, int storageId);
     void remotePartReferenceMutationCommitted(const QString& partNumber);
     void remoteCollectionMutationCommitted(int workspaceId, int collectionItemId);
-    void remoteBuildMutationCommitted(int workspaceId, int buildId);
+    void remoteBuildMutationCommitted(int workspaceId, int buildId,
+                                      bool inventoryChanged,
+                                      bool collectionChanged,
+                                      bool pullingAffected);
 
 private:
     BrickSuiteWebSocketServer* m_server = nullptr;

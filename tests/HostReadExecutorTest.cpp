@@ -3,10 +3,12 @@
 #include "../src/services/application/HostReadExecutor.h"
 #include "../src/services/application/HostReadProtocolService.h"
 #include "../src/services/application/RemoteReadApplicationServices.h"
+#include "../src/services/application/dto/RemoteReadJson.h"
 #include "../src/network/BrickSuiteOperationDispatcher.h"
 #include "../src/network/BrickSuiteWebSocketServer.h"
 #include "../src/network/BrickSuiteWebSocketClient.h"
 #include "../src/network/BrickSuiteHostIdentity.h"
+#include "../src/network/RemoteSessionState.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -19,6 +21,7 @@
 #include <QHostAddress>
 #include <QElapsedTimer>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <cstdio>
 #include <algorithm>
 
@@ -102,6 +105,13 @@ bool seedDatabase(const QString& path, const QString& workspaceName)
         execute(QStringLiteral("INSERT INTO inventory_record(workspace_id,part_id,color_id,storage_location_id,manufacturer_id,condition,ownership_type,quantity,created_utc,modified_utc) SELECT 1,p.id,c.id,s.id,1,'Used','Owned',7,'%1','%1' FROM part p,color c,storage_location s WHERE p.part_number='3001' AND c.rebrickable_id=4 AND s.name='Host Bin'").arg(now));
         execute(QStringLiteral("INSERT INTO inventory_movement(workspace_id,inventory_record_id,part_id,color_id,movement_type,quantity_change,to_storage_location_id,condition,ownership_type,reference_type,reference_id,notes,created_utc) SELECT 1,i.id,i.part_id,i.color_id,'Add',7,i.storage_location_id,'Used','Owned','Test','seed','Host history','%1' FROM inventory_record i").arg(now));
         execute(QStringLiteral("INSERT INTO build(workspace_id,build_type,name,set_number,inventory_mode,status,is_active,created_utc,modified_utc) VALUES(1,'MOC','Host Build','MOC-HOST','Stock','Planned',1,'%1','%1')").arg(now));
+        query.prepare(QStringLiteral("INSERT INTO build(workspace_id,build_type,name,set_number,inventory_mode,status,is_active,created_utc,modified_utc) VALUES(1,'MOC',:name,:number,'Stock','Planned',1,:now,:now)"));
+        for (int i=1;i<=500 && ok;++i) {
+            query.bindValue(QStringLiteral(":name"),QStringLiteral("Paged Build %1").arg(i,3,10,QChar('0')));
+            query.bindValue(QStringLiteral(":number"),QStringLiteral("MOC-PAGED-%1").arg(i,3,10,QChar('0')));
+            query.bindValue(QStringLiteral(":now"),now);
+            ok=query.exec();
+        }
         execute(QStringLiteral("INSERT INTO collection_item(workspace_id,item_type,state,condition,completeness,storage_location_id,source_build_id,nickname,notes,allow_parts_source,is_active,created_utc,modified_utc) SELECT 1,'MOC','Assembled','Used','Complete',s.id,b.id,'Host Collection','Host notes',0,1,'%1','%1' FROM storage_location s,build b WHERE b.name='Host Build' AND s.name='Host Bin'").arg(now));
         execute(QStringLiteral("INSERT INTO build_requirement(build_id,part_id,color_id,quantity_required,quantity_pulled,quantity_released,is_spare,created_utc,modified_utc) SELECT b.id,p.id,c.id,10,0,0,0,'%1','%1' FROM build b,part p,color c WHERE b.name='Host Build' AND p.part_number='3001' AND c.rebrickable_id=4").arg(now));
         execute(QStringLiteral("INSERT INTO build_allocation(build_id,build_requirement_id,inventory_record_id,part_id,color_id,storage_location_id,quantity_allocated,created_utc,modified_utc) SELECT b.id,r.id,i.id,i.part_id,i.color_id,i.storage_location_id,3,'%1','%1' FROM build b JOIN build_requirement r ON r.build_id=b.id CROSS JOIN inventory_record i WHERE b.name='Host Build'").arg(now));
@@ -248,8 +258,15 @@ int main(int argc, char** argv)
             executor.listBuilds(workspaces.first().id(), false, &app,
                 [&](const QList<Build>& result) { builds = result; loop.quit(); });
         }), "Build read completion");
-        ok &= check(builds.size() == 1, "Build projection");
-        const int buildId = builds.isEmpty() ? 0 : builds.first().id();
+        ok &= check(builds.size() == 501, "Build projection");
+        const auto hostBuild=std::find_if(builds.cbegin(),builds.cend(),[](const Build& b){return b.name()==QStringLiteral("Host Build");});
+        const int buildId = hostBuild==builds.cend() ? 0 : hostBuild->id();
+        RemoteReadDto::Page<RemoteReadDto::BuildSummary> buildPage1,buildPage3;
+        ok &= check(waitFor([&](QEventLoop& loop){executor.listBuildsPortable(1,false,{1,250},&app,[&](const auto&r){buildPage1=r;loop.quit();});}),"first Build page completion");
+        ok &= check(waitFor([&](QEventLoop& loop){executor.listBuildsPortable(1,false,{3,250},&app,[&](const auto&r){buildPage3=r;loop.quit();});}),"later Build page completion");
+        ok &= check(buildPage1.totalRows==501&&buildPage1.rows.size()==250
+                    &&buildPage3.totalRows==501&&buildPage3.rows.size()==1,
+                    ">500 Builds are returned through bounded pages");
         std::optional<Build> wrongWorkspaceBuild;
         ok &= check(waitFor([&](QEventLoop& loop) {
             executor.getBuild(999, buildId, &app,
@@ -364,6 +381,29 @@ int main(int argc, char** argv)
         BrickSuiteWebSocketServer server;
         HostReadProtocolService protocol(hostPath);
         protocol.registerOperations(server.operationDispatcher());
+        // Delay these Host-global reads so a Workspace generation transition can
+        // be exercised while the request is outstanding.
+        server.operationDispatcher().registerAsyncOperation(
+            QStringLiteral("storage.types.list"), true,
+            [](const BrickSuiteProtocol::Message& request, auto completion) {
+                RemoteReadDto::StorageType type;
+                type.storageTypeId = 1; type.name = QStringLiteral("Bin");
+                QTimer::singleShot(25, [request, completion = std::move(completion), type]() mutable {
+                    completion(BrickSuiteProtocol::response(request,
+                        {{QStringLiteral("rows"), QJsonArray{RemoteReadJson::toJson(type)}}}));
+                });
+            }, 2, QStringLiteral("storage.types.list"));
+        server.operationDispatcher().registerAsyncOperation(
+            QStringLiteral("partReference.customizations"), true,
+            [](const BrickSuiteProtocol::Message& request, auto completion) {
+                RemoteReadDto::PartReferenceCustomization row;
+                row.customizationId = 1; row.partNumber = QStringLiteral("3001");
+                row.catalog = QStringLiteral("Bricks"); row.section = QStringLiteral("Basic");
+                QTimer::singleShot(25, [request, completion = std::move(completion), row]() mutable {
+                    completion(BrickSuiteProtocol::response(request,
+                        {{QStringLiteral("rows"), QJsonArray{RemoteReadJson::toJson(row)}}}));
+                });
+            }, 2, QStringLiteral("partReference.customizations.read"));
         const auto identity = BrickSuiteHostIdentity::generateEphemeral();
         QString error;
         const QString token = QStringLiteral("m264b-loopback-token");
@@ -373,7 +413,36 @@ int main(int argc, char** argv)
         client.configure(QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
                          identity.fingerprint, token, false);
         ok &= check(connectClient(client), "secure Host read loopback authenticates");
-        RemoteReadApplicationServices remote(client);
+        RemoteSessionState session;
+        session.authenticated(identity.fingerprint);
+        session.setWorkspaceId(1);
+        RemoteReadApplicationServices remote(client, &session);
+        bool storageTypesAccepted = false;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            remote.listStorageTypes(&app, [&](const auto& result) {
+                storageTypesAccepted = result.succeeded(); loop.quit();
+            });
+            session.setWorkspaceId(2);
+        }), "Host-global Storage Types completion after Workspace transition");
+        ok &= check(storageTypesAccepted,
+                    "Storage Types response was incorrectly rejected by Workspace generation");
+        bool customizationsAccepted = false;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            remote.listPartReferenceCustomizations(&app, [&](const auto& result) {
+                customizationsAccepted = result.succeeded(); loop.quit();
+            });
+            session.setWorkspaceId(3);
+        }), "Host-global Part Reference completion after Workspace transition");
+        ok &= check(customizationsAccepted,
+                    "Part Reference response was incorrectly rejected by Workspace generation");
+
+        int obsoleteHostCompletions = 0;
+        remote.listStorageTypes(&app, [&](const auto&) { ++obsoleteHostCompletions; });
+        session.authenticated(QString(64, QLatin1Char('B')));
+        { QEventLoop loop; QTimer::singleShot(100, &loop, &QEventLoop::quit); loop.exec(); }
+        ok &= check(obsoleteHostCompletions == 0,
+                    "Host-global response from an obsolete Host/session was accepted");
+        session.authenticated(identity.fingerprint);
         QStringList remoteManufacturers;
         ok &= check(waitFor([&](QEventLoop& loop) {
             remote.listManufacturerNames(&app, [&](const auto& result) {
@@ -423,7 +492,7 @@ int main(int argc, char** argv)
             {"inventory.get",{{"workspaceId",1},{"inventoryRecordId",1}}},
             {"inventory.history",{{"workspaceId",1},{"partNumber","3001"},{"rebrickableColorId",4}}},
             {"inventory.lost.list",{{"workspaceId",1}}},
-            {"builds.list",{{"workspaceId",1},{"includeArchived",false}}},
+            {"builds.list",{{"workspaceId",1},{"includeArchived",false},{"page",1},{"pageSize",250}}},
             {"builds.get",{{"workspaceId",1},{"buildId",1}}},
             {"builds.requirements",{{"workspaceId",1},{"buildId",1},{"page",1},{"pageSize",250}}},
             {"builds.missingParts",{{"workspaceId",1},{"buildId",1},{"page",1},{"pageSize",250}}},

@@ -32,8 +32,9 @@ and business conflicts are definitive and create no receipt. Successful results 
 and the full authoritative Storage detail, so a Client need not perform an immediate follow-up read.
 
 The receipt and Storage change commit atomically. Same-ID/same-payload retry returns the stored
-result with `replayed=true`; changed payload returns `IDEMPOTENCY_CONFLICT`. Only timeout or
-disconnect creates an unknown outcome. After a new commit, the correlated response is handed to
+result with `replayed=true`; changed payload returns `IDEMPOTENCY_CONFLICT`. Timeout, disconnect,
+or an unusable/mismatched committed-success response creates an unknown outcome because the Client
+cannot prove what committed. After a new commit, the correlated response is handed to
 the server send path before one Workspace/Storage-scoped `Storage` invalidation and Host-local
 Storage notification are published. Replays and failures publish nothing. Protocol 1.1 and Hosts
 without an exact operation capability remain read-only.
@@ -68,9 +69,8 @@ to portable identities before asynchronous submission. The read-only `inventory.
 returns the Host's outstanding Lost Part/Color projection so Mark Found never requires raw identity
 entry on the Client.
 
-Protocol 1.2 extends the frozen Protocol 1.1 read and invalidation contract with the
-domain-neutral infrastructure required for Host-authoritative mutations. M26.6A does
-not expose any operational write operation or enable any Remote Client write control.
+Protocol 1.2 extends the frozen Protocol 1.1 read and invalidation contract with
+Host-authoritative, capability-gated operational mutations.
 
 ## Compatibility
 
@@ -106,7 +106,24 @@ Mutations use the normal correlated request/response envelope. The transport
 
 `workspaceId` is a positive exact JSON integer. `mutationId` is a UUID generated once
 per logical user action. `expected` holds operation-specific conflict inputs and
-`mutation` holds its business DTO. Later phases define those operation-specific fields.
+`mutation` holds its operation-specific business DTO.
+
+## Final operation and capability summary
+
+| Domain | Reads | Protocol 1.2 writes |
+|---|---|---|
+| Workspace | `workspace.list`, `workspace.get` | Host administration only |
+| Manufacturers | `manufacturers.list` | Host administration only |
+| Storage | `storage.list`, `storage.get`, `storage.types.list` | add, edit, activate/archive |
+| Inventory | search, details, history, lost inventory | add, edit, move, correct, remove, lost/found |
+| Builds | list, details, requirements, Missing Parts, Pulling, return plans | metadata/lifecycle, requirements, allocations, Pulling, disassembly, spare storage |
+| Collection | search and details | add, edit, lifecycle and remove where advertised |
+| Part Reference | `partReference.customizations` | customization add/remove |
+
+`workspace.list`, `manufacturers.list`, `storage.types.list`, and
+`partReference.customizations` are Host-global reads. Their responses are scoped to the authenticated
+Host/session generation rather than the selected Workspace generation. Other operational reads remain
+scoped to their requested Workspace.
 
 ## Canonical request hash
 
@@ -137,8 +154,9 @@ receipts remain available across practical disconnect and retry windows.
 ## Unknown outcomes
 
 A 30-second Client timeout or connection loss after submission does not prove rollback.
-It is an unknown outcome. The Client retains the original mutation ID and may offer an
-explicit retry using that same ID. M26.6A never resubmits automatically.
+Neither does a committed-success response whose envelope, mutation identity, operation, or
+authoritative result cannot be validated. These are unknown outcomes. The Client retains the exact
+request and mutation ID and may offer an explicit safe retry; it never resubmits automatically.
 
 If the Host accepted work before disconnect, queued or executing work may continue.
 If SQLite commits, the receipt and domain result survive even when the response is
@@ -154,7 +172,7 @@ keys and a 5000 ms busy timeout, and does not change journal mode or enable WAL.
 At most 16 accepted/executing mutations are held. Overflow and bounded SQLite lock
 exhaustion return retryable `BUSY`. New work is rejected during shutdown; accepted work
 is drained before the connection and thread stop. Host-local GUI writes continue using
-the default connection in M26.6A.
+the default connection.
 
 ## Common result
 
@@ -201,9 +219,9 @@ An authenticated `FullBrickSuiteClient` may invoke only an explicitly registered
 operation supported by its negotiated protocol. A broad write marker, if ever added,
 must not authorize an operation by itself.
 
-Production Protocol 1.2 mutation capabilities currently cover interactive Pulling, Inventory,
-Storage, and the Part Reference customization operations documented below. General Builds and
-Collection remain read-only.
+Production Protocol 1.2 mutation capabilities cover Inventory, Storage, Part Reference,
+Collection, interactive Pulling, and the Build operations documented below. Each exact capability
+is independently advertised and authorized.
 
 ## Part Reference customization mutations
 
@@ -229,7 +247,8 @@ removable Host customization identity.
 Both authoritative results return the customization ID and identity snapshot, including creation
 and modification UTC timestamps. The customization change and durable receipt commit atomically.
 Same-ID/same-payload retry replays the stored result without another mutation or invalidation;
-changed payload returns `IDEMPOTENCY_CONFLICT`. Only timeout or disconnect has unknown outcome.
+changed payload returns `IDEMPOTENCY_CONFLICT`. Timeout, disconnect, or an unusable/mismatched
+committed-success response has unknown outcome.
 For a new commit, the correlated response precedes one Host-global `PartReferenceCustomizations`
 invalidation and Host-local overlay refresh. Replay and failure publish nothing.
 
@@ -305,9 +324,9 @@ payloads are excluded.
 
 ## Extension guidance
 
-M26.6B and later phases add typed operation DTOs to `RemoteMutationDtos`, a Host-side
-connection-bound application/domain service, an exact operation/capability registration,
-and a Client method on `RemoteMutationApplicationServices`. Widgets use that application
+Each mutation domain uses typed operation DTOs, a Host-side connection-bound application/domain
+service, exact operation/capability registration, and a Client method on
+`RemoteMutationApplicationServices`. Widgets use that application
 service and never construct protocol JSON.
 
 The domain mutation and receipt must share one transaction. Business validation must
@@ -326,7 +345,8 @@ Edit and lifecycle requests carry the prior authoritative item as expected state
 `modifiedUtc`, active state, immutable source identity, Storage ID, and mutable values. The Host
 rejects stale state instead of overwriting newer data. Successful replies return the authoritative
 item. Standard Protocol 1.2 receipts make an identical retry a replay and reject a changed payload
-under the same mutation ID. Only timeout or disconnection has an unknown client outcome.
+under the same mutation ID. Timeout, disconnection, or an unusable/mismatched committed-success
+response has an unknown client outcome.
 
 A newly committed mutation sends its correlated response before publishing one `Collection`
 invalidation. Receipt replay publishes no second invalidation, and Collection writes do not emit

@@ -1352,6 +1352,8 @@ if(BUILD_TESTING)
         src/models/BuildRequirement.h src/models/BuildRequirement.cpp
         src/models/BuildAllocation.h src/models/BuildAllocation.cpp
         src/models/CollectionItem.h src/models/CollectionItem.cpp
+        src/models/SetCatalogItem.h src/models/SetCatalogItem.cpp
+        src/models/MinifigCatalogItem.h src/models/MinifigCatalogItem.cpp
         src/models/CollectionSearchCriteria.h src/models/CollectionSearchResult.h
         src/models/Part.h src/models/Part.cpp
         src/models/Color.h src/models/Color.cpp
@@ -1371,12 +1373,16 @@ if(BUILD_TESTING)
         src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
         src/repositories/PartCategoryRepository.h src/repositories/PartCategoryRepository.cpp
         src/repositories/CollectionRepository.h src/repositories/CollectionRepository.cpp
+        src/repositories/SetCatalogRepository.h src/repositories/SetCatalogRepository.cpp
+        src/repositories/MinifigCatalogRepository.h src/repositories/MinifigCatalogRepository.cpp
         src/repositories/UserPartReferenceRepository.h src/repositories/UserPartReferenceRepository.cpp
         src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
         src/services/builds/MissingPartsService.h src/services/builds/MissingPartsService.cpp
     src/services/builds/BuildPullingService.h src/services/builds/BuildPullingService.cpp
     src/services/builds/BuildRequirementAvailabilityService.h
     src/services/builds/BuildRequirementAvailabilityService.cpp
+        src/services/builds/BuildLifecycleService.h src/services/builds/BuildLifecycleService.cpp
+        src/services/collection/CollectionItemService.h src/services/collection/CollectionItemService.cpp
         src/services/parts/PartReferenceManifest.h src/services/parts/PartReferenceManifest.cpp
         src/services/parts/PartReferenceCustomizationService.h src/services/parts/PartReferenceCustomizationService.cpp
         src/services/application/ApplicationServices.h
@@ -1606,6 +1612,12 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME RemoteInventoryDialogParity COMMAND RemoteInventoryDialogParityTest)
     set_tests_properties(RemoteInventoryDialogParity PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    qt_add_executable(LoggerLevelTest EXCLUDE_FROM_ALL
+        tests/LoggerLevelTest.cpp
+        src/services/Logger.h src/services/Logger.cpp)
+    target_link_libraries(LoggerLevelTest PRIVATE Qt6::Core)
+    add_test(NAME LoggerLevel COMMAND LoggerLevelTest)
 endif()
 
 if(WIN32)

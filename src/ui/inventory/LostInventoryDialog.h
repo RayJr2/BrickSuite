@@ -47,6 +47,7 @@ public:
         RemoteInventoryMutationApplicationService& remoteMutations,
         const QHash<int, QString>& storagePaths, QWidget* parent = nullptr);
     void refreshRemoteStoragePaths(const QHash<int, QString>& storagePaths);
+    void refreshAfterExternalCommit();
 
 private:
     void loadLostInventory();

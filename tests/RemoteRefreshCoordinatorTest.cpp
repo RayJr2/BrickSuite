@@ -121,6 +121,20 @@ int main(int argc, char* argv[])
     ok &= check(storageStarts == 1 && !coordinator.isDirty(P::Storage),
                 "Showing a dirty surface must refresh it once.");
 
+    int collectionStarts = 0;
+    int buildsStarts = 0;
+    coordinator.registerProjection(P::Collection, [] { return true; },
+        [&](const OperationalInvalidation&, auto completion) {
+            ++collectionStarts; completion(true);
+        });
+    coordinator.registerProjection(P::Builds, [] { return true; },
+        [&](const OperationalInvalidation&, auto completion) {
+            ++buildsStarts; completion(true);
+        });
+    coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Collection));
+    ok &= check(waitUntil([&] { return collectionStarts == 1 && buildsStarts == 1; }),
+                "Collection invalidation must refresh Collection and Build eligibility.");
+
     coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Inventory));
     coordinator.resetContext(true, 2, 2);
     QThread::msleep(200);

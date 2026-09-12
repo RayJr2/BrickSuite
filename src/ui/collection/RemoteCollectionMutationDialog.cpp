@@ -108,22 +108,27 @@ void RemoteCollectionMutationDialog::setPending(bool pending)
 void RemoteCollectionMutationDialog::submit()
 {
     if (m_pending) return;
-    const auto value = request(); m_mutationId = value.mutationId; setPending(true);
+    const auto value = m_retainedRequest ? *m_retainedRequest : request();
+    m_retainedRequest = value; m_mutationId = value.mutationId; setPending(true);
     m_status->setText(QStringLiteral("Saving to BrickSuite Host..."));
     m_service.submit(m_operation, value, this,
         [this](const RemoteCollectionMutationDto::Result& result) {
-            setPending(false); m_mutationId.clear();
+            setPending(false); m_mutationId.clear(); m_retainedRequest.reset();
             emit mutationCompleted(result.item.value(QStringLiteral("collectionItemId")).toInt());
             accept();
         },
         [this](const RemoteMutationDto::Error& error) {
             if (error.outcome == RemoteMutationDto::Outcome::Unknown) {
-                setPending(false);
+                // Keep every logical field disabled: this button can only replay
+                // the exact retained request under the same mutation ID.
+                m_pending = false;
+                m_buttons->button(QDialogButtonBox::Ok)->setEnabled(true);
                 m_status->setText(QStringLiteral("The outcome is unknown. Retry Safely to check the same mutation."));
                 m_buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Retry Safely"));
                 return;
             }
-            setPending(false); m_mutationId.clear(); m_status->setText(error.message);
+            setPending(false); m_mutationId.clear(); m_retainedRequest.reset();
+            m_status->setText(error.message);
             if (error.code == QStringLiteral("STALE_VERSION") || error.code == QStringLiteral("CONFLICT"))
                 emit refreshRequired();
         });

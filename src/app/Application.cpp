@@ -59,7 +59,7 @@ bool Application::initialize(const StartupProgress& progress)
 
         return false;
     }
-    qInfo() << "Startup phase database initialization completed in"
+    qDebug() << "Startup phase database initialization completed in"
             << phaseTimer.elapsed() << "ms.";
 
     QSqlDatabase database = DatabaseManager::instance().database();
@@ -75,7 +75,7 @@ bool Application::initialize(const StartupProgress& progress)
 
         return false;
     }
-    qInfo() << "Startup phase reference data initialization completed in"
+    qDebug() << "Startup phase reference data initialization completed in"
             << phaseTimer.elapsed() << "ms.";
 
     report(3, QStringLiteral("Preparing main window and catalog services..."));
@@ -93,8 +93,8 @@ bool Application::initialize(const StartupProgress& progress)
                       << (sharedDataSource == SharedDataSource::ThisComputer
                               ? "This Computer" : "BrickSuite Host");
     if (!m_applicationServices->sharedStatus().isAvailable())
-        qWarning().noquote() << "BrickSuite Host shared services are unavailable until remote connectivity is configured.";
-    qInfo() << "Startup phase application service creation completed in"
+        qInfo().noquote() << "BrickSuite Host shared services will become available after authentication.";
+    qDebug() << "Startup phase application service creation completed in"
             << phaseTimer.elapsed() << "ms.";
 
     phaseTimer.restart();
@@ -102,7 +102,7 @@ bool Application::initialize(const StartupProgress& progress)
                                                 *m_sessionStorageSelectionService,
                                                 *m_applicationServices,
                                                 *m_networkManager);
-    qInfo() << "Startup phase MainWindow construction completed in"
+    qDebug() << "Startup phase MainWindow construction completed in"
             << phaseTimer.elapsed() << "ms.";
     report(4, QStringLiteral("Starting background services..."));
     phaseTimer.restart();
@@ -112,11 +112,11 @@ bool Application::initialize(const StartupProgress& progress)
 
     m_automaticBackupService->start();
     m_networkManager->startConfiguredMode();
-    qInfo() << "Startup phase background services and first show completed in"
+    qDebug() << "Startup phase background services and first show completed in"
             << phaseTimer.elapsed() << "ms.";
 
     report(5, QStringLiteral("Ready"));
-    qInfo() << "Application initialization phases completed in"
+    qDebug() << "Application initialization phases completed in"
             << initializationTimer.elapsed() << "ms.";
     return true;
 }

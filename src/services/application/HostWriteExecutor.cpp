@@ -154,7 +154,9 @@ public:
             return;
         }
         qInfo() << "Remote mutation committed" << context.operation << context.workspaceId
-                << context.mutationId.left(8) << timer.elapsed() << "ms";
+                << context.mutationId.left(8);
+        qDebug() << "Remote mutation commit timing" << context.operation
+                 << timer.elapsed() << "ms";
         if (completion && guarded) {
             const auto workflow=outcome.publicationWorkflow;
             const auto scope=outcome.publicationScope;

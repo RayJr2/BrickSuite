@@ -355,8 +355,9 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
                       .arg(message.payload.value(QStringLiteral("brickSuiteVersion")).toString())
                       .arg(message.payload.value(QStringLiteral("protocolMajor")).toInt())
                       .arg(message.payload.value(QStringLiteral("protocolMinor")).toInt()));
-        qInfo() << "BrickSuite Host secure connection and authentication completed in"
-                << m_connectTimer.elapsed() << "ms.";
+        qInfo() << "BrickSuite Host secure connection and authentication completed.";
+        qDebug() << "BrickSuite Host secure connection and authentication completed in"
+                 << m_connectTimer.elapsed() << "ms.";
         emit authenticatedSessionEstablished(m_presentedFingerprint);
         emit testConnectionCompleted(true, m_status.message);
     }

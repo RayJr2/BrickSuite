@@ -218,7 +218,7 @@ PartsCatalogWidget::PartsCatalogWidget(PartExternalIdEnrichmentService* enrichme
                     m_cachedImageScaleMs += scale;
                     m_cachedImageApplyMs += apply;
                     if (m_timedCachedImages.isEmpty()) {
-                        qInfo().noquote()
+                        qDebug().noquote()
                             << QStringLiteral("Performance PartsCatalog cached-images "
                                               "decode=%1ms scale=%2ms apply=%3ms")
                                    .arg(m_cachedImageDecodeMs)
@@ -562,7 +562,7 @@ void PartsCatalogWidget::searchParts(const QString& loadingMessage)
 
     updatePagingControls();
     const qint64 statusMs = phaseTimer.elapsed();
-    qInfo().noquote()
+    qDebug().noquote()
         << QStringLiteral("Performance PartsCatalog page=%1 rows=%2 total=%3ms count=%4ms "
                           "search=%5ms clear=%6ms item-create=%7ms actions=%8ms "
                           "table-attach=%9ms row-other=%10ms image-path=%11ms "

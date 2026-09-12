@@ -76,6 +76,7 @@
 #include "../services/application/ApplicationServices.h"
 #include "../services/application/RemoteReadApplicationServices.h"
 #include "../services/application/RemotePartReferenceMutationApplicationService.h"
+#include "../services/application/RemoteBuildMutationApplicationService.h"
 #include "../network/BrickSuiteNetworkManager.h"
 #include "../network/BrickSuiteWebSocketClient.h"
 #include "../network/BrickSuiteHostIdentity.h"
@@ -221,10 +222,25 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             &SetsCatalogWidget::createBuildRequested,
             this,
             [this](int setCatalogId, const QString& inventoryMode) {
-                if (!m_applicationServices.sharedStatus().isAvailable()) {
+                const bool remoteMode = m_remoteReads != nullptr;
+                if (!remoteMode && !m_applicationServices.sharedStatus().isAvailable()) {
                     QMessageBox::information(this, "Create Build",
                                              m_applicationServices.sharedStatus().message);
                     return;
+                }
+                if (remoteMode) {
+                    const auto* session=m_networkManager.remoteSession();
+                    if (!session || !session->isAuthenticated()) {
+                        QMessageBox::information(this,"Create Build",
+                            "BrickSuite Host is not connected.");
+                        return;
+                    }
+                    const auto* mutations=m_networkManager.remoteBuildMutations();
+                    if (!mutations || !mutations->isAvailableFor(QStringLiteral("builds.add"))) {
+                        QMessageBox::information(this,"Create Build",
+                            "Creating Builds is not available from this connected Host.");
+                        return;
+                    }
                 }
                 if (!m_workspaceContext.hasCurrentWorkspace()) {
                     QMessageBox::warning(this,
@@ -280,6 +296,30 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
                 if (response != QMessageBox::Yes)
                     return;
+
+                if (remoteMode) {
+                    RemoteBuildMutationDto::Request request;
+                    request.workspaceId=m_workspaceContext.currentWorkspaceId();
+                    request.mutationId=RemoteMutationDto::newMutationId();
+                    request.buildType=QStringLiteral("Set");
+                    request.reference=set->setNumber();
+                    request.inventoryMode=inventoryMode;
+                    request.manufacturer=inventoryMode==QStringLiteral("CompleteSet")
+                        ? QStringLiteral("LEGO") : QString();
+                    request.initialStatus=QStringLiteral("Planned");
+                    request.name=set->name();
+                    m_networkManager.remoteBuildMutations()->submit(
+                        QStringLiteral("builds.add"),request,this,
+                        [this](const RemoteBuildMutationDto::Result& result) {
+                            m_tabWidget->setCurrentWidget(m_buildsWidget);
+                            m_buildsWidget->refreshRemoteBuildsPreservingSelection();
+                            statusBar()->showMessage(QStringLiteral("Build created on BrickSuite Host."),5000);
+                            Q_UNUSED(result);
+                        },[this](const RemoteMutationDto::Error& error) {
+                            QMessageBox::warning(this,QStringLiteral("Create Build"),error.message);
+                        });
+                    return;
+                }
 
                 Build build;
 
@@ -341,6 +381,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
         m_myCollectionWidget->refresh();
         m_myCollectionWidget->selectCollectionItem(collectionItemId);
+        if (m_buildsWidget) m_buildsWidget->refresh();
     });
 
     // Builds tab
@@ -359,19 +400,29 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         m_buildsWidget->refresh();
         m_myInventoryWidget->refresh();
         m_buildsWidget->refreshOpenLocalPulling(buildId);
+        m_myInventoryWidget->refreshOpenHistoryAfterStorageChange();
     });
     connect(&m_networkManager, &BrickSuiteNetworkManager::remoteInventoryMutationCommitted,
             this, [this](int workspaceId) {
         if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
         m_myInventoryWidget->refresh();
         m_buildsWidget->refresh();
+        m_myInventoryWidget->refreshOpenHistoryAfterStorageChange();
+        m_myInventoryWidget->refreshOpenLostInventory();
+        m_buildsWidget->refreshOpenLocalPulling();
     });
     connect(&m_networkManager, &BrickSuiteNetworkManager::remoteBuildMutationCommitted,
-            this, [this](int workspaceId, int) {
+            this, [this](int workspaceId, int buildId, bool inventoryChanged,
+                         bool collectionChanged, bool pullingAffected) {
         if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
         m_buildsWidget->refresh();
-        m_myInventoryWidget->refresh();
-        m_myCollectionWidget->refresh();
+        if (pullingAffected) m_buildsWidget->refreshOpenLocalPulling(buildId);
+        if (inventoryChanged) {
+            m_myInventoryWidget->refresh();
+            m_myInventoryWidget->refreshOpenHistoryAfterStorageChange();
+            m_myInventoryWidget->refreshOpenLostInventory();
+        }
+        if (collectionChanged) m_myCollectionWidget->refresh();
     });
 
     if (m_remoteReads)

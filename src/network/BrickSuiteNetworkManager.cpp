@@ -84,12 +84,14 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
                     emit remoteCollectionMutationCommitted(int(*scope.workspaceId),int(*scope.collectionItemId));
                 if ((workflow == HostMutationPublicationService::Workflow::BuildMetadata
                      || workflow == HostMutationPublicationService::Workflow::BuildRequirements
-                     || workflow == HostMutationPublicationService::Workflow::Pulling
                      || workflow == HostMutationPublicationService::Workflow::BuildCancellation
                      || workflow == HostMutationPublicationService::Workflow::BuildDisassembly
                      || workflow == HostMutationPublicationService::Workflow::CompleteSetSpare)
                     && scope.workspaceId && scope.buildId)
-                    emit remoteBuildMutationCommitted(int(*scope.workspaceId),int(*scope.buildId));
+                    emit remoteBuildMutationCommitted(
+                        int(*scope.workspaceId), int(*scope.buildId),
+                        scope.inventoryChanged, scope.collectionChanged,
+                        workflow != HostMutationPublicationService::Workflow::BuildMetadata);
             }, Qt::QueuedConnection);
         }, this);
     m_hostMutations->registerOperation(m_server->operationDispatcher(),

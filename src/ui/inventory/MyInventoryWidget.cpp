@@ -1274,7 +1274,7 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
     };
     const qint64 measuredRowNs = mapSetupNs + itemCreationNs + colorSetupNs
         + storageSetupNs + metadataSetupNs + actionCreationNs + tableAttachNs + imageSetupNs;
-    qInfo().noquote()
+    qDebug().noquote()
         << QStringLiteral("Performance MyInventory page=%1 rows=%2 total=%3ms count=%4ms "
                           "search=%5ms clear=%6ms item-create=%7ms actions=%8ms "
                           "table-attach=%9ms metadata=%10ms storage=%11ms color=%12ms "
@@ -1290,7 +1290,7 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                    - static_cast<double>(measuredRowNs) / 1000000.0), 'f', 1))
                .arg(tableFinalizeMs).arg(statusMs);
     if (m_remoteReads) {
-        qInfo().noquote() << QStringLiteral(
+        qDebug().noquote() << QStringLiteral(
             "Performance RemoteInventory page=%1 rows=%2 roundtrip=%3ms decorate-and-query=%4ms table=%5ms total=%6ms unknown-local=%7")
             .arg(m_currentPage + 1).arg(results.size()).arg(m_remoteRoundTripMs)
             .arg(searchMs).arg(rowAggregateMs + tableFinalizeMs).arg(totalTimer.elapsed())
@@ -1399,6 +1399,12 @@ void MyInventoryWidget::refreshOpenHistoryAfterStorageChange()
 {
     if (m_activeHistoryDialog)
         m_activeHistoryDialog->refreshAfterStorageChange();
+}
+
+void MyInventoryWidget::refreshOpenLostInventory()
+{
+    for (LostInventoryDialog* dialog : findChildren<LostInventoryDialog*>())
+        if (dialog) dialog->refreshAfterExternalCommit();
 }
 
 void MyInventoryWidget::setRemoteSessionConnected(bool connected)
@@ -1521,16 +1527,26 @@ void MyInventoryWidget::addPart()
             m_activeRemoteMutationDialog->activateWindow();
             return;
         }
-        const int filteredStorage=m_storageCombo->currentData().toInt();
-        auto* dialog = new AddInventoryDialog(m_workspaceContext,m_sessionStorageSelectionService,
-            *m_remoteMutations,m_storagePathById,filteredStorage,this);
-        m_activeRemoteMutationDialog = dialog;
-        connect(dialog, &QDialog::finished, this, [this, dialog](int result) {
-            if (m_activeRemoteMutationDialog == dialog) m_activeRemoteMutationDialog = nullptr;
-            if (result == QDialog::Accepted) refreshRemoteCurrentPage();
-            dialog->deleteLater();
-        });
-        dialog->open();
+        const int workspaceId = m_workspaceContext.currentWorkspaceId();
+        m_remoteReads->listManufacturerNames(this,
+            [this, workspaceId](AsyncReadResult<QStringList> result) {
+                if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+                if (!result.succeeded()) {
+                    QMessageBox::warning(this, QStringLiteral("Add Part to Inventory"),
+                                         result.message);
+                    return;
+                }
+                const int filteredStorage=m_storageCombo->currentData().toInt();
+                auto* dialog = new AddInventoryDialog(m_workspaceContext,m_sessionStorageSelectionService,
+                    *m_remoteMutations,m_storagePathById,*result.value,filteredStorage,this);
+                m_activeRemoteMutationDialog = dialog;
+                connect(dialog, &QDialog::finished, this, [this, dialog](int dialogResult) {
+                    if (m_activeRemoteMutationDialog == dialog) m_activeRemoteMutationDialog = nullptr;
+                    if (dialogResult == QDialog::Accepted) refreshRemoteCurrentPage();
+                    dialog->deleteLater();
+                });
+                dialog->open();
+            });
         return;
     }
     if (!m_workspaceContext.hasCurrentWorkspace())
@@ -1660,9 +1676,30 @@ void MyInventoryWidget::openRemoteMutationDialog(
         m_activeRemoteMutationDialog->activateWindow();
         return;
     }
+    if (operation == QStringLiteral("inventory.edit") && m_remoteReads) {
+        const int workspaceId = m_workspaceContext.currentWorkspaceId();
+        m_remoteReads->listManufacturerNames(this,
+            [this, workspaceId, operation, detail](AsyncReadResult<QStringList> result) {
+                if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+                if (!result.succeeded()) {
+                    QMessageBox::warning(this, QStringLiteral("Edit Inventory"), result.message);
+                    return;
+                }
+                createRemoteMutationDialog(operation, detail, *result.value);
+            });
+        return;
+    }
+    createRemoteMutationDialog(operation, detail, {});
+}
+
+void MyInventoryWidget::createRemoteMutationDialog(
+    const QString& operation, const RemoteReadDto::InventoryDetail& detail,
+    const QStringList& manufacturerNames)
+{
+    if (m_activeRemoteMutationDialog) return;
     auto* dialog = new RemoteInventoryMutationDialog(operation,
         m_workspaceContext.currentWorkspaceId(), *m_remoteMutations,
-        m_storagePathById, detail, this);
+        m_storagePathById, manufacturerNames, detail, this);
     m_activeRemoteMutationDialog = dialog;
     connect(dialog, &QDialog::finished, this, [this, dialog](int result) {
         if (m_activeRemoteMutationDialog == dialog) m_activeRemoteMutationDialog = nullptr;

@@ -41,8 +41,9 @@ public:
         AsyncReadCompletion<QList<RemoteReadDto::InventoryHistoryRow>> completion);
     ReadRequestToken listLostInventory(qint64 workspaceId, QObject* context,
         AsyncReadCompletion<QList<RemoteReadDto::LostInventoryRow>> completion);
-    ReadRequestToken listBuilds(qint64 workspaceId, bool includeArchived, QObject* context,
-        AsyncReadCompletion<QList<RemoteReadDto::BuildSummary>> completion);
+    ReadRequestToken listBuilds(qint64 workspaceId, bool includeArchived,
+        const RemoteReadDto::PageRequest& page, QObject* context,
+        AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::BuildSummary>> completion);
     ReadRequestToken getBuild(qint64 workspaceId, qint64 buildId, QObject* context,
         AsyncReadCompletion<RemoteReadDto::BuildDetail> completion);
     ReadRequestToken buildCancellationReturns(qint64 workspaceId, qint64 buildId, QObject* context,

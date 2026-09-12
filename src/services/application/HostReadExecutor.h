@@ -72,8 +72,9 @@ public:
     void missingParts(int workspaceId, int buildId, QObject* context,
                       std::function<void(const QList<MissingPartsService::MissingPart>&)> completion,
                       ErrorCallback failure = {});
-    void listBuildsPortable(int workspaceId, bool includeArchived, QObject* context,
-        std::function<void(const QList<RemoteReadDto::BuildSummary>&)> completion,
+    void listBuildsPortable(int workspaceId, bool includeArchived,
+        const RemoteReadDto::PageRequest& page, QObject* context,
+        std::function<void(const RemoteReadDto::Page<RemoteReadDto::BuildSummary>&)> completion,
         ErrorCallback failure = {});
     void getBuildPortable(int workspaceId, int buildId, QObject* context,
         std::function<void(const std::optional<RemoteReadDto::BuildDetail>&)> completion,

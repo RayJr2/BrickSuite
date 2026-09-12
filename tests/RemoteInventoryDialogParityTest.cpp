@@ -29,11 +29,25 @@ int main(int argc,char**argv)
     d.quantity=6;d.allocatedQuantity=2;d.storageId=10;d.storagePath="Room / Bin";
     d.manufacturerDisplay="LEGO";d.condition="Used";d.ownershipType="Owned";d.modifiedUtc=QDateTime::currentDateTimeUtc();
     const QHash<int,QString> paths{{10,"Room / Bin"},{11,"Room / Other"}};
-    RemoteInventoryMutationDialog edit("inventory.edit",1,inventory,paths,d);
+    const QStringList hostManufacturers{QStringLiteral("LEGO"), QStringLiteral("Alternate Bricks")};
+    RemoteInventoryMutationDialog edit("inventory.edit",1,inventory,paths,hostManufacturers,d);
     edit.show();app.processEvents();
     ok&=check(edit.windowTitle()=="Edit Inventory","Edit title mismatch");
     ok&=check(edit.findChild<QComboBox*>("colorCombo")!=nullptr,"Edit named Color combo missing");
     ok&=check(edit.findChild<QCheckBox*>("showAllColorsCheck")->isVisible(),"Edit Show All Colors missing");
+    auto* editManufacturer=edit.findChild<QComboBox*>("manufacturerCombo");
+    ok&=check(editManufacturer
+              && editManufacturer->findText(QStringLiteral("LEGO"),Qt::MatchFixedString)>=0
+              && editManufacturer->findText(QStringLiteral("Alternate Bricks"),Qt::MatchFixedString)>=0
+              && editManufacturer->findText(QStringLiteral("Inactive Bricks"),Qt::MatchFixedString)<0,
+              "Remote Edit does not use active Host manufacturer names");
+    d.manufacturerDisplay=QStringLiteral("Legacy Host Maker");
+    RemoteInventoryMutationDialog legacyEdit("inventory.edit",1,inventory,paths,hostManufacturers,d);
+    auto* legacyManufacturer=legacyEdit.findChild<QComboBox*>("manufacturerCombo");
+    ok&=check(legacyManufacturer
+              && legacyManufacturer->currentData().toString()==QStringLiteral("Legacy Host Maker"),
+              "Remote Edit did not preserve a current inactive/legacy Host manufacturer");
+    d.manufacturerDisplay=QStringLiteral("LEGO");
     ok&=check(edit.findChild<QLineEdit*>("notesEdit")==nullptr,"Edit unexpectedly exposes Notes");
     ok&=check(edit.findChild<QSpinBox*>("quantitySpin")->value()==6,"Edit quantity does not match Host state");
     ok&=check(edit.findChild<QSpinBox*>("quantitySpin")->minimum()==0
@@ -41,24 +55,24 @@ int main(int argc,char**argv)
               "Edit quantity range does not match local Edit semantics");
     for(auto* field:edit.findChildren<QLineEdit*>())
         ok&=check(field->text()!=QStringLiteral("4"),"Edit exposes raw Rebrickable Color ID");
-    RemoteInventoryMutationDialog move("inventory.move",1,inventory,paths,d);
+    RemoteInventoryMutationDialog move("inventory.move",1,inventory,paths,hostManufacturers,d);
     move.show();app.processEvents();
     auto* destination=move.findChild<QComboBox*>("destinationCombo");
     ok&=check(destination&&destination->findData(10)<0&&destination->findData(11)>=0,"Move destination identity/exclusion failed");
     ok&=check(move.findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok)->text()=="Move","Move action wording mismatch");
     ok&=check(move.findChild<QCheckBox*>("showAllColorsCheck")==nullptr,"Move retains Show All Colors");
     ok&=check(move.findChild<QLineEdit*>("notesEdit")==nullptr,"Move unexpectedly exposes Notes");
-    RemoteInventoryMutationDialog correct("inventory.correct",1,inventory,paths,d);
+    RemoteInventoryMutationDialog correct("inventory.correct",1,inventory,paths,hostManufacturers,d);
     correct.show();app.processEvents();
     ok&=check(correct.findChild<QLineEdit*>("replacementPartEdit")->isVisible(),"Correct Part field missing");
     ok&=check(correct.findChild<QLineEdit*>("notesEdit")->isVisible(),"Correct Notes field missing");
     ok&=check(correct.findChild<QCheckBox*>("showAllColorsCheck")==nullptr,"Correct retains Show All Colors");
-    RemoteInventoryMutationDialog remove("inventory.remove",1,inventory,paths,d);
+    RemoteInventoryMutationDialog remove("inventory.remove",1,inventory,paths,hostManufacturers,d);
     remove.show();app.processEvents();
     bool allocationShown=false;for(auto* label:remove.findChildren<QLabel*>())allocationShown|=label->text().contains("Allocated to Builds: 2");
     ok&=check(allocationShown,"Remove allocation context missing");
     ok&=check(remove.findChild<QLineEdit*>("notesEdit")->isVisible(),"Remove Notes field missing");
-    RemoteInventoryMutationDialog markLost("inventory.markLost",1,inventory,paths,d);
+    RemoteInventoryMutationDialog markLost("inventory.markLost",1,inventory,paths,hostManufacturers,d);
     markLost.show();app.processEvents();
     ok&=check(markLost.findChild<QLineEdit*>("notesEdit")->isVisible(),"Mark Lost Notes field missing");
     ok&=check(markLost.findChild<QComboBox*>("destinationCombo")==nullptr,"Mark Lost retains Destination");

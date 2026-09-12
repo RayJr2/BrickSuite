@@ -121,11 +121,13 @@ AddInventoryDialog::AddInventoryDialog(
     WorkspaceContext& workspaceContext,
     SessionStorageSelectionService& sessionStorageSelectionService,
     RemoteInventoryMutationApplicationService& remoteMutations,
-    const QHash<int, QString>& hostStoragePaths, int preferredStorageLocationId,
+    const QHash<int, QString>& hostStoragePaths,
+    const QStringList& hostManufacturerNames, int preferredStorageLocationId,
     QWidget* parent)
     : QDialog(parent), m_workspaceContext(workspaceContext),
       m_sessionStorageSelectionService(sessionStorageSelectionService),
       m_remoteMutations(&remoteMutations), m_hostStoragePaths(hostStoragePaths),
+      m_hostManufacturerNames(hostManufacturerNames),
       m_preferredStorageLocationId(preferredStorageLocationId)
 {
     m_quickEntryMode=true; initializeUi(); loadStorageLocations(); clearPartSelection();
@@ -509,6 +511,15 @@ void AddInventoryDialog::loadPart()
 void AddInventoryDialog::loadManufacturers()
 {
     m_manufacturerCombo->clear();
+
+    if (m_remoteMutations) {
+        for (const QString& name : m_hostManufacturerNames)
+            m_manufacturerCombo->addItem(name, name);
+        const int legoIndex = m_manufacturerCombo->findText(
+            QStringLiteral("LEGO"), Qt::MatchFixedString);
+        if (legoIndex >= 0) m_manufacturerCombo->setCurrentIndex(legoIndex);
+        return;
+    }
 
     ManufacturerRepository repository;
     const QList<Manufacturer> manufacturers = repository.getAll(true);

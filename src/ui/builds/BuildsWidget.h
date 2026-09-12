@@ -155,6 +155,8 @@ private:
     SingleInstanceWindowRegistry<int, QDialog> m_remotePullingDialogs;
     bool m_remoteMode = false;
     int m_restoreSelectedBuildId = 0;
+    int m_remoteBuildPage = 1;
+    int m_remoteBuildTotalRows = 0;
     bool m_restoreNewBuildExpanded = false;
 
     QComboBox* m_typeCombo = nullptr;
@@ -171,6 +173,9 @@ private:
     QCheckBox* m_showArchivedBuildsCheck = nullptr;
     QSplitter* m_buildsRequirementsSplitter = nullptr;
     QLabel* m_statusLabel = nullptr;
+    QPushButton* m_previousBuildPageButton = nullptr;
+    QPushButton* m_nextBuildPageButton = nullptr;
+    QLabel* m_buildPageLabel = nullptr;
 
     int m_selectedBuildId = 0;
 

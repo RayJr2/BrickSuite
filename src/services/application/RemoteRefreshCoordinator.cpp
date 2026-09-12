@@ -130,7 +130,9 @@ QSet<RemoteRefreshCoordinator::Projection> RemoteRefreshCoordinator::projections
     case OperationalInvalidationDomain::Pulling:
         return {P::Pulling, P::Builds, P::MissingParts,
                 P::Inventory, P::InventoryHistory};
-    case OperationalInvalidationDomain::Collection: return {P::Collection};
+    case OperationalInvalidationDomain::Collection:
+        // Collection membership controls Add/View Collection actions in Builds.
+        return {P::Collection, P::Builds};
     case OperationalInvalidationDomain::PartReferenceCustomizations:
         return {P::PartReferenceCustomizations};
     }

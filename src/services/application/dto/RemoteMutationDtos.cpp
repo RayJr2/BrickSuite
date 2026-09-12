@@ -1,9 +1,11 @@
 #include "RemoteMutationDtos.h"
 
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QRegularExpression>
+#include <QSet>
 #include <QUuid>
 #include <algorithm>
 #include <cmath>
@@ -87,16 +89,35 @@ QJsonObject resultToJson(const Result& result)
 
 bool resultFromJson(const QJsonObject& object, Result* result, Error* error)
 {
-    if (!result || !object.value(QStringLiteral("authoritative")).isObject()) {
+    static const QRegularExpression uuid(QStringLiteral(
+        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"));
+    static const QSet<QString> fields{QStringLiteral("mutationId"), QStringLiteral("operation"),
+        QStringLiteral("replayed"), QStringLiteral("committedUtc"), QStringLiteral("authoritative")};
+    bool exactFields = object.size() == fields.size();
+    for (auto it = object.constBegin(); it != object.constEnd(); ++it)
+        exactFields = exactFields && fields.contains(it.key());
+    const auto mutationId = object.value(QStringLiteral("mutationId"));
+    const auto operation = object.value(QStringLiteral("operation"));
+    const auto replayed = object.value(QStringLiteral("replayed"));
+    const auto committedUtc = object.value(QStringLiteral("committedUtc"));
+    const auto authoritative = object.value(QStringLiteral("authoritative"));
+    const QDateTime committed = committedUtc.isString()
+        ? QDateTime::fromString(committedUtc.toString(), Qt::ISODateWithMs) : QDateTime();
+    if (!result || !exactFields || !mutationId.isString()
+        || !uuid.match(mutationId.toString()).hasMatch()
+        || !operation.isString() || operation.toString().trimmed().isEmpty()
+        || !replayed.isBool() || !committedUtc.isString()
+        || !committed.isValid() || committed.offsetFromUtc() != 0
+        || !authoritative.isObject()) {
         if (error) *error = {QStringLiteral("INTERNAL_ERROR"),
             QStringLiteral("The Host returned an invalid mutation result."), false};
         return false;
     }
-    result->mutationId = object.value(QStringLiteral("mutationId")).toString();
-    result->operation = object.value(QStringLiteral("operation")).toString();
-    result->replayed = object.value(QStringLiteral("replayed")).toBool();
-    result->committedUtc = object.value(QStringLiteral("committedUtc")).toString();
-    result->authoritative = object.value(QStringLiteral("authoritative")).toObject();
-    return !result->mutationId.isEmpty() && !result->operation.isEmpty();
+    result->mutationId = mutationId.toString().toLower();
+    result->operation = operation.toString();
+    result->replayed = replayed.toBool();
+    result->committedUtc = committedUtc.toString();
+    result->authoritative = authoritative.toObject();
+    return true;
 }
 } // namespace RemoteMutationDto

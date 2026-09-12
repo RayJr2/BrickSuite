@@ -88,6 +88,30 @@ int main(int argc, char** argv)
                != RemoteMutationDto::requestHash(QStringLiteral("test.mutation"), changed),
                "business payload changes hash")) return 1;
 
+    const QJsonObject validResult{{"mutationId",first.mutationId},{"operation","test.mutation"},
+        {"replayed",false},{"committedUtc","2026-09-12T12:34:56.000Z"},
+        {"authoritative",QJsonObject{{"value",1}}}};
+    RemoteMutationDto::Result decoded; RemoteMutationDto::Error decodeError;
+    if (!check(RemoteMutationDto::resultFromJson(validResult,&decoded,&decodeError)
+               && !decoded.replayed, "strict normal success decoding")) return 1;
+    QJsonObject replay=validResult; replay["replayed"]=true;
+    if (!check(RemoteMutationDto::resultFromJson(replay,&decoded,&decodeError)
+               && decoded.replayed, "strict replay decoding")) return 1;
+    auto rejected=[&](QJsonObject value,const char*message){
+        RemoteMutationDto::Result ignored; return check(!RemoteMutationDto::resultFromJson(value,&ignored),message);};
+    QJsonObject malformed=validResult; malformed["mutationId"]="not-a-uuid";
+    if(!rejected(malformed,"malformed result mutation ID rejected"))return 1;
+    malformed=validResult;malformed["replayed"]="false";
+    if(!rejected(malformed,"non-Boolean replayed rejected"))return 1;
+    malformed=validResult;malformed["committedUtc"]=42;
+    if(!rejected(malformed,"non-string commit timestamp rejected"))return 1;
+    malformed=validResult;malformed["committedUtc"]="not-a-time";
+    if(!rejected(malformed,"invalid commit timestamp rejected"))return 1;
+    malformed=validResult;malformed.remove("authoritative");
+    if(!rejected(malformed,"missing authoritative result rejected"))return 1;
+    malformed=validResult;malformed["unexpected"]=true;
+    if(!rejected(malformed,"unexpected result field rejected"))return 1;
+
     int publications = 0;
     QStringList deliveryOrder;
     QString failedMutationId;
