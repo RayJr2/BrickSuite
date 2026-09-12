@@ -71,6 +71,10 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
         return QJsonObject{{QStringLiteral("serverUtc"),
             QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
     });
+    registerOperation(QStringLiteral("system.status"), true,
+        [](const QJsonObject&) {
+        return QJsonObject{{QStringLiteral("maintenance"), false}};
+    });
     registerOperation(QStringLiteral("system.catalogStatus"), true,
         [](const QJsonObject&) {
         return QJsonObject{{QStringLiteral("supported"), false}};

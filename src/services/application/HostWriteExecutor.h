@@ -12,6 +12,7 @@ class QSqlDatabase;
 
 class HostWriteExecutor : public QObject
 {
+    Q_OBJECT
 public:
     static constexpr int MaximumQueuedMutations = 16;
     static constexpr int ReceiptRetentionDays = 90;
@@ -37,11 +38,19 @@ public:
 
     bool isAccepting() const;
     int queuedMutationCount() const;
+    int activeMutationCount() const;
+    bool isIdle() const;
+    void stopAccepting();
+    void startAccepting();
     QString connectionName() const;
     void enqueue(const RemoteMutationDto::RequestContext& context, const QString& requestHash,
                  Mutation mutation, QObject* callbackContext,
                  Completion completion, Failure failure);
     void shutdown();
+
+signals:
+    void activityChanged();
+    void drained();
 
 private:
     class Worker;
@@ -51,4 +60,5 @@ private:
     QString m_connectionName;
     std::atomic_bool m_accepting{true};
     std::atomic_int m_queued{0};
+    std::atomic_int m_active{0};
 };

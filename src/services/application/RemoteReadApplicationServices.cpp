@@ -21,6 +21,7 @@ AsyncReadError RemoteReadApplicationServices::mapError(const QString& code)
     if (code == QStringLiteral("INVALID_REQUEST")) return AsyncReadError::InvalidRequest;
     if (code == QStringLiteral("TIMEOUT")) return AsyncReadError::Timeout;
     if (code == QStringLiteral("SERVER_BUSY")) return AsyncReadError::ServerBusy;
+    if (code == QStringLiteral("HOST_MAINTENANCE")) return AsyncReadError::Unavailable;
     if (code == QStringLiteral("UNKNOWN_OPERATION")) return AsyncReadError::Unsupported;
     if (code == QStringLiteral("AUTH_REQUIRED")) return AsyncReadError::Unavailable;
     return AsyncReadError::InternalFailure;
@@ -36,9 +37,13 @@ ReadRequestToken RemoteReadApplicationServices::request(
     const RemoteSessionState::Snapshot sessionSnapshot = m_session
         ? m_session->snapshot() : RemoteSessionState::Snapshot{};
     if (m_client.status().state != BrickSuiteConnectionState::ConnectedAuthenticated) {
-        QTimer::singleShot(0, context, [token, completion = std::move(completion)]() mutable {
+        const bool maintenance = m_client.status().state == BrickSuiteConnectionState::HostMaintenance;
+        QTimer::singleShot(0, context, [token, maintenance,
+            completion = std::move(completion)]() mutable {
             completion(AsyncReadResult<T>::failure(token, AsyncReadError::Unavailable,
-                QStringLiteral("Connect and authenticate to BrickSuite Host first.")));
+                maintenance
+                    ? QStringLiteral("BrickSuite Host is temporarily in maintenance. Try again after it returns.")
+                    : QStringLiteral("Connect and authenticate to BrickSuite Host first.")));
         });
         return token;
     }

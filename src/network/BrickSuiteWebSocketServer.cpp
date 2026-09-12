@@ -131,6 +131,23 @@ int BrickSuiteWebSocketServer::broadcastInvalidation(OperationalInvalidation inv
     return recipients;
 }
 
+void BrickSuiteWebSocketServer::setOperationalAdmissionOpen(bool open)
+{
+    m_operationalAdmissionOpen = open;
+    emit statusChanged();
+}
+
+void BrickSuiteWebSocketServer::broadcastFullOperationalInvalidation()
+{
+    OperationalInvalidation value;
+    // Host-wide domains form a valid protocol-1.2 event without inventing a
+    // Workspace scope. Clients use maintenance recovery to reload their full
+    // current Workspace projection when this event arrives.
+    value.domains = {OperationalInvalidationDomain::Workspaces,
+                     OperationalInvalidationDomain::PartReferenceCustomizations};
+    broadcastInvalidation(value);
+}
+
 void BrickSuiteWebSocketServer::acceptConnection()
 {
     while (m_server && m_server->hasPendingConnections()) {
@@ -298,6 +315,15 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
                QStringLiteral("The request exceeds the negotiated protocol version."));
         return;
     }
+    const bool maintenanceSafe = request.operation == QStringLiteral("system.capabilities")
+        || request.operation == QStringLiteral("system.ping")
+        || request.operation == QStringLiteral("system.status");
+    if (!m_operationalAdmissionOpen && !maintenanceSafe) {
+        reject(socket, request, QStringLiteral("HOST_MAINTENANCE"),
+               QStringLiteral("BrickSuite Host is temporarily in maintenance. Try again after it returns."),
+               true);
+        return;
+    }
     const QByteArray sessionId = session.id;
     QPointer<QWebSocket> guard(socket);
     m_dispatcher.dispatchAsync(request, session.authenticated,
@@ -306,6 +332,12 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
             auto it = m_sessions.find(guard.data());
             if (it == m_sessions.constEnd() || !it->authenticated || it->id != sessionId)
                 return;
+            if ((operation == QStringLiteral("system.capabilities")
+                 || operation == QStringLiteral("system.status"))
+                && response.type == BrickSuiteProtocol::MessageType::Response) {
+                response.payload.insert(QStringLiteral("maintenance"),
+                                        !m_operationalAdmissionOpen);
+            }
             if (operation == QStringLiteral("system.capabilities")
                 && response.type == BrickSuiteProtocol::MessageType::Response) {
                 QJsonArray operations;
@@ -317,6 +349,8 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
                     if (!capabilities.contains(name)) capabilities.append(name);
                 response.payload.insert(QStringLiteral("operations"), operations);
                 response.payload.insert(QStringLiteral("capabilities"), capabilities);
+                response.payload.insert(QStringLiteral("maintenance"),
+                                        !m_operationalAdmissionOpen);
                 it->invalidationsReady = true;
             }
             qDebug() << "BrickSuite Host sending response" << operation

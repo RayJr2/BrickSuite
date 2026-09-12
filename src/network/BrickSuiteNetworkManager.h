@@ -17,6 +17,7 @@ class RemotePartReferenceMutationApplicationService;
 class RemoteCollectionMutationApplicationService;
 class RemoteBuildMutationApplicationService;
 class HostMutationProtocolService;
+class HostMaintenanceCoordinator;
 class RemoteSessionState;
 class OperationalInvalidationPublisher;
 struct OperationalInvalidation;
@@ -43,6 +44,7 @@ public:
     RemoteBuildMutationApplicationService* remoteBuildMutations() const;
     RemoteSessionState* remoteSession() const;
     OperationalInvalidationPublisher* invalidationPublisher() const;
+    HostMaintenanceCoordinator* maintenanceCoordinator() const;
     BrickSuiteConnectionStatus connectionStatus() const;
     QString serverStatusText() const;
     QString generateOrRotateHostToken(QString* error = nullptr);
@@ -68,6 +70,7 @@ private:
     QString m_serverError;
     std::unique_ptr<HostReadProtocolService> m_hostReads;
     std::unique_ptr<HostMutationProtocolService> m_hostMutations;
+    std::unique_ptr<HostMaintenanceCoordinator> m_maintenanceCoordinator;
     std::unique_ptr<RemoteReadApplicationServices> m_remoteReads;
     std::unique_ptr<RemoteMutationApplicationServices> m_remoteMutations;
     std::unique_ptr<RemotePullingApplicationService> m_remotePulling;

@@ -55,6 +55,7 @@
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
 #include "../../services/application/RemoteInventoryMutationApplicationService.h"
+#include "../../services/application/HostOperationalGate.h"
 
 #include "../helpers/ColorComboHelper.h"
 #include "../helpers/LargeViewLoadingGuard.h"
@@ -1448,6 +1449,11 @@ void MyInventoryWidget::reloadManufacturers()
 
 void MyInventoryWidget::importCsv()
 {
+    if (!HostOperationalGate::localWritesAllowed()) {
+        QMessageBox::information(this, tr("Host Maintenance"),
+                                 tr("Host Maintenance prevents operational changes."));
+        return;
+    }
     if (!m_workspaceContext.hasCurrentWorkspace()) {
         return;
     }

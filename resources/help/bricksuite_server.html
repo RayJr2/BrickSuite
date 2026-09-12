@@ -17,6 +17,9 @@
 <h2>Host setup</h2>
 <ol><li>Keep <b>Shared Data Source = This Computer</b>.</li><li>Open <b>Edit → Settings → Server</b>.</li><li>Select the specific LAN address remote Clients should reach. Loopback is safest for local testing; all-interfaces choices are advanced options.</li><li>Choose a port, generate an access token, and enable BrickSuite Server.</li><li>Record the certificate fingerprint and securely transfer the access token to the Client.</li><li>If needed, permit inbound traffic on that port in the Host operating-system firewall.</li></ol>
 <p>The Server runs only while BrickSuite is running. A listener failure does not prevent local use.</p>
+<h2>Host maintenance</h2>
+<p>The Host operator can use <b>Edit → Settings → Server → Enter Maintenance</b> to create a safe boundary for database maintenance. BrickSuite immediately rejects new Host-backed reads and changes, lets operations that were already admitted finish, and enters Maintenance only after the Host read and write queues are idle. If draining takes too long, maintenance entry is cancelled and normal admission resumes.</p>
+<p>While Maintenance is active, Host-local operational changes are unavailable and Remote Clients show <b>Host Maintenance</b>. Client-local Parts, Sets, and Minifigs catalogs, cached images, and built-in Part Reference content remain usable. Exiting Maintenance reopens Host operations and causes connected Clients to refresh Host-backed data.</p>
 <h2>Client setup</h2>
 <ol><li>Select <b>Shared Data Source = BrickSuite Host</b>.</li><li>Enter a complete endpoint such as <code>wss://host.example:47826</code>.</li><li>Enter the access token and trusted certificate fingerprint.</li><li>Choose <b>Test Connection</b>. It uses the real TLS, pinning, protocol, authentication, and capabilities workflow.</li><li>Restart after changing Shared Data Source.</li></ol>
 <h2>LAN and Internet addressing</h2>

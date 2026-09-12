@@ -1,4 +1,5 @@
 #include "BuildAllocationMutationService.h"
+#include "../application/HostOperationalGate.h"
 #include "../../database/DatabaseManager.h"
 #include "../../repositories/BuildAllocationRepository.h"
 #include "../../repositories/BuildRepository.h"
@@ -13,7 +14,7 @@ namespace { BuildAllocationMutationService::Result fail(BuildAllocationMutationS
 BuildAllocationMutationService::BuildAllocationMutationService():BuildAllocationMutationService(DatabaseManager::instance().database()){}
 BuildAllocationMutationService::BuildAllocationMutationService(const QSqlDatabase&db):m_connectionName(db.connectionName()){}
 QSqlDatabase BuildAllocationMutationService::database()const{return QSqlDatabase::database(m_connectionName,false);}
-BuildAllocationMutationService::Result BuildAllocationMutationService::inTransaction(const std::function<Result()>&op)const{auto db=database();if(!db.transaction())return fail(Error::DatabaseFailure,"Unable to begin the allocation transaction.");auto r=op();if(!r.success){db.rollback();return r;}if(!db.commit()){db.rollback();return fail(Error::DatabaseFailure,"Unable to commit the allocation transaction.");}return r;}
+BuildAllocationMutationService::Result BuildAllocationMutationService::inTransaction(const std::function<Result()>&op)const{auto db=database();if(db.connectionName()==QStringLiteral("qt_sql_default_connection")&&!HostOperationalGate::localWritesAllowed())return fail(Error::InvalidState,"Host Maintenance prevents operational changes.");if(!db.transaction())return fail(Error::DatabaseFailure,"Unable to begin the allocation transaction.");auto r=op();if(!r.success){db.rollback();return r;}if(!db.commit()){db.rollback();return fail(Error::DatabaseFailure,"Unable to commit the allocation transaction.");}return r;}
 BuildAllocationMutationService::Result BuildAllocationMutationService::replaceForRequirement(int id,const QList<BuildAllocation>&a)const{return inTransaction([&]{return replaceForRequirementInCurrentTransaction(id,a);});}
 BuildAllocationMutationService::Result BuildAllocationMutationService::replaceForRequirementInCurrentTransaction(int id,const QList<BuildAllocation>&requested)const{
     auto db=database();auto requirement=BuildRequirementRepository(db).getById(id);if(!requirement)return fail(Error::NotFound,"The Build requirement was not found.");

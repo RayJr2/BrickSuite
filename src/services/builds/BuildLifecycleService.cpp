@@ -1,6 +1,7 @@
 #include "BuildLifecycleService.h"
 
 #include "../../database/DatabaseManager.h"
+#include "../application/HostOperationalGate.h"
 #include "../../repositories/BuildAllocationRepository.h"
 #include "../../repositories/BuildRepository.h"
 #include "../../repositories/BuildRequirementRepository.h"
@@ -33,6 +34,9 @@ QSqlDatabase BuildLifecycleService::database() const
 BuildLifecycleService::Result BuildLifecycleService::inTransaction(
     const std::function<Result()>& operation) const
 {
+    if (database().connectionName() == QStringLiteral("qt_sql_default_connection")
+        && !HostOperationalGate::localWritesAllowed())
+        return failure(Error::InvalidState, QStringLiteral("Host Maintenance prevents operational changes."));
     QSqlDatabase db = database();
     if (!db.isValid() || !db.isOpen() || !db.transaction())
         return failure(Error::DatabaseFailure, "Unable to begin the Build lifecycle transaction.");

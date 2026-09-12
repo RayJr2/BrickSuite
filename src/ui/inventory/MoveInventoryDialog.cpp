@@ -13,6 +13,7 @@
 #include "../../models/StorageLocation.h"
 
 #include "../../repositories/InventoryRecordRepository.h"
+#include "../../services/application/HostOperationalGate.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
@@ -160,6 +161,9 @@ void MoveInventoryDialog::loadStorageLocations()
 
 void MoveInventoryDialog::moveInventory()
 {
+    if (!HostOperationalGate::localWritesAllowed()) {
+        QMessageBox::information(this, tr("Host Maintenance"), tr("Host Maintenance prevents operational changes.")); return;
+    }
     const int destinationId = m_destinationCombo->currentData().toInt();
 
     if (destinationId <= 0) {

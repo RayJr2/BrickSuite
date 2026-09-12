@@ -11,6 +11,7 @@ public:
     ~HostReadProtocolService() override;
     void registerOperations(BrickSuiteOperationDispatcher& dispatcher);
     bool isAvailable() const;
+    HostReadExecutor& executor();
 private:
     std::unique_ptr<HostReadExecutor> m_executor;
 };

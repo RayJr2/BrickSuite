@@ -189,6 +189,7 @@ QString BrickSuiteWebSocketClient::enqueueRequest(
 void BrickSuiteWebSocketClient::setStatus(BrickSuiteConnectionState state,
                                           const QString& message)
 {
+    if (m_status.state == state && m_status.message == message) return;
     m_status = {state, message};
     emit statusChanged(m_status);
 }
@@ -202,6 +203,9 @@ void BrickSuiteWebSocketClient::handleConnected()
 
 void BrickSuiteWebSocketClient::handleDisconnected()
 {
+#ifdef BRICKSUITE_TESTING
+    ++m_transportDisconnectCount;
+#endif
     failPending(QStringLiteral("TIMEOUT"), QStringLiteral("The Host connection was interrupted."), true);
     if (m_authenticated) {
         ++m_authenticatedSessionGeneration;
@@ -300,7 +304,13 @@ void BrickSuiteWebSocketClient::handleText(const QString& text)
             m_socket.abort();
             return;
         }
+        const bool maintenanceEnded = m_authenticated
+            && m_status.state == BrickSuiteConnectionState::HostMaintenance;
+        if (maintenanceEnded)
+            setStatus(BrickSuiteConnectionState::ConnectedAuthenticated,
+                      QStringLiteral("Connected and authenticated to BrickSuite Host."));
         emit invalidationReceived(invalidation, m_authenticatedSessionGeneration);
+        if (maintenanceEnded) emit hostMaintenanceEnded();
         return;
     }
     handleResponse(parsed.message);
@@ -329,6 +339,9 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
         } else if (message.error.code == QStringLiteral("INCOMPATIBLE_PROTOCOL")) {
             setStatus(BrickSuiteConnectionState::IncompatibleProtocol, message.error.message);
             m_explicitDisconnect = true;
+        } else if (message.error.code == QStringLiteral("HOST_MAINTENANCE")) {
+            setStatus(BrickSuiteConnectionState::HostMaintenance,
+                      QStringLiteral("Host Maintenance — shared operations are temporarily unavailable."));
         }
         emit requestFailed(message.requestId, message.error);
         if (pending.context && pending.failure) pending.failure(message.error);
@@ -418,6 +431,9 @@ void BrickSuiteWebSocketClient::failPending(const QString& code,
 
 void BrickSuiteWebSocketClient::scheduleReconnect()
 {
+#ifdef BRICKSUITE_TESTING
+    ++m_reconnectScheduleCount;
+#endif
     static constexpr int delays[] = {1000, 2000, 4000, 8000, 15000, 30000, 60000};
     const int index = qMin(m_reconnectAttempt, 6);
     const int base = delays[index];

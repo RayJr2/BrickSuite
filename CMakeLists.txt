@@ -71,6 +71,9 @@ qt_add_executable(BrickSuite
     src/network/RemoteSessionState.cpp
     src/services/application/RemoteRefreshCoordinator.h
     src/services/application/RemoteRefreshCoordinator.cpp
+    src/services/application/HostMaintenanceCoordinator.h
+    src/services/application/HostMaintenanceCoordinator.cpp
+    src/services/application/HostOperationalGate.h
     src/services/application/HostMutationPublicationService.h
     src/services/application/HostMutationPublicationService.cpp
     src/services/application/HostWriteExecutor.h

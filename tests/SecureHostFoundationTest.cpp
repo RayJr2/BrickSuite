@@ -197,6 +197,8 @@ int main(int argc, char** argv)
                 "explicit regeneration changes Host fingerprint");
 
     BrickSuiteWebSocketServer server;
+    server.operationDispatcher().registerOperation(QStringLiteral("test.operational"), true,
+        [](const QJsonObject&) { return QJsonObject{{QStringLiteral("accepted"), true}}; });
     QString serverError;
     const QString token = QStringLiteral("test-token-with-at-least-256-bits-not-required-for-fixture");
     ok &= check(server.startWithIdentity(QHostAddress::LocalHost, 0, token,
@@ -288,15 +290,70 @@ int main(int argc, char** argv)
     ok &= check(waitUntil([&]() { return pingCompleted && firstEvents == 2; }),
                 "invalidation delivery does not disturb request correlation");
 
+    const quint64 maintenanceSessionGeneration = client.authenticatedSessionGeneration();
+    const int maintenanceDisconnects = client.transportDisconnectCountForTesting();
+    const int maintenanceReconnects = client.reconnectScheduleCountForTesting();
+    server.setOperationalAdmissionOpen(false);
+    BrickSuiteProtocol::Error maintenanceError;
+    bool maintenanceRejected = false;
+    client.sendRequest(QStringLiteral("test.operational"), {}, &client, {},
+        [&](const BrickSuiteProtocol::Error& error) {
+            maintenanceError = error;
+            maintenanceRejected = true;
+        });
+    ok &= check(waitUntil([&]() { return maintenanceRejected; })
+                && maintenanceError.code == QStringLiteral("HOST_MAINTENANCE")
+                && maintenanceError.retryable
+                && client.status().state == BrickSuiteConnectionState::HostMaintenance,
+                "maintenance rejects operational work definitively and updates Client state");
+    ok &= check(client.socketStateForTesting() == QAbstractSocket::ConnectedState
+                    && client.authenticatedForTesting()
+                    && client.authenticatedSessionGeneration() == maintenanceSessionGeneration
+                    && client.transportDisconnectCountForTesting() == maintenanceDisconnects
+                    && client.reconnectScheduleCountForTesting() == maintenanceReconnects
+                    && !client.reconnectTimerActiveForTesting(),
+                "maintenance preserves the authenticated transport and schedules no reconnect");
+    bool statusCompleted = false;
+    QJsonObject maintenanceStatus;
+    client.sendRequest(QStringLiteral("system.status"), {}, &client,
+        [&](const QJsonObject& payload) {
+            maintenanceStatus = payload;
+            statusCompleted = true;
+        });
+    ok &= check(waitUntil([&]() { return statusCompleted; })
+                && maintenanceStatus.value(QStringLiteral("maintenance")).toBool(),
+                "maintenance-safe authenticated status request remains available");
+    server.setOperationalAdmissionOpen(true);
+    server.broadcastFullOperationalInvalidation();
+    ok &= check(waitUntil([&]() {
+        return client.status().state == BrickSuiteConnectionState::ConnectedAuthenticated;
+    }), "maintenance exit invalidation restores authenticated Client state");
+    ok &= check(client.socketStateForTesting() == QAbstractSocket::ConnectedState
+                    && client.authenticatedForTesting()
+                    && client.authenticatedSessionGeneration() == maintenanceSessionGeneration
+                    && client.transportDisconnectCountForTesting() == maintenanceDisconnects
+                    && client.reconnectScheduleCountForTesting() == maintenanceReconnects,
+                "maintenance exit keeps the same authenticated socket and session generation");
+    bool operationRecovered = false;
+    client.sendRequest(QStringLiteral("test.operational"), {}, &client,
+        [&](const QJsonObject& payload) {
+            operationRecovered = payload.value(QStringLiteral("accepted")).toBool();
+        });
+    ok &= check(waitUntil([&]() { return operationRecovered; }),
+                "operational requests resume on the existing connection after maintenance");
+
     client.sendProtocolEventForTesting(codecEvent);
     ok &= check(waitUntil([&]() {
         return client.status().state != BrickSuiteConnectionState::ConnectedAuthenticated;
     }), "Client-originated event is rejected by disconnecting the sender");
 
     const int firstEventsBeforeDisconnectedBroadcast = firstEvents;
+    const int secondEventsBeforeDisconnectedBroadcast = secondEvents;
     ok &= check(server.broadcastInvalidation(broadcast) == 1,
                 "disconnected Client is removed from broadcast recipients");
-    ok &= check(waitUntil([&]() { return secondEvents == 3; })
+    ok &= check(waitUntil([&]() {
+                    return secondEvents == secondEventsBeforeDisconnectedBroadcast + 1;
+                })
                 && firstEvents == firstEventsBeforeDisconnectedBroadcast,
                 "disconnected Client receives no invalidation");
 
@@ -308,7 +365,7 @@ int main(int argc, char** argv)
                 "reconnected Client rejoins authenticated broadcasts");
     ok &= check(waitUntil([&]() {
         return firstEvents == firstEventsBeforeDisconnectedBroadcast + 1
-            && secondEvents == 4;
+            && secondEvents == secondEventsBeforeDisconnectedBroadcast + 2;
     }), "new-session invalidation is accepted after reconnect");
 
     secondClient.disconnectFromHost();
@@ -337,8 +394,25 @@ int main(int argc, char** argv)
                     == BrickSuiteConnectionState::HostIdentityMismatch,
                 "wrong fingerprint produces identity-mismatch state");
 
+    BrickSuiteWebSocketClient reconnectClient;
+    reconnectClient.configure(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, token, true);
+    reconnectClient.connectToHost();
+    bool reconnectSuccess = false;
+    ok &= check(waitForResult(reconnectClient, &reconnectSuccess, &resultMessage)
+                    && reconnectSuccess,
+                "automatic-reconnect Client authenticates before disconnect test");
+    const int disconnectSchedules = reconnectClient.reconnectScheduleCountForTesting();
     server.stop();
     ok &= check(!server.isListening(), "server shutdown stops listener");
+    ok &= check(waitUntil([&]() {
+                    return reconnectClient.transportDisconnectCountForTesting() > 0
+                        && reconnectClient.reconnectScheduleCountForTesting()
+                            == disconnectSchedules + 1;
+                }),
+                "an actual transport close schedules exactly one reconnect attempt");
+    reconnectClient.disconnectFromHost();
 
     QString cleanupError;
     ok &= check(CredentialStore::remove(

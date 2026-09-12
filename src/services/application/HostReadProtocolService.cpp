@@ -16,6 +16,7 @@ void failed(const BrickSuiteProtocol::Message&r,Completion c,const QString&){c(B
 HostReadProtocolService::HostReadProtocolService(const QString&p,QObject*parent):QObject(parent),m_executor(std::make_unique<HostReadExecutor>(p,this)){}
 HostReadProtocolService::~HostReadProtocolService()=default;
 bool HostReadProtocolService::isAvailable()const{return m_executor&&m_executor->isAccepting();}
+HostReadExecutor& HostReadProtocolService::executor(){return *m_executor;}
 void HostReadProtocolService::registerOperations(BrickSuiteOperationDispatcher& d)
 {
  d.registerAsyncOperation("workspace.list",true,[this](const auto&r,Completion c){if(!r.payload.isEmpty()){invalid(r,std::move(c),"workspace.list does not accept payload fields.");return;}m_executor->listWorkspaces(this,[r,c](const QList<Workspace>&rows){QJsonArray a;for(const auto&w:rows){RemoteReadDto::WorkspaceSummary v{w.id(),w.name()};a.append(RemoteReadJson::toJson(v));}c(BrickSuiteProtocol::response(r,{{"rows",a}}));},[r,c](const QString&e){failed(r,c,e);});});

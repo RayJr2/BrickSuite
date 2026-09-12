@@ -1,6 +1,7 @@
 #include "CollectionItemService.h"
 
 #include "../../database/DatabaseManager.h"
+#include "../application/HostOperationalGate.h"
 #include "../../models/Build.h"
 #include "../../repositories/BuildRepository.h"
 #include "../../repositories/CollectionRepository.h"
@@ -51,6 +52,9 @@ QSqlDatabase CollectionItemService::database() const
 CollectionItemService::Result CollectionItemService::inTransaction(
     const std::function<Result()>& operation) const
 {
+    if (database().connectionName() == QStringLiteral("qt_sql_default_connection")
+        && !HostOperationalGate::localWritesAllowed())
+        return failure(Error::InvalidInput, QStringLiteral("Host Maintenance prevents operational changes."));
     QSqlDatabase db = database();
     if (!db.transaction()) return failure(Error::DatabaseFailure, db.lastError().text());
     Result result = operation();

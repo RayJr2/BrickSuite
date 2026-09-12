@@ -33,6 +33,9 @@ public:
     int authenticatedClientCount() const;
     BrickSuiteOperationDispatcher& operationDispatcher();
     int broadcastInvalidation(OperationalInvalidation invalidation);
+    void setOperationalAdmissionOpen(bool open);
+    bool operationalAdmissionOpen() const { return m_operationalAdmissionOpen; }
+    void broadcastFullOperationalInvalidation();
 
 signals:
     void statusChanged();
@@ -67,4 +70,5 @@ private:
     BrickSuiteHostIdentity::Result m_identity;
     BrickSuiteOperationDispatcher m_dispatcher;
     quint64 m_nextInvalidationSequence = 1;
+    bool m_operationalAdmissionOpen = true;
 };

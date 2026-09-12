@@ -23,6 +23,7 @@
 #include "../services/application/HostBuildMutationService.h"
 #include "../services/application/RemoteBuildMutationApplicationService.h"
 #include "../services/application/HostMutationPublicationService.h"
+#include "../services/application/HostMaintenanceCoordinator.h"
 #include "../services/CredentialStore.h"
 #include "../settings/UserSettings.h"
 
@@ -116,6 +117,8 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     for(const QString&operation:collectionOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostCollectionMutationService::createMutation(operation,metadata,error);});
     const QStringList buildOperations={QStringLiteral("builds.add"),QStringLiteral("builds.edit"),QStringLiteral("builds.setActive"),QStringLiteral("builds.complete"),QStringLiteral("builds.cancel"),QStringLiteral("builds.disassemble"),QStringLiteral("builds.spare.store"),QStringLiteral("builds.requirements.add"),QStringLiteral("builds.requirements.edit"),QStringLiteral("builds.requirements.remove"),QStringLiteral("builds.allocations.set"),QStringLiteral("builds.allocateAvailable")};
     for(const QString&operation:buildOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostBuildMutationService::createMutation(operation,metadata,error);});
+    m_maintenanceCoordinator = std::make_unique<HostMaintenanceCoordinator>(
+        *m_server, m_hostReads->executor(), m_hostMutations->executor(), this);
     connect(m_server, &BrickSuiteWebSocketServer::statusChanged,
             this, &BrickSuiteNetworkManager::statusChanged);
     connect(m_client, &BrickSuiteWebSocketClient::statusChanged,
@@ -194,6 +197,7 @@ bool BrickSuiteNetworkManager::restartServer(QString* error)
 
 void BrickSuiteNetworkManager::stop()
 {
+    if (m_maintenanceCoordinator) m_maintenanceCoordinator->beginShutdown();
     m_client->disconnectFromHost();
     m_server->stop();
 }
@@ -220,6 +224,8 @@ RemoteSessionState* BrickSuiteNetworkManager::remoteSession() const
 { return m_remoteSession.get(); }
 OperationalInvalidationPublisher* BrickSuiteNetworkManager::invalidationPublisher() const
 { return m_invalidationPublisher.get(); }
+HostMaintenanceCoordinator* BrickSuiteNetworkManager::maintenanceCoordinator() const
+{ return m_maintenanceCoordinator.get(); }
 BrickSuiteConnectionStatus BrickSuiteNetworkManager::connectionStatus() const { return m_client->status(); }
 
 QString BrickSuiteNetworkManager::serverStatusText() const

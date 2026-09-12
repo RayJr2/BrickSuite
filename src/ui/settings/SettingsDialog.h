@@ -71,6 +71,8 @@ private slots:
     void generateOrRotateServerToken();
     void regenerateHostIdentity();
     void updateNetworkPresentation();
+    void enterHostMaintenance();
+    void leaveHostMaintenance();
 
 private:
     void buildGeneralTab();
@@ -147,9 +149,16 @@ private:
     QCheckBox* m_serverEnabledCheck = nullptr;
     QComboBox* m_serverBindCombo = nullptr;
     QSpinBox* m_serverPortSpin = nullptr;
+    bool m_originalServerEnabled = false;
+    QString m_originalServerBindAddress;
+    int m_originalServerPort = 0;
     QLabel* m_serverStatusLabel = nullptr;
     QLabel* m_serverFingerprintLabel = nullptr;
     QPushButton* m_serverTokenButton = nullptr;
+    QLabel* m_maintenanceStateLabel = nullptr;
+    QLabel* m_maintenanceCountersLabel = nullptr;
+    QPushButton* m_enterMaintenanceButton = nullptr;
+    QPushButton* m_leaveMaintenanceButton = nullptr;
     QLineEdit* m_hostEndpointEdit = nullptr;
     QLineEdit* m_hostFingerprintEdit = nullptr;
     QLineEdit* m_hostTokenEdit = nullptr;

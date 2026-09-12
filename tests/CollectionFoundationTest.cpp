@@ -7,6 +7,7 @@
 #include "../src/repositories/CollectionRepository.h"
 #include "../src/repositories/StorageLocationRepository.h"
 #include "../src/services/collection/CollectionItemService.h"
+#include "../src/services/application/HostOperationalGate.h"
 #include "../src/services/database/AutomaticBackupPolicy.h"
 
 #include <QCoreApplication>
@@ -362,6 +363,14 @@ int main(int argc, char* argv[])
                   "archive/reactivate preserves identity");
 
     const int before = scalar(db,"SELECT COUNT(*) FROM collection_item");
+    HostOperationalGate::setLocalWritesAllowed(false);
+    const auto maintenanceBlocked = service.createSet(
+        1, setId, CollectionItemState::Assembled, collectionLocation);
+    HostOperationalGate::setLocalWritesAllowed(true);
+    ok &= require(!maintenanceBlocked.success
+                  && maintenanceBlocked.message.contains("Host Maintenance")
+                  && scalar(db,"SELECT COUNT(*) FROM collection_item")==before,
+                  "Host maintenance authoritatively blocks local Collection mutation");
     ok &= require(q.exec("CREATE TRIGGER force_collection_failure BEFORE INSERT ON collection_item BEGIN SELECT RAISE(ABORT,'forced'); END"), "rollback trigger");
     const auto failed = service.createSet(1,setId,CollectionItemState::Assembled,collectionLocation);
     ok &= require(!failed.success && scalar(db,"SELECT COUNT(*) FROM collection_item")==before,

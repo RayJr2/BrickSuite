@@ -33,6 +33,7 @@
 #include "../../repositories/ExternalPartIdentifierRepository.h"
 #include "../../repositories/ExternalPartMappingRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
+#include "../../services/application/HostOperationalGate.h"
 #include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/PartCategoryRepository.h"
@@ -605,6 +606,9 @@ void AddInventoryDialog::loadStorageLocations()
 
 void AddInventoryDialog::addInventory()
 {
+    if (!HostOperationalGate::localWritesAllowed()) {
+        QMessageBox::information(this, tr("Host Maintenance"), tr("Host Maintenance prevents operational changes.")); return;
+    }
     if (!m_workspaceContext.hasCurrentWorkspace()) {
         QMessageBox::warning(this, "BrickSuite", "Select a workspace before adding inventory.");
 

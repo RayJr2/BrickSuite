@@ -39,6 +39,12 @@ public:
 #ifdef BRICKSUITE_TESTING
     void sendProtocolEventForTesting(const OperationalInvalidation& invalidation);
     int pendingRequestCountForTesting() const { return m_pending.size(); }
+    QAbstractSocket::SocketState socketStateForTesting() const { return m_socket.state(); }
+    bool authenticatedForTesting() const { return m_authenticated; }
+    bool reconnectTimerActiveForTesting() const { return m_reconnectTimer.isActive(); }
+    int reconnectAttemptForTesting() const { return m_reconnectAttempt; }
+    int reconnectScheduleCountForTesting() const { return m_reconnectScheduleCount; }
+    int transportDisconnectCountForTesting() const { return m_transportDisconnectCount; }
 #endif
 
 signals:
@@ -51,6 +57,7 @@ signals:
     void authenticatedSessionLost();
     void invalidationReceived(const OperationalInvalidation& invalidation,
                               quint64 authenticatedSessionGeneration);
+    void hostMaintenanceEnded();
 
 private:
     struct Pending {
@@ -90,6 +97,10 @@ private:
     QElapsedTimer m_connectTimer;
     bool m_authenticated = false;
     quint64 m_authenticatedSessionGeneration = 0;
+#ifdef BRICKSUITE_TESTING
+    int m_reconnectScheduleCount = 0;
+    int m_transportDisconnectCount = 0;
+#endif
 };
 
 Q_DECLARE_METATYPE(BrickSuiteConnectionStatus)

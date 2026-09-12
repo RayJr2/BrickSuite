@@ -454,3 +454,17 @@ the original result without duplicate Inventory, history, lifecycle changes, or 
 changed payload conflicts. Only timeout or disconnection is an unknown outcome, and safe retry
 must retain the exact mutation ID and frozen plan. The correlated response precedes invalidation
 and Host-local refresh.
+
+## Host maintenance admission
+
+Protocol 1.2 Hosts may temporarily close admission for Host-backed operational reads and
+mutations while retaining authenticated TLS sessions. A request received after that cutoff is
+rejected before dispatch with `HOST_MAINTENANCE`, `retryable: true`. This is a definitive
+non-execution result, never an unknown mutation outcome. Work admitted before the cutoff drains
+normally, including its correlated response and post-commit invalidation.
+
+`system.hello`, `system.authenticate`, `system.capabilities`, `system.ping`, and the additive
+authenticated `system.status` operation remain maintenance-safe. Capabilities and status include
+the Boolean `maintenance` field. Exiting maintenance reopens admission and publishes an existing
+Protocol 1.2 invalidation so Clients can end suppression and refresh Host-backed projections;
+no new unsolicited event type is introduced.

@@ -22,8 +22,15 @@ QString RemoteMutationApplicationServices::submit(
 {
     if (!isAvailableFor(operation, capability)) {
         if (failure) {
-            RemoteMutationDto::Error error{QStringLiteral("FORBIDDEN"),
-                QStringLiteral("The connected Host does not permit this operation."), false};
+            const bool maintenance = m_client.status().state
+                == BrickSuiteConnectionState::HostMaintenance;
+            RemoteMutationDto::Error error{
+                maintenance ? QStringLiteral("HOST_MAINTENANCE") : QStringLiteral("FORBIDDEN"),
+                maintenance
+                    ? QStringLiteral("BrickSuite Host is temporarily in maintenance. Try again after it returns.")
+                    : QStringLiteral("The connected Host does not permit this operation."),
+                maintenance};
+            error.outcome = RemoteMutationDto::Outcome::DefinitiveFailure;
             error.mutationId = metadata.mutationId;
             failure(error);
         }

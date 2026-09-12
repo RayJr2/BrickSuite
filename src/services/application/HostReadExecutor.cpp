@@ -27,8 +27,10 @@
 class HostReadExecutor::Worker : public QObject
 {
 public:
-    Worker(QString path, QString name, std::atomic_int& queued)
-        : m_path(std::move(path)), m_name(std::move(name)), m_queued(queued) {}
+    Worker(QString path, QString name, std::atomic_int& queued,
+           std::atomic_int& active, HostReadExecutor* owner)
+        : m_path(std::move(path)), m_name(std::move(name)), m_queued(queued),
+          m_active(active), m_owner(owner) {}
 
     void initialize()
     {
@@ -56,6 +58,13 @@ public:
     {
         Q_ASSERT(QThread::currentThread() == thread());
         const int remaining = --m_queued;
+        ++m_active;
+        notifyActivity();
+        struct ActiveGuard {
+            std::atomic_int& active;
+            Worker* worker;
+            ~ActiveGuard() { --active; worker->notifyActivity(); }
+        } activeGuard{m_active, this};
         if (!m_services) {
             deliverFailure(context, failure, m_error.isEmpty()
                 ? QStringLiteral("The Host read executor is unavailable.") : m_error);
@@ -84,6 +93,16 @@ public:
         return QDateTime::currentMSecsSinceEpoch();
     }
 
+    void notifyActivity()
+    {
+        QPointer<HostReadExecutor> owner(m_owner);
+        QMetaObject::invokeMethod(m_owner, [owner] {
+            if (!owner) return;
+            emit owner->activityChanged();
+            if (owner->isIdle()) emit owner->drained();
+        }, Qt::QueuedConnection);
+    }
+
 private:
     QString m_path;
     QString m_name;
@@ -91,6 +110,8 @@ private:
     QSqlDatabase m_database;
     std::unique_ptr<ApplicationServices> m_services;
     std::atomic_int& m_queued;
+    std::atomic_int& m_active;
+    HostReadExecutor* m_owner = nullptr;
 };
 
 HostReadExecutor::HostReadExecutor(const QString& databasePath, QObject* parent)
@@ -99,7 +120,7 @@ HostReadExecutor::HostReadExecutor(const QString& databasePath, QObject* parent)
           .arg(QUuid::createUuid().toString(QUuid::WithoutBraces)))
 {
     m_thread.setObjectName(QStringLiteral("BrickSuite Host Read Worker"));
-    m_worker = new Worker(databasePath, m_connectionName, m_queued);
+    m_worker = new Worker(databasePath, m_connectionName, m_queued, m_active, this);
     m_worker->moveToThread(&m_thread);
     connect(&m_thread, &QThread::started, m_worker, [worker = m_worker]() {
         worker->initialize();
@@ -112,6 +133,12 @@ HostReadExecutor::~HostReadExecutor() { shutdown(); }
 QString HostReadExecutor::connectionName() const { return m_connectionName; }
 bool HostReadExecutor::isAccepting() const { return m_accepting && m_thread.isRunning(); }
 int HostReadExecutor::queuedReadCount() const { return m_queued.load(); }
+int HostReadExecutor::activeReadCount() const { return m_active.load(); }
+bool HostReadExecutor::isIdle() const
+{ return queuedReadCount() == 0 && activeReadCount() == 0; }
+void HostReadExecutor::stopAccepting() { m_accepting = false; }
+void HostReadExecutor::startAccepting()
+{ if (m_thread.isRunning() && m_worker) m_accepting = true; }
 
 void HostReadExecutor::deliverFailure(QObject* context, const ErrorCallback& failure,
                                       const QString& message)
@@ -132,11 +159,12 @@ void HostReadExecutor::enqueue(const QString& label, Task task, QObject* context
     }
     int expected = m_queued.load();
     do {
-        if (expected >= MaximumQueuedReads) {
+        if (expected + m_active.load() >= MaximumQueuedReads) {
             deliverFailure(context, failure, QStringLiteral("The Host read queue is full."));
             return;
         }
     } while (!m_queued.compare_exchange_weak(expected, expected + 1));
+    emit activityChanged();
     QPointer<QObject> guard(context);
     const qint64 queuedAt = QDateTime::currentMSecsSinceEpoch();
     QMetaObject::invokeMethod(m_worker,
@@ -148,7 +176,7 @@ void HostReadExecutor::enqueue(const QString& label, Task task, QObject* context
 
 void HostReadExecutor::shutdown()
 {
-    if (!m_accepting.exchange(false)) return;
+    m_accepting = false;
     if (m_thread.isRunning()) {
         QMetaObject::invokeMethod(m_worker, [worker = m_worker]() { worker->close(); },
                                   Qt::BlockingQueuedConnection);

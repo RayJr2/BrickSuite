@@ -1,5 +1,6 @@
 /* BrickSuite - The Digital Twin Platform for Your Brick Workshop */
 #include "PartReferenceCustomizationService.h"
+#include "../application/HostOperationalGate.h"
 #include "../../database/DatabaseManager.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/UserPartReferenceRepository.h"
@@ -158,6 +159,9 @@ PartReferenceCustomizationResult PartReferenceCustomizationService::add(
     int partId, const QString& catalog, const QString& section,
     PartReferencePlacement placement, const QString& anchorPartNumber) const
 {
+    if (serviceDatabase().connectionName() == QStringLiteral("qt_sql_default_connection")
+        && !HostOperationalGate::localWritesAllowed())
+        return {false, QStringLiteral("Host Maintenance prevents operational changes."), 0};
     const auto part = PartRepository(serviceDatabase()).getById(partId);
     if (!part || !part->isActive())
         return {false, QStringLiteral("Select an active local catalog Part."), 0};
@@ -201,6 +205,9 @@ PartReferenceCustomizationResult PartReferenceCustomizationService::add(
 
 PartReferenceCustomizationResult PartReferenceCustomizationService::remove(int userEntryId) const
 {
+    if (serviceDatabase().connectionName() == QStringLiteral("qt_sql_default_connection")
+        && !HostOperationalGate::localWritesAllowed())
+        return {false, QStringLiteral("Host Maintenance prevents operational changes."), 0};
     if (userEntryId <= 0)
         return {false, QStringLiteral("Built-in Part Reference entries cannot be removed."), 0};
     QString error;

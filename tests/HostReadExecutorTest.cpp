@@ -45,6 +45,15 @@ bool waitFor(const std::function<void(QEventLoop&)>& start)
     return !timedOut;
 }
 
+bool waitUntil(const std::function<bool()>& predicate, int timeoutMs = 5000)
+{
+    QElapsedTimer timer;
+    timer.start();
+    while (!predicate() && timer.elapsed() < timeoutMs)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    return predicate();
+}
+
 bool connectClient(BrickSuiteWebSocketClient& client)
 {
     bool success = false;
@@ -342,6 +351,15 @@ int main(int argc, char** argv)
         ok &= check(collection.rows.size() == 1 && collection.total == 1
                         && collection.rows.first().item.nickname == QStringLiteral("Host Collection"),
                     "Collection projection");
+
+        ok &= check(waitUntil([&] { return executor.isIdle(); })
+                        && executor.activeReadCount() == 0
+                        && executor.queuedReadCount() == 0,
+                    "completed read executor reports idle counters");
+        executor.stopAccepting();
+        ok &= check(!executor.isAccepting(), "read admission can be stopped without shutdown");
+        executor.startAccepting();
+        ok &= check(executor.isAccepting(), "read admission can resume");
 
         executor.shutdown();
         ok &= check(!executor.isAccepting(), "shutdown stops task acceptance");

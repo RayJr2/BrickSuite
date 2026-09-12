@@ -10,6 +10,7 @@ enum class BrickSuiteConnectionState
     VerifyingHost,
     Authenticating,
     ConnectedAuthenticated,
+    HostMaintenance,
     AuthenticationFailed,
     HostIdentityMismatch,
     IncompatibleProtocol,

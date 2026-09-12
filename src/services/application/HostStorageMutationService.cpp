@@ -1,4 +1,5 @@
 #include "HostStorageMutationService.h"
+#include "HostOperationalGate.h"
 
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../repositories/StorageLocationTypeRepository.h"
@@ -121,6 +122,9 @@ HostStorageMutationService::Result HostStorageMutationService::authoritative(int
 
 HostStorageMutationService::Result HostStorageMutationService::add(const AddRequest& request) const
 {
+    if (database().connectionName() == QStringLiteral("qt_sql_default_connection")
+        && !HostOperationalGate::localWritesAllowed())
+        return fail(ErrorCode::InvalidArgument, QStringLiteral("Host Maintenance prevents operational changes."));
     const QString name = request.name.trimmed();
     if (name.isEmpty() || name.size() > MaximumNameLength
         || request.description.size() > MaximumDescriptionLength)
@@ -141,6 +145,9 @@ HostStorageMutationService::Result HostStorageMutationService::add(const AddRequ
 
 HostStorageMutationService::Result HostStorageMutationService::edit(const EditRequest& request) const
 {
+    if (database().connectionName() == QStringLiteral("qt_sql_default_connection")
+        && !HostOperationalGate::localWritesAllowed())
+        return fail(ErrorCode::InvalidArgument, QStringLiteral("Host Maintenance prevents operational changes."));
     const QString name = request.name.trimmed();
     if (request.storageId <= 0 || name.isEmpty() || name.size() > MaximumNameLength
         || request.description.size() > MaximumDescriptionLength)
@@ -186,6 +193,9 @@ HostStorageMutationService::Result HostStorageMutationService::edit(const EditRe
 HostStorageMutationService::Result HostStorageMutationService::setActive(
     const SetActiveRequest& request) const
 {
+    if (database().connectionName() == QStringLiteral("qt_sql_default_connection")
+        && !HostOperationalGate::localWritesAllowed())
+        return fail(ErrorCode::InvalidArgument, QStringLiteral("Host Maintenance prevents operational changes."));
     if (request.workspaceId <= 0 || request.storageId <= 0)
         return fail(ErrorCode::InvalidArgument, QStringLiteral("The Storage location is invalid."));
     StorageLocationRepository repository(database()); std::optional<StorageLocation> current;

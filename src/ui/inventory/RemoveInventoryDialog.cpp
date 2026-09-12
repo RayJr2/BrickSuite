@@ -13,6 +13,7 @@
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/BuildAllocationRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
+#include "../../services/application/HostOperationalGate.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
@@ -109,6 +110,9 @@ bool RemoveInventoryDialog::loadInventoryRecord()
 
 void RemoveInventoryDialog::removeEntry()
 {
+    if (!HostOperationalGate::localWritesAllowed()) {
+        QMessageBox::information(this, tr("Host Maintenance"), tr("Host Maintenance prevents operational changes.")); return;
+    }
     const auto answer = QMessageBox::question(
         this,
         "BrickSuite",

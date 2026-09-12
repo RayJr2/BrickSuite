@@ -29,6 +29,7 @@
 
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
+#include "../../services/application/HostOperationalGate.h"
 #include "../../repositories/ManufacturerRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
@@ -244,6 +245,9 @@ bool EditInventoryDialog::loadInventoryRecord()
 
 void EditInventoryDialog::saveChanges()
 {
+    if (!HostOperationalGate::localWritesAllowed()) {
+        QMessageBox::information(this, tr("Host Maintenance"), tr("Host Maintenance prevents operational changes.")); return;
+    }
     InventoryRecordRepository repository;
 
     const std::optional<InventoryRecord> existing = repository.getById(m_inventoryRecordId);

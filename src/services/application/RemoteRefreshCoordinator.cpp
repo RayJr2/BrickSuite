@@ -52,13 +52,14 @@ void RemoteRefreshCoordinator::receiveInvalidation(
             m_pending.insert(projection);
         }
     }
-    if (!m_pending.isEmpty()) m_coalescingTimer.start();
+    if (m_operationalAvailable && !m_pending.isEmpty()) m_coalescingTimer.start();
 }
 
 void RemoteRefreshCoordinator::surfaceBecameRelevant(Projection projection)
 {
     auto it = m_registrations.find(projection);
-    if (it == m_registrations.end() || !it->dirty || it->inFlight || !m_connected) return;
+    if (it == m_registrations.end() || !it->dirty || it->inFlight || !m_connected
+        || !m_operationalAvailable) return;
     m_pending.remove(projection);
     start(projection);
 }
@@ -94,6 +95,17 @@ void RemoteRefreshCoordinator::setConnected(bool connected)
         it->inFlight = false;
         it->rerun = false;
     }
+}
+
+void RemoteRefreshCoordinator::setOperationalAvailable(bool available)
+{
+    if (m_operationalAvailable == available) return;
+    m_operationalAvailable = available;
+    if (!available) {
+        m_coalescingTimer.stop();
+        return;
+    }
+    if (!m_pending.isEmpty()) m_coalescingTimer.start();
 }
 
 bool RemoteRefreshCoordinator::isDirty(Projection projection) const
@@ -170,7 +182,8 @@ void RemoteRefreshCoordinator::processPending()
 void RemoteRefreshCoordinator::start(Projection projection)
 {
     auto it = m_registrations.find(projection);
-    if (it == m_registrations.end() || !m_connected || it->inFlight || !it->refresher) return;
+    if (it == m_registrations.end() || !m_connected || !m_operationalAvailable
+        || it->inFlight || !it->refresher) return;
     it->dirty = false;
     it->inFlight = true;
     it->rerun = false;

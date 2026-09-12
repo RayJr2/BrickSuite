@@ -163,7 +163,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         if (m_applicationServices.sharedDataSource() == SharedDataSource::BrickSuiteHost) {
             const auto status = m_networkManager.connectionStatus();
             statusBar()->showMessage(QStringLiteral("Host: %1").arg(status.message));
-            if (status.state != BrickSuiteConnectionState::ConnectedAuthenticated) {
+            if (status.state != BrickSuiteConnectionState::ConnectedAuthenticated
+                && status.state != BrickSuiteConnectionState::HostMaintenance) {
                 m_workspaceList->setEnabled(false);
                 if (m_workspaceContext.hasCurrentWorkspace())
                     statusBar()->showMessage(QStringLiteral("Host disconnected; displayed shared data may be stale."));
@@ -173,6 +174,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     if (m_remoteReads) {
         RemoteSessionState* session = m_networkManager.remoteSession();
+        connect(m_networkManager.client(), &BrickSuiteWebSocketClient::hostMaintenanceEnded,
+                this, [this] {
+            m_refreshAfterWorkspaceReload = true;
+            loadRemoteWorkspaces();
+        });
         connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged,
                 session, &RemoteSessionState::setWorkspaceId);
         connect(session, &RemoteSessionState::authenticatedSessionEstablished,
@@ -2411,6 +2417,14 @@ void MainWindow::configureRemoteRefreshCoordinator()
     });
     connect(session, &RemoteSessionState::authenticatedSessionLost,
             m_remoteRefreshCoordinator, [this] { m_remoteRefreshCoordinator->setConnected(false); });
+    connect(m_networkManager.client(), &BrickSuiteWebSocketClient::statusChanged,
+            m_remoteRefreshCoordinator,
+            [this](const BrickSuiteConnectionStatus& status) {
+        if (status.state == BrickSuiteConnectionState::HostMaintenance)
+            m_remoteRefreshCoordinator->setOperationalAvailable(false);
+        else if (status.state == BrickSuiteConnectionState::ConnectedAuthenticated)
+            m_remoteRefreshCoordinator->setOperationalAvailable(true);
+    });
     connect(session, &RemoteSessionState::workspaceGenerationChanged, this,
             [this, session](quint64 generation, int) {
         m_remoteRefreshCoordinator->resetContext(session->isAuthenticated(),

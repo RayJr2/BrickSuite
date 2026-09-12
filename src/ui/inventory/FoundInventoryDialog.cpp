@@ -24,6 +24,7 @@
 #include "../../models/StorageLocation.h"
 
 #include "../../repositories/InventoryRecordRepository.h"
+#include "../../services/application/HostOperationalGate.h"
 #include "../../repositories/LostInventoryRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
@@ -235,6 +236,9 @@ void FoundInventoryDialog::loadStorageLocations()
 
 void FoundInventoryDialog::returnFoundInventory()
 {
+    if (!HostOperationalGate::localWritesAllowed()) {
+        QMessageBox::information(this, tr("Host Maintenance"), tr("Host Maintenance prevents operational changes.")); return;
+    }
     if (m_outstandingQuantity <= 0)
         return;
 

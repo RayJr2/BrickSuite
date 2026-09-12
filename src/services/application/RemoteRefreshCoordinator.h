@@ -40,6 +40,7 @@ public:
     void resetContext(bool connected, quint64 sessionGeneration,
                       quint64 workspaceGeneration);
     void setConnected(bool connected);
+    void setOperationalAvailable(bool available);
 
     bool isDirty(Projection projection) const;
     bool isInFlight(Projection projection) const;
@@ -68,6 +69,7 @@ private:
     QSet<Projection> m_pending;
     QTimer m_coalescingTimer;
     bool m_connected = false;
+    bool m_operationalAvailable = true;
     quint64 m_sessionGeneration = 0;
     quint64 m_workspaceGeneration = 0;
     quint64 m_contextSerial = 0;

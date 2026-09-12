@@ -13,6 +13,7 @@
 #include "../../models/StorageLocation.h"
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
+#include "../../services/application/HostOperationalGate.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
@@ -206,6 +207,9 @@ void CorrectInventoryDialog::updateSaveButtonState()
 
 void CorrectInventoryDialog::saveCorrection()
 {
+    if (!HostOperationalGate::localWritesAllowed()) {
+        QMessageBox::information(this, tr("Host Maintenance"), tr("Host Maintenance prevents operational changes.")); return;
+    }
     InventoryRecordRepository repository;
 
     if (!repository.correctEntry(m_inventoryRecordId,

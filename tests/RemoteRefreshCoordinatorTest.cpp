@@ -86,6 +86,20 @@ int main(int argc, char* argv[])
                 "Several in-flight invalidations must produce exactly one rerun.");
     inventoryCompletion(true);
 
+    coordinator.setOperationalAvailable(false);
+    coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Inventory));
+    QThread::msleep(200);
+    QCoreApplication::processEvents();
+    ok &= check(inventoryStarts == 2 && coordinator.isDirty(P::Inventory),
+                "Host maintenance must retain dirty state without starting operational reads.");
+    coordinator.surfaceBecameRelevant(P::Inventory);
+    ok &= check(inventoryStarts == 2,
+                "Surface changes during Host maintenance must not retry operational reads.");
+    coordinator.setOperationalAvailable(true);
+    ok &= check(waitUntil([&] { return inventoryStarts == 3; }),
+                "Leaving Host maintenance must start one retained refresh.");
+    inventoryCompletion(true);
+
     inventoryVisible = false;
     int pullingStarts = 0;
     coordinator.registerProjection(P::Pulling, [] { return true; },
@@ -139,7 +153,7 @@ int main(int argc, char* argv[])
     coordinator.resetContext(true, 2, 2);
     QThread::msleep(200);
     QCoreApplication::processEvents();
-    ok &= check(!coordinator.isDirty(P::Inventory) && inventoryStarts == 2,
+    ok &= check(!coordinator.isDirty(P::Inventory) && inventoryStarts == 3,
                 "Session/Workspace transition must discard a queued old plan.");
 
     coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Inventory, 8));
@@ -151,14 +165,14 @@ int main(int argc, char* argv[])
     // new Host/Workspace refresh state.
     inventoryVisible = true;
     coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Inventory, 8));
-    ok &= check(waitUntil([&] { return inventoryStarts == 3; }),
+    ok &= check(waitUntil([&] { return inventoryStarts == 4; }),
                 "A current-context refresh should start before transition.");
     const auto obsoleteCompletion = inventoryCompletion;
     coordinator.resetContext(true, 3, 4);
     obsoleteCompletion(true);
     ok &= check(!coordinator.isDirty(P::Inventory)
                     && !coordinator.isInFlight(P::Inventory)
-                    && inventoryStarts == 3,
+                    && inventoryStarts == 4,
                 "Obsolete in-flight completion must not affect the new context.");
 
     // Two authenticated Clients own independent coordinators. The same Host
@@ -174,7 +188,7 @@ int main(int argc, char* argv[])
     coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Inventory));
     secondClient.receiveInvalidation(event(OperationalInvalidationDomain::Inventory));
     secondClient.receiveInvalidation(event(OperationalInvalidationDomain::Inventory));
-    ok &= check(waitUntil([&] { return inventoryStarts == 4 && secondClientStarts == 1; }),
+    ok &= check(waitUntil([&] { return inventoryStarts == 5 && secondClientStarts == 1; }),
                 "Each Client must coalesce and refresh independently.");
     inventoryCompletion(true);
 

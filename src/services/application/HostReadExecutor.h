@@ -27,6 +27,10 @@ public:
     QString connectionName() const;
     bool isAccepting() const;
     int queuedReadCount() const;
+    int activeReadCount() const;
+    bool isIdle() const;
+    void stopAccepting();
+    void startAccepting();
     void shutdown();
 
     using ErrorCallback = std::function<void(const QString&)>;
@@ -125,6 +129,10 @@ public:
         std::function<void(const RemoteReadDto::Page<RemoteReadDto::PullingRow>&)> completion,
         ErrorCallback failure = {});
 
+signals:
+    void activityChanged();
+    void drained();
+
 private:
     class Worker;
     using Task = std::function<void(ApplicationServices&, const QSqlDatabase&)>;
@@ -136,5 +144,6 @@ private:
     Worker* m_worker = nullptr;
     std::atomic_bool m_accepting{true};
     std::atomic_int m_queued{0};
+    std::atomic_int m_active{0};
     QString m_connectionName;
 };

@@ -23,8 +23,10 @@ bool isBusyError(const QString& text)
 class HostWriteExecutor::Worker : public QObject
 {
 public:
-    Worker(QString path, QString name, std::atomic_int& queued)
-        : m_path(std::move(path)), m_name(std::move(name)), m_queued(queued) {}
+    Worker(QString path, QString name, std::atomic_int& queued,
+           std::atomic_int& active, HostWriteExecutor* owner)
+        : m_path(std::move(path)), m_name(std::move(name)), m_queued(queued),
+          m_active(active), m_owner(owner) {}
 
     void initialize()
     {
@@ -47,7 +49,10 @@ public:
                  QObject* callbackContext, Completion completion, Failure failure,
                  Publisher publisher)
     {
-        struct CountGuard { std::atomic_int& value; ~CountGuard(){ --value; } } guard{m_queued};
+        --m_queued;
+        ++m_active;
+        notifyActivity();
+        struct CountGuard { std::atomic_int& active; Worker* worker; ~CountGuard(){ --active; worker->notifyActivity(); } } guard{m_active,this};
         const QPointer<QObject> guarded(callbackContext);
         auto fail = [guarded, failure](RemoteMutationDto::Error error) {
             if (!failure || !guarded) return;
@@ -184,17 +189,29 @@ public:
         QSqlDatabase::removeDatabase(m_name);
     }
 
+    void notifyActivity()
+    {
+        QPointer<HostWriteExecutor> owner(m_owner);
+        QMetaObject::invokeMethod(m_owner, [owner] {
+            if (!owner) return;
+            emit owner->activityChanged();
+            if (owner->isIdle()) emit owner->drained();
+        }, Qt::QueuedConnection);
+    }
+
 private:
     QString m_path, m_name, m_error;
     QSqlDatabase m_database;
     std::atomic_int& m_queued;
+    std::atomic_int& m_active;
+    HostWriteExecutor* m_owner = nullptr;
 };
 
 HostWriteExecutor::HostWriteExecutor(const QString& path, Publisher publisher, QObject* parent)
     : QObject(parent), m_publisher(std::move(publisher)),
       m_connectionName(QStringLiteral("host-write-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces)))
 {
-    m_worker = new Worker(path, m_connectionName, m_queued);
+    m_worker = new Worker(path, m_connectionName, m_queued, m_active, this);
     m_worker->moveToThread(&m_thread);
     m_thread.start();
     QMetaObject::invokeMethod(m_worker, [this]{ m_worker->initialize(); }, Qt::BlockingQueuedConnection);
@@ -203,6 +220,12 @@ HostWriteExecutor::HostWriteExecutor(const QString& path, Publisher publisher, Q
 HostWriteExecutor::~HostWriteExecutor() { shutdown(); }
 bool HostWriteExecutor::isAccepting() const { return m_accepting && m_thread.isRunning(); }
 int HostWriteExecutor::queuedMutationCount() const { return m_queued.load(); }
+int HostWriteExecutor::activeMutationCount() const { return m_active.load(); }
+bool HostWriteExecutor::isIdle() const
+{ return queuedMutationCount() == 0 && activeMutationCount() == 0; }
+void HostWriteExecutor::stopAccepting() { m_accepting = false; }
+void HostWriteExecutor::startAccepting()
+{ if (m_thread.isRunning() && m_worker) m_accepting = true; }
 QString HostWriteExecutor::connectionName() const { return m_connectionName; }
 
 void HostWriteExecutor::enqueue(const RemoteMutationDto::RequestContext& context,
@@ -215,13 +238,15 @@ void HostWriteExecutor::enqueue(const RemoteMutationDto::RequestContext& context
                 QStringLiteral("The Host mutation service is stopping."), true}); }, Qt::QueuedConnection);
         return;
     }
-    if (m_queued.fetch_add(1) >= MaximumQueuedMutations) {
+    const int queuedBefore = m_queued.fetch_add(1);
+    if (queuedBefore + m_active.load() >= MaximumQueuedMutations) {
         --m_queued;
         if (failure && callbackContext)
             QMetaObject::invokeMethod(callbackContext, [failure]{ failure({QStringLiteral("BUSY"),
                 QStringLiteral("The Host mutation queue is full. Try again."), true}); }, Qt::QueuedConnection);
         return;
     }
+    emit activityChanged();
     QMetaObject::invokeMethod(m_worker, [=, mutation=std::move(mutation)]() mutable {
         m_worker->execute(context, hash, std::move(mutation), callbackContext,
                           completion, failure, m_publisher);
@@ -230,7 +255,7 @@ void HostWriteExecutor::enqueue(const RemoteMutationDto::RequestContext& context
 
 void HostWriteExecutor::shutdown()
 {
-    if (!m_accepting.exchange(false)) return;
+    m_accepting = false;
     if (m_worker && m_thread.isRunning())
         QMetaObject::invokeMethod(m_worker, [this]{ m_worker->close(); }, Qt::BlockingQueuedConnection);
     m_thread.quit(); m_thread.wait(); delete m_worker; m_worker = nullptr;

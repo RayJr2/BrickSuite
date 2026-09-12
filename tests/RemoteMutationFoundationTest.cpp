@@ -180,6 +180,12 @@ int main(int argc, char** argv)
                 HostWriteExecutor::MutationOutcome out; out.success=true; return out;
             }, &app, [](const auto&){}, [&](const auto& error){ overflowBusy |= error.code==QStringLiteral("BUSY"); });
         entered.acquire();
+        if (!check(queued.activeMutationCount() == 1 && !queued.isIdle(),
+                   "active mutation is exposed for maintenance drain")) return 1;
+        queued.stopAccepting();
+        if (!check(!queued.isAccepting(), "write admission can stop while active work drains")) return 1;
+        queued.startAccepting();
+        if (!check(queued.isAccepting(), "write admission can resume")) return 1;
         for (int i=0; i<16; ++i) {
             auto next = context(RemoteMutationDto::newMutationId());
             queued.enqueue(next, QStringLiteral("queued-%1").arg(i),
@@ -192,10 +198,10 @@ int main(int argc, char** argv)
         QEventLoop drain;
         QTimer poll;
         QObject::connect(&poll, &QTimer::timeout, &drain, [&] {
-            if (queued.queuedMutationCount()==0 && overflowBusy) drain.quit();
+            if (queued.isIdle() && overflowBusy) drain.quit();
         });
         poll.start(5); QTimer::singleShot(10000, &drain, &QEventLoop::quit); drain.exec();
-        if (!check(overflowBusy && queued.queuedMutationCount()==0, "queue overflow returns BUSY")) return 1;
+        if (!check(overflowBusy && queued.isIdle(), "queue overflow returns BUSY and executor drains")) return 1;
     }
 
     // Force receipt insertion to fail after the domain callback has changed data.

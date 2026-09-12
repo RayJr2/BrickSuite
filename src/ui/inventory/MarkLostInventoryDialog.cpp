@@ -27,6 +27,7 @@
 
 #include "../../repositories/ColorRepository.h"
 #include "../../repositories/InventoryRecordRepository.h"
+#include "../../services/application/HostOperationalGate.h"
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 
@@ -155,6 +156,9 @@ bool MarkLostInventoryDialog::loadInventory()
 
 void MarkLostInventoryDialog::markLost()
 {
+    if (!HostOperationalGate::localWritesAllowed()) {
+        QMessageBox::information(this, tr("Host Maintenance"), tr("Host Maintenance prevents operational changes.")); return;
+    }
     const int quantityLost = m_quantityLostSpin->value();
 
     if (quantityLost <= 0 || quantityLost > m_currentQuantity) {

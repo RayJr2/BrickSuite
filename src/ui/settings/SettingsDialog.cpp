@@ -25,6 +25,7 @@
 #include "../../models/Workspace.h"
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/application/ApplicationServices.h"
+#include "../../services/application/HostMaintenanceCoordinator.h"
 #include "../../network/BrickSuiteNetworkManager.h"
 #include "../../network/BrickSuiteWebSocketClient.h"
 #include "../../network/BrickSuiteWebSocketServer.h"
@@ -112,6 +113,16 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
 
     connect(&m_networkManager, &BrickSuiteNetworkManager::statusChanged,
             this, &SettingsDialog::updateNetworkPresentation);
+    if (auto* maintenance = m_networkManager.maintenanceCoordinator()) {
+        connect(maintenance, &HostMaintenanceCoordinator::stateChanged,
+                this, &SettingsDialog::updateNetworkPresentation);
+        connect(maintenance, &HostMaintenanceCoordinator::countersChanged,
+                this, &SettingsDialog::updateNetworkPresentation);
+        connect(maintenance, &HostMaintenanceCoordinator::maintenanceEntryFailed,
+                this, [this](const QString& message) {
+            QMessageBox::warning(this, tr("Host Maintenance"), message);
+        });
+    }
     connect(m_networkManager.client(), &BrickSuiteWebSocketClient::trustRequired,
             this, [this](const QString& fingerprint) {
         const auto choice = QMessageBox::question(
@@ -356,15 +367,18 @@ void SettingsDialog::loadSettings()
     m_backupRetentionSpin->setValue(settings.automaticBackupRetentionCount());
     updateBackupPresentation();
 
-    m_serverEnabledCheck->setChecked(settings.brickSuiteServerEnabled());
-    int bindIndex = m_serverBindCombo->findData(settings.brickSuiteServerBindAddress());
+    m_originalServerEnabled = settings.brickSuiteServerEnabled();
+    m_originalServerBindAddress = settings.brickSuiteServerBindAddress();
+    m_originalServerPort = settings.brickSuiteServerPort();
+    m_serverEnabledCheck->setChecked(m_originalServerEnabled);
+    int bindIndex = m_serverBindCombo->findData(m_originalServerBindAddress);
     if (bindIndex < 0) {
-        m_serverBindCombo->addItem(settings.brickSuiteServerBindAddress(),
-                                   settings.brickSuiteServerBindAddress());
+        m_serverBindCombo->addItem(m_originalServerBindAddress,
+                                   m_originalServerBindAddress);
         bindIndex = m_serverBindCombo->count() - 1;
     }
     m_serverBindCombo->setCurrentIndex(bindIndex);
-    m_serverPortSpin->setValue(settings.brickSuiteServerPort());
+    m_serverPortSpin->setValue(m_originalServerPort);
     m_hostEndpointEdit->setText(settings.brickSuiteHostEndpoint());
     m_hostFingerprintEdit->setText(settings.brickSuiteTrustedFingerprint());
     QString clientCredentialError;
@@ -491,7 +505,13 @@ void SettingsDialog::saveSettings()
     if (m_automaticBackupService)
         m_automaticBackupService->reloadPolicy();
 
-    if (sharedDataSource == SharedDataSource::ThisComputer) {
+    const QString serverBindAddress = m_serverBindCombo->currentData().toString();
+    const bool serverConfigurationChanged = m_serverEnabledCheck->isChecked()
+        != m_originalServerEnabled
+        || serverBindAddress != m_originalServerBindAddress
+        || m_serverPortSpin->value() != m_originalServerPort
+        || sharedDataSource != m_originalSharedDataSource;
+    if (sharedDataSource == SharedDataSource::ThisComputer && serverConfigurationChanged) {
         QString serverError;
         if (!m_networkManager.restartServer(&serverError) && m_serverEnabledCheck->isChecked())
             QMessageBox::warning(this, tr("BrickSuite Server"), serverError);
@@ -763,6 +783,19 @@ void SettingsDialog::buildServerTab()
     serverForm->addRow(tr("Certificate fingerprint:"), m_serverFingerprintLabel);
     serverForm->addRow(QString(), m_serverTokenButton);
     serverForm->addRow(QString(), regenerateButton);
+    m_maintenanceStateLabel = new QLabel(serverGroup);
+    m_maintenanceCountersLabel = new QLabel(serverGroup);
+    m_enterMaintenanceButton = new QPushButton(tr("Enter Maintenance..."), serverGroup);
+    m_leaveMaintenanceButton = new QPushButton(tr("Exit Maintenance"), serverGroup);
+    auto* maintenanceButtons = new QWidget(serverGroup);
+    auto* maintenanceButtonsLayout = new QHBoxLayout(maintenanceButtons);
+    maintenanceButtonsLayout->setContentsMargins(0, 0, 0, 0);
+    maintenanceButtonsLayout->addWidget(m_enterMaintenanceButton);
+    maintenanceButtonsLayout->addWidget(m_leaveMaintenanceButton);
+    maintenanceButtonsLayout->addStretch();
+    serverForm->addRow(tr("Maintenance state:"), m_maintenanceStateLabel);
+    serverForm->addRow(tr("Host operations:"), m_maintenanceCountersLabel);
+    serverForm->addRow(QString(), maintenanceButtons);
     auto* reachability = new QLabel(
         tr("Listening locally does not confirm that your router or firewall permits remote "
            "connections. BrickSuite does not configure port forwarding or firewall rules."), serverGroup);
@@ -798,6 +831,10 @@ void SettingsDialog::buildServerTab()
             this, &SettingsDialog::regenerateHostIdentity);
     connect(m_hostTestButton, &QPushButton::clicked,
             this, &SettingsDialog::testBrickSuiteHostConnection);
+    connect(m_enterMaintenanceButton, &QPushButton::clicked,
+            this, &SettingsDialog::enterHostMaintenance);
+    connect(m_leaveMaintenanceButton, &QPushButton::clicked,
+            this, &SettingsDialog::leaveHostMaintenance);
     connect(m_sharedDataSourceCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             this, &SettingsDialog::updateNetworkPresentation);
     connect(m_serverEnabledCheck, &QCheckBox::toggled,
@@ -825,6 +862,36 @@ void SettingsDialog::updateNetworkPresentation()
     m_hostReconnectCheck->setEnabled(!local);
     m_hostTestButton->setEnabled(!local);
     if (!local) m_hostConnectionStatusLabel->setText(m_networkManager.connectionStatus().message);
+    if (auto* maintenance = m_networkManager.maintenanceCoordinator()) {
+        m_maintenanceStateLabel->setText(maintenance->stateText());
+        m_maintenanceCountersLabel->setText(
+            tr("Reads: %1 queued, %2 active; Writes: %3 queued, %4 active")
+                .arg(maintenance->queuedReads()).arg(maintenance->activeReads())
+                .arg(maintenance->queuedWrites()).arg(maintenance->activeWrites()));
+        const bool listening = local && m_networkManager.server()->isListening();
+        m_enterMaintenanceButton->setEnabled(listening
+            && maintenance->state() == HostMaintenanceCoordinator::State::Normal);
+        m_leaveMaintenanceButton->setEnabled(listening
+            && maintenance->state() == HostMaintenanceCoordinator::State::Maintenance);
+    }
+}
+
+void SettingsDialog::enterHostMaintenance()
+{
+    if (QMessageBox::question(this, tr("Enter Host Maintenance"),
+        tr("New Host-backed Remote operations will be temporarily rejected while admitted "
+           "operations finish. Host-local operational writes will be disabled. Client-local "
+           "catalog browsing remains available. Continue?"),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
+    if (auto* maintenance = m_networkManager.maintenanceCoordinator())
+        maintenance->requestEnterMaintenance();
+}
+
+void SettingsDialog::leaveHostMaintenance()
+{
+    if (auto* maintenance = m_networkManager.maintenanceCoordinator())
+        maintenance->leaveMaintenance();
 }
 
 void SettingsDialog::generateOrRotateServerToken()
