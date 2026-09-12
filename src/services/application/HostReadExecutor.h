@@ -81,6 +81,9 @@ public:
     void buildCancellationReturnsPortable(int workspaceId, int buildId, QObject* context,
         std::function<void(const std::optional<QList<RemoteReadDto::BuildCancellationReturnRow>>&)> completion,
         ErrorCallback failure = {});
+    void buildDisassemblyReturnsPortable(int workspaceId, int buildId, QObject* context,
+        std::function<void(const std::optional<QList<RemoteReadDto::BuildCancellationReturnRow>>&)> completion,
+        ErrorCallback failure = {});
     void pullingView(int buildId, QObject* context,
                      std::function<void(const BuildPullingService::PullingView&)> completion,
                      ErrorCallback failure = {});

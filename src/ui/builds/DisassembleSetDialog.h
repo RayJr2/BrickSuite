@@ -54,6 +54,7 @@ public:
                                   bool collectOnly = false);
     DisassembleSetDialog(int workspaceId, const QString& buildName,
                          const QString& reference,
+                         const QString& inventoryMode,
                          const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
                          const QList<RemoteReadDto::StorageSummary>& storage,
                          SessionStorageSelectionService& sessionStorageSelectionService,

@@ -85,7 +85,9 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
                 if ((workflow == HostMutationPublicationService::Workflow::BuildMetadata
                      || workflow == HostMutationPublicationService::Workflow::BuildRequirements
                      || workflow == HostMutationPublicationService::Workflow::Pulling
-                     || workflow == HostMutationPublicationService::Workflow::BuildCancellation)
+                     || workflow == HostMutationPublicationService::Workflow::BuildCancellation
+                     || workflow == HostMutationPublicationService::Workflow::BuildDisassembly
+                     || workflow == HostMutationPublicationService::Workflow::CompleteSetSpare)
                     && scope.workspaceId && scope.buildId)
                     emit remoteBuildMutationCommitted(int(*scope.workspaceId),int(*scope.buildId));
             }, Qt::QueuedConnection);
@@ -110,7 +112,7 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     for(const QString&operation:partReferenceOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostPartReferenceMutationService::createMutation(operation,metadata,error);});
     const QStringList collectionOperations={QStringLiteral("collection.add"),QStringLiteral("collection.edit"),QStringLiteral("collection.setActive")};
     for(const QString&operation:collectionOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostCollectionMutationService::createMutation(operation,metadata,error);});
-    const QStringList buildOperations={QStringLiteral("builds.add"),QStringLiteral("builds.edit"),QStringLiteral("builds.setActive"),QStringLiteral("builds.complete"),QStringLiteral("builds.cancel"),QStringLiteral("builds.requirements.add"),QStringLiteral("builds.requirements.edit"),QStringLiteral("builds.requirements.remove"),QStringLiteral("builds.allocations.set"),QStringLiteral("builds.allocateAvailable")};
+    const QStringList buildOperations={QStringLiteral("builds.add"),QStringLiteral("builds.edit"),QStringLiteral("builds.setActive"),QStringLiteral("builds.complete"),QStringLiteral("builds.cancel"),QStringLiteral("builds.disassemble"),QStringLiteral("builds.spare.store"),QStringLiteral("builds.requirements.add"),QStringLiteral("builds.requirements.edit"),QStringLiteral("builds.requirements.remove"),QStringLiteral("builds.allocations.set"),QStringLiteral("builds.allocateAvailable")};
     for(const QString&operation:buildOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostBuildMutationService::createMutation(operation,metadata,error);});
     connect(m_server, &BrickSuiteWebSocketServer::statusChanged,
             this, &BrickSuiteNetworkManager::statusChanged);

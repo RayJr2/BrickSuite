@@ -37,6 +37,8 @@ OperationalInvalidation HostMutationPublicationService::invalidationFor(
         result.buildId = scope.buildId;
         break;
     case Workflow::BuildCancellation:
+    case Workflow::BuildDisassembly:
+    case Workflow::CompleteSetSpare:
         result.domains = {D::Builds, D::BuildRequirements, D::MissingParts, D::Pulling};
         if (scope.inventoryChanged) {
             result.domains.append(D::Inventory);

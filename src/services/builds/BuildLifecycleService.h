@@ -32,6 +32,13 @@ public:
         int returnedPieces = 0;
         bool collectionChanged = false;
     };
+    struct ReturnPlanResult {
+        bool success = false;
+        Error error = Error::None;
+        QString message;
+        Build build;
+        QList<DisassemblyReturn> rows;
+    };
     BuildLifecycleService();
     explicit BuildLifecycleService(const QSqlDatabase& database);
     Result disassemble(int buildId, const QList<DisassemblyReturn>& returns,
@@ -48,6 +55,7 @@ public:
                                  int storageLocationId, int quantity) const;
     Result storeCompleteSetSpareInCurrentTransaction(int buildId, int requirementId,
         int storageLocationId, int quantity) const;
+    ReturnPlanResult disassemblyReturnPlan(int buildId) const;
 private:
     QSqlDatabase database() const;
     Result inTransaction(const std::function<Result()>& operation) const;

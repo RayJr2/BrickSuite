@@ -47,6 +47,8 @@ public:
         AsyncReadCompletion<RemoteReadDto::BuildDetail> completion);
     ReadRequestToken buildCancellationReturns(qint64 workspaceId, qint64 buildId, QObject* context,
         AsyncReadCompletion<QList<RemoteReadDto::BuildCancellationReturnRow>> completion);
+    ReadRequestToken buildDisassemblyReturns(qint64 workspaceId, qint64 buildId, QObject* context,
+        AsyncReadCompletion<QList<RemoteReadDto::BuildCancellationReturnRow>> completion);
     ReadRequestToken buildRequirements(qint64 workspaceId, qint64 buildId, const RemoteReadDto::PageRequest& page,
         QObject* context, AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::BuildRequirement>> completion);
     ReadRequestToken missingParts(qint64 workspaceId, qint64 buildId,

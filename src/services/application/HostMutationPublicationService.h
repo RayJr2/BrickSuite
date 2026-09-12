@@ -15,6 +15,8 @@ public:
         BuildMetadata,
         BuildRequirements,
         BuildCancellation,
+        BuildDisassembly,
+        CompleteSetSpare,
         Pulling,
         Collection,
         PartReferenceCustomization

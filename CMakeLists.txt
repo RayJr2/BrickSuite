@@ -1025,6 +1025,8 @@ if(BUILD_TESTING)
         src/services/builds/BuildLifecycleService.h src/services/builds/BuildLifecycleService.cpp
         src/services/builds/BuildRequirementMutationService.h src/services/builds/BuildRequirementMutationService.cpp
         src/services/builds/BuildAllocationMutationService.h src/services/builds/BuildAllocationMutationService.cpp
+        src/services/builds/BuildPullingService.h src/services/builds/BuildPullingService.cpp
+        src/services/builds/BuildMutationService.h src/services/builds/BuildMutationService.cpp
         src/services/collection/CollectionItemService.h src/services/collection/CollectionItemService.cpp
     )
     target_link_libraries(MinifigBuildCreationTest PRIVATE Qt6::Core Qt6::Sql)

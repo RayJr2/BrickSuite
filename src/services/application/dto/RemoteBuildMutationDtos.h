@@ -74,6 +74,7 @@ struct Request {
     int quantityRequired = 0;
     bool spare = false;
     qint64 preferredStorageId = 0;
+    int quantity = 0;
     RequirementExpectedState expectedRequirement;
     QList<AllocationRow> allocations;
 };

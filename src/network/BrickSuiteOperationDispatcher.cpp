@@ -46,6 +46,8 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
                                          QStringLiteral("builds.setActive"),
                                          QStringLiteral("builds.complete"),
                                          QStringLiteral("builds.cancel"),
+                                         QStringLiteral("builds.disassemble"),
+                                         QStringLiteral("builds.spare.store"),
                                          QStringLiteral("builds.requirements.add"),
                                          QStringLiteral("builds.requirements.edit"),
                                          QStringLiteral("builds.requirements.remove"),

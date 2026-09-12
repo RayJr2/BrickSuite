@@ -11,6 +11,7 @@
 #include "../../repositories/ManufacturerRepository.h"
 #include "../parts/PartReferenceManifest.h"
 #include "../builds/BuildRequirementAvailabilityService.h"
+#include "../builds/BuildLifecycleService.h"
 
 #include <QElapsedTimer>
 #include <QHash>
@@ -422,6 +423,33 @@ void HostReadExecutor::buildCancellationReturnsPortable(int workspaceId, int bui
             result=rows;
         }
 done:
+        if(guard)QMetaObject::invokeMethod(guard,[guard,completion,result=std::move(result)]()mutable{if(guard)completion(result);},Qt::QueuedConnection);
+    },context,std::move(failure));
+}
+
+void HostReadExecutor::buildDisassemblyReturnsPortable(int workspaceId, int buildId,
+    QObject* context,
+    std::function<void(const std::optional<QList<RemoteReadDto::BuildCancellationReturnRow>>&)> completion,
+    ErrorCallback failure)
+{
+    QPointer<QObject> guard(context);
+    enqueue(QStringLiteral("builds.disassemblyReturns"), [=, completion=std::move(completion)]
+        (ApplicationServices& services, const QSqlDatabase& db) mutable {
+        std::optional<QList<RemoteReadDto::BuildCancellationReturnRow>> result;
+        const auto plan=BuildLifecycleService(db).disassemblyReturnPlan(buildId);
+        if(plan.success&&plan.build.workspaceId()==workspaceId){
+            QList<RemoteReadDto::BuildCancellationReturnRow> rows;
+            ManufacturerRepository manufacturers(db);
+            for(const auto& source:plan.rows){
+                const auto part=PartRepository(db).getById(source.partId);
+                const auto color=ColorRepository(db).getById(source.colorId);
+                const auto manufacturer=manufacturers.getById(source.manufacturerId);
+                if(!part||!color||!manufacturer){result=std::nullopt;goto done_disassembly;}
+                rows.append({source.requirementId,part->partNumber(),part->name(),color->name(),manufacturer->name(),source.quantity,source.spare});
+            }
+            result=rows;
+        }
+done_disassembly:
         if(guard)QMetaObject::invokeMethod(guard,[guard,completion,result=std::move(result)]()mutable{if(guard)completion(result);},Qt::QueuedConnection);
     },context,std::move(failure));
 }

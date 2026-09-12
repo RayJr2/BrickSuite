@@ -213,14 +213,15 @@ DisassembleSetDialog::DisassembleSetDialog(
 
 DisassembleSetDialog::DisassembleSetDialog(
     int workspaceId, const QString& buildName, const QString& reference,
+    const QString& inventoryMode,
     const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
     const QList<RemoteReadDto::StorageSummary>& storage,
     SessionStorageSelectionService& sessionStorageSelectionService, QWidget* parent)
     : DisassembleSetDialog(0, sessionStorageSelectionService, parent, true)
 {
     m_workspaceId=workspaceId;m_buildName=buildName;m_setNumber=reference;
-    m_inventoryMode=QStringLiteral("Stock");m_disassemblyLabel=QStringLiteral("Build");
-    setWindowTitle(QStringLiteral("Return Pulled Pieces"));
+    m_inventoryMode=inventoryMode;m_disassemblyLabel=inventoryMode==QStringLiteral("CompleteSet")?QStringLiteral("Complete Set"):QStringLiteral("Build");
+    setWindowTitle(inventoryMode==QStringLiteral("CompleteSet")?QStringLiteral("Disassemble Complete Set"):QStringLiteral("Return Pulled Pieces"));
     m_disassembleButton->setText(QStringLiteral("Continue"));
     m_buildLabel->setText(reference.isEmpty()?buildName:QString("%1 — %2").arg(reference,buildName));
     loadRemoteRows(rows,storage);updateSummary();
@@ -239,7 +240,7 @@ void DisassembleSetDialog::loadRemoteRows(
     const int remembered=m_sessionStorageSelectionService.rememberedDestination(m_workspaceId);
     const int defaultIndex=m_defaultDestinationCombo->findData(remembered);
     if(defaultIndex>=0)m_defaultDestinationCombo->setCurrentIndex(defaultIndex);
-    m_table->setHorizontalHeaderItem(4,new QTableWidgetItem(QStringLiteral("Pulled Qty")));
+    m_table->setHorizontalHeaderItem(4,new QTableWidgetItem(m_inventoryMode==QStringLiteral("CompleteSet")?QStringLiteral("Set Qty"):QStringLiteral("Pulled Qty")));
     m_table->setRowCount(0);m_rows.clear();int tableRow=0;
     for(const auto&source:rows){
         if(source.quantityPulled<=0)continue;m_table->insertRow(tableRow);
@@ -492,11 +493,15 @@ bool DisassembleSetDialog::loadRequirements()
         if (pulledOrSetQuantity <= 0)
             continue;
 
+        const int returnedPartId=m_inventoryMode==QStringLiteral("Stock")
+            ?requirement.effectivePartId():requirement.partId();
+        const int returnedColorId=m_inventoryMode==QStringLiteral("Stock")
+            ?requirement.effectiveColorId():requirement.colorId();
         const std::optional<Part> part =
-            partRepository.getById(requirement.partId());
+            partRepository.getById(returnedPartId);
 
         const std::optional<Color> color =
-            colorRepository.getById(requirement.colorId());
+            colorRepository.getById(returnedColorId);
 
         struct ManufacturerSlice
         {
@@ -515,8 +520,8 @@ bool DisassembleSetDialog::loadRequirements()
             const QList<BuildPartManufacturerProvenance> provenance =
                 allocationRepository.pulledManufacturerProvenance(
                     m_buildId,
-                    requirement.partId(),
-                    requirement.colorId());
+                    returnedPartId,
+                    returnedColorId);
 
             int provenanceQuantity = 0;
 
@@ -546,9 +551,9 @@ bool DisassembleSetDialog::loadRequirements()
                             "BrickSuite will not guess the manufacturer. "
                             "No inventory changes have been made.")
                         .arg(part ? part->partNumber()
-                                  : QString::number(requirement.partId()))
+                                  : QString::number(returnedPartId))
                         .arg(color ? color->name()
-                                   : QString::number(requirement.colorId()))
+                                   : QString::number(returnedColorId))
                         .arg(pulledOrSetQuantity)
                         .arg(provenanceQuantity));
 
@@ -573,7 +578,7 @@ bool DisassembleSetDialog::loadRequirements()
                             "Part %2.\n\nNo inventory changes have been made.")
                         .arg(slice.manufacturerId)
                         .arg(part ? part->partNumber()
-                                  : QString::number(requirement.partId())));
+                                  : QString::number(returnedPartId)));
 
                 m_table->setRowCount(0);
                 m_rows.clear();
@@ -584,14 +589,14 @@ bool DisassembleSetDialog::loadRequirements()
 
             auto* partNumberItem =
                 new QTableWidgetItem(part ? part->partNumber()
-                                          : QString::number(requirement.partId()));
+                                          : QString::number(returnedPartId));
 
             auto* nameItem =
                 new QTableWidgetItem(part ? part->name() : QString());
 
             auto* colorItem =
                 new QTableWidgetItem(color ? color->name()
-                                           : QString::number(requirement.colorId()));
+                                           : QString::number(returnedColorId));
 
             auto* manufacturerItem =
                 new QTableWidgetItem(manufacturer->name());
@@ -624,8 +629,8 @@ bool DisassembleSetDialog::loadRequirements()
 
             RowData row;
             row.requirementId = requirement.id();
-            row.partId = requirement.partId();
-            row.colorId = requirement.colorId();
+            row.partId = returnedPartId;
+            row.colorId = returnedColorId;
             row.manufacturerId = slice.manufacturerId;
             row.sourceQuantity = slice.quantity;
             row.isSpare = requirement.isSpare();

@@ -65,6 +65,35 @@ int main(int argc, char** argv)
     ok &= require(!RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.cancel"),
         duplicate, &decoded, &error), "Duplicate cancellation return row was accepted");
 
+    auto disassemble = existingRequest();
+    disassemble.expected.status = QStringLiteral("Complete");
+    disassemble.returns.append({17, QStringLiteral("LEGO"), 22, 3, false});
+    ok &= require(RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.disassemble"),
+        RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.disassemble"), disassemble),
+        &decoded, &error) && decoded.returns.size()==1
+        &&decoded.returns.first().requirementId==17&&decoded.returns.first().quantity==3
+        &&decoded.returns.first().manufacturer==QStringLiteral("LEGO"),
+        "Build disassembly return plan did not round-trip");
+    auto emptyDisassembly = disassemble; emptyDisassembly.returns.clear();
+    ok &= require(!RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.disassemble"),
+        RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.disassemble"), emptyDisassembly),
+        &decoded, &error), "Empty disassembly return plan was accepted");
+    auto oversized=RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.disassemble"),disassemble);
+    QJsonArray oversizedRows;for(int i=1;i<=501;++i)oversizedRows.append(QJsonObject{{"requirementId",i},{"manufacturer","LEGO"},{"storageId",22},{"quantity",1},{"spare",false}});
+    oversized.mutation["returns"]=oversizedRows;
+    ok &= require(!RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.disassemble"),oversized,&decoded,&error),
+        "Oversized disassembly return plan was accepted");
+
+    auto spare = existingRequest();
+    spare.expectedRequirement={17,9,QStringLiteral("2026-09-11T12:30:00.000Z"),
+        QStringLiteral("3001"),5,QString(),-1,2,0,0,true};
+    spare.requirementId=17;spare.preferredStorageId=22;spare.quantity=2;
+    ok &= require(RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.spare.store"),
+        RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.spare.store"), spare),
+        &decoded, &error) && decoded.requirementId==17&&decoded.preferredStorageId==22
+        &&decoded.quantity==2&&decoded.expectedRequirement.spare,
+        "Complete Set spare request did not round-trip");
+
     auto stale = RemoteBuildMutationDto::toMetadata(QStringLiteral("builds.complete"), existingRequest());
     stale.expected.insert(QStringLiteral("modifiedUtc"), QStringLiteral("not-a-date"));
     ok &= require(!RemoteBuildMutationDto::fromMetadata(QStringLiteral("builds.complete"),

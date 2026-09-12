@@ -70,8 +70,12 @@ BuildLifecycleService::Result BuildLifecycleService::returnPiecesInCurrentTransa
         const auto children = storage.hasActiveChildrenChecked(row.storageLocationId);
         if (children == StorageLocationRepository::CheckResult::Error)
             return failure(Error::DatabaseFailure, "Unable to validate a storage destination.");
+        const int expectedPartId=requirement&&build.inventoryMode()==QStringLiteral("Stock")
+            ?requirement->effectivePartId():(requirement?requirement->partId():0);
+        const int expectedColorId=requirement&&build.inventoryMode()==QStringLiteral("Stock")
+            ?requirement->effectiveColorId():(requirement?requirement->colorId():0);
         if (!requirement || requirement->buildId() != build.id()
-            || requirement->partId() != row.partId || requirement->colorId() != row.colorId
+            || expectedPartId != row.partId || expectedColorId != row.colorId
             || !destination || !destination->isActive()
             || destination->workspaceId() != build.workspaceId()
             || children == StorageLocationRepository::CheckResult::Yes) {
@@ -120,6 +124,34 @@ BuildLifecycleService::Result BuildLifecycleService::returnPiecesInCurrentTransa
     }
     result.success = true;
     return result;
+}
+
+BuildLifecycleService::ReturnPlanResult BuildLifecycleService::disassemblyReturnPlan(int buildId) const
+{
+    QSqlDatabase db=database();ReturnPlanResult result;
+    std::optional<Build> build;
+    if(!BuildRepository(db).tryGetById(buildId,build)){result.error=Error::DatabaseFailure;result.message="Unable to load the Build.";return result;}
+    if(!build){result.error=Error::NotFound;result.message="The Build was not found.";return result;}
+    if(!build->isActive()||build->status()!=QStringLiteral("Complete")
+        ||(build->inventoryMode()!=QStringLiteral("Stock")&&build->inventoryMode()!=QStringLiteral("CompleteSet"))){result.error=Error::InvalidState;result.message="Only an active Complete Build can be disassembled.";return result;}
+    QList<BuildRequirement> requirements;
+    if(!BuildRequirementRepository(db).tryGetByBuild(buildId,requirements)){result.error=Error::DatabaseFailure;result.message="Unable to load Build requirements.";return result;}
+    BuildAllocationRepository allocations(db);
+    for(const auto& requirement:requirements){
+        if(build->inventoryMode()==QStringLiteral("CompleteSet")){
+            const int quantity=requirement.isSpare()?qMax(requirement.quantityRequired()-requirement.quantityReleased(),0):requirement.quantityRequired();
+            if(quantity>0)result.rows.append({requirement.id(),requirement.partId(),requirement.colorId(),build->manufacturerId(),0,quantity,requirement.isSpare()});
+            continue;
+        }
+        int tracked=0;
+        for(const auto& provenance:allocations.pulledManufacturerProvenance(buildId,requirement.effectivePartId(),requirement.effectiveColorId())){
+            result.rows.append({requirement.id(),requirement.effectivePartId(),requirement.effectiveColorId(),provenance.manufacturerId,0,provenance.quantityPulled,requirement.isSpare()});
+            tracked+=provenance.quantityPulled;
+        }
+        if(tracked!=requirement.quantityPulled()){result.error=Error::InvalidState;result.message=QString("Manufacturer provenance is incomplete for requirement %1.").arg(requirement.id());result.rows.clear();return result;}
+    }
+    if(result.rows.isEmpty()){result.error=Error::InvalidState;result.message="The Build has no pieces available to return.";return result;}
+    result.success=true;result.build=*build;return result;
 }
 
 BuildLifecycleService::Result BuildLifecycleService::disassemble(

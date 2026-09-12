@@ -8,6 +8,8 @@
 #include "../src/services/builds/BuildLifecycleService.h"
 #include "../src/services/builds/BuildRequirementMutationService.h"
 #include "../src/services/builds/BuildAllocationMutationService.h"
+#include "../src/services/builds/BuildPullingService.h"
+#include "../src/services/builds/BuildMutationService.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -220,6 +222,54 @@ int main(int argc, char* argv[])
                  && scalar(db, "SELECT COUNT(*) FROM build_allocation") == 1
                  && scalar(db, QString("SELECT COUNT(*) FROM build WHERE id=%1 AND status='Planned'").arg(requirementBuild.id())) == 1,
                  "Unpulled cancellation rollback failed.")) return 1;
+
+    // Exercise the real Stock lifecycle with an effective-color substitution.
+    // Pulled provenance is physical identity, so the authoritative return plan
+    // must project the effective Part/Color rather than the logical original.
+    const int substituteColorId = scalar(db, "SELECT id FROM color WHERE rebrickable_id=2");
+    if (!require(q.exec(QString("INSERT INTO inventory_record(workspace_id,part_id,color_id,storage_location_id,manufacturer_id,condition,ownership_type,quantity,created_utc,modified_utc) VALUES(%1,%2,%3,%4,%5,'Used','Owned',4,'%6','%6')")
+                            .arg(workspaceId).arg(partId).arg(substituteColorId)
+                            .arg(storageId).arg(manufacturerId).arg(now)),
+                 "Substitution lifecycle inventory seed failed.")) return 1;
+    const int substituteInventoryId = q.lastInsertId().toInt();
+    Build substitutionBuild; substitutionBuild.setWorkspaceId(workspaceId);
+    substitutionBuild.setBuildType("MOC"); substitutionBuild.setName("Substitution lifecycle");
+    substitutionBuild.setSetNumber("MOC-S"); substitutionBuild.setInventoryMode("Stock");
+    substitutionBuild.setManufacturerId(manufacturerId); substitutionBuild.setStatus("Planned");
+    if (!require(builds.create(substitutionBuild), "Substitution lifecycle Build seed failed.")) return 1;
+    BuildRequirement substituted; substituted.setBuildId(substitutionBuild.id());
+    substituted.setPartId(partId); substituted.setColorId(colorId);
+    substituted.setSubstituteColorId(substituteColorId); substituted.setQuantityRequired(2);
+    if (!require(BuildRequirementRepository().create(substituted),
+                 "Substitution lifecycle requirement seed failed.")) return 1;
+    BuildAllocation substituteAllocation; substituteAllocation.setInventoryRecordId(substituteInventoryId);
+    substituteAllocation.setQuantityAllocated(2);
+    if (!require(allocationMutations.replaceForRequirement(substituted.id(), {substituteAllocation}).success,
+                 "Substitution lifecycle allocation failed.")) return 1;
+    const int substituteAllocationId = scalar(db, QString("SELECT id FROM build_allocation WHERE build_requirement_id=%1").arg(substituted.id()));
+    BuildPullingService pulling(db);
+    if (!require(pulling.recordPull(substituteAllocationId, 2).success,
+                 "Substitution lifecycle pull failed.")) return 1;
+    if (!require(BuildMutationService(db).complete(substitutionBuild.id()).success,
+                 "Substitution lifecycle completion failed.")) return 1;
+    const auto returnPlan = lifecycle.disassemblyReturnPlan(substitutionBuild.id());
+    if (!require(returnPlan.success && returnPlan.rows.size()==1
+                 && returnPlan.rows.first().requirementId==substituted.id()
+                 && returnPlan.rows.first().partId==partId
+                 && returnPlan.rows.first().colorId==substituteColorId
+                 && returnPlan.rows.first().manufacturerId==manufacturerId
+                 && returnPlan.rows.first().quantity==2,
+                 "Completed substituted Build did not retain an authoritative physical return plan: "+returnPlan.message)) return 1;
+    QList<BuildLifecycleService::DisassemblyReturn> plannedReturns = returnPlan.rows;
+    plannedReturns.first().storageLocationId = storageId;
+    if (!require(lifecycle.disassemble(substitutionBuild.id(), plannedReturns,
+                                      CollectionItemState::Unassembled).success,
+                 "Substitution lifecycle disassembly failed.")) return 1;
+    if (!require(scalar(db, QString("SELECT COUNT(*) FROM build WHERE id=%1 AND status='Disassembled'").arg(substitutionBuild.id()))==1
+                 && scalar(db, QString("SELECT quantity_pulled FROM build_requirement WHERE id=%1").arg(substituted.id()))==0
+                 && scalar(db, QString("SELECT COUNT(*) FROM build_part_provenance WHERE build_id=%1").arg(substitutionBuild.id()))==0
+                 && scalar(db, QString("SELECT quantity FROM inventory_record WHERE id=%1").arg(substituteInventoryId))==4,
+                 "Substitution lifecycle did not return the physical inventory exactly.")) return 1;
     qInfo() << "M23.7.4 Minifig Build creation validation passed.";
     return 0;
 }

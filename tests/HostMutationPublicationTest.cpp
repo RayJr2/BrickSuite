@@ -115,6 +115,14 @@ int main(int argc, char** argv)
                      && has(cancellation, D::Collection),
                  "Build cancellation compound domains are incomplete"))
         return 1;
+    const auto disassembly=Service::invalidationFor(Service::Workflow::BuildDisassembly,scope);
+    if(!require(disassembly.domains==cancellation.domains,
+                "Build disassembly compound domains are incomplete"))return 1;
+    scope.collectionChanged=false;
+    const auto spare=Service::invalidationFor(Service::Workflow::CompleteSetSpare,scope);
+    if(!require(has(spare,D::BuildRequirements)&&has(spare,D::Inventory)
+                    &&has(spare,D::InventoryHistory)&&!has(spare,D::Collection),
+                "Complete Set spare domains are incorrect"))return 1;
 
     scope = {};
     scope.workspaceId = 4;

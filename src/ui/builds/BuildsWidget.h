@@ -111,6 +111,7 @@ private:
     void showRemotePulling(int buildId);
     void addRemoteBuildToCollection(const RemoteReadDto::BuildSummary& build);
     void editRemoteBuild(const RemoteReadDto::BuildSummary& build);
+    void storeRemoteSpare(const RemoteReadDto::BuildRequirement& requirement);
     void submitRemoteBuildMutation(const QString& operation,
                                    const RemoteReadDto::BuildSummary& build,
                                    bool desiredActive = true);

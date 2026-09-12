@@ -51,9 +51,13 @@ RemoteMutationDto::Metadata toMetadata(const QString& operation, const Request& 
         expected=expectedJson(r.expected);
         if(operation==QStringLiteral("builds.edit")){mutation["name"]=r.name;mutation["manufacturer"]=r.manufacturer;mutation["notes"]=r.notes;}
         else if(operation==QStringLiteral("builds.setActive"))mutation["desiredActive"]=r.desiredActive;
-        else if(operation==QStringLiteral("builds.cancel")){
+        else if(operation==QStringLiteral("builds.cancel")||operation==QStringLiteral("builds.disassemble")){
             mutation["linkedCollectionState"]=r.linkedCollectionState;
             QJsonArray rows;for(const auto& row:r.returns)rows.append(QJsonObject{{"requirementId",double(row.requirementId)},{"manufacturer",row.manufacturer},{"storageId",double(row.storageId)},{"quantity",row.quantity},{"spare",row.spare}});mutation["returns"]=rows;
+        } else if(operation==QStringLiteral("builds.spare.store")) {
+            mutation={{"buildId",double(r.buildId)},{"requirementId",double(r.requirementId)},
+                      {"storageId",double(r.preferredStorageId)},{"quantity",r.quantity}};
+            expected=requirementExpectedJson(r.expectedRequirement);
         }
     }
     return {r.workspaceId,r.mutationId,expected,mutation};
@@ -64,11 +68,19 @@ bool fromMetadata(const QString& operation, const RemoteMutationDto::Metadata& m
 {
     if(!out)return false;Request r;r.workspaceId=md.workspaceId;r.mutationId=md.mutationId;
     const bool reqAdd=operation=="builds.requirements.add",reqEdit=operation=="builds.requirements.edit",reqRemove=operation=="builds.requirements.remove",allocSet=operation=="builds.allocations.set",allocate=operation=="builds.allocateAvailable";
-    const bool add=operation=="builds.add",edit=operation=="builds.edit",active=operation=="builds.setActive",complete=operation=="builds.complete",cancel=operation=="builds.cancel";
-    if(!reqAdd&&!reqEdit&&!reqRemove&&!allocSet&&!allocate&&!add&&!edit&&!active&&!complete&&!cancel){invalid(error,"Unsupported Build mutation.");return false;}
+    const bool add=operation=="builds.add",edit=operation=="builds.edit",active=operation=="builds.setActive",complete=operation=="builds.complete",cancel=operation=="builds.cancel",disassemble=operation=="builds.disassemble",storeSpare=operation=="builds.spare.store";
+    if(!reqAdd&&!reqEdit&&!reqRemove&&!allocSet&&!allocate&&!add&&!edit&&!active&&!complete&&!cancel&&!disassemble&&!storeSpare){invalid(error,"Unsupported Build mutation.");return false;}
     if(reqAdd){qint64 color=0,subColor=0,quantity=0;if(!md.expected.isEmpty()||md.mutation.size()!=7||!id(md.mutation["buildId"],&r.buildId)||!text(md.mutation["partNumber"],&r.partNumber,false,100)||!integer(md.mutation["rebrickableColorId"],0,INT_MAX,&color)||!text(md.mutation["substitutePartNumber"],&r.substitutePartNumber,true,100)||!integer(md.mutation["substituteRebrickableColorId"],-1,INT_MAX,&subColor)||!id(md.mutation["quantityRequired"],&quantity)||quantity>1000000||!md.mutation["spare"].isBool()){invalid(error,"The requirement Add request is invalid.");return false;}r.rebrickableColorId=int(color);r.substituteRebrickableColorId=int(subColor);r.quantityRequired=int(quantity);r.spare=md.mutation["spare"].toBool();
     }else if(reqEdit||reqRemove||allocSet){if(!parseRequirementExpected(md.expected,&r.expectedRequirement)||!id(md.mutation["requirementId"],&r.requirementId)||r.requirementId!=r.expectedRequirement.requirementId){invalid(error,"The requirement expected state is invalid.");return false;}if(reqEdit){qint64 subColor=0,quantity=0;if(md.mutation.size()!=5||!text(md.mutation["substitutePartNumber"],&r.substitutePartNumber,true,100)||!integer(md.mutation["substituteRebrickableColorId"],-1,INT_MAX,&subColor)||!id(md.mutation["quantityRequired"],&quantity)||quantity>1000000||!md.mutation["spare"].isBool()){invalid(error,"The requirement Edit request is invalid.");return false;}r.substituteRebrickableColorId=int(subColor);r.quantityRequired=int(quantity);r.spare=md.mutation["spare"].toBool();}else if(reqRemove){if(md.mutation.size()!=1){invalid(error,"The requirement Remove request is invalid.");return false;}}else{if(md.mutation.size()!=2||!md.mutation["allocations"].isArray()||md.mutation["allocations"].toArray().size()>500){invalid(error,"The allocation-set request is invalid.");return false;}QSet<qint64> seen;for(const auto&v:md.mutation["allocations"].toArray()){if(!v.isObject()){invalid(error,"An allocation row is invalid.");return false;}AllocationRow a;if(!parseAllocation(v.toObject(),&a)||seen.contains(a.inventoryRecordId)){invalid(error,"An allocation row is invalid or duplicated.");return false;}seen.insert(a.inventoryRecordId);r.allocations.append(a);}}
     }else if(allocate){if(!parseExpected(md.expected,&r.expected)||md.mutation.size()!=2||!id(md.mutation["buildId"],&r.buildId)||!id(md.mutation["preferredStorageId"],&r.preferredStorageId,true)){invalid(error,"The Allocate Available request is invalid.");return false;}
+    }else if(storeSpare){
+        qint64 quantity=0;
+        if(!parseRequirementExpected(md.expected,&r.expectedRequirement)||md.mutation.size()!=4
+            ||!id(md.mutation["buildId"],&r.buildId)||!id(md.mutation["requirementId"],&r.requirementId)
+            ||r.requirementId!=r.expectedRequirement.requirementId||r.buildId!=r.expectedRequirement.buildId
+            ||!id(md.mutation["storageId"],&r.preferredStorageId)
+            ||!id(md.mutation["quantity"],&quantity)||quantity>1000000){invalid(error,"The Complete Set spare request is invalid.");return false;}
+        r.quantity=int(quantity);
     }else if(add){
         if(!md.expected.isEmpty()||md.mutation.size()!=7||!text(md.mutation["buildType"],&r.buildType)||!text(md.mutation["reference"],&r.reference,true,200)||!text(md.mutation["inventoryMode"],&r.inventoryMode)||!text(md.mutation["manufacturer"],&r.manufacturer,true,200)||!text(md.mutation["initialStatus"],&r.initialStatus)||!text(md.mutation["name"],&r.name,false,500)||!text(md.mutation["notes"],&r.notes,true)){invalid(error,"The Build Add request is invalid.");return false;}
     }else{
@@ -77,7 +89,7 @@ bool fromMetadata(const QString& operation, const RemoteMutationDto::Metadata& m
         else if(active){if(md.mutation.size()!=2||!md.mutation["desiredActive"].isBool()){invalid(error,"The Build active-state request is invalid.");return false;}r.desiredActive=md.mutation["desiredActive"].toBool();}
         else if(complete){if(md.mutation.size()!=1){invalid(error,"The Build Complete request is invalid.");return false;}}
         else {
-            if(md.mutation.size()!=3||!text(md.mutation["linkedCollectionState"],&r.linkedCollectionState)||!md.mutation["returns"].isArray()||md.mutation["returns"].toArray().size()>10000){invalid(error,"The Build Cancel request is invalid.");return false;}
+            if(md.mutation.size()!=3||!text(md.mutation["linkedCollectionState"],&r.linkedCollectionState)||!md.mutation["returns"].isArray()||(md.mutation["returns"].toArray().isEmpty()&&disassemble)||md.mutation["returns"].toArray().size()>(disassemble?500:10000)){invalid(error,disassemble?"The Build Disassemble request is invalid.":"The Build Cancel request is invalid.");return false;}
             QSet<QString> duplicates;for(const auto& value:md.mutation["returns"].toArray()){if(!value.isObject()){invalid(error,"A Build return row is invalid.");return false;}const auto o=value.toObject();ReturnRow row;qint64 quantity=0;if(o.size()!=5||!id(o["requirementId"],&row.requirementId)||!text(o["manufacturer"],&row.manufacturer,false,200)||!id(o["storageId"],&row.storageId)||!id(o["quantity"],&quantity)||quantity>1000000||!o["spare"].isBool()){invalid(error,"A Build return row is invalid.");return false;}row.quantity=int(quantity);row.spare=o["spare"].toBool();const QString key=QString("%1|%2|%3|%4").arg(row.requirementId).arg(row.manufacturer.toCaseFolded()).arg(row.storageId).arg(row.spare);if(duplicates.contains(key)){invalid(error,"Duplicate Build return rows are not allowed.");return false;}duplicates.insert(key);r.returns.append(row);}
         }
     }

@@ -405,3 +405,32 @@ Pulling. The correlated response precedes invalidation and Host-local refresh. S
 and payload replays the stored outcome without another mutation or invalidation; a changed
 payload conflicts. Only timeout or disconnect is an unknown outcome and requires retrying the
 exact retained request.
+
+## Build disassembly and Complete Set spare storage
+
+Protocol 1.2 advertises `builds.disassemble` and `builds.spare.store` as independent exact
+capabilities. Neither implies a generic status or Inventory-write capability. Before disassembly,
+`builds.disassemblyReturns` supplies a bounded return projection (maximum 500 rows) containing
+Host requirement identity, portable Manufacturer identity, authoritative quantity, and spare
+state. The mutation supplies the chosen active Host Inventory leaf Storage IDs and the complete
+unchanged return plan; Client row numbers and local catalog or Storage IDs are never authority.
+
+The Host revalidates the complete Build snapshot, ownership, lifecycle, requirement quantities,
+manufacturer provenance, Storage destinations, and return-plan completeness inside the write
+transaction. Inventory return/merge, movement history, provenance and requirement updates, Build
+status transition, and linked Collection synchronization commit atomically. The authoritative
+result contains the Build plus affected requirement, Inventory, and allocation IDs and returned
+piece count. It invalidates Build projections and only the Inventory/History and Collection
+domains actually changed.
+
+`builds.spare.store` identifies one Complete Set spare requirement, a positive bounded quantity,
+and an active Host Inventory leaf Storage ID. Its expected requirement snapshot prevents stale
+release counts. The Host derives Part, Color, and Manufacturer from the Build requirement and
+atomically adds or merges Inventory, records `SetSpareRelease` movement history, and advances the
+released quantity.
+
+Both operations use standard durable mutation receipts. Identical mutation ID and payload replay
+the original result without duplicate Inventory, history, lifecycle changes, or invalidation;
+changed payload conflicts. Only timeout or disconnection is an unknown outcome, and safe retry
+must retain the exact mutation ID and frozen plan. The correlated response precedes invalidation
+and Host-local refresh.
