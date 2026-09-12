@@ -36,6 +36,7 @@ class QPushButton;
 class QTabWidget;
 class QSpinBox;
 class QWidget;
+class QTableWidget;
 
 class RebrickableApiClient;
 class BricksetService;
@@ -77,6 +78,10 @@ private slots:
     void updateNetworkPresentation();
     void enterHostMaintenance();
     void leaveHostMaintenance();
+    void refreshPairedDevices();
+    void renamePairedDevice();
+    void revokePairedDevice();
+    void revokeAllPairedDevices();
 
 private:
     void buildGeneralTab();
@@ -180,6 +185,12 @@ private:
     QLineEdit* m_pairingDeviceNameEdit = nullptr;
     QLabel* m_remotePairingStatusLabel = nullptr;
     QPushButton* m_pairDeviceButton = nullptr;
+    QTableWidget* m_pairedDevicesTable = nullptr;
+    QLabel* m_pairedDevicesStatusLabel = nullptr;
+    QLabel* m_legacyClientsLabel = nullptr;
+    QPushButton* m_renameDeviceButton = nullptr;
+    QPushButton* m_revokeDeviceButton = nullptr;
+    QPushButton* m_revokeAllDevicesButton = nullptr;
 
     QDialogButtonBox* m_buttonBox = nullptr;
 };

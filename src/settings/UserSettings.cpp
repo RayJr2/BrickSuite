@@ -51,6 +51,7 @@ constexpr auto kTrustedFingerprintKey = "TrustedFingerprint";
 constexpr auto kReconnectAutomaticallyKey = "ReconnectAutomatically";
 constexpr auto kPairedDeviceIdKey = "PairedDeviceId";
 constexpr auto kPairedHostFingerprintKey = "PairedHostFingerprint";
+constexpr auto kPairedDeviceNameKey = "PairedDeviceName";
 constexpr auto kRememberedHostWorkspacesGroup = "RememberedHostWorkspaces";
 
 constexpr auto kRebrickableApiKey = "ApiKey";
@@ -279,6 +280,7 @@ void UserSettings::clearBrickSuiteHostTrustState(const QString& endpoint,
     settings.endGroup();
     settings.remove(kPairedDeviceIdKey);
     settings.remove(kPairedHostFingerprintKey);
+    settings.remove(kPairedDeviceNameKey);
     settings.endGroup();
 }
 
@@ -316,6 +318,23 @@ void UserSettings::clearBrickSuitePairedDevice()
     settings.beginGroup(kGroupBrickSuiteNetwork);
     settings.remove(kPairedDeviceIdKey);
     settings.remove(kPairedHostFingerprintKey);
+    settings.endGroup();
+}
+
+QString UserSettings::brickSuitePairedDeviceName() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    const QString value = settings.value(kPairedDeviceNameKey).toString().trimmed();
+    settings.endGroup();
+    return value;
+}
+
+void UserSettings::setBrickSuitePairedDeviceName(const QString& name)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBrickSuiteNetwork);
+    settings.setValue(kPairedDeviceNameKey, name.trimmed());
     settings.endGroup();
 }
 

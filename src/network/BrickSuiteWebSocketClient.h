@@ -27,6 +27,7 @@ public:
                                bool reconnectAutomatically);
     void beginPairing(const QUrl& endpoint, const QString& trustedFingerprint,
                       const QString& code, const QString& friendlyName);
+    void cancelPairing();
     void setTrustedFingerprint(const QString& fingerprint);
     void connectToHost();
     void disconnectFromHost();
@@ -53,6 +54,7 @@ public:
     int reconnectAttemptForTesting() const { return m_reconnectAttempt; }
     int reconnectScheduleCountForTesting() const { return m_reconnectScheduleCount; }
     int transportDisconnectCountForTesting() const { return m_transportDisconnectCount; }
+    bool pairingPendingForTesting() const { return m_pairing; }
 #endif
 
 signals:
@@ -60,6 +62,7 @@ signals:
     void trustRequired(const QString& fingerprint);
     void pairingCompleted(const QString& deviceId, const QString& credential);
     void pairingFailed(const QString& message);
+    void deviceRevoked();
     void requestCompleted(const QString& requestId, const QJsonObject& payload);
     void requestFailed(const QString& requestId, const BrickSuiteProtocol::Error& error);
     void testConnectionCompleted(bool success, const QString& message);
@@ -92,6 +95,7 @@ private:
     void sendHello();
     void sendAuthentication(const BrickSuiteProtocol::Message& hello);
     void sendPairing();
+    void clearPairingIntent();
     QString enqueueRequest(const QString& operation, const QJsonObject& payload,
                            QObject* context, Completion completion, Failure failure,
                            int timeoutMs);
@@ -118,6 +122,7 @@ private:
     bool m_dataEpochSupported = false;
     int m_requestedProtocolMinor = 2;
     bool m_pairing = false;
+    bool m_connectWhenDisconnected = false;
 #ifdef BRICKSUITE_TESTING
     int m_reconnectScheduleCount = 0;
     int m_transportDisconnectCount = 0;

@@ -16,6 +16,9 @@ BrickSuiteWebSocketServer::BrickSuiteWebSocketServer(QObject* parent)
     , m_registry(std::make_unique<PairedDeviceRegistry>())
     , m_pairing(std::make_unique<BrickSuitePairingService>(*m_registry))
 {
+    QString registryError;
+    if (!m_registry->load(&registryError))
+        qWarning().noquote() << "Paired-device administration unavailable:" << registryError;
 }
 
 BrickSuiteWebSocketServer::~BrickSuiteWebSocketServer()
@@ -110,6 +113,53 @@ int BrickSuiteWebSocketServer::authenticatedClientCount() const
     return count;
 }
 
+int BrickSuiteWebSocketServer::authenticatedDeviceSessionCount(const QString& deviceId) const
+{
+    int count = 0;
+    for (const Session& session : m_sessions)
+        if (session.authenticated && session.deviceId.compare(deviceId, Qt::CaseInsensitive) == 0)
+            ++count;
+    return count;
+}
+
+int BrickSuiteWebSocketServer::legacyAuthenticatedClientCount() const
+{
+    int count = 0;
+    for (const Session& session : m_sessions)
+        if (session.authenticated && session.legacySharedToken) ++count;
+    return count;
+}
+
+int BrickSuiteWebSocketServer::disconnectAuthenticatedDevice(const QString& deviceId)
+{
+    int count = 0;
+    const auto sockets = m_sessions.keys();
+    for (QWebSocket* socket : sockets) {
+        const auto it = m_sessions.constFind(socket);
+        if (it == m_sessions.cend() || !it->authenticated
+            || it->deviceId.compare(deviceId, Qt::CaseInsensitive) != 0)
+            continue;
+        send(socket, BrickSuiteProtocol::event(QStringLiteral("system.deviceRevoked"), {}));
+        QTimer::singleShot(0, socket, [socket] {
+            socket->close(QWebSocketProtocol::CloseCodePolicyViolated,
+                          QStringLiteral("Device authorization revoked."));
+        });
+        ++count;
+    }
+    return count;
+}
+
+int BrickSuiteWebSocketServer::disconnectAllAuthenticatedDevices()
+{
+    int count = 0;
+    QStringList deviceIds;
+    for (const Session& session : m_sessions)
+        if (session.authenticated && !session.deviceId.isEmpty()
+            && !deviceIds.contains(session.deviceId)) deviceIds.append(session.deviceId);
+    for (const QString& deviceId : deviceIds) count += disconnectAuthenticatedDevice(deviceId);
+    return count;
+}
+
 #ifdef BRICKSUITE_TESTING
 QStringList BrickSuiteWebSocketServer::authenticatedDeviceIdsForTesting() const
 {
@@ -120,13 +170,6 @@ QStringList BrickSuiteWebSocketServer::authenticatedDeviceIdsForTesting() const
     return ids;
 }
 
-int BrickSuiteWebSocketServer::legacyAuthenticatedClientCountForTesting() const
-{
-    int count = 0;
-    for (const Session& session : m_sessions)
-        if (session.authenticated && session.legacySharedToken) ++count;
-    return count;
-}
 #endif
 
 int BrickSuiteWebSocketServer::broadcastInvalidation(OperationalInvalidation invalidation)

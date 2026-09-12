@@ -79,6 +79,7 @@ int main(int argc, char** argv)
     const QString configuredIdentity = QStringLiteral("wss://example.invalid:50001|")
         + trustedFingerprint.toLower();
     settings.setBrickSuiteTrustedFingerprint(trustedFingerprint);
+    settings.setBrickSuitePairedDeviceName(QStringLiteral("Workshop Laptop"));
     settings.setBrickSuitePairedDevice(QStringLiteral("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"),
                                        trustedFingerprint);
     ok &= check(settings.brickSuitePairedDeviceId()
@@ -94,11 +95,23 @@ int main(int argc, char** argv)
         raw.beginGroup("Appearance");
         raw.setValue("Theme", "dark");
     }
+    settings.clearBrickSuitePairedDevice();
+    ok &= check(settings.brickSuitePairedDeviceId().isEmpty()
+                    && settings.brickSuitePairedHostFingerprint().isEmpty()
+                    && settings.brickSuiteHostEndpoint() == "wss://example.invalid:50001"
+                    && settings.brickSuiteTrustedFingerprint() == trustedFingerprint
+                    && settings.brickSuitePairedDeviceName() == "Workshop Laptop"
+                    && !settings.brickSuiteReconnectAutomatically()
+                    && settings.rememberedHostWorkspaceId(configuredIdentity) == 9,
+                "targeted revocation clears only paired authorization identity");
+    settings.setBrickSuitePairedDevice(QStringLiteral("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"),
+                                       trustedFingerprint);
     settings.clearBrickSuiteHostTrustState("wss://example.invalid:50001",
                                            trustedFingerprint);
     ok &= check(settings.brickSuiteTrustedFingerprint().isEmpty()
                     && settings.brickSuitePairedDeviceId().isEmpty()
                     && settings.brickSuitePairedHostFingerprint().isEmpty()
+                    && settings.brickSuitePairedDeviceName().isEmpty()
                     && settings.rememberedHostWorkspaceId(configuredIdentity) == 0,
                 "Forget Host clears trust, paired identity, and remembered Host Workspace");
     {

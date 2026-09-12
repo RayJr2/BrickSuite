@@ -34,6 +34,10 @@ public:
     quint16 serverPort() const;
     QString fingerprint() const;
     int authenticatedClientCount() const;
+    int authenticatedDeviceSessionCount(const QString& deviceId) const;
+    int legacyAuthenticatedClientCount() const;
+    int disconnectAuthenticatedDevice(const QString& deviceId);
+    int disconnectAllAuthenticatedDevices();
     BrickSuitePairingService* pairingService() const { return m_pairing.get(); }
     PairedDeviceRegistry* pairedDeviceRegistry() const { return m_registry.get(); }
     BrickSuiteOperationDispatcher& operationDispatcher();
@@ -43,7 +47,7 @@ public:
     void broadcastFullOperationalInvalidation();
 #ifdef BRICKSUITE_TESTING
     QStringList authenticatedDeviceIdsForTesting() const;
-    int legacyAuthenticatedClientCountForTesting() const;
+    int legacyAuthenticatedClientCountForTesting() const { return legacyAuthenticatedClientCount(); }
 #endif
 
 signals:

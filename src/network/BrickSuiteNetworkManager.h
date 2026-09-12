@@ -22,6 +22,7 @@ class HostMaintenanceCoordinator;
 class RemoteSessionState;
 class OperationalInvalidationPublisher;
 class BrickSuitePairingService;
+class PairedDeviceAdministrationService;
 struct OperationalInvalidation;
 
 class BrickSuiteNetworkManager : public QObject
@@ -56,6 +57,7 @@ public:
     bool savePairedClientCredential(const QString& credential, QString* error = nullptr);
     QString pairedClientCredential(QString* error = nullptr) const;
     BrickSuitePairingService* pairingService() const;
+    PairedDeviceAdministrationService* pairedDeviceAdministration() const;
 
 signals:
     void statusChanged();
@@ -87,4 +89,5 @@ private:
     std::unique_ptr<RemoteBuildMutationApplicationService> m_remoteBuildMutations;
     std::unique_ptr<RemoteSessionState> m_remoteSession;
     std::unique_ptr<OperationalInvalidationPublisher> m_invalidationPublisher;
+    std::unique_ptr<PairedDeviceAdministrationService> m_pairedDeviceAdministration;
 };

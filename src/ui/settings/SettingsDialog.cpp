@@ -31,6 +31,7 @@
 #include "../../network/BrickSuiteWebSocketServer.h"
 #include "../../network/BrickSuiteHostIdentity.h"
 #include "../../network/BrickSuitePairingService.h"
+#include "../../network/PairedDeviceAdministrationService.h"
 #include "../../api/brickset/BricksetService.h"
 #include "../../api/ApiProviderStatusRegistry.h"
 #include "../../settings/ThemeManager.h"
@@ -49,6 +50,8 @@
 #include <QFormLayout>
 #include <QFileDialog>
 #include <QGroupBox>
+#include <QHeaderView>
+#include <QInputDialog>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
@@ -59,6 +62,7 @@
 #include <QHBoxLayout>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QTableWidget>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -114,6 +118,9 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
 
     connect(&m_networkManager, &BrickSuiteNetworkManager::statusChanged,
             this, &SettingsDialog::updateNetworkPresentation);
+    connect(m_networkManager.pairedDeviceAdministration(),
+            &PairedDeviceAdministrationService::devicesChanged,
+            this, &SettingsDialog::refreshPairedDevices);
     if (auto* maintenance = m_networkManager.maintenanceCoordinator()) {
         connect(maintenance, &HostMaintenanceCoordinator::stateChanged,
                 this, &SettingsDialog::updateNetworkPresentation);
@@ -156,14 +163,21 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
         }
         UserSettings::instance().setBrickSuitePairedDevice(
             deviceId, m_hostFingerprintEdit->text());
+        UserSettings::instance().setSharedDataSource(SharedDataSource::BrickSuiteHost);
+        UserSettings::instance().setBrickSuiteHostEndpoint(
+            QUrl(m_hostEndpointEdit->text().trimmed()).toString(QUrl::FullyEncoded));
+        UserSettings::instance().setBrickSuiteTrustedFingerprint(
+            m_hostFingerprintEdit->text());
+        UserSettings::instance().setBrickSuiteReconnectAutomatically(
+            m_hostReconnectCheck->isChecked());
+        UserSettings::instance().setBrickSuitePairedDeviceName(
+            m_pairingDeviceNameEdit->text());
         m_remotePairingStatusLabel->setText(
             tr("Paired as device %1. Reconnecting securely...").arg(deviceId));
         m_networkManager.client()->configurePairedDevice(
             QUrl(m_hostEndpointEdit->text().trimmed()), m_hostFingerprintEdit->text(),
             deviceId, credential, false);
-        QTimer::singleShot(100, m_networkManager.client(), [client = m_networkManager.client()] {
-            client->connectToHost();
-        });
+        m_networkManager.client()->connectToHost();
         updateNetworkPresentation();
     });
     connect(m_networkManager.client(), &BrickSuiteWebSocketClient::pairingFailed,
@@ -408,6 +422,8 @@ void SettingsDialog::loadSettings()
     QString clientCredentialError;
     m_hostTokenEdit->setText(m_networkManager.clientToken(&clientCredentialError));
     m_hostReconnectCheck->setChecked(settings.brickSuiteReconnectAutomatically());
+    const QString pairedDeviceName = settings.brickSuitePairedDeviceName();
+    if (!pairedDeviceName.isEmpty()) m_pairingDeviceNameEdit->setText(pairedDeviceName);
     updateNetworkPresentation();
 }
 
@@ -702,6 +718,7 @@ void SettingsDialog::backupNow()
 
 void SettingsDialog::cancelSettings()
 {
+    m_networkManager.client()->cancelPairing();
     const auto originalTheme = static_cast<UserSettings::Theme>(m_originalThemeValue);
 
     if (QApplication* application = qobject_cast<QApplication*>(QApplication::instance())) {
@@ -775,8 +792,13 @@ void SettingsDialog::buildServerTab()
 {
     auto* tab = new QWidget(m_tabWidget);
     auto* layout = new QVBoxLayout(tab);
+    auto* sections = new QTabWidget(tab);
+    layout->addWidget(sections);
 
-    auto* serverGroup = new QGroupBox(tr("BrickSuite Server (This Computer)"), tab);
+    auto* thisComputerPage = new QWidget(sections);
+    auto* thisComputerLayout = new QVBoxLayout(thisComputerPage);
+
+    auto* serverGroup = new QGroupBox(tr("BrickSuite Server (This Computer)"), thisComputerPage);
     auto* serverForm = new QFormLayout(serverGroup);
     m_serverEnabledCheck = new QCheckBox(tr("Enable BrickSuite Server"), serverGroup);
     m_serverBindCombo = new QComboBox(serverGroup);
@@ -845,9 +867,13 @@ void SettingsDialog::buildServerTab()
            "connections. BrickSuite does not configure port forwarding or firewall rules."), serverGroup);
     reachability->setWordWrap(true);
     serverForm->addRow(QString(), reachability);
-    layout->addWidget(serverGroup);
+    thisComputerLayout->addWidget(serverGroup);
+    thisComputerLayout->addStretch();
+    sections->addTab(thisComputerPage, tr("This Computer"));
 
-    auto* clientGroup = new QGroupBox(tr("BrickSuite Host Client"), tab);
+    auto* hostClientPage = new QWidget(sections);
+    auto* hostClientLayout = new QVBoxLayout(hostClientPage);
+    auto* clientGroup = new QGroupBox(tr("BrickSuite Host Client"), hostClientPage);
     auto* clientForm = new QFormLayout(clientGroup);
     m_hostEndpointEdit = new QLineEdit(clientGroup);
     m_hostEndpointEdit->setPlaceholderText(QStringLiteral("wss://host.example:47826"));
@@ -885,8 +911,41 @@ void SettingsDialog::buildServerTab()
     clientForm->addRow(QString(), m_pairDeviceButton);
     clientForm->addRow(tr("Pairing status:"), m_remotePairingStatusLabel);
     clientForm->addRow(QString(), m_forgetHostButton);
-    layout->addWidget(clientGroup);
-    layout->addStretch();
+    hostClientLayout->addWidget(clientGroup);
+    hostClientLayout->addStretch();
+    sections->addTab(hostClientPage, tr("Host Client"));
+
+    auto* devicesPage = new QWidget(sections);
+    auto* devicesLayout = new QVBoxLayout(devicesPage);
+    m_pairedDevicesStatusLabel = new QLabel(devicesPage);
+    m_pairedDevicesStatusLabel->setWordWrap(true);
+    devicesLayout->addWidget(m_pairedDevicesStatusLabel);
+    m_pairedDevicesTable = new QTableWidget(0, 4, devicesPage);
+    m_pairedDevicesTable->setHorizontalHeaderLabels(
+        {tr("Device Name"), tr("Status"), tr("Last Seen"), tr("Client")});
+    m_pairedDevicesTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_pairedDevicesTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_pairedDevicesTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_pairedDevicesTable->verticalHeader()->setVisible(false);
+    m_pairedDevicesTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_pairedDevicesTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_pairedDevicesTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    m_pairedDevicesTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+    devicesLayout->addWidget(m_pairedDevicesTable);
+    m_legacyClientsLabel = new QLabel(devicesPage);
+    devicesLayout->addWidget(m_legacyClientsLabel);
+    auto* deviceButtons = new QHBoxLayout;
+    auto* refreshDevicesButton = new QPushButton(tr("Refresh"), devicesPage);
+    m_renameDeviceButton = new QPushButton(tr("Rename Device..."), devicesPage);
+    m_revokeDeviceButton = new QPushButton(tr("Revoke Device..."), devicesPage);
+    m_revokeAllDevicesButton = new QPushButton(tr("Revoke All Devices..."), devicesPage);
+    deviceButtons->addWidget(refreshDevicesButton);
+    deviceButtons->addStretch();
+    deviceButtons->addWidget(m_renameDeviceButton);
+    deviceButtons->addWidget(m_revokeDeviceButton);
+    deviceButtons->addWidget(m_revokeAllDevicesButton);
+    devicesLayout->addLayout(deviceButtons);
+    sections->addTab(devicesPage, tr("Devices"));
     m_tabWidget->addTab(tab, tr("Server"));
 
     connect(m_serverTokenButton, &QPushButton::clicked,
@@ -911,6 +970,20 @@ void SettingsDialog::buildServerTab()
             this, &SettingsDialog::updateNetworkPresentation);
     connect(m_serverEnabledCheck, &QCheckBox::toggled,
             this, &SettingsDialog::updateNetworkPresentation);
+    connect(refreshDevicesButton, &QPushButton::clicked,
+            this, &SettingsDialog::refreshPairedDevices);
+    connect(m_renameDeviceButton, &QPushButton::clicked,
+            this, &SettingsDialog::renamePairedDevice);
+    connect(m_revokeDeviceButton, &QPushButton::clicked,
+            this, &SettingsDialog::revokePairedDevice);
+    connect(m_revokeAllDevicesButton, &QPushButton::clicked,
+            this, &SettingsDialog::revokeAllPairedDevices);
+    connect(m_pairedDevicesTable, &QTableWidget::itemSelectionChanged,
+            this, [this]() {
+        const bool selected = m_pairedDevicesTable->currentRow() >= 0;
+        m_renameDeviceButton->setEnabled(selected);
+        m_revokeDeviceButton->setEnabled(selected);
+    });
 }
 
 void SettingsDialog::updateNetworkPresentation()
@@ -966,7 +1039,11 @@ void SettingsDialog::updateNetworkPresentation()
     m_pairingDeviceNameEdit->setEnabled(!local);
     m_pairDeviceButton->setEnabled(!local);
     const QString pairedDeviceId = UserSettings::instance().brickSuitePairedDeviceId();
-    if (!local && !pairedDeviceId.isEmpty())
+    if (!local && m_networkManager.connectionStatus().state
+            == BrickSuiteConnectionState::DeviceRevoked)
+        m_remotePairingStatusLabel->setText(
+            tr("Revoked by the Host — pairing required."));
+    else if (!local && !pairedDeviceId.isEmpty())
         m_remotePairingStatusLabel->setText(tr("Paired device %1").arg(pairedDeviceId));
     m_forgetHostButton->setEnabled(!local
         && (!m_hostFingerprintEdit->text().trimmed().isEmpty()
@@ -983,6 +1060,93 @@ void SettingsDialog::updateNetworkPresentation()
         m_leaveMaintenanceButton->setEnabled(listening
             && maintenance->state() == HostMaintenanceCoordinator::State::Maintenance);
     }
+    refreshPairedDevices();
+}
+
+void SettingsDialog::refreshPairedDevices()
+{
+    if (!m_pairedDevicesTable) return;
+    QString selectedId;
+    if (const auto selected = m_pairedDevicesTable->selectedItems(); !selected.isEmpty())
+        selectedId = selected.first()->data(Qt::UserRole).toString();
+    QString error;
+    const auto devices = m_networkManager.pairedDeviceAdministration()->devices(&error);
+    m_pairedDevicesTable->blockSignals(true);
+    m_pairedDevicesTable->setRowCount(devices.size());
+    int selectedRow = -1;
+    for (int row = 0; row < devices.size(); ++row) {
+        const auto& device = devices.at(row);
+        QString status;
+        if (!device.record.active) status = tr("Revoked");
+        else if (!device.credentialCheckSucceeded || !device.credentialAvailable) status = tr("Unusable");
+        else status = device.connectedSessions > 0 ? tr("Connected") : tr("Disconnected");
+        auto* name = new QTableWidgetItem(device.record.friendlyName);
+        name->setData(Qt::UserRole, device.record.deviceId);
+        name->setToolTip(tr("Device ID: %1\nFirst paired: %2")
+            .arg(device.record.deviceId,
+                 QLocale().toString(QDateTime::fromString(device.record.firstPairedUtc,
+                                                           Qt::ISODateWithMs).toLocalTime(),
+                                     QLocale::ShortFormat)));
+        m_pairedDevicesTable->setItem(row, 0, name);
+        m_pairedDevicesTable->setItem(row, 1, new QTableWidgetItem(status));
+        const QDateTime lastSeen = QDateTime::fromString(device.record.lastSeenUtc, Qt::ISODateWithMs);
+        m_pairedDevicesTable->setItem(row, 2, new QTableWidgetItem(lastSeen.isValid()
+            ? QLocale().toString(lastSeen.toLocalTime(), QLocale::ShortFormat) : tr("Never")));
+        m_pairedDevicesTable->setItem(row, 3, new QTableWidgetItem(
+            tr("Protocol 1.3 — BrickSuite %1 — %2")
+                .arg(device.record.clientVersion.isEmpty() ? tr("Unknown") : device.record.clientVersion,
+                     device.record.platform.isEmpty() ? tr("Unknown") : device.record.platform)));
+        if (device.record.deviceId == selectedId) selectedRow = row;
+    }
+    if (selectedRow >= 0) m_pairedDevicesTable->selectRow(selectedRow);
+    m_pairedDevicesTable->blockSignals(false);
+    const bool available = error.isEmpty();
+    m_pairedDevicesStatusLabel->setText(available
+        ? tr("%1 paired Protocol 1.3 device(s). Administration actions apply immediately.").arg(devices.size())
+        : tr("Paired-device administration is unavailable: %1").arg(error));
+    m_legacyClientsLabel->setText(tr("Legacy Protocol 1.2 authenticated clients: %1. Manage their shared access through token rotation.")
+        .arg(m_networkManager.pairedDeviceAdministration()->legacyAuthenticatedClientCount()));
+    const bool selected = m_pairedDevicesTable->currentRow() >= 0;
+    m_renameDeviceButton->setEnabled(available && selected);
+    m_revokeDeviceButton->setEnabled(available && selected);
+    m_revokeAllDevicesButton->setEnabled(available && !devices.isEmpty());
+}
+
+void SettingsDialog::renamePairedDevice()
+{
+    const int row = m_pairedDevicesTable->currentRow();
+    if (row < 0) return;
+    const QString deviceId = m_pairedDevicesTable->item(row, 0)->data(Qt::UserRole).toString();
+    bool accepted = false;
+    const QString name = QInputDialog::getText(this, tr("Rename Paired Device"),
+        tr("Device name:"), QLineEdit::Normal, m_pairedDevicesTable->item(row, 0)->text(),
+        &accepted).trimmed();
+    if (!accepted) return;
+    const auto result = m_networkManager.pairedDeviceAdministration()->renameDevice(deviceId, name);
+    if (!result.success) QMessageBox::critical(this, tr("Rename Paired Device"), result.error);
+}
+
+void SettingsDialog::revokePairedDevice()
+{
+    const int row = m_pairedDevicesTable->currentRow();
+    if (row < 0) return;
+    const QString name = m_pairedDevicesTable->item(row, 0)->text();
+    const QString deviceId = m_pairedDevicesTable->item(row, 0)->data(Qt::UserRole).toString();
+    if (QMessageBox::warning(this, tr("Revoke Device"),
+        tr("Revoke %1? It will be disconnected immediately and cannot reconnect using its current pairing. Other devices, the Host certificate, data epoch, and BrickSuite database are unchanged.")
+            .arg(name), QMessageBox::Yes | QMessageBox::Cancel,
+        QMessageBox::Cancel) != QMessageBox::Yes) return;
+    const auto result = m_networkManager.pairedDeviceAdministration()->revokeDevice(deviceId);
+    if (!result.success) QMessageBox::critical(this, tr("Revoke Device"), result.error);
+}
+
+void SettingsDialog::revokeAllPairedDevices()
+{
+    if (QMessageBox::warning(this, tr("Revoke All Devices"),
+        tr("Revoke every paired Protocol 1.3 device? All paired devices will be disconnected and must pair again. Legacy Protocol 1.2 shared-token access is separate and will remain enabled."),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) return;
+    const auto result = m_networkManager.pairedDeviceAdministration()->revokeAllDevices();
+    if (!result.success) QMessageBox::critical(this, tr("Revoke All Devices"), result.error);
 }
 
 void SettingsDialog::enterHostMaintenance()

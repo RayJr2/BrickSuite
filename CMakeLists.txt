@@ -58,6 +58,8 @@ qt_add_executable(BrickSuite
     src/network/PairedDeviceRegistry.cpp
     src/network/BrickSuitePairingService.h
     src/network/BrickSuitePairingService.cpp
+    src/network/PairedDeviceAdministrationService.h
+    src/network/PairedDeviceAdministrationService.cpp
     src/network/BrickSuiteConnectionState.h
     src/network/OperationalInvalidation.h
     src/network/OperationalInvalidation.cpp
@@ -1335,6 +1337,7 @@ if(BUILD_TESTING)
         src/network/BrickSuiteHostIdentity.h src/network/BrickSuiteHostIdentity.cpp
         src/network/PairedDeviceRegistry.h src/network/PairedDeviceRegistry.cpp
         src/network/BrickSuitePairingService.h src/network/BrickSuitePairingService.cpp
+        src/network/PairedDeviceAdministrationService.h src/network/PairedDeviceAdministrationService.cpp
         src/network/BrickSuiteConnectionState.h
         src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp

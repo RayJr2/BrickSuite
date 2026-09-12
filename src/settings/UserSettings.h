@@ -57,6 +57,8 @@ public:
     QString brickSuitePairedHostFingerprint() const;
     void setBrickSuitePairedDevice(const QString& deviceId, const QString& hostFingerprint);
     void clearBrickSuitePairedDevice();
+    QString brickSuitePairedDeviceName() const;
+    void setBrickSuitePairedDeviceName(const QString& name);
     bool brickSuiteReconnectAutomatically() const;
     void setBrickSuiteReconnectAutomatically(bool enabled);
     int rememberedHostWorkspaceId(const QString& hostIdentity) const;

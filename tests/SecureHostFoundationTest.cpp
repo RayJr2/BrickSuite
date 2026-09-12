@@ -4,6 +4,7 @@
 #include "../src/network/BrickSuiteOperationDispatcher.h"
 #include "../src/network/BrickSuiteWebSocketClient.h"
 #include "../src/network/BrickSuiteWebSocketServer.h"
+#include "../src/network/PairedDeviceAdministrationService.h"
 #include "../src/network/OperationalInvalidation.h"
 
 #include <QCoreApplication>
@@ -15,12 +16,14 @@
 #include <QTimer>
 #include <QStandardPaths>
 #include <QFile>
+#include <QTemporaryDir>
 #include <QWebSocket>
 
 #include "../src/services/CredentialStore.h"
 
 #include <iostream>
 #include <functional>
+#include <algorithm>
 
 namespace {
 
@@ -256,6 +259,36 @@ int main(int argc, char** argv)
                 "secure loopback server starts");
     ok &= check(server.serverPort() != 0, "ephemeral server port assigned");
 
+    QTemporaryDir administrationTemporary;
+    PairedDeviceRegistry unhealthyRegistry(
+        administrationTemporary.filePath(QStringLiteral("paired-devices.json")));
+    ok &= check(unhealthyRegistry.load(&serverError), "administration registry fixture loads");
+    const QString unhealthyDeviceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString fixtureTimestamp = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+    ok &= check(unhealthyRegistry.add({unhealthyDeviceId, QStringLiteral("Orphan device"),
+                    fixtureTimestamp, fixtureTimestamp, QStringLiteral("0.4.0"),
+                    QStringLiteral("Windows"), QStringLiteral("missing-credential"), true},
+                    &serverError),
+                "administration orphan fixture persists");
+    PairedDeviceAdministrationService unhealthyAdministration(
+        unhealthyRegistry, server,
+        [](const QString&) {
+            return PairedDeviceAdministrationService::CredentialState{true, false, {}};
+        },
+        [](const QString&, QString* error) {
+            if (error) *error = QStringLiteral("injected deletion failure");
+            return false;
+        });
+    const auto unhealthyDevices = unhealthyAdministration.devices(&serverError);
+    ok &= check(serverError.isEmpty() && unhealthyDevices.size() == 1
+                    && !unhealthyDevices.first().credentialAvailable,
+                "missing device credential is exposed as unusable and remains fail closed");
+    const auto failedCredentialDeletion = unhealthyAdministration.revokeDevice(unhealthyDeviceId);
+    ok &= check(!failedCredentialDeletion.success
+                    && unhealthyRegistry.find(unhealthyDeviceId).has_value()
+                    && !unhealthyRegistry.find(unhealthyDeviceId)->active,
+                "credential deletion failure leaves an accurately inactive device record");
+
     BrickSuiteWebSocketServer conflictingServer;
     ok &= check(!conflictingServer.startWithIdentity(QHostAddress::LocalHost,
                     server.serverPort(), token, identity, &serverError),
@@ -396,6 +429,146 @@ int main(int argc, char** argv)
     bool unknownSuccess = true;
     ok &= check(waitForResult(unknownDeviceClient, &unknownSuccess, &resultMessage) && !unknownSuccess,
                 "unknown Protocol 1.3 device ID fails closed");
+    BrickSuiteWebSocketClient duplicateDeviceSession;
+    duplicateDeviceSession.configurePairedDevice(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, secondPairedDeviceId, secondPairedCredential, false);
+    duplicateDeviceSession.connectToHost();
+    bool duplicateSessionSuccess = false;
+    ok &= check(waitForResult(duplicateDeviceSession, &duplicateSessionSuccess, &resultMessage)
+                    && duplicateSessionSuccess,
+                "one paired device may hold multiple authenticated sessions");
+    PairedDeviceAdministrationService administration(*server.pairedDeviceRegistry(), server);
+    QString administrationError;
+    auto administeredDevices = administration.devices(&administrationError);
+    const auto secondAdministered = std::find_if(
+        administeredDevices.cbegin(), administeredDevices.cend(),
+        [&](const PairedDeviceAdministrationService::DeviceInfo& device) {
+            return device.record.deviceId == secondPairedDeviceId;
+        });
+    ok &= check(administrationError.isEmpty() && administeredDevices.size() == 2
+                    && secondAdministered != administeredDevices.cend()
+                    && secondAdministered->connectedSessions == 2,
+                "device administration lists paired devices");
+    const auto renamed = administration.renameDevice(
+        secondPairedDeviceId, QStringLiteral("Protocol 1.3 test device"));
+    ok &= check(renamed.success
+                    && server.pairedDeviceRegistry()->find(secondPairedDeviceId)->friendlyName
+                        == QStringLiteral("Protocol 1.3 test device"),
+                "device rename persists and duplicate friendly names remain valid");
+    const auto secondCredentialBeforeRevoke = CredentialStore::read(
+        BrickSuitePairingService::credentialReference(secondPairedDeviceId));
+    ok &= check(secondCredentialBeforeRevoke.success && secondCredentialBeforeRevoke.found
+                    && secondCredentialBeforeRevoke.value == secondPairedCredential,
+                "rename preserves device identity and credential");
+    int revocationNotices = 0;
+    QObject::connect(&secondPairedClient, &BrickSuiteWebSocketClient::deviceRevoked,
+                     [&] { ++revocationNotices; });
+    const auto revoked = administration.revokeDevice(secondPairedDeviceId);
+    ok &= check(revoked.success
+                    && waitUntil([&] {
+                        return secondPairedClient.status().state
+                                == BrickSuiteConnectionState::DeviceRevoked
+                            && duplicateDeviceSession.status().state
+                                == BrickSuiteConnectionState::DeviceRevoked;
+                    })
+                    && revocationNotices == 1
+                    && !secondPairedClient.reconnectTimerActiveForTesting()
+                    && pairedClient.status().state
+                        == BrickSuiteConnectionState::ConnectedAuthenticated
+                    && server.legacyAuthenticatedClientCountForTesting() == 2,
+                "targeted revocation disconnects only the selected paired device");
+    ok &= check(!server.pairedDeviceRegistry()->find(secondPairedDeviceId).has_value()
+                    && !CredentialStore::read(
+                        BrickSuitePairingService::credentialReference(secondPairedDeviceId)).found,
+                "targeted revocation removes registry record and protected credential");
+    BrickSuiteWebSocketClient revokedReconnectClient;
+    revokedReconnectClient.configurePairedDevice(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, secondPairedDeviceId, secondPairedCredential, false);
+    revokedReconnectClient.connectToHost();
+    bool revokedReconnectSuccess = true;
+    ok &= check(waitForResult(revokedReconnectClient, &revokedReconnectSuccess, &resultMessage)
+                    && !revokedReconnectSuccess,
+                "revoked credential cannot authenticate again");
+
+    const auto replacementPairingAttempt = server.pairingService()->start(&serverError);
+    BrickSuiteWebSocketClient cancelledPairingClient;
+    cancelledPairingClient.beginPairing(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, replacementPairingAttempt.code,
+        QStringLiteral("Cancelled pairing"));
+    ok &= check(cancelledPairingClient.pairingPendingForTesting(),
+                "pairing intent is retained before enrollment starts");
+    cancelledPairingClient.cancelPairing();
+    ok &= check(!cancelledPairingClient.pairingPendingForTesting(),
+                "explicit pairing cancellation clears pending intent");
+
+    BrickSuiteWebSocketClient invalidCodePairingClient;
+    bool invalidPairingFailed = false;
+    QObject::connect(&invalidCodePairingClient, &BrickSuiteWebSocketClient::pairingFailed,
+                     [&](const QString&) { invalidPairingFailed = true; });
+    invalidCodePairingClient.beginPairing(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, QStringLiteral("0000000000000000"),
+        QStringLiteral("Invalid-code pairing"));
+    invalidCodePairingClient.connectToHost();
+    ok &= check(waitUntil([&] { return invalidPairingFailed; })
+                    && !invalidCodePairingClient.pairingPendingForTesting(),
+                "rejected pairing code clears pending intent");
+    invalidCodePairingClient.disconnectFromHost();
+    ok &= check(waitUntil([&] {
+                    return invalidCodePairingClient.socketStateForTesting()
+                        == QAbstractSocket::UnconnectedState;
+                }), "invalid-code enrollment socket closes before the next fixture");
+
+    BrickSuiteWebSocketClient mismatchedPairingClient;
+    mismatchedPairingClient.beginPairing(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        QString(64, QLatin1Char('A')), replacementPairingAttempt.code,
+        QStringLiteral("Mismatched Host pairing"));
+    mismatchedPairingClient.connectToHost();
+    ok &= check(waitUntil([&] {
+                    return mismatchedPairingClient.status().state
+                        == BrickSuiteConnectionState::HostIdentityMismatch;
+                }) && !mismatchedPairingClient.pairingPendingForTesting(),
+                "Host identity mismatch clears pending pairing intent");
+    mismatchedPairingClient.disconnectFromHost();
+    ok &= check(waitUntil([&] {
+                    return mismatchedPairingClient.socketStateForTesting()
+                        == QAbstractSocket::UnconnectedState;
+                }), "identity-mismatch enrollment socket closes before re-pairing");
+
+    const auto successfulReplacementAttempt = server.pairingService()->start(&serverError);
+    QString replacementDeviceId;
+    QString replacementDeviceCredential;
+    QObject::connect(&secondPairedClient, &BrickSuiteWebSocketClient::pairingCompleted,
+                     [&](const QString& deviceId, const QString& credential) {
+        replacementDeviceId = deviceId;
+        replacementDeviceCredential = credential;
+    });
+    // Exercise the Settings action sequence exactly: request closure of the revoked
+    // socket, retain one pairing intent, then issue one explicit connect request.
+    secondPairedClient.disconnectFromHost();
+    secondPairedClient.beginPairing(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, successfulReplacementAttempt.code,
+        QStringLiteral("Protocol 1.3 test device"));
+    secondPairedClient.connectToHost();
+    ok &= check(waitUntil([&] { return !replacementDeviceId.isEmpty(); })
+                    && replacementDeviceId != secondPairedDeviceId
+                    && replacementDeviceCredential != secondPairedCredential
+                    && !secondPairedClient.pairingPendingForTesting(),
+                "revoked Remote pairs again against the already trusted Host identity");
+    secondPairedClient.configurePairedDevice(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, replacementDeviceId, replacementDeviceCredential, false);
+    secondPairedClient.connectToHost();
+    bool replacementAuthenticated = false;
+    ok &= check(waitForResult(secondPairedClient, &replacementAuthenticated, &resultMessage)
+                    && replacementAuthenticated
+                    && server.authenticatedDeviceIdsForTesting().contains(replacementDeviceId),
+                "re-paired Remote authenticates with its new device identity and credential");
     secondPairedClient.disconnectFromHost();
 
     QWebSocket unauthenticatedSocket;
@@ -572,7 +745,6 @@ int main(int argc, char** argv)
     ok &= check(waitForResult(restartedPairedClient, &restartedPairedSuccess, &resultMessage)
                     && restartedPairedSuccess,
                 "Host restart preserves paired-device registry and credential authentication");
-    restartedPairedClient.disconnectFromHost();
     BrickSuiteWebSocketClient oldTokenClient;
     success = true;
     oldTokenClient.configure(
@@ -590,6 +762,20 @@ int main(int argc, char** argv)
     ok &= check(waitForResult(replacementTokenClient, &success, &resultMessage) && success
                     && rotatedServer.fingerprint() == identity.fingerprint,
                 "replacement token authenticates without changing Host fingerprint");
+    PairedDeviceAdministrationService rotatedAdministration(
+        *rotatedServer.pairedDeviceRegistry(), rotatedServer);
+    const QString fingerprintBeforeRevokeAll = rotatedServer.fingerprint();
+    const auto revokeAll = rotatedAdministration.revokeAllDevices();
+    ok &= check(revokeAll.success
+                    && waitUntil([&] {
+                        return restartedPairedClient.status().state
+                            == BrickSuiteConnectionState::DeviceRevoked;
+                    })
+                    && replacementTokenClient.status().state
+                        == BrickSuiteConnectionState::ConnectedAuthenticated
+                    && rotatedServer.pairedDeviceRegistry()->devices().isEmpty()
+                    && rotatedServer.fingerprint() == fingerprintBeforeRevokeAll,
+                "revoke all disconnects paired devices while preserving legacy access and Host identity");
     replacementTokenClient.disconnectFromHost();
     rotatedServer.stop();
 

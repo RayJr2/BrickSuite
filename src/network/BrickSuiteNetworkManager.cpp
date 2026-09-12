@@ -6,6 +6,7 @@
 #include "RemoteSessionState.h"
 #include "OperationalInvalidationPublisher.h"
 #include "HostDataEpoch.h"
+#include "PairedDeviceAdministrationService.h"
 #include "../database/DatabaseManager.h"
 #include "../services/application/HostReadProtocolService.h"
 #include "../services/application/RemoteReadApplicationServices.h"
@@ -52,6 +53,9 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     }
     m_remoteSession = std::make_unique<RemoteSessionState>(this);
     m_invalidationPublisher = std::make_unique<OperationalInvalidationPublisher>(*m_server, this);
+    m_pairedDeviceAdministration = std::make_unique<PairedDeviceAdministrationService>(
+        *m_server->pairedDeviceRegistry(), *m_server, PairedDeviceAdministrationService::CredentialReader{},
+        PairedDeviceAdministrationService::CredentialRemover{}, this);
     m_remoteReads = std::make_unique<RemoteReadApplicationServices>(*m_client,
                                                                      m_remoteSession.get(), this);
     m_remoteMutations = std::make_unique<RemoteMutationApplicationServices>(*m_client, this);
@@ -134,6 +138,12 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
             this, &BrickSuiteNetworkManager::statusChanged);
     connect(m_client, &BrickSuiteWebSocketClient::statusChanged,
             this, [this](const BrickSuiteConnectionStatus&) { emit statusChanged(); });
+    connect(m_client, &BrickSuiteWebSocketClient::deviceRevoked, this, [this]() {
+        QString error;
+        if (!savePairedClientCredential(QString(), &error))
+            qWarning().noquote() << "Revoked paired-device credential cleanup failed:" << error;
+        UserSettings::instance().clearBrickSuitePairedDevice();
+    });
     connect(m_client, &BrickSuiteWebSocketClient::authenticatedSessionEstablishedWithEpoch,
             m_remoteSession.get(), &RemoteSessionState::authenticatedWithEpoch);
     connect(m_client, &BrickSuiteWebSocketClient::authenticatedSessionLost,
@@ -361,4 +371,9 @@ QString BrickSuiteNetworkManager::pairedClientCredential(QString* error) const
 BrickSuitePairingService* BrickSuiteNetworkManager::pairingService() const
 {
     return m_server->pairingService();
+}
+
+PairedDeviceAdministrationService* BrickSuiteNetworkManager::pairedDeviceAdministration() const
+{
+    return m_pairedDeviceAdministration.get();
 }

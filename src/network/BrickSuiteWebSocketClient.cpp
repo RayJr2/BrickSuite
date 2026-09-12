@@ -36,9 +36,16 @@ BrickSuiteWebSocketClient::BrickSuiteWebSocketClient(QObject* parent)
     connect(&m_socket, &QWebSocket::errorOccurred, this,
             [this](QAbstractSocket::SocketError) {
         if (m_status.state != BrickSuiteConnectionState::HostIdentityMismatch
-            && m_status.state != BrickSuiteConnectionState::AuthenticationFailed)
+            && m_status.state != BrickSuiteConnectionState::DeviceRevoked
+            && m_status.state != BrickSuiteConnectionState::AuthenticationFailed) {
             setStatus(BrickSuiteConnectionState::Error,
                       QStringLiteral("Unable to establish the secure Host connection."));
+            if (m_pairing) {
+                const QString message = m_status.message;
+                clearPairingIntent();
+                emit pairingFailed(message);
+            }
+        }
     });
 }
 
@@ -57,9 +64,8 @@ void BrickSuiteWebSocketClient::configure(const QUrl& endpoint,
     m_accessToken = accessToken;
     m_reconnectAutomatically = reconnectAutomatically;
     m_deviceId.clear();
-    m_pairing = false;
-    m_pairingCode.clear();
-    m_pairingFriendlyName.clear();
+    clearPairingIntent();
+    m_connectWhenDisconnected = false;
     m_requestedProtocolMinor = 2;
 }
 
@@ -72,9 +78,8 @@ void BrickSuiteWebSocketClient::configurePairedDevice(
     m_deviceId = deviceId.trimmed().toLower();
     m_accessToken = credential;
     m_reconnectAutomatically = reconnectAutomatically;
-    m_pairing = false;
-    m_pairingCode.clear();
-    m_pairingFriendlyName.clear();
+    clearPairingIntent();
+    m_connectWhenDisconnected = false;
     m_requestedProtocolMinor = 3;
 }
 
@@ -90,7 +95,15 @@ void BrickSuiteWebSocketClient::beginPairing(
     m_pairingFriendlyName = friendlyName.trimmed();
     m_reconnectAutomatically = false;
     m_pairing = true;
+    m_connectWhenDisconnected = false;
     m_requestedProtocolMinor = 3;
+}
+
+void BrickSuiteWebSocketClient::cancelPairing()
+{
+    if (!m_pairing) return;
+    clearPairingIntent();
+    disconnectFromHost();
 }
 
 void BrickSuiteWebSocketClient::setTrustedFingerprint(const QString& fingerprint)
@@ -105,14 +118,33 @@ void BrickSuiteWebSocketClient::connectToHost()
         setStatus(BrickSuiteConnectionState::Error,
                   QStringLiteral("Configure a valid wss:// Host endpoint and port."));
         emit testConnectionCompleted(false, m_status.message);
+        if (m_pairing) {
+            const QString message = m_status.message;
+            clearPairingIntent();
+            emit pairingFailed(message);
+        }
         return;
     }
     if (!m_endpoint.userInfo().isEmpty() || m_endpoint.hasQuery() || m_endpoint.hasFragment()) {
         setStatus(BrickSuiteConnectionState::Error,
                   QStringLiteral("The Host endpoint must not contain credentials, query, or fragment data."));
         emit testConnectionCompleted(false, m_status.message);
+        if (m_pairing) {
+            const QString message = m_status.message;
+            clearPairingIntent();
+            emit pairingFailed(message);
+        }
         return;
     }
+    if (m_socket.state() != QAbstractSocket::UnconnectedState) {
+        m_connectWhenDisconnected = true;
+        m_explicitDisconnect = true;
+        if (m_socket.state() != QAbstractSocket::ClosingState)
+            m_socket.close(QWebSocketProtocol::CloseCodeNormal,
+                           QStringLiteral("Starting a new Host connection."));
+        return;
+    }
+    m_connectWhenDisconnected = false;
     m_explicitDisconnect = false;
     m_dataEpoch.clear();
     m_dataEpochSupported = false;
@@ -131,6 +163,8 @@ void BrickSuiteWebSocketClient::connectToHost()
 
 void BrickSuiteWebSocketClient::disconnectFromHost()
 {
+    m_connectWhenDisconnected = false;
+    clearPairingIntent();
     m_explicitDisconnect = true;
     m_reconnectTimer.stop();
     failPending(QStringLiteral("TIMEOUT"), QStringLiteral("The Host connection closed."), true);
@@ -220,6 +254,10 @@ QString BrickSuiteWebSocketClient::enqueueRequest(
             QStringLiteral("The Host request timed out."), true};
         qWarning() << "BrickSuite request timed out" << pending.operation << id.left(8);
         emit requestFailed(id, error);
+        if (pending.operation == QStringLiteral("system.pair")) {
+            clearPairingIntent();
+            emit pairingFailed(error.message);
+        }
         if (pending.context && pending.failure) pending.failure(error);
         emit testConnectionCompleted(false, error.message);
     });
@@ -258,12 +296,20 @@ void BrickSuiteWebSocketClient::handleDisconnected()
         m_capabilities = {};
         emit authenticatedSessionLost();
     }
+    if (m_connectWhenDisconnected) {
+        m_connectWhenDisconnected = false;
+        QMetaObject::invokeMethod(this, &BrickSuiteWebSocketClient::connectToHost,
+                                  Qt::QueuedConnection);
+        return;
+    }
     if (!m_explicitDisconnect && m_reconnectAutomatically
         && m_status.state != BrickSuiteConnectionState::HostIdentityMismatch
+        && m_status.state != BrickSuiteConnectionState::DeviceRevoked
         && m_status.state != BrickSuiteConnectionState::AuthenticationFailed
         && m_status.state != BrickSuiteConnectionState::IncompatibleProtocol) {
         scheduleReconnect();
     } else if (m_status.state != BrickSuiteConnectionState::HostIdentityMismatch
+               && m_status.state != BrickSuiteConnectionState::DeviceRevoked
                && m_status.state != BrickSuiteConnectionState::AuthenticationFailed
                && m_status.state != BrickSuiteConnectionState::IncompatibleProtocol) {
         setStatus(BrickSuiteConnectionState::Disconnected, QStringLiteral("Disconnected."));
@@ -286,6 +332,11 @@ void BrickSuiteWebSocketClient::handleSslErrors(const QList<QSslError>& errors)
         setStatus(BrickSuiteConnectionState::HostIdentityMismatch,
                   QStringLiteral("The Host certificate fingerprint does not match the trusted Host."));
         emit testConnectionCompleted(false, m_status.message);
+        if (m_pairing) {
+            const QString message = m_status.message;
+            clearPairingIntent();
+            emit pairingFailed(message);
+        }
         m_socket.abort();
         return;
     }
@@ -330,6 +381,18 @@ void BrickSuiteWebSocketClient::handleText(const QString& text)
         return;
     }
     if (parsed.message.type == BrickSuiteProtocol::MessageType::Event) {
+        if (m_authenticated && parsed.message.operation == QStringLiteral("system.deviceRevoked")
+            && parsed.message.payload.isEmpty()) {
+            m_explicitDisconnect = true;
+            m_accessToken.clear();
+            m_deviceId.clear();
+            emit deviceRevoked();
+            setStatus(BrickSuiteConnectionState::DeviceRevoked,
+                      QStringLiteral("This device has been revoked by the Host. Pair this device again to reconnect."));
+            m_socket.close(QWebSocketProtocol::CloseCodePolicyViolated,
+                           QStringLiteral("Device authorization revoked."));
+            return;
+        }
         if (!m_authenticated || parsed.message.operation != OperationalInvalidation::Operation) {
             setStatus(BrickSuiteConnectionState::Error,
                       QStringLiteral("The Host returned an invalid event message."));
@@ -389,7 +452,10 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
                       QStringLiteral("Host Maintenance — shared operations are temporarily unavailable."));
         }
         emit requestFailed(message.requestId, message.error);
-        if (operation == QStringLiteral("system.pair")) emit pairingFailed(message.error.message);
+        if (operation == QStringLiteral("system.pair")) {
+            clearPairingIntent();
+            emit pairingFailed(message.error.message);
+        }
         if (pending.context && pending.failure) pending.failure(message.error);
         emit testConnectionCompleted(false, message.error.message);
         return;
@@ -408,9 +474,7 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
             m_socket.abort();
             return;
         }
-        m_pairing = false;
-        m_pairingCode.clear();
-        m_pairingFriendlyName.clear();
+        clearPairingIntent();
         m_explicitDisconnect = true;
         m_socket.close(QWebSocketProtocol::CloseCodeNormal,
                        QStringLiteral("Pairing completed; reconnecting to authenticate."));
@@ -512,6 +576,13 @@ void BrickSuiteWebSocketClient::sendPairing()
     });
 }
 
+void BrickSuiteWebSocketClient::clearPairingIntent()
+{
+    m_pairing = false;
+    m_pairingCode.clear();
+    m_pairingFriendlyName.clear();
+}
+
 void BrickSuiteWebSocketClient::failPending(const QString& code,
                                             const QString& message, bool retryable)
 {
@@ -522,7 +593,10 @@ void BrickSuiteWebSocketClient::failPending(const QString& code,
         pending.timer->deleteLater();
         const BrickSuiteProtocol::Error error{code, message, retryable};
         emit requestFailed(id, error);
-        if (pending.operation == QStringLiteral("system.pair")) emit pairingFailed(message);
+        if (pending.operation == QStringLiteral("system.pair")) {
+            clearPairingIntent();
+            emit pairingFailed(message);
+        }
         if (pending.context && pending.failure) pending.failure(error);
     }
 }
