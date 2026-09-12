@@ -16,6 +16,7 @@ BrickSuiteWebSocketServer::BrickSuiteWebSocketServer(QObject* parent)
     , m_registry(std::make_unique<PairedDeviceRegistry>())
     , m_pairing(std::make_unique<BrickSuitePairingService>(*m_registry))
 {
+    m_authenticationClock.start();
     QString registryError;
     if (!m_registry->load(&registryError))
         qWarning().noquote() << "Paired-device administration unavailable:" << registryError;
@@ -50,6 +51,8 @@ bool BrickSuiteWebSocketServer::startWithIdentity(
     const BrickSuiteHostIdentity::Result& identity, QString* error)
 {
     stop();
+    m_authenticationThrottle.clear();
+    m_authenticationClock.restart();
     if (accessToken.trimmed().isEmpty() || !identity.success
         || identity.certificate.isNull() || identity.privateKey.isNull()) {
         if (error) *error = QStringLiteral("A valid Host identity and access token are required.");
@@ -355,9 +358,11 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
         QString hmacError;
         QString authenticationSecret = m_accessToken;
         std::optional<PairedDeviceRecord> pairedDevice;
+        QString requestedDeviceId;
         if (pairedProtocol) {
-            const QString deviceId = request.payload.value(QStringLiteral("deviceId")).toString();
-            pairedDevice = m_registry->find(deviceId);
+            requestedDeviceId = request.payload.value(QStringLiteral("deviceId")).toString()
+                                    .trimmed().toLower();
+            pairedDevice = m_registry->find(requestedDeviceId);
             if (pairedDevice && pairedDevice->active) {
                 const auto credential = CredentialStore::read(pairedDevice->credentialReference);
                 if (credential.success && credential.found) authenticationSecret = credential.value;
@@ -365,6 +370,24 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
             } else {
                 authenticationSecret.clear();
             }
+        }
+        const QString peer = socket->peerAddress().toString();
+        const QString throttleKey = pairedProtocol && pairedDevice
+            ? QStringLiteral("device:") + pairedDevice->deviceId.toLower()
+            : (pairedProtocol ? QStringLiteral("unknown-peer:") : QStringLiteral("legacy-peer:"))
+                + peer;
+        const qint64 nowMs = m_authenticationClock.elapsed();
+        const auto throttle = m_authenticationThrottle.check(throttleKey, nowMs);
+        if (throttle.expiredLockout)
+            qInfo() << "BrickSuite authentication throttle expired.";
+        if (!throttle.allowed) {
+            session.challengeConsumed = true;
+            reject(socket, request, QStringLiteral("AUTH_THROTTLED"),
+                   QStringLiteral("Authentication is temporarily restricted after repeated failures. Try again shortly."),
+                   true);
+            socket->close(QWebSocketProtocol::CloseCodePolicyViolated,
+                          QStringLiteral("Authentication temporarily throttled."));
+            return;
         }
         const QByteArray expected = challengeUsable && !authenticationSecret.isEmpty()
             ? BrickSuiteAuthentication::hmacSha256(
@@ -378,7 +401,11 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
             ++session.authenticationFailures;
             session.nextAuthenticationAllowedMs = QDateTime::currentMSecsSinceEpoch()
                 + 1000 * session.authenticationFailures;
-            qWarning() << "BrickSuite Server authentication failed.";
+            const bool lockoutActivated = m_authenticationThrottle.recordFailure(throttleKey, nowMs);
+            if (lockoutActivated)
+                qWarning() << "BrickSuite authentication temporarily throttled after repeated failures.";
+            else
+                qDebug() << "BrickSuite Server authentication failed.";
             reject(socket, request, QStringLiteral("AUTH_FAILED"),
                    QStringLiteral("BrickSuite authentication failed."));
             if (session.authenticationFailures >= BrickSuiteProtocol::MaximumAuthenticationFailures)
@@ -386,6 +413,8 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
                               QStringLiteral("Authentication failed."));
             return;
         }
+        if (m_authenticationThrottle.recordSuccess(throttleKey))
+            qInfo() << "BrickSuite authentication succeeded after prior failures; throttle state reset.";
         session.authenticated = true;
         session.legacySharedToken = !pairedProtocol;
         if (pairedProtocol) {

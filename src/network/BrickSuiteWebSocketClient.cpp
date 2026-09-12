@@ -37,6 +37,7 @@ BrickSuiteWebSocketClient::BrickSuiteWebSocketClient(QObject* parent)
             [this](QAbstractSocket::SocketError) {
         if (m_status.state != BrickSuiteConnectionState::HostIdentityMismatch
             && m_status.state != BrickSuiteConnectionState::DeviceRevoked
+            && m_status.state != BrickSuiteConnectionState::AuthenticationThrottled
             && m_status.state != BrickSuiteConnectionState::AuthenticationFailed) {
             setStatus(BrickSuiteConnectionState::Error,
                       QStringLiteral("Unable to establish the secure Host connection."));
@@ -305,11 +306,13 @@ void BrickSuiteWebSocketClient::handleDisconnected()
     if (!m_explicitDisconnect && m_reconnectAutomatically
         && m_status.state != BrickSuiteConnectionState::HostIdentityMismatch
         && m_status.state != BrickSuiteConnectionState::DeviceRevoked
+        && m_status.state != BrickSuiteConnectionState::AuthenticationThrottled
         && m_status.state != BrickSuiteConnectionState::AuthenticationFailed
         && m_status.state != BrickSuiteConnectionState::IncompatibleProtocol) {
         scheduleReconnect();
     } else if (m_status.state != BrickSuiteConnectionState::HostIdentityMismatch
                && m_status.state != BrickSuiteConnectionState::DeviceRevoked
+               && m_status.state != BrickSuiteConnectionState::AuthenticationThrottled
                && m_status.state != BrickSuiteConnectionState::AuthenticationFailed
                && m_status.state != BrickSuiteConnectionState::IncompatibleProtocol) {
         setStatus(BrickSuiteConnectionState::Disconnected, QStringLiteral("Disconnected."));
@@ -443,6 +446,10 @@ void BrickSuiteWebSocketClient::handleResponse(const BrickSuiteProtocol::Message
         if (message.error.code == QStringLiteral("AUTH_FAILED")) {
             setStatus(BrickSuiteConnectionState::AuthenticationFailed,
                       QStringLiteral("BrickSuite Host authentication failed."));
+            m_explicitDisconnect = true;
+        } else if (message.error.code == QStringLiteral("AUTH_THROTTLED")) {
+            setStatus(BrickSuiteConnectionState::AuthenticationThrottled,
+                      QStringLiteral("Host authentication is temporarily restricted after repeated failures. Try again shortly."));
             m_explicitDisconnect = true;
         } else if (message.error.code == QStringLiteral("INCOMPATIBLE_PROTOCOL")) {
             setStatus(BrickSuiteConnectionState::IncompatibleProtocol, message.error.message);

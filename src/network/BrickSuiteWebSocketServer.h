@@ -6,9 +6,11 @@
 #include "OperationalInvalidation.h"
 #include "PairedDeviceRegistry.h"
 #include "BrickSuitePairingService.h"
+#include "HostAuthenticationThrottle.h"
 
 #include <QHash>
 #include <QHostAddress>
+#include <QElapsedTimer>
 #include <QObject>
 #include <QTimer>
 #include <memory>
@@ -88,4 +90,6 @@ private:
     bool m_operationalAdmissionOpen = true;
     std::unique_ptr<PairedDeviceRegistry> m_registry;
     std::unique_ptr<BrickSuitePairingService> m_pairing;
+    HostAuthenticationThrottle m_authenticationThrottle;
+    QElapsedTimer m_authenticationClock;
 };

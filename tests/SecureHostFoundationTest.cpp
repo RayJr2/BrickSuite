@@ -686,6 +686,48 @@ int main(int argc, char** argv)
     pairedClient.disconnectFromHost();
     unauthenticatedSocket.close();
 
+    const auto failPairedAuthentication = [&]() {
+        BrickSuiteWebSocketClient attempt;
+        attempt.configurePairedDevice(
+            QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+            identity.fingerprint, pairedDeviceId, QStringLiteral("wrong-device-credential"), false);
+        attempt.connectToHost();
+        bool attemptSuccess = true;
+        const bool failed = waitForResult(attempt, &attemptSuccess, &resultMessage)
+            && !attemptSuccess;
+        attempt.disconnectFromHost();
+        waitUntil([&] {
+            return attempt.socketStateForTesting() == QAbstractSocket::UnconnectedState;
+        });
+        return failed;
+    };
+    ok &= check(failPairedAuthentication() && failPairedAuthentication()
+                    && failPairedAuthentication(),
+                "paired-device failures accumulate across independent connections");
+    BrickSuiteWebSocketClient throttledDeviceClient;
+    throttledDeviceClient.configurePairedDevice(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, pairedDeviceId, pairedCredential, false);
+    throttledDeviceClient.connectToHost();
+    bool throttledSuccess = true;
+    ok &= check(waitForResult(throttledDeviceClient, &throttledSuccess, &resultMessage)
+                    && !throttledSuccess
+                    && throttledDeviceClient.status().state
+                        == BrickSuiteConnectionState::AuthenticationThrottled
+                    && !throttledDeviceClient.reconnectTimerActiveForTesting(),
+                "correct credential is temporarily throttled without a reconnect storm");
+    throttledDeviceClient.disconnectFromHost();
+    BrickSuiteWebSocketClient unrelatedDeviceClient;
+    unrelatedDeviceClient.configurePairedDevice(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, replacementDeviceId, replacementDeviceCredential, false);
+    unrelatedDeviceClient.connectToHost();
+    bool unrelatedDeviceSuccess = false;
+    ok &= check(waitForResult(unrelatedDeviceClient, &unrelatedDeviceSuccess, &resultMessage)
+                    && unrelatedDeviceSuccess,
+                "throttling one paired identity does not block another paired device");
+    unrelatedDeviceClient.disconnectFromHost();
+
     BrickSuiteWebSocketClient wrongTokenClient;
     success = true;
     wrongTokenClient.configure(
@@ -696,6 +738,52 @@ int main(int argc, char** argv)
                 "wrong access token fails authentication");
     ok &= check(wrongTokenClient.status().state == BrickSuiteConnectionState::AuthenticationFailed,
                 "wrong token produces authentication-failed state");
+    wrongTokenClient.disconnectFromHost();
+    waitUntil([&] {
+        return wrongTokenClient.socketStateForTesting() == QAbstractSocket::UnconnectedState;
+    });
+    const auto failLegacyAuthentication = [&]() {
+        BrickSuiteWebSocketClient attempt;
+        attempt.configure(
+            QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+            identity.fingerprint, QStringLiteral("another-wrong-token"), false);
+        attempt.connectToHost();
+        bool attemptSuccess = true;
+        const bool failed = waitForResult(attempt, &attemptSuccess, &resultMessage)
+            && !attemptSuccess;
+        attempt.disconnectFromHost();
+        waitUntil([&] {
+            return attempt.socketStateForTesting() == QAbstractSocket::UnconnectedState;
+        });
+        return failed;
+    };
+    ok &= check(failLegacyAuthentication() && failLegacyAuthentication(),
+                "legacy shared-token failures accumulate across independent connections");
+    BrickSuiteWebSocketClient throttledLegacyClient;
+    throttledLegacyClient.configure(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, token, false);
+    throttledLegacyClient.connectToHost();
+    bool throttledLegacySuccess = true;
+    ok &= check(waitForResult(throttledLegacyClient, &throttledLegacySuccess, &resultMessage)
+                    && !throttledLegacySuccess
+                    && throttledLegacyClient.status().state
+                        == BrickSuiteConnectionState::AuthenticationThrottled,
+                "legacy shared-token authentication is throttled across reconnects");
+    throttledLegacyClient.disconnectFromHost();
+    server.stop();
+    ok &= check(server.startWithIdentity(QHostAddress::LocalHost, 0, token, identity, &serverError),
+                "Host restart clears transient authentication throttling");
+    BrickSuiteWebSocketClient postRestartLegacyClient;
+    postRestartLegacyClient.configure(
+        QUrl(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort())),
+        identity.fingerprint, token, false);
+    postRestartLegacyClient.connectToHost();
+    bool postRestartLegacySuccess = false;
+    ok &= check(waitForResult(postRestartLegacyClient, &postRestartLegacySuccess, &resultMessage)
+                    && postRestartLegacySuccess,
+                "legacy Client authenticates after Host restart clears transient throttle");
+    postRestartLegacyClient.disconnectFromHost();
 
     BrickSuiteWebSocketClient wrongFingerprintClient;
     success = true;

@@ -12,6 +12,7 @@ enum class BrickSuiteConnectionState
     ConnectedAuthenticated,
     HostMaintenance,
     DeviceRevoked,
+    AuthenticationThrottled,
     AuthenticationFailed,
     HostIdentityMismatch,
     IncompatibleProtocol,

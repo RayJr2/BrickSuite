@@ -52,6 +52,8 @@ qt_add_executable(BrickSuite
     src/network/BrickSuiteProtocol.cpp
     src/network/BrickSuiteAuthentication.h
     src/network/BrickSuiteAuthentication.cpp
+    src/network/HostAuthenticationThrottle.h
+    src/network/HostAuthenticationThrottle.cpp
     src/network/BrickSuiteHostIdentity.h
     src/network/BrickSuiteHostIdentity.cpp
     src/network/PairedDeviceRegistry.h
@@ -1341,6 +1343,7 @@ if(BUILD_TESTING)
         src/network/BrickSuiteConnectionState.h
         src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
+        src/network/HostAuthenticationThrottle.h src/network/HostAuthenticationThrottle.cpp
         src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
         src/services/CredentialStore.h src/services/CredentialStore.cpp
     )
@@ -1424,6 +1427,7 @@ if(BUILD_TESTING)
         src/network/BrickSuitePairingService.h src/network/BrickSuitePairingService.cpp
         src/network/BrickSuiteConnectionState.h
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
+        src/network/HostAuthenticationThrottle.h src/network/HostAuthenticationThrottle.cpp
         src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
         src/services/CredentialStore.h src/services/CredentialStore.cpp
         resources/resources.qrc
@@ -1579,6 +1583,7 @@ if(BUILD_TESTING)
         src/network/BrickSuiteConnectionState.h
         src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp
         src/network/BrickSuiteWebSocketServer.h src/network/BrickSuiteWebSocketServer.cpp
+        src/network/HostAuthenticationThrottle.h src/network/HostAuthenticationThrottle.cpp
         src/network/BrickSuiteWebSocketClient.h src/network/BrickSuiteWebSocketClient.cpp
         src/services/application/HostMutationProtocolService.h src/services/application/HostMutationProtocolService.cpp
         src/services/application/RemoteMutationApplicationServices.h src/services/application/RemoteMutationApplicationServices.cpp
@@ -1656,6 +1661,13 @@ if(BUILD_TESTING)
         src/services/database/AutomaticBackupPolicy.cpp)
     target_link_libraries(DatabaseRestoreHardeningTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME DatabaseRestoreHardening COMMAND DatabaseRestoreHardeningTest)
+
+    qt_add_executable(HostAuthenticationThrottleTest EXCLUDE_FROM_ALL
+        tests/HostAuthenticationThrottleTest.cpp
+        src/network/HostAuthenticationThrottle.h
+        src/network/HostAuthenticationThrottle.cpp)
+    target_link_libraries(HostAuthenticationThrottleTest PRIVATE Qt6::Core)
+    add_test(NAME HostAuthenticationThrottle COMMAND HostAuthenticationThrottleTest)
 
     qt_add_executable(PairingFoundationTest EXCLUDE_FROM_ALL
         tests/PairingFoundationTest.cpp
