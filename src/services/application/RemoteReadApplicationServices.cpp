@@ -43,7 +43,8 @@ AsyncReadError RemoteReadApplicationServices::mapError(const QString& code)
     if (code == QStringLiteral("NOT_FOUND")) return AsyncReadError::NotFound;
     if (code == QStringLiteral("INVALID_REQUEST")) return AsyncReadError::InvalidRequest;
     if (code == QStringLiteral("TIMEOUT")) return AsyncReadError::Timeout;
-    if (code == QStringLiteral("SERVER_BUSY")) return AsyncReadError::ServerBusy;
+    if (code == QStringLiteral("SERVER_BUSY") || code == QStringLiteral("HOST_BUSY"))
+        return AsyncReadError::ServerBusy;
     if (code == QStringLiteral("HOST_MAINTENANCE")) return AsyncReadError::Unavailable;
     if (code == QStringLiteral("UNKNOWN_OPERATION")) return AsyncReadError::Unsupported;
     if (code == QStringLiteral("AUTH_REQUIRED")) return AsyncReadError::Unavailable;

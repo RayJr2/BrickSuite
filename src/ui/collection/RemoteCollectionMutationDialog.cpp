@@ -6,6 +6,7 @@
 #include "../../services/application/RemoteCollectionMutationApplicationService.h"
 
 #include <QComboBox>
+#include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -68,6 +69,14 @@ RemoteCollectionMutationDialog::RemoteCollectionMutationDialog(
         form->addRow(QStringLiteral("Collection Location:"), m_storage);
         form->addRow(QStringLiteral("Nickname:"), m_nickname);
         form->addRow(QStringLiteral("Notes:"), m_notes);
+        if (operation == QStringLiteral("collection.edit")
+            && seed.expected.type == QStringLiteral("Set")
+            && service.isAvailableFor(QStringLiteral("collection.partsSource.set"))) {
+            m_allowPartsSource = new QCheckBox(QStringLiteral("Consider for What Can I Build"), this);
+            m_allowPartsSource->setChecked(seed.expected.allowPartsSource);
+            m_allowPartsSource->setToolTip(QStringLiteral("Use this complete Set as an advisory piece source. BrickSuite will not reserve or consume it."));
+            form->addRow(QStringLiteral("Buildability:"), m_allowPartsSource);
+        }
     } else {
         form->addRow(new QLabel(seed.desiredActive
             ? QStringLiteral("Reactivate this Collection item?")
@@ -101,7 +110,7 @@ void RemoteCollectionMutationDialog::setPending(bool pending)
 {
     m_pending = pending; m_buttons->button(QDialogButtonBox::Ok)->setEnabled(!pending);
     const QList<QWidget*> fields{m_state, m_condition, m_completeness,
-                                 m_storage, m_nickname, m_notes};
+                                 m_storage, m_nickname, m_notes, m_allowPartsSource};
     for (QWidget* widget : fields) if (widget) widget->setEnabled(!pending);
 }
 
@@ -109,11 +118,35 @@ void RemoteCollectionMutationDialog::submit()
 {
     if (m_pending) return;
     const auto value = m_retainedRequest ? *m_retainedRequest : request();
-    m_retainedRequest = value; m_mutationId = value.mutationId; setPending(true);
+    const QString operation = m_retainedRequest ? m_retainedOperation : m_operation;
+    m_retainedRequest = value; m_retainedOperation = operation; m_mutationId = value.mutationId; setPending(true);
     m_status->setText(QStringLiteral("Saving to BrickSuite Host..."));
-    m_service.submit(m_operation, value, this,
-        [this](const RemoteCollectionMutationDto::Result& result) {
-            setPending(false); m_mutationId.clear(); m_retainedRequest.reset();
+    submitRequest(operation, value, operation == QStringLiteral("collection.edit")
+        && m_allowPartsSource
+        && m_allowPartsSource->isChecked() != m_seed.expected.allowPartsSource);
+}
+
+void RemoteCollectionMutationDialog::submitRequest(const QString& operation,
+    const RemoteCollectionMutationDto::Request& value, bool submitPartsSourceAfter)
+{
+    m_service.submit(operation, value, this,
+        [this, submitPartsSourceAfter](const RemoteCollectionMutationDto::Result& result) {
+            if (submitPartsSourceAfter) {
+                RemoteCollectionMutationDto::Request parts = m_seed;
+                parts.workspaceId = m_workspaceId;
+                parts.collectionItemId = m_seed.collectionItemId;
+                parts.mutationId = RemoteMutationDto::newMutationId();
+                parts.allowPartsSource = m_allowPartsSource->isChecked();
+                parts.expected.modifiedUtc = result.item.value(QStringLiteral("modifiedUtc")).toString();
+                parts.expected.allowPartsSource = m_seed.expected.allowPartsSource;
+                m_retainedRequest = parts;
+                m_retainedOperation = QStringLiteral("collection.partsSource.set");
+                m_mutationId = parts.mutationId;
+                m_status->setText(QStringLiteral("Saving buildability preference to BrickSuite Host..."));
+                submitRequest(QStringLiteral("collection.partsSource.set"), parts, false);
+                return;
+            }
+            setPending(false); m_mutationId.clear(); m_retainedRequest.reset(); m_retainedOperation.clear();
             emit mutationCompleted(result.item.value(QStringLiteral("collectionItemId")).toInt());
             accept();
         },
@@ -127,7 +160,7 @@ void RemoteCollectionMutationDialog::submit()
                 m_buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Retry Safely"));
                 return;
             }
-            setPending(false); m_mutationId.clear(); m_retainedRequest.reset();
+            setPending(false); m_mutationId.clear(); m_retainedRequest.reset(); m_retainedOperation.clear();
             m_status->setText(error.message);
             if (error.code == QStringLiteral("STALE_VERSION") || error.code == QStringLiteral("CONFLICT"))
                 emit refreshRequired();

@@ -589,10 +589,11 @@ void MyCollectionWidget::openRemoteMutation(const QString& operation, int itemId
                     seed.state = detail.state; seed.condition = detail.condition; seed.completeness = detail.completeness;
                     seed.storageId = detail.storageId; seed.nickname = detail.nickname; seed.notes = detail.notes;
                     seed.desiredActive = !detail.active;
+                    seed.allowPartsSource = detail.allowPartsSource;
                     seed.expected = {detail.modifiedUtc.toUTC().toString(Qt::ISODateWithMs), detail.type,
                         detail.setNumber, detail.minifigNumber, detail.state, detail.condition,
                         detail.completeness, detail.nickname, detail.notes, detail.storageId,
-                        detail.sourceBuildId, detail.active};
+                        detail.sourceBuildId, detail.active, detail.allowPartsSource};
                     const QString reference = detail.type == QStringLiteral("Set") ? detail.setNumber
                         : detail.type == QStringLiteral("Minifig") ? detail.minifigNumber : detail.referenceFallback;
                     auto* dialog = new RemoteCollectionMutationDialog(operation, workspaceId,

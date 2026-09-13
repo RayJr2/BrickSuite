@@ -190,6 +190,12 @@ void BuildsWidget::invalidatePartUsageDiscovery()
         m_whatCanIBuildWidget->invalidateCatalog();
 }
 
+void BuildsWidget::invalidateRemoteBuildability()
+{
+    if (m_remoteMode && m_whatCanIBuildWidget)
+        m_whatCanIBuildWidget->invalidateOperationalData();
+}
+
 BuildsWidget::BuildsWidget(
     WorkspaceContext& workspaceContext,
     SessionStorageSelectionService& sessionStorageSelectionService,
@@ -712,6 +718,8 @@ void BuildsWidget::setRemoteSessionConnected(bool connected)
 {
     if (!m_remoteMode) return;
     m_remoteSessionConnected = connected;
+    if (m_whatCanIBuildWidget)
+        m_whatCanIBuildWidget->setRemoteSessionConnected(connected);
     for (QDialog* dialog : findChildren<QDialog*>()) {
         if (!connected && dialog->objectName().startsWith(QStringLiteral("remoteBuildWorkflow_"))) {
             dialog->close();

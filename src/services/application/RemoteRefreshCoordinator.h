@@ -24,6 +24,7 @@ public:
         InventoryHistory,
         Collection,
         CollectionLocations,
+        Buildability,
         PartReferenceCustomizations
     };
     Q_ENUM(Projection)

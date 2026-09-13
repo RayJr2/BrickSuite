@@ -3,6 +3,7 @@
 #include "../../models/PartUsageDiscovery.h"
 #include "../../models/InventoryBuildability.h"
 #include "../../models/Part.h"
+#include "../../services/application/dto/RemoteBuildabilityDtos.h"
 #include <QWidget>
 #include <optional>
 
@@ -30,6 +31,7 @@ public:
         RemoteCollectionMutationApplicationService* remoteCollection = nullptr);
     void invalidateCatalog();
     void invalidateOperationalData();
+    void setRemoteSessionConnected(bool connected);
 
 signals:
     void createBuildRequested(int setCatalogId, const QString& inventoryMode);
@@ -44,6 +46,8 @@ private:
     void showDetails(int setCatalogId);
     void showMissingParts(const InventoryBuildabilitySetResult& result);
     void showSources(const InventoryBuildabilitySetResult& result);
+    void requestRemoteDetails(const InventoryBuildabilitySetResult& result, bool sourcesOnly);
+    void updateRemoteCapability();
     void modeChanged();
     void updateControls();
     void loadColors();
@@ -66,6 +70,9 @@ private:
     bool m_searchOutstanding = false;
     int m_page = 0;
     quint64 m_generation = 0;
+    quint64 m_remoteSearchToken = 0;
+    quint64 m_remoteDetailsGeneration = 0;
+    bool m_remoteSessionConnected = false;
     std::optional<Part> m_resolvedPart;
     bool m_inventoryMode = true;
 

@@ -125,31 +125,29 @@ QSet<RemoteRefreshCoordinator::Projection> RemoteRefreshCoordinator::projections
 {
     using P = Projection;
     switch (domain) {
-    case OperationalInvalidationDomain::Workspaces: return {P::Workspaces};
+    case OperationalInvalidationDomain::Workspaces: return {P::Workspaces, P::Buildability};
     case OperationalInvalidationDomain::Storage:
         return {P::Storage, P::Inventory, P::InventoryLocations,
                 P::Collection, P::CollectionLocations, P::Pulling,
-                P::InventoryHistory};
+                P::InventoryHistory, P::Buildability};
     case OperationalInvalidationDomain::Inventory:
         return {P::Inventory, P::Builds, P::MissingParts, P::Pulling,
-                P::InventoryHistory};
+                P::InventoryHistory, P::Buildability};
     case OperationalInvalidationDomain::InventoryHistory: return {P::InventoryHistory};
     case OperationalInvalidationDomain::Builds:
-        return {P::Builds, P::MissingParts, P::Pulling};
+        return {P::Builds, P::MissingParts, P::Pulling, P::Buildability};
     case OperationalInvalidationDomain::BuildRequirements:
-        return {P::BuildRequirements, P::MissingParts, P::Pulling};
+        return {P::BuildRequirements, P::MissingParts, P::Pulling, P::Buildability};
     case OperationalInvalidationDomain::MissingParts: return {P::MissingParts};
     case OperationalInvalidationDomain::Pulling:
         return {P::Pulling, P::Builds, P::MissingParts,
-                P::Inventory, P::InventoryHistory};
+                P::Inventory, P::InventoryHistory, P::Buildability};
     case OperationalInvalidationDomain::Collection:
         // Collection membership controls Add/View Collection actions in Builds.
-        return {P::Collection, P::Builds};
+        return {P::Collection, P::Builds, P::Buildability};
     case OperationalInvalidationDomain::PartReferenceCustomizations:
         return {P::PartReferenceCustomizations};
-    case OperationalInvalidationDomain::Buildability:
-        // M28.5C2 will attach the Remote buildability projection.
-        return {};
+    case OperationalInvalidationDomain::Buildability: return {P::Buildability};
     }
     return {};
 }

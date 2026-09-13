@@ -79,6 +79,7 @@ public:
     void setRemoteSessionConnected(bool connected);
     void refreshOpenLocalPulling(const std::optional<int>& buildId = std::nullopt);
     void invalidatePartUsageDiscovery();
+    void invalidateRemoteBuildability();
 
 signals:
     void collectionItemRequested(int collectionItemId);

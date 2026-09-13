@@ -82,8 +82,13 @@ QList<ThemeCatalogItem> ThemeCatalogRepository::activeSetFilterHierarchy() const
               FROM theme_catalog tc JOIN tree ON tc.parent_theme_catalog_id=tree.id
              WHERE tc.is_active=1 AND tc.id IN used
         )
-        SELECT id,name,COALESCE(parent_id,0),depth,qualified_name
-          FROM tree ORDER BY path
+        SELECT tree.id,tree.name,COALESCE(tree.parent_id,0),tree.depth,
+               tree.qualified_name,tei.provider,tei.external_id
+          FROM tree
+          LEFT JOIN theme_external_identifier tei
+            ON tei.theme_catalog_id=tree.id AND tei.provider='Rebrickable'
+           AND tei.is_active=1
+         ORDER BY tree.path
     )")) {
         qCritical() << "Unable to load Set Theme filter hierarchy:" << query.lastError().text();
         return themes;
@@ -91,7 +96,8 @@ QList<ThemeCatalogItem> ThemeCatalogRepository::activeSetFilterHierarchy() const
     while(query.next()) {
         ThemeCatalogItem item;item.id=query.value(0).toInt();item.name=query.value(1).toString();
         item.parentThemeCatalogId=query.value(2).toInt();item.depth=query.value(3).toInt();
-        item.qualifiedName=query.value(4).toString();themes.append(item);
+        item.qualifiedName=query.value(4).toString();item.provider=query.value(5).toString();
+        item.externalId=query.value(6).toString();themes.append(item);
     }
     return themes;
 }

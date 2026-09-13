@@ -44,12 +44,13 @@ struct InventoryBuildabilitySetResult
     int advisorySatisfiedQuantity = 0;
     int advisorySatisfiedRequirements = 0;
     int missingQuantity = 0;
+    int collectionSourceCount = 0;
     QList<InventoryBuildabilityRequirement> requirements;
     QList<InventoryBuildabilitySource> sources;
 
     int loosePercent() const;
     int advisoryPercent() const;
-    bool usesCollection() const { return !sources.isEmpty(); }
+    bool usesCollection() const { return collectionSourceCount > 0 || !sources.isEmpty(); }
 };
 
 struct InventoryBuildabilitySearch

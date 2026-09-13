@@ -137,6 +137,7 @@ int main(int argc, char* argv[])
 
     int collectionStarts = 0;
     int buildsStarts = 0;
+    int buildabilityStarts = 0;
     coordinator.registerProjection(P::Collection, [] { return true; },
         [&](const OperationalInvalidation&, auto completion) {
             ++collectionStarts; completion(true);
@@ -145,9 +146,17 @@ int main(int argc, char* argv[])
         [&](const OperationalInvalidation&, auto completion) {
             ++buildsStarts; completion(true);
         });
+    coordinator.registerProjection(P::Buildability, [] { return true; },
+        [&](const OperationalInvalidation&, auto completion) {
+            ++buildabilityStarts; completion(true);
+        });
     coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Collection));
-    ok &= check(waitUntil([&] { return collectionStarts == 1 && buildsStarts == 1; }),
-                "Collection invalidation must refresh Collection and Build eligibility.");
+    ok &= check(waitUntil([&] { return collectionStarts == 1 && buildsStarts == 1
+                                      && buildabilityStarts == 1; }),
+                "Collection invalidation must refresh Collection, Build eligibility, and buildability.");
+    coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Buildability));
+    ok &= check(waitUntil([&] { return buildabilityStarts == 2; }),
+                "Buildability invalidation must target the buildability projection.");
 
     coordinator.receiveInvalidation(event(OperationalInvalidationDomain::Inventory));
     coordinator.resetContext(true, 2, 2);

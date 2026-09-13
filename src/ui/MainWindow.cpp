@@ -2429,6 +2429,12 @@ void MainWindow::configureRemoteRefreshCoordinator()
                        [this] { m_myCollectionWidget->refreshRemoteLocations(); },
                        std::move(done));
         });
+    m_remoteRefreshCoordinator->registerProjection(P::Buildability,
+        [this] { return m_tabWidget->currentWidget() == m_buildsWidget; },
+        [this](const OperationalInvalidation&, auto done) {
+            m_buildsWidget->invalidateRemoteBuildability();
+            done(true);
+        });
     m_remoteRefreshCoordinator->registerProjection(P::PartReferenceCustomizations,
         [this] { return m_partReferenceDialog && m_partReferenceDialog->isVisible(); },
         [this, completeOn](const OperationalInvalidation&, auto done) {
@@ -2475,6 +2481,7 @@ void MainWindow::configureRemoteRefreshCoordinator()
         } else if (current == m_buildsWidget) {
             m_remoteRefreshCoordinator->surfaceBecameRelevant(P::Builds);
             m_remoteRefreshCoordinator->surfaceBecameRelevant(P::BuildRequirements);
+            m_remoteRefreshCoordinator->surfaceBecameRelevant(P::Buildability);
         } else if (current == m_myCollectionWidget) {
             m_remoteRefreshCoordinator->surfaceBecameRelevant(P::CollectionLocations);
             m_remoteRefreshCoordinator->surfaceBecameRelevant(P::Collection);

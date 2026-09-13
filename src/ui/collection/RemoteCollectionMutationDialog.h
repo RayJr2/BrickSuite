@@ -12,6 +12,7 @@ class QDialogButtonBox;
 class QLabel;
 class QLineEdit;
 class QTextEdit;
+class QCheckBox;
 
 class RemoteCollectionMutationDialog : public QDialog
 {
@@ -30,6 +31,9 @@ signals:
 private:
     void submit();
     void setPending(bool pending);
+    void submitRequest(const QString& operation,
+                       const RemoteCollectionMutationDto::Request& value,
+                       bool submitPartsSourceAfter);
     RemoteCollectionMutationDto::Request request() const;
 
     QString m_operation;
@@ -38,6 +42,7 @@ private:
     RemoteCollectionMutationDto::Request m_seed;
     QString m_mutationId;
     std::optional<RemoteCollectionMutationDto::Request> m_retainedRequest;
+    QString m_retainedOperation;
     bool m_pending = false;
     QComboBox* m_state = nullptr;
     QComboBox* m_condition = nullptr;
@@ -45,6 +50,7 @@ private:
     QComboBox* m_storage = nullptr;
     QLineEdit* m_nickname = nullptr;
     QTextEdit* m_notes = nullptr;
+    QCheckBox* m_allowPartsSource = nullptr;
     QLabel* m_status = nullptr;
     QDialogButtonBox* m_buttons = nullptr;
 };
