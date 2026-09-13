@@ -7,6 +7,7 @@ struct InventoryBuildabilityRequirement
 {
     int partId = 0;
     int colorId = 0;
+    int rebrickableColorId = -1;
     QString partNumber;
     QString partName;
     QString colorName;
@@ -32,6 +33,7 @@ struct InventoryBuildabilitySetResult
     QString name;
     int year = 0;
     int themeCatalogId = 0;
+    int rebrickableThemeId = 0;
     QString themeName;
     QString imageUrl;
     int catalogPartCount = 0;
@@ -63,6 +65,8 @@ struct InventoryBuildabilitySearch
     bool includeCollection = true;
     bool fullyBuildableFirst = true;
     int maximumResults = 250;
+    // Internal Host/local identity used only to constrain an exact detail evaluation.
+    int exactSetCatalogId = 0;
 };
 
 struct InventoryBuildabilitySearchResult

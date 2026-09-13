@@ -2,6 +2,7 @@
 
 #include "ApplicationServices.h"
 #include "dto/RemoteReadDtos.h"
+#include "dto/RemoteBuildabilityDtos.h"
 #include "../../models/StorageLocation.h"
 
 #include <QObject>
@@ -137,6 +138,14 @@ public:
     void pullingPortable(int workspaceId, int buildId, const RemoteReadDto::PageRequest& page,
         QObject* context,
         std::function<void(const RemoteReadDto::Page<RemoteReadDto::PullingRow>&)> completion,
+        ErrorCallback failure = {});
+    void searchBuildabilityPortable(const RemoteBuildabilityDto::SearchRequest& request,
+        QObject* context,
+        std::function<void(const std::optional<RemoteBuildabilityDto::SearchResponse>&)> completion,
+        ErrorCallback failure = {});
+    void buildabilityDetailsPortable(const RemoteBuildabilityDto::DetailsRequest& request,
+        QObject* context,
+        std::function<void(const std::optional<RemoteBuildabilityDto::DetailsResponse>&)> completion,
         ErrorCallback failure = {});
 
 signals:

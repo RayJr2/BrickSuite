@@ -109,6 +109,8 @@ qt_add_executable(BrickSuite
     src/services/application/dto/RemotePartReferenceMutationDtos.cpp
     src/services/application/dto/RemoteCollectionMutationDtos.h
     src/services/application/dto/RemoteCollectionMutationDtos.cpp
+    src/services/application/dto/RemoteBuildabilityDtos.h
+    src/services/application/dto/RemoteBuildabilityDtos.cpp
     src/services/application/dto/RemoteBuildMutationDtos.h
     src/services/application/dto/RemoteBuildMutationDtos.cpp
     src/services/application/HostPullingMutationService.h
@@ -1424,6 +1426,11 @@ if(BUILD_TESTING)
 
     qt_add_executable(HostReadExecutorTest EXCLUDE_FROM_ALL
         tests/HostReadExecutorTest.cpp
+        src/models/InventoryBuildability.h src/models/InventoryBuildability.cpp
+        src/repositories/InventoryBuildabilityRepository.h
+        src/repositories/InventoryBuildabilityRepository.cpp
+        src/services/application/dto/RemoteBuildabilityDtos.h
+        src/services/application/dto/RemoteBuildabilityDtos.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp
         src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
         src/models/Workspace.h src/models/Workspace.cpp
@@ -1526,6 +1533,8 @@ if(BUILD_TESTING)
         src/services/application/dto/RemoteReadDtos.h
         src/services/application/dto/RemoteReadJson.h
         src/services/application/dto/RemoteReadJson.cpp
+        src/services/application/dto/RemoteBuildabilityDtos.h
+        src/services/application/dto/RemoteBuildabilityDtos.cpp
         src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
         src/network/OperationalInvalidation.h src/network/OperationalInvalidation.cpp
         src/network/BrickSuiteOperationDispatcher.h src/network/BrickSuiteOperationDispatcher.cpp

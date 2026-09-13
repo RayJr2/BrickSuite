@@ -21,6 +21,7 @@ QString operationalInvalidationDomainName(OperationalInvalidationDomain domain)
     case OperationalInvalidationDomain::Collection: return QStringLiteral("collection");
     case OperationalInvalidationDomain::PartReferenceCustomizations:
         return QStringLiteral("partReferenceCustomizations");
+    case OperationalInvalidationDomain::Buildability: return QStringLiteral("buildability");
     }
     return {};
 }
@@ -29,7 +30,7 @@ std::optional<OperationalInvalidationDomain> operationalInvalidationDomainFromNa
     const QString& name)
 {
     for (int value = int(OperationalInvalidationDomain::Workspaces);
-         value <= int(OperationalInvalidationDomain::PartReferenceCustomizations); ++value) {
+         value <= int(OperationalInvalidationDomain::Buildability); ++value) {
         const auto domain = static_cast<OperationalInvalidationDomain>(value);
         if (operationalInvalidationDomainName(domain) == name) return domain;
     }
@@ -55,7 +56,8 @@ bool readOptionalId(const QJsonObject& payload, const QString& key,
 bool requiresWorkspace(OperationalInvalidationDomain domain)
 {
     return domain != OperationalInvalidationDomain::Workspaces
-        && domain != OperationalInvalidationDomain::PartReferenceCustomizations;
+        && domain != OperationalInvalidationDomain::PartReferenceCustomizations
+        && domain != OperationalInvalidationDomain::Buildability;
 }
 }
 
@@ -75,6 +77,14 @@ QJsonObject OperationalInvalidation::toPayload() const
     addId(QStringLiteral("collectionItemId"), collectionItemId);
     if (!partNumber.isEmpty()) result.insert(QStringLiteral("partNumber"), partNumber);
     return result;
+}
+
+OperationalInvalidation OperationalInvalidation::forProtocolMinor(int protocolMinor) const
+{
+    OperationalInvalidation compatible = *this;
+    if (protocolMinor < 5)
+        compatible.domains.removeAll(OperationalInvalidationDomain::Buildability);
+    return compatible;
 }
 
 bool OperationalInvalidation::fromPayload(const QJsonObject& payload,
@@ -153,7 +163,7 @@ bool OperationalInvalidation::validate(const OperationalInvalidation& value,
     for (const auto domain : value.domains) {
         const int numeric = int(domain);
         if (numeric < int(OperationalInvalidationDomain::Workspaces)
-            || numeric > int(OperationalInvalidationDomain::PartReferenceCustomizations)
+            || numeric > int(OperationalInvalidationDomain::Buildability)
             || seen.contains(numeric)) {
             if (error) *error = QStringLiteral("Invalid or duplicate invalidation domain.");
             return false;

@@ -68,15 +68,16 @@ void HostMutationProtocolService::registerInternalOperation(
 
 void HostMutationProtocolService::registerOperation(
     BrickSuiteOperationDispatcher& dispatcher, const QString& operation,
-    const QString& capability, MutationFactory factory)
+    const QString& capability, MutationFactory factory, int minimumMinor)
 {
     dispatcher.registerAsyncOperation(operation, true,
-        [this, operation, factory=std::move(factory)](
+        [this, operation, factory=std::move(factory), minimumMinor](
             const BrickSuiteProtocol::Message& request,
             BrickSuiteOperationDispatcher::Completion completion) {
-            if (request.protocolMinor < 2) {
+            if (request.protocolMinor < minimumMinor) {
                 completion(BrickSuiteProtocol::errorResponse(request, QStringLiteral("FORBIDDEN"),
-                    QStringLiteral("This mutation requires BrickSuite protocol 1.2.")));
+                    QStringLiteral("This mutation requires BrickSuite protocol 1.%1.")
+                        .arg(minimumMinor)));
                 return;
             }
             RemoteMutationDto::Metadata metadata;
@@ -127,5 +128,5 @@ void HostMutationProtocolService::registerOperation(
                     completion(BrickSuiteProtocol::errorResponse(request, failure.code,
                         failure.message, failure.retryable));
                 });
-        }, 2, capability, BrickSuiteOperationDispatcher::AdmissionKind::Write);
+        }, minimumMinor, capability, BrickSuiteOperationDispatcher::AdmissionKind::Write);
 }

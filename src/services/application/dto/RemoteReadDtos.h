@@ -113,6 +113,7 @@ struct CollectionSummary {
     QString setNumber; QString minifigNumber; QString referenceFallback; QString titleFallback;
     QString state; QString condition; QString completeness; qint64 storageId = 0;
     QString storagePath; QString nickname; qint64 sourceBuildId = 0; bool active = true;
+    bool allowPartsSource = false;
 };
 struct CollectionDetail : CollectionSummary { QString notes; QDateTime createdUtc; QDateTime modifiedUtc; };
 

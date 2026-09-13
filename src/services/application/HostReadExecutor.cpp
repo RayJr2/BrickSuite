@@ -10,6 +10,8 @@
 #include "../../repositories/BuildRequirementRepository.h"
 #include "../../repositories/BuildAllocationRepository.h"
 #include "../../repositories/ManufacturerRepository.h"
+#include "../../repositories/InventoryBuildabilityRepository.h"
+#include "../../repositories/SetCatalogRepository.h"
 #include "../parts/PartReferenceManifest.h"
 #include "../builds/BuildRequirementAvailabilityService.h"
 #include "../builds/BuildLifecycleService.h"
@@ -26,6 +28,44 @@
 #include <QStringList>
 #include <QUuid>
 #include <algorithm>
+
+namespace {
+RemoteBuildabilityDto::CompactResult portableBuildability(
+    const InventoryBuildabilitySetResult& value)
+{
+    return {value.setNumber, value.name, value.year, value.rebrickableThemeId,
+        value.themeName, value.imageUrl, value.catalogPartCount, value.totalQuantity,
+        value.totalRequirements, value.looseSatisfiedQuantity,
+        value.looseSatisfiedRequirements, value.advisorySatisfiedQuantity,
+        value.advisorySatisfiedRequirements, value.missingQuantity,
+        value.usesCollection(), int(value.sources.size())};
+}
+
+int activeThemeCatalogId(const QSqlDatabase& db, int externalId, bool* queryOk)
+{
+    if (queryOk) *queryOk = false;
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral(
+        "SELECT tc.id FROM theme_external_identifier tei "
+        "JOIN theme_catalog tc ON tc.id=tei.theme_catalog_id "
+        "WHERE tei.provider='Rebrickable' AND tei.external_id=:id "
+        "AND tei.is_active=1 AND tc.is_active=1"));
+    query.bindValue(QStringLiteral(":id"), QString::number(externalId));
+    if (!query.exec()) return 0;
+    if (queryOk) *queryOk = true;
+    return query.next() ? query.value(0).toInt() : 0;
+}
+
+bool activeWorkspaceExists(const QSqlDatabase& db, qint64 workspaceId, bool* queryOk)
+{
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral("SELECT 1 FROM workspace WHERE id=:id AND is_active=1"));
+    query.bindValue(QStringLiteral(":id"), workspaceId);
+    const bool executed = query.exec();
+    if (queryOk) *queryOk = executed;
+    return executed && query.next();
+}
+}
 
 struct HostReadExecutor::PendingRead
 {
@@ -664,6 +704,153 @@ void HostReadExecutor::listLostInventoryPortable(int workspaceId, QObject* conte
             if (guard) QMetaObject::invokeMethod(guard,
                 [guard, completion, out=std::move(out)]() mutable { if (guard) completion(out); },
                 Qt::QueuedConnection);
+        }, context, std::move(failure));
+}
+
+void HostReadExecutor::searchBuildabilityPortable(
+    const RemoteBuildabilityDto::SearchRequest& request, QObject* context,
+    std::function<void(const std::optional<RemoteBuildabilityDto::SearchResponse>&)> completion,
+    ErrorCallback failure)
+{
+    QPointer<QObject> guard(context);
+    enqueue(QStringLiteral("buildability.inventory.search"),
+        [=, completion=std::move(completion)](ApplicationServices&, const QSqlDatabase& db) mutable {
+            bool workspaceQueryOk = false;
+            const bool workspaceExists = activeWorkspaceExists(
+                db, request.workspaceId, &workspaceQueryOk);
+            if (!workspaceQueryOk) {
+                deliverFailure(guard, failure, QStringLiteral("Unable to validate the Workspace."));
+                return;
+            }
+            if (!workspaceExists) {
+                if (guard) QMetaObject::invokeMethod(guard,
+                    [guard, completion] { if (guard) completion(std::nullopt); },
+                    Qt::QueuedConnection);
+                return;
+            }
+            InventoryBuildabilitySearch local;
+            local.workspaceId = int(request.workspaceId);
+            local.text = request.text;
+            local.minimumPercent = request.minimumPercent;
+            local.minimumSetParts = request.minimumSetParts;
+            local.yearFrom = request.yearFrom;
+            local.yearTo = request.yearTo;
+            local.fullyBuildableOnly = request.fullyBuildableOnly;
+            local.includeCollection = request.includeCollection;
+            local.fullyBuildableFirst = request.fullyBuildableFirst;
+            local.maximumResults = request.maximumResults;
+            if (request.rebrickableThemeId > 0) {
+                bool queryOk = false;
+                local.themeCatalogId = activeThemeCatalogId(
+                    db, request.rebrickableThemeId, &queryOk);
+                if (!queryOk) {
+                    deliverFailure(guard, failure,
+                        QStringLiteral("Unable to resolve the Rebrickable Theme identity."));
+                    return;
+                }
+                if (local.themeCatalogId <= 0) {
+                    if (guard) QMetaObject::invokeMethod(guard,
+                        [guard, completion] { if (guard) completion(std::nullopt); },
+                        Qt::QueuedConnection);
+                    return;
+                }
+            }
+            const auto result = InventoryBuildabilityRepository(db).search(local);
+            if (!result.success) {
+                deliverFailure(guard, failure, result.errorMessage);
+                return;
+            }
+            RemoteBuildabilityDto::SearchResponse out;
+            out.qualifyingCount = result.qualifyingCount;
+            out.capReached = result.capReached;
+            out.eligibleCollectionSourceCount = result.eligibleCollectionSources;
+            out.dormantCollectionSourceCount = result.dormantCollectionSources;
+            for (const auto& item : result.sets) out.rows.append(portableBuildability(item));
+            if (out.rows.size() > request.maximumResults)
+                out.rows = out.rows.mid(0, request.maximumResults);
+            out.returnedCount = out.rows.size();
+            out.capReached = out.qualifyingCount > out.returnedCount;
+            if (guard) QMetaObject::invokeMethod(guard,
+                [guard, completion, out=std::move(out)]() mutable {
+                    if (guard) completion(out);
+                }, Qt::QueuedConnection);
+        }, context, std::move(failure));
+}
+
+void HostReadExecutor::buildabilityDetailsPortable(
+    const RemoteBuildabilityDto::DetailsRequest& request, QObject* context,
+    std::function<void(const std::optional<RemoteBuildabilityDto::DetailsResponse>&)> completion,
+    ErrorCallback failure)
+{
+    QPointer<QObject> guard(context);
+    enqueue(QStringLiteral("buildability.inventory.details"),
+        [=, completion=std::move(completion)](ApplicationServices&, const QSqlDatabase& db) mutable {
+            bool workspaceQueryOk = false;
+            const bool workspaceExists = activeWorkspaceExists(
+                db, request.workspaceId, &workspaceQueryOk);
+            if (!workspaceQueryOk) {
+                deliverFailure(guard, failure, QStringLiteral("Unable to validate the Workspace."));
+                return;
+            }
+            if (!workspaceExists) {
+                if (guard) QMetaObject::invokeMethod(guard,
+                    [guard, completion] { if (guard) completion(std::nullopt); },
+                    Qt::QueuedConnection);
+                return;
+            }
+            bool lookupOk = false;
+            const auto matches = SetCatalogRepository(db).getExactMatchesBySetNumber(
+                request.setNumber, &lookupOk);
+            if (!lookupOk) {
+                deliverFailure(guard, failure, QStringLiteral("Unable to resolve the Set identity."));
+                return;
+            }
+            if (matches.size() != 1) {
+                if (guard) QMetaObject::invokeMethod(guard,
+                    [guard, completion] { if (guard) completion(std::nullopt); },
+                    Qt::QueuedConnection);
+                return;
+            }
+            InventoryBuildabilitySearch local;
+            local.workspaceId = int(request.workspaceId);
+            local.minimumPercent = 0;
+            local.minimumSetParts = 1;
+            local.includeCollection = request.includeCollection;
+            local.maximumResults = 50;
+            local.exactSetCatalogId = matches.first().id();
+            const auto evaluated = InventoryBuildabilityRepository(db).search(local);
+            if (!evaluated.success) {
+                deliverFailure(guard, failure, evaluated.errorMessage);
+                return;
+            }
+            if (evaluated.sets.isEmpty()) {
+                if (guard) QMetaObject::invokeMethod(guard,
+                    [guard, completion] { if (guard) completion(std::nullopt); },
+                    Qt::QueuedConnection);
+                return;
+            }
+            const auto& item = evaluated.sets.first();
+            RemoteBuildabilityDto::DetailsResponse out;
+            out.candidate = portableBuildability(item);
+            out.page = request.paging.page;
+            out.pageSize = request.paging.pageSize;
+            out.totalCount = item.requirements.size();
+            const int begin = qMin(out.totalCount, (out.page - 1) * out.pageSize);
+            const int end = qMin(out.totalCount, begin + out.pageSize);
+            for (int i = begin; i < end; ++i) {
+                const auto& row = item.requirements.at(i);
+                out.requirements.append({row.partNumber, row.partName,
+                    row.rebrickableColorId, row.colorName, row.required,
+                    row.looseAvailable, row.looseUsed, row.collectionUsed, row.missing});
+            }
+            out.returnedCount = out.requirements.size();
+            for (const auto& source : item.sources)
+                out.sources.append({source.collectionItemId, source.label,
+                    source.state, source.piecesUsed});
+            if (guard) QMetaObject::invokeMethod(guard,
+                [guard, completion, out=std::move(out)]() mutable {
+                    if (guard) completion(out);
+                }, Qt::QueuedConnection);
         }, context, std::move(failure));
 }
 

@@ -147,6 +147,8 @@ QJsonObject toJson(const RemoteReadDto::BuildCancellationReturnRow&v){return{{"r
 bool fromJson(const QJsonObject&o,RemoteReadDto::BuildCancellationReturnRow*v,DecodeError*e){qint64 qty=0;if(o.size()!=7||!integer(o,"requirementId",1,9007199254740991LL,&v->requirementId)||!textField(o,"partNumber",&v->partNumber)||!textField(o,"partNameFallback",&v->partNameFallback,false)||!textField(o,"colorNameFallback",&v->colorNameFallback,false)||!textField(o,"manufacturerDisplay",&v->manufacturerDisplay)||!integer(o,"quantityPulled",1,INT_MAX,&qty)||!o.value("spare").isBool())return fail(e,"Invalid Build cancellation return row.");v->quantityPulled=int(qty);v->spare=o.value("spare").toBool();return true;}
 QJsonObject toJson(const RemoteReadDto::CollectionSummary& v)
 { return {{"collectionItemId",double(v.collectionItemId)},{"workspaceId",double(v.workspaceId)},{"type",v.type},{"setNumber",v.setNumber},{"minifigNumber",v.minifigNumber},{"referenceFallback",v.referenceFallback},{"titleFallback",v.titleFallback},{"state",v.state},{"condition",v.condition},{"completeness",v.completeness},{"storageId",double(v.storageId)},{"storagePath",v.storagePath},{"nickname",v.nickname},{"sourceBuildId",double(v.sourceBuildId)},{"active",v.active}}; }
+QJsonObject toJson(const RemoteReadDto::CollectionSummary& v, bool includePartsSource)
+{ QJsonObject o=toJson(v);if(includePartsSource)o.insert("allowPartsSource",v.allowPartsSource);return o; }
 bool fromJson(const QJsonObject& o, RemoteReadDto::CollectionSummary* v, DecodeError* e)
 {
     if (!integer(o,"collectionItemId",1,9007199254740991LL,&v->collectionItemId) || !integer(o,"workspaceId",1,9007199254740991LL,&v->workspaceId)
@@ -158,9 +160,13 @@ bool fromJson(const QJsonObject& o, RemoteReadDto::CollectionSummary* v, DecodeE
         || !textField(o,"condition",&v->condition) || !textField(o,"completeness",&v->completeness)
         || !textField(o,"storagePath",&v->storagePath,false) || !textField(o,"nickname",&v->nickname,false)
         || !o.value("active").isBool()) return fail(e,QStringLiteral("Invalid Collection summary."));
-    v->active=o.value("active").toBool(); return true;
+    if (o.contains("allowPartsSource") && !o.value("allowPartsSource").isBool())
+        return fail(e,QStringLiteral("Invalid Collection parts-source state."));
+    v->active=o.value("active").toBool();
+    v->allowPartsSource=o.value("allowPartsSource").toBool(false); return true;
 }
 QJsonObject toJson(const RemoteReadDto::CollectionDetail&v){QJsonObject o=toJson(static_cast<const RemoteReadDto::CollectionSummary&>(v));o["notes"]=v.notes;o["createdUtc"]=utc(v.createdUtc);o["modifiedUtc"]=utc(v.modifiedUtc);return o;}
+QJsonObject toJson(const RemoteReadDto::CollectionDetail&v,bool includePartsSource){QJsonObject o=toJson(static_cast<const RemoteReadDto::CollectionSummary&>(v),includePartsSource);o["notes"]=v.notes;o["createdUtc"]=utc(v.createdUtc);o["modifiedUtc"]=utc(v.modifiedUtc);return o;}
 bool fromJson(const QJsonObject&o,RemoteReadDto::CollectionDetail*v,DecodeError*e){return fromJson(o,static_cast<RemoteReadDto::CollectionSummary*>(v),e)&&textField(o,"notes",&v->notes,false)&&parseUtc(o.value("createdUtc"),&v->createdUtc)&&parseUtc(o.value("modifiedUtc"),&v->modifiedUtc);}
 QJsonObject toJson(const RemoteReadDto::PartReferenceCustomization& v)
 {

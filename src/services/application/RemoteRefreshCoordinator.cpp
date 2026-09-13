@@ -147,6 +147,9 @@ QSet<RemoteRefreshCoordinator::Projection> RemoteRefreshCoordinator::projections
         return {P::Collection, P::Builds};
     case OperationalInvalidationDomain::PartReferenceCustomizations:
         return {P::PartReferenceCustomizations};
+    case OperationalInvalidationDomain::Buildability:
+        // M28.5C2 will attach the Remote buildability projection.
+        return {};
     }
     return {};
 }

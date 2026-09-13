@@ -197,11 +197,16 @@ InventoryBuildabilitySearchResult InventoryBuildabilityRepository::search(
              WHERE tc.is_active=1
         )
         SELECT sc.id,sc.set_number,sc.name,sc.year,sc.theme_id,
+               COALESCE(CAST(tei.external_id AS INTEGER),0),
                COALESCE(tp.qualified_name,''),sc.image_url,sc.num_parts
           FROM set_catalog sc
           JOIN effective_totals totals ON totals.set_id=sc.id
           LEFT JOIN theme_paths tp ON tp.id=sc.theme_id
+          LEFT JOIN theme_external_identifier tei
+            ON tei.theme_catalog_id=sc.theme_id AND tei.provider='Rebrickable'
+           AND tei.is_active=1
          WHERE (:text='' OR sc.set_number LIKE :numberPattern OR sc.name LIKE :namePattern)
+           AND (:exactSet=0 OR sc.id=:exactSet)
            AND totals.total_quantity>=:minimumSetParts
            AND (:yearFrom=0 OR (sc.year>0 AND sc.year>=:yearFrom))
            AND (:yearTo=0 OR (sc.year>0 AND sc.year<=:yearTo))
@@ -216,6 +221,7 @@ InventoryBuildabilitySearchResult InventoryBuildabilityRepository::search(
     candidates.bindValue(QStringLiteral(":yearFrom"),qMax(0,request.yearFrom));
     candidates.bindValue(QStringLiteral(":yearTo"),qMax(0,request.yearTo));
     candidates.bindValue(QStringLiteral(":theme"),qMax(0,request.themeCatalogId));
+    candidates.bindValue(QStringLiteral(":exactSet"),qMax(0,request.exactSetCatalogId));
     if (!execPrepared(candidates,&out.errorMessage)) return out;
 
     QHash<int,InventoryBuildabilitySetResult> metadata;
@@ -225,8 +231,9 @@ InventoryBuildabilitySearchResult InventoryBuildabilityRepository::search(
         InventoryBuildabilitySetResult value;value.setCatalogId=candidates.value(0).toInt();
         value.setNumber=candidates.value(1).toString();value.name=candidates.value(2).toString();
         value.year=candidates.value(3).toInt();value.themeCatalogId=candidates.value(4).toInt();
-        value.themeName=candidates.value(5).toString();value.imageUrl=candidates.value(6).toString();
-        value.catalogPartCount=candidates.value(7).toInt();metadata.insert(value.setCatalogId,value);
+        value.rebrickableThemeId=candidates.value(5).toInt();
+        value.themeName=candidates.value(6).toString();value.imageUrl=candidates.value(7).toString();
+        value.catalogPartCount=candidates.value(8).toInt();metadata.insert(value.setCatalogId,value);
         candidateParameters.append(QStringLiteral(":candidate%1").arg(candidateNumber++));
     }
     out.candidateCountAfterCatalogFilters=metadata.size();
@@ -236,7 +243,8 @@ InventoryBuildabilitySearchResult InventoryBuildabilityRepository::search(
     // safe candidate set. This is one query, never a per-Set composition lookup.
     QSqlQuery requirements(db);
     const QString requirementSql=QString::fromLatin1(effectivePartsCte)+QStringLiteral(R"(
-        SELECT ep.set_id,ep.part_id,ep.color_id,p.part_number,p.name,c.name,SUM(ep.quantity)
+        SELECT ep.set_id,ep.part_id,ep.color_id,p.part_number,p.name,c.name,
+               COALESCE(c.rebrickable_id,-1),SUM(ep.quantity)
           FROM effective_parts ep JOIN part p ON p.id=ep.part_id JOIN color c ON c.id=ep.color_id
          WHERE ep.set_id IN (%1)
          GROUP BY ep.set_id,ep.part_id,ep.color_id
@@ -262,7 +270,8 @@ InventoryBuildabilitySearchResult InventoryBuildabilityRepository::search(
         InventoryBuildabilityRequirement req;
         req.partId=requirements.value(1).toInt();req.colorId=requirements.value(2).toInt();
         req.partNumber=requirements.value(3).toString();req.partName=requirements.value(4).toString();
-        req.colorName=requirements.value(5).toString();req.required=requirements.value(6).toInt();
+        req.colorName=requirements.value(5).toString();
+        req.rebrickableColorId=requirements.value(6).toInt();req.required=requirements.value(7).toInt();
         const QString k=key(req.partId,req.colorId);
         req.looseAvailable=loose.value(k);req.looseUsed=qMin(req.required,req.looseAvailable);
         int remaining=req.required-req.looseUsed;

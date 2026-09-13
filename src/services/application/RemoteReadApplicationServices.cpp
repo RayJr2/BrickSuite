@@ -1,6 +1,7 @@
 #include "RemoteReadApplicationServices.h"
 
 #include "dto/RemoteReadJson.h"
+#include "dto/RemoteBuildabilityDtos.h"
 #include "../../network/BrickSuiteWebSocketClient.h"
 #include "../../network/RemoteSessionState.h"
 
@@ -14,6 +15,28 @@ RemoteReadApplicationServices::RemoteReadApplicationServices(
 bool RemoteReadApplicationServices::isAvailableFor(const QString& operation) const
 { return m_client.status().state == BrickSuiteConnectionState::ConnectedAuthenticated
       && m_client.supportsOperation(operation); }
+
+ReadRequestToken RemoteReadApplicationServices::searchBuildability(
+    const RemoteBuildabilityDto::SearchRequest& value, QObject* context,
+    AsyncReadCompletion<RemoteBuildabilityDto::SearchResponse> completion)
+{
+    return request<RemoteBuildabilityDto::SearchResponse>(
+        QStringLiteral("buildability.inventory.search"),
+        RemoteBuildabilityDto::toJson(value), context, std::move(completion),
+        [](const QJsonObject& object, RemoteBuildabilityDto::SearchResponse* out,
+           QString* error) { return RemoteBuildabilityDto::fromJson(object, out, error); });
+}
+
+ReadRequestToken RemoteReadApplicationServices::buildabilityDetails(
+    const RemoteBuildabilityDto::DetailsRequest& value, QObject* context,
+    AsyncReadCompletion<RemoteBuildabilityDto::DetailsResponse> completion)
+{
+    return request<RemoteBuildabilityDto::DetailsResponse>(
+        QStringLiteral("buildability.inventory.details"),
+        RemoteBuildabilityDto::toJson(value), context, std::move(completion),
+        [](const QJsonObject& object, RemoteBuildabilityDto::DetailsResponse* out,
+           QString* error) { return RemoteBuildabilityDto::fromJson(object, out, error); });
+}
 
 AsyncReadError RemoteReadApplicationServices::mapError(const QString& code)
 {

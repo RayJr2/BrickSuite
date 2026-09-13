@@ -24,7 +24,8 @@ public:
     using MutationFactory = std::function<HostWriteExecutor::Mutation(
         const RemoteMutationDto::Metadata&, RemoteMutationDto::Error*)>;
     void registerOperation(BrickSuiteOperationDispatcher& dispatcher,
-        const QString& operation, const QString& capability, MutationFactory factory);
+        const QString& operation, const QString& capability, MutationFactory factory,
+        int minimumMinor = 2);
 
 private:
     HostWriteExecutor m_executor;

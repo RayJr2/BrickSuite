@@ -134,6 +134,14 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     for(const QString&operation:partReferenceOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostPartReferenceMutationService::createMutation(operation,metadata,error);});
     const QStringList collectionOperations={QStringLiteral("collection.add"),QStringLiteral("collection.edit"),QStringLiteral("collection.setActive")};
     for(const QString&operation:collectionOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostCollectionMutationService::createMutation(operation,metadata,error);});
+    const QString collectionPartsSourceOperation = QStringLiteral("collection.partsSource.set");
+    m_hostMutations->registerOperation(m_server->operationDispatcher(), collectionPartsSourceOperation,
+        collectionPartsSourceOperation,
+        [collectionPartsSourceOperation](const RemoteMutationDto::Metadata& metadata,
+                                         RemoteMutationDto::Error* error) {
+            return HostCollectionMutationService::createMutation(
+                collectionPartsSourceOperation, metadata, error);
+        }, 5);
     const QStringList buildOperations={QStringLiteral("builds.add"),QStringLiteral("builds.edit"),QStringLiteral("builds.setActive"),QStringLiteral("builds.complete"),QStringLiteral("builds.cancel"),QStringLiteral("builds.disassemble"),QStringLiteral("builds.spare.store"),QStringLiteral("builds.requirements.add"),QStringLiteral("builds.requirements.edit"),QStringLiteral("builds.requirements.remove"),QStringLiteral("builds.allocations.set"),QStringLiteral("builds.allocateAvailable")};
     for(const QString&operation:buildOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostBuildMutationService::createMutation(operation,metadata,error);});
     m_maintenanceCoordinator = std::make_unique<HostMaintenanceCoordinator>(

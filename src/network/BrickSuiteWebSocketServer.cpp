@@ -192,14 +192,15 @@ int BrickSuiteWebSocketServer::broadcastInvalidation(OperationalInvalidation inv
         qWarning().noquote() << "Invalidation broadcast rejected:" << error;
         return 0;
     }
-    const auto message = BrickSuiteProtocol::event(OperationalInvalidation::Operation,
-                                                    invalidation.toPayload());
     int recipients = 0;
     for (auto it = m_sessions.constBegin(); it != m_sessions.constEnd(); ++it) {
         if (!it->authenticated || !it->invalidationsReady || it->protocolMinor < 1 || !it.key())
             continue;
-        send(it.key(), message);
-        ++recipients;
+        const OperationalInvalidation compatible = invalidation.forProtocolMinor(it->protocolMinor);
+        if (compatible.domains.isEmpty()) continue;
+        const auto message = BrickSuiteProtocol::event(
+            OperationalInvalidation::Operation, compatible.toPayload());
+        if (send(it.key(), message)) ++recipients;
     }
     qDebug() << "Host invalidation" << invalidation.sequence << "domains"
              << invalidation.domains.size() << "workspace"
@@ -235,7 +236,8 @@ void BrickSuiteWebSocketServer::broadcastFullOperationalInvalidation()
     // Workspace scope. Clients use maintenance recovery to reload their full
     // current Workspace projection when this event arrives.
     value.domains = {OperationalInvalidationDomain::Workspaces,
-                     OperationalInvalidationDomain::PartReferenceCustomizations};
+                     OperationalInvalidationDomain::PartReferenceCustomizations,
+                     OperationalInvalidationDomain::Buildability};
     broadcastInvalidation(value);
 }
 

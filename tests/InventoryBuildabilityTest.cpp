@@ -17,8 +17,9 @@ int main(int argc,char**argv)
     const QString name="buildability-test";auto db=QSqlDatabase::addDatabase("QSQLITE",name);db.setDatabaseName(dir.filePath("test.db"));if(!require(db.open(),"database open"))return 1;
     const QStringList schema={
         "CREATE TABLE part(id INTEGER PRIMARY KEY,part_number TEXT,name TEXT)",
-        "CREATE TABLE color(id INTEGER PRIMARY KEY,name TEXT)",
+        "CREATE TABLE color(id INTEGER PRIMARY KEY,name TEXT,rebrickable_id INTEGER)",
         "CREATE TABLE theme_catalog(id INTEGER PRIMARY KEY,name TEXT,parent_theme_catalog_id INTEGER,is_active INTEGER)",
+        "CREATE TABLE theme_external_identifier(theme_catalog_id INTEGER,provider TEXT,external_id TEXT,is_active INTEGER)",
         "CREATE TABLE set_catalog(id INTEGER PRIMARY KEY,set_number TEXT,name TEXT,year INTEGER,theme_id INTEGER,image_url TEXT,num_parts INTEGER)",
         "CREATE TABLE set_catalog_part(id INTEGER PRIMARY KEY,set_catalog_id INTEGER,part_id INTEGER,color_id INTEGER,quantity_required INTEGER,is_spare INTEGER)",
         "CREATE TABLE set_inventory_revision(id INTEGER PRIMARY KEY,provider TEXT,external_inventory_id TEXT,set_catalog_id INTEGER,version INTEGER,is_active INTEGER,is_preferred INTEGER)",
@@ -31,8 +32,9 @@ int main(int argc,char**argv)
     for(const auto&s:schema)if(!sql(db,s))return 1;
     const QStringList data={
         "INSERT INTO part VALUES(1,'3001','Brick'),(2,'3002','Plate')",
-        "INSERT INTO color VALUES(1,'Red'),(2,'Blue')",
+        "INSERT INTO color VALUES(1,'Red',4),(2,'Blue',1)",
         "INSERT INTO theme_catalog VALUES(100,'Space',NULL,1),(101,'Classic Space',100,1),(200,'Technic',NULL,1)",
+        "INSERT INTO theme_external_identifier VALUES(100,'Rebrickable','100',1),(101,'Rebrickable','101',1),(200,'Rebrickable','200',1)",
         "INSERT INTO set_catalog VALUES(10,'A-1','Exact Set',2026,100,'',4),(20,'B-1','Collection Set',2025,100,'',2),(30,'C-1','Fallback Set',2024,101,'',3),(40,'D-1','Two Source Set',2024,101,'',5),(50,'E-1','Twenty Four',2015,101,'',24),(60,'F-1','Twenty Five',2020,100,'',25),(65,'F-2','Twenty Six',2021,100,'',26),(66,'F-3','Combined Match',2020,101,'',25),(70,'G-1','Spare Inflation',2010,200,'',27),(80,'H-1','One Piece',0,0,'',1),(90,'I-1','No Composition',2020,100,'',0)",
         "INSERT INTO set_inventory_revision VALUES(1,'Rebrickable','100',10,1,1,1),(2,'Rebrickable','200',20,1,1,1)",
         "INSERT INTO set_inventory_part VALUES(1,1,1,1,3,0),(2,1,2,2,1,0),(3,1,1,2,99,1),(4,2,1,1,2,0)",

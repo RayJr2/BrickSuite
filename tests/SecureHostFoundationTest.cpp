@@ -132,7 +132,7 @@ int main(int argc, char** argv)
     ok &= check(!OperationalInvalidation::validate(invalidEvent, true, &invalidationError),
                 "empty invalidation domain list rejected");
     for (int value = int(OperationalInvalidationDomain::Workspaces);
-         value <= int(OperationalInvalidationDomain::PartReferenceCustomizations); ++value) {
+         value <= int(OperationalInvalidationDomain::Buildability); ++value) {
         const auto domain = static_cast<OperationalInvalidationDomain>(value);
         const QString name = operationalInvalidationDomainName(domain);
         ok &= check(!name.isEmpty() && operationalInvalidationDomainFromName(name) == domain,

@@ -1,7 +1,9 @@
 #include "../src/services/application/AsyncReadResult.h"
 #include "../src/services/application/dto/RemoteReadJson.h"
+#include "../src/services/application/dto/RemoteBuildabilityDtos.h"
 #include "../src/services/application/LocalReferenceDecoration.h"
 #include "../src/network/BrickSuiteOperationDispatcher.h"
+#include "../src/network/OperationalInvalidation.h"
 
 #include <QCoreApplication>
 #include <QJsonArray>
@@ -77,6 +79,77 @@ int main(int argc, char** argv)
     RemoteReadDto::PageRequest paging;
     ok &= require(RemoteReadJson::pageRequest({{"page",1},{"pageSize",500}}, &paging), "valid paging rejected");
     ok &= require(!RemoteReadJson::pageRequest({{"page",0},{"pageSize",501}}, &paging), "invalid paging accepted");
+    OperationalInvalidation buildabilityInvalidation;
+    buildabilityInvalidation.sequence=1;
+    buildabilityInvalidation.domains={OperationalInvalidationDomain::Buildability};
+    QString invalidationError;
+    ok &= require(OperationalInvalidation::validate(buildabilityInvalidation,true,
+        &invalidationError)&&buildabilityInvalidation.forProtocolMinor(4).domains.isEmpty()
+        && buildabilityInvalidation.forProtocolMinor(5).domains
+            ==buildabilityInvalidation.domains,
+        "Protocol 1.5 buildability invalidation gating failed");
+
+    RemoteBuildabilityDto::SearchRequest buildabilitySearch;
+    buildabilitySearch.workspaceId = 2; buildabilitySearch.text = QStringLiteral("space");
+    buildabilitySearch.minimumPercent = 0; buildabilitySearch.minimumSetParts = 1;
+    buildabilitySearch.yearFrom = 1980; buildabilitySearch.yearTo = 2026;
+    buildabilitySearch.rebrickableThemeId = 42; buildabilitySearch.maximumResults = 250;
+    RemoteBuildabilityDto::SearchRequest decodedBuildabilitySearch;
+    QString buildabilityError;
+    ok &= require(RemoteBuildabilityDto::fromJson(
+        RemoteBuildabilityDto::toJson(buildabilitySearch), &decodedBuildabilitySearch,
+        &buildabilityError) && decodedBuildabilitySearch.rebrickableThemeId == 42,
+        "buildability search DTO round trip failed");
+    QJsonObject invalidBuildabilitySearch = RemoteBuildabilityDto::toJson(buildabilitySearch);
+    invalidBuildabilitySearch.insert(QStringLiteral("unknown"), true);
+    ok &= require(!RemoteBuildabilityDto::fromJson(invalidBuildabilitySearch,
+        &decodedBuildabilitySearch, &buildabilityError), "unknown search field accepted");
+    invalidBuildabilitySearch = RemoteBuildabilityDto::toJson(buildabilitySearch);
+    invalidBuildabilitySearch[QStringLiteral("maximumResults")] = 251;
+    ok &= require(!RemoteBuildabilityDto::fromJson(invalidBuildabilitySearch,
+        &decodedBuildabilitySearch, &buildabilityError), "oversized search result bound accepted");
+    invalidBuildabilitySearch = RemoteBuildabilityDto::toJson(buildabilitySearch);
+    invalidBuildabilitySearch[QStringLiteral("text")] = QString(513, QLatin1Char('x'));
+    ok &= require(!RemoteBuildabilityDto::fromJson(invalidBuildabilitySearch,
+        &decodedBuildabilitySearch, &buildabilityError), "oversized buildability text accepted");
+    invalidBuildabilitySearch = RemoteBuildabilityDto::toJson(buildabilitySearch);
+    invalidBuildabilitySearch[QStringLiteral("yearFrom")] = 2027;
+    ok &= require(!RemoteBuildabilityDto::fromJson(invalidBuildabilitySearch,
+        &decodedBuildabilitySearch, &buildabilityError), "reversed year range accepted");
+
+    RemoteBuildabilityDto::CompactResult compact;
+    compact.setNumber="1000-1";compact.name="Synthetic";compact.year=2026;
+    compact.rebrickableThemeId=42;compact.qualifiedThemeName="Space / Test";
+    compact.catalogPartCount=10;compact.totalRequiredPieces=10;compact.totalRequirements=2;
+    compact.looseSatisfiedPieces=6;compact.looseSatisfiedRequirements=1;
+    compact.advisorySatisfiedPieces=8;compact.advisorySatisfiedRequirements=1;
+    compact.missingPieces=2;compact.usesCollection=true;compact.collectionSourceCount=1;
+    RemoteBuildabilityDto::CompactResult decodedCompact;
+    ok &= require(RemoteBuildabilityDto::fromJson(RemoteBuildabilityDto::toJson(compact),
+        &decodedCompact,&buildabilityError)&&decodedCompact.setNumber==compact.setNumber,
+        "compact buildability DTO round trip failed");
+    RemoteBuildabilityDto::Requirement buildabilityRequirement;
+    buildabilityRequirement.partNumber="3001";buildabilityRequirement.partDescription="Brick";
+    buildabilityRequirement.rebrickableColorId=4;buildabilityRequirement.colorName="Red";
+    buildabilityRequirement.requiredQuantity=5;buildabilityRequirement.looseAvailableQuantity=3;
+    buildabilityRequirement.looseUsedQuantity=3;buildabilityRequirement.collectionUsedQuantity=1;
+    buildabilityRequirement.missingQuantity=1;
+    RemoteBuildabilityDto::Requirement decodedBuildabilityRequirement;
+    ok &= require(RemoteBuildabilityDto::fromJson(
+        RemoteBuildabilityDto::toJson(buildabilityRequirement),
+        &decodedBuildabilityRequirement,&buildabilityError),
+        "buildability requirement DTO round trip failed");
+    RemoteBuildabilityDto::DetailsRequest detailsRequest;
+    detailsRequest.workspaceId=2;detailsRequest.setNumber="1000-1";
+    detailsRequest.paging={2,500};
+    RemoteBuildabilityDto::DetailsRequest decodedDetailsRequest;
+    ok &= require(RemoteBuildabilityDto::fromJson(RemoteBuildabilityDto::toJson(detailsRequest),
+        &decodedDetailsRequest,&buildabilityError)&&decodedDetailsRequest.paging.pageSize==500,
+        "buildability details request round trip failed");
+    QJsonObject invalidDetails=RemoteBuildabilityDto::toJson(detailsRequest);
+    invalidDetails[QStringLiteral("pageSize")]=501;
+    ok &= require(!RemoteBuildabilityDto::fromJson(invalidDetails,&decodedDetailsRequest,
+        &buildabilityError),"oversized details page accepted");
 
     RemoteReadDto::BuildSummary build;
     build.buildId=9;build.workspaceId=2;build.buildType="Set";build.name="Set Build";
@@ -156,10 +229,21 @@ int main(int argc, char** argv)
     RemoteReadDto::CollectionSummary collection;collection.collectionItemId=1;collection.workspaceId=1;collection.type="Set";collection.setNumber="10300-1";collection.referenceFallback="10300-1";collection.titleFallback="Synthetic Collection Item";collection.state="Assembled";collection.condition="Used";collection.completeness="Complete";collection.active=true;
     QJsonArray collectionRows;for(int i=0;i<250;++i){collection.collectionItemId=i+1;collectionRows.append(RemoteReadJson::toJson(collection));}
     const qsizetype collectionBytes=QJsonDocument({{"rows",collectionRows},{"page",1},{"pageSize",250},{"totalRows",250}}).toJson(QJsonDocument::Compact).size();
+    RemoteBuildabilityDto::SearchResponse buildabilityResponse;
+    for(int i=0;i<250;++i){auto result=compact;result.setNumber=QStringLiteral("%1-1").arg(i+1);buildabilityResponse.rows.append(result);}
+    buildabilityResponse.qualifyingCount=250;buildabilityResponse.returnedCount=250;
+    const qsizetype buildabilityBytes=QJsonDocument(
+        RemoteBuildabilityDto::toJson(buildabilityResponse)).toJson(QJsonDocument::Compact).size();
     RemoteReadDto::CollectionSummary decodedCollection;
     ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(collection),
         &decodedCollection, &decodeError) && decodedCollection.setNumber == QStringLiteral("10300-1"),
         "Collection portable identity round trip failed");
+    collection.allowPartsSource = true;
+    ok &= require(!RemoteReadJson::toJson(collection).contains("allowPartsSource")
+        && RemoteReadJson::toJson(collection, true).value("allowPartsSource").toBool()
+        && RemoteReadJson::fromJson(RemoteReadJson::toJson(collection, true),
+            &decodedCollection, &decodeError) && decodedCollection.allowPartsSource,
+        "Protocol-versioned Collection parts-source exposure failed");
     RemoteReadDto::PartReferenceCustomization customization;
     customization.customizationId=7; customization.partNumber="3001";
     customization.catalog="Bricks"; customization.section="Basic"; customization.displayOrder=12;
@@ -206,7 +290,8 @@ int main(int argc, char** argv)
         && pullingBytes<BrickSuiteProtocol::MaximumMessageBytes
         && historyBytes<BrickSuiteProtocol::MaximumMessageBytes
         && missingBytes<BrickSuiteProtocol::MaximumMessageBytes
-        && collectionBytes<BrickSuiteProtocol::MaximumMessageBytes,
+        && collectionBytes<BrickSuiteProtocol::MaximumMessageBytes
+        && buildabilityBytes<BrickSuiteProtocol::MaximumMessageBytes,
         "bounded pages exceed protocol message limit");
     std::cout << "Payload bytes inventory250=" << inventoryBytes
               << " requirements500=" << requirementBytes
@@ -214,9 +299,31 @@ int main(int argc, char** argv)
               << " history250=" << historyBytes
               << " missing250=" << missingBytes
               << " collection250=" << collectionBytes
+              << " buildability250=" << buildabilityBytes
               << " serializationMs=" << serializationTimer.elapsed() << '\n';
 
     BrickSuiteOperationDispatcher dispatcher;
+    dispatcher.registerAsyncOperation(QStringLiteral("buildability.inventory.search"), true,
+        [](const BrickSuiteProtocol::Message& request,
+           BrickSuiteOperationDispatcher::Completion completion) {
+            completion(BrickSuiteProtocol::response(request));
+        }, 5, QStringLiteral("buildability.inventory"));
+    dispatcher.registerAsyncOperation(QStringLiteral("collection.partsSource.set"), true,
+        [](const BrickSuiteProtocol::Message& request,
+           BrickSuiteOperationDispatcher::Completion completion) {
+            completion(BrickSuiteProtocol::response(request));
+        }, 5, QStringLiteral("collection.partsSource.set"));
+    ok &= require(!dispatcher.operations(4).contains("buildability.inventory.search")
+        && !dispatcher.capabilities(4).contains("buildability.inventory")
+        && dispatcher.operations(5).contains("buildability.inventory.search")
+        && !dispatcher.capabilities(4).contains("collection.partsSource.set")
+        && dispatcher.capabilities(5).contains("buildability.inventory")
+        && dispatcher.capabilities(5).contains("collection.partsSource.set"),
+        "Protocol 1.5 operation/capability gating failed");
+    BrickSuiteProtocol::Message oldRequest=BrickSuiteProtocol::request(
+        QStringLiteral("buildability.inventory.search"));oldRequest.protocolMinor=4;
+    dispatcher.dispatchAsync(oldRequest,true,[&](const auto&response){ok&=require(
+        response.error.code==QStringLiteral("FORBIDDEN"),"Protocol 1.4 invoked 1.5 operation");});
     bool completed = false;
     dispatcher.registerAsyncOperation(QStringLiteral("workspace.list"), true,
         [](const BrickSuiteProtocol::Message& request, BrickSuiteOperationDispatcher::Completion completion) {

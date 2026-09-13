@@ -229,11 +229,17 @@ void GlobalRebrickableImportDialog::startImport()
         }
     });
     connect(m_worker, &QThread::finished, this, [this, result]() {
-        bool parts = false, sets = false, minifigs = false;
+        bool parts = false, sets = false, minifigs = false, buildability = false;
         int imported = 0, noChanges = 0, failed = 0, blocked = 0, notImplemented = 0;
         for (const auto& entry : result->entries) {
             const bool completed = entry.status == RebrickableImportStatus::Imported || entry.status == RebrickableImportStatus::NoChanges;
             if (completed) { imported += entry.status == RebrickableImportStatus::Imported; noChanges += entry.status == RebrickableImportStatus::NoChanges; parts |= entry.dataset == RebrickableDatasetId::Parts || entry.dataset == RebrickableDatasetId::PartCategories || entry.dataset == RebrickableDatasetId::PartRelationships; sets |= entry.dataset == RebrickableDatasetId::Sets || entry.dataset == RebrickableDatasetId::Inventories || entry.dataset == RebrickableDatasetId::InventoryParts || entry.dataset == RebrickableDatasetId::InventoryMinifigs || entry.dataset == RebrickableDatasetId::InventorySets; minifigs |= entry.dataset == RebrickableDatasetId::Minifigs; }
+            if (entry.status == RebrickableImportStatus::Imported)
+                buildability |= entry.dataset == RebrickableDatasetId::Sets
+                    || entry.dataset == RebrickableDatasetId::Inventories
+                    || entry.dataset == RebrickableDatasetId::InventoryParts
+                    || entry.dataset == RebrickableDatasetId::InventoryMinifigs
+                    || entry.dataset == RebrickableDatasetId::InventorySets;
             failed += entry.status == RebrickableImportStatus::Failed;
             blocked += entry.status == RebrickableImportStatus::BlockedByDependency;
             notImplemented += entry.status == RebrickableImportStatus::NotImplemented;
@@ -242,7 +248,8 @@ void GlobalRebrickableImportDialog::startImport()
         m_progressLabel->setText(QStringLiteral("Import run complete."));
         m_summaryLabel->setText(QStringLiteral("Global Rebrickable import completed%1: %2 imported, %3 no changes, %4 failed, %5 blocked, %6 not implemented.")
             .arg(failed || blocked ? QStringLiteral(" with issues") : QString()).arg(imported).arg(noChanges).arg(failed).arg(blocked).arg(notImplemented));
-        if (parts || sets || minifigs) emit catalogDataChanged(parts, sets, minifigs);
+        if (parts || sets || minifigs)
+            emit catalogDataChanged(parts, sets, minifigs, buildability);
         m_worker = nullptr; m_cancellation.reset();
     });
     connect(m_worker, &QThread::finished, m_worker, &QObject::deleteLater);

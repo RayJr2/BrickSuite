@@ -2,6 +2,7 @@
 
 #include "AsyncReadResult.h"
 #include "dto/RemoteReadDtos.h"
+#include "dto/RemoteBuildabilityDtos.h"
 
 #include <QJsonObject>
 #include <QObject>
@@ -63,6 +64,12 @@ public:
         AsyncReadCompletion<RemoteReadDto::CollectionDetail> completion);
     ReadRequestToken listPartReferenceCustomizations(QObject* context,
         AsyncReadCompletion<QList<RemoteReadDto::PartReferenceCustomization>> completion);
+    ReadRequestToken searchBuildability(const RemoteBuildabilityDto::SearchRequest& request,
+        QObject* context,
+        AsyncReadCompletion<RemoteBuildabilityDto::SearchResponse> completion);
+    ReadRequestToken buildabilityDetails(const RemoteBuildabilityDto::DetailsRequest& request,
+        QObject* context,
+        AsyncReadCompletion<RemoteBuildabilityDto::DetailsResponse> completion);
 
     bool isAvailableFor(const QString& operation) const;
 

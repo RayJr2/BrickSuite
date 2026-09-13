@@ -24,7 +24,8 @@ protected:
     void closeEvent(QCloseEvent* event) override;
 
 signals:
-    void catalogDataChanged(bool partsChanged, bool setsChanged, bool minifigsChanged);
+    void catalogDataChanged(bool partsChanged, bool setsChanged, bool minifigsChanged,
+                            bool buildabilityChanged);
 
 private:
     void selectFolder();

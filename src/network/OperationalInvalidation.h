@@ -16,12 +16,13 @@ enum class OperationalInvalidationDomain
     MissingParts,
     Pulling,
     Collection,
-    PartReferenceCustomizations
+    PartReferenceCustomizations,
+    Buildability
 };
 
 struct OperationalInvalidation
 {
-    static constexpr int MaximumDomains = 10;
+    static constexpr int MaximumDomains = 11;
     static constexpr int MaximumPartNumberLength = 128;
     static constexpr quint64 MaximumJsonInteger = 9007199254740991ULL;
     static const QString Operation;
@@ -37,6 +38,7 @@ struct OperationalInvalidation
     QString partNumber;
 
     QJsonObject toPayload() const;
+    OperationalInvalidation forProtocolMinor(int protocolMinor) const;
     static bool fromPayload(const QJsonObject& payload, OperationalInvalidation* result,
                             QString* error = nullptr);
     static bool validate(const OperationalInvalidation& value, bool requireSequence,

@@ -81,6 +81,8 @@
 #include "../services/application/RemotePartReferenceMutationApplicationService.h"
 #include "../services/application/RemoteBuildMutationApplicationService.h"
 #include "../network/BrickSuiteNetworkManager.h"
+#include "../network/OperationalInvalidation.h"
+#include "../network/OperationalInvalidationPublisher.h"
 #include "../network/BrickSuiteWebSocketClient.h"
 #include "../network/BrickSuiteHostIdentity.h"
 #include "../network/RemoteSessionState.h"
@@ -899,10 +901,15 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         auto* dialog = new GlobalRebrickableImportDialog(this);
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         connect(dialog, &GlobalRebrickableImportDialog::catalogDataChanged, this,
-                [this](bool parts, bool sets, bool minifigs) {
+                [this](bool parts, bool sets, bool minifigs, bool buildabilityChanged) {
                     if (parts && m_partsCatalogWidget) m_partsCatalogWidget->refreshCatalog();
                     if (sets && m_setsCatalogWidget) m_setsCatalogWidget->refresh();
                     if (sets && m_buildsWidget) m_buildsWidget->invalidatePartUsageDiscovery();
+                    if (buildabilityChanged && m_networkManager.invalidationPublisher()) {
+                        OperationalInvalidation invalidation;
+                        invalidation.domains = {OperationalInvalidationDomain::Buildability};
+                        m_networkManager.invalidationPublisher()->publish(invalidation);
+                    }
                     if (minifigs && m_minifigsCatalogWidget) m_minifigsCatalogWidget->refresh();
                 });
         dialog->show();
