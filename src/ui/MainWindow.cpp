@@ -32,6 +32,7 @@
 #include "../models/Build.h"
 #include "../models/Part.h"
 #include "../models/SetCatalogItem.h"
+#include "../models/WhatCanIBuildPartSelection.h"
 #include "../models/Workspace.h"
 
 #include "../repositories/BuildRepository.h"
@@ -421,6 +422,10 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             this, [this](const QString& message, int timeoutMs) {
                 statusBar()->showMessage(message, timeoutMs);
             });
+    connect(m_partsCatalogWidget, &PartsCatalogWidget::findSetsUsingPartRequested,
+            this, &MainWindow::openWhatCanIBuildForPart);
+    connect(m_myInventoryWidget, &MyInventoryWidget::findSetsUsingPartRequested,
+            this, &MainWindow::openWhatCanIBuildForPart);
     connect(m_setsCatalogWidget, &SetsCatalogWidget::catalogDataChanged,
             m_buildsWidget, &BuildsWidget::invalidatePartUsageDiscovery);
     connect(&m_networkManager, &BrickSuiteNetworkManager::remotePullingMutationCommitted,
@@ -991,6 +996,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                         if (m_myInventoryWidget)
                             m_myInventoryWidget->sendPartToActiveAddInventoryDialog(partNumber);
                     });
+
+            connect(m_partReferenceDialog,
+                    &PartReferenceDialog::findSetsUsingPartRequested,
+                    this,
+                    &MainWindow::openWhatCanIBuildForPart);
 
             if (m_myInventoryWidget) {
                 connect(m_myInventoryWidget,
@@ -2295,6 +2305,21 @@ QString MainWindow::remoteHostIdentity() const
         return session->hostIdentity();
     return BrickSuiteHostIdentity::normalizedFingerprint(
         UserSettings::instance().brickSuiteTrustedFingerprint());
+}
+
+void MainWindow::openWhatCanIBuildForPart(const WhatCanIBuildPartSelection& selection)
+{
+    QString message;
+    if (!m_buildsWidget || !m_buildsWidget->openWhatCanIBuildForPart(selection, &message)) {
+        statusBar()->showMessage(
+            message.isEmpty() ? QStringLiteral("Unable to add the selected Part to What Can I Build.")
+                              : message,
+            8000);
+        return;
+    }
+
+    m_tabWidget->setCurrentWidget(m_buildsWidget);
+    statusBar()->showMessage(message, 5000);
 }
 
 void MainWindow::setRemoteSurfacesConnected(bool connected)

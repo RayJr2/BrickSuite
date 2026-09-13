@@ -1040,7 +1040,8 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
             }
         }
         actionCombo->addItem("View History", "history");
-        if (m_remoteReads && actionCombo->count() <= 3)
+        actionCombo->addItem("Find Sets Using This Part", "find-sets");
+        if (m_remoteReads && actionCombo->count() <= 4)
             actionCombo->setToolTip(QStringLiteral("The connected Host has not granted Inventory write capabilities."));
 
         // Future actions can be added here:
@@ -1152,6 +1153,12 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                         dialog.exec();
                         m_activeHistoryDialog = nullptr;
                         m_activeHistoryInventoryRecordId = 0;
+                    } else if (action == "find-sets") {
+                        if (rebrickableColorId >= 0)
+                            emit findSetsUsingPartRequested({partNumber, rebrickableColorId, 1});
+                        else
+                            QMessageBox::information(this, QStringLiteral("What Can I Build"),
+                                QStringLiteral("This Inventory Color cannot be mapped to a local Rebrickable Color. Update local Rebrickable catalog data and try again."));
                     }
 
                     // Return the action control

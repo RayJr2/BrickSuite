@@ -50,6 +50,7 @@ class QShowEvent;
 class QDialog;
 class QTabWidget;
 class WhatCanIBuildWidget;
+struct WhatCanIBuildPartSelection;
 
 class BuildsWidget : public QWidget
 {
@@ -80,6 +81,8 @@ public:
     void refreshOpenLocalPulling(const std::optional<int>& buildId = std::nullopt);
     void invalidatePartUsageDiscovery();
     void invalidateRemoteBuildability();
+    bool openWhatCanIBuildForPart(const WhatCanIBuildPartSelection& selection,
+                                 QString* statusMessage = nullptr);
 
 signals:
     void collectionItemRequested(int collectionItemId);

@@ -52,6 +52,7 @@ class ApplicationServices;
 class BrickSuiteNetworkManager;
 class RemoteReadApplicationServices;
 class RemoteRefreshCoordinator;
+struct WhatCanIBuildPartSelection;
 class DatabaseRestoreCoordinator;
 
 class MainWindow : public QMainWindow
@@ -88,6 +89,7 @@ private:
     QWidget* createWorkspaceTab();
     void initializeProviderStatuses();
     void ensureBrickLinkColorMappings();
+    void openWhatCanIBuildForPart(const WhatCanIBuildPartSelection& selection);
 
     WorkspaceContext& m_workspaceContext;
     SessionStorageSelectionService& m_sessionStorageSelectionService;

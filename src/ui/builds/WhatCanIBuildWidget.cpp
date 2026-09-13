@@ -141,6 +141,53 @@ WhatCanIBuildWidget::WhatCanIBuildWidget(WorkspaceContext& workspaceContext, QWi
 void WhatCanIBuildWidget::loadColors(){m_colorCombo->addItem(QStringLiteral("Any Color"),0);for(const auto&c:ColorRepository().getAll())m_colorCombo->addItem(c.name(),c.id());}
 void WhatCanIBuildWidget::loadThemes(){m_themeCombo->addItem(QStringLiteral("All Themes"),0);m_themeCombo->setItemData(0,0,Qt::UserRole+1);for(const auto&t:ThemeCatalogRepository().activeSetFilterHierarchy()){m_themeCombo->addItem(t.qualifiedName,t.id);m_themeCombo->setItemData(m_themeCombo->count()-1,t.externalId.toInt(),Qt::UserRole+1);}}
 
+bool WhatCanIBuildWidget::addPartSelection(const WhatCanIBuildPartSelection& selection,
+    QString* statusMessage)
+{
+    if (!selection.isValid()) {
+        if (statusMessage) *statusMessage = QStringLiteral("The selected Part identity is invalid.");
+        return false;
+    }
+    const auto resolved = PartResolver().resolve(selection.partNumber.trimmed());
+    if (!resolved.hasResolvedPart) {
+        if (statusMessage) *statusMessage = QStringLiteral("The local Parts Catalog does not contain a unique match for Part %1. Update local Rebrickable catalog data and try again.").arg(selection.partNumber);
+        return false;
+    }
+    int colorId = 0;
+    QString colorName = QStringLiteral("Any Color");
+    if (selection.rebrickableColorId) {
+        const auto color = ColorRepository().getByRebrickableId(*selection.rebrickableColorId);
+        if (!color) {
+            if (statusMessage) *statusMessage = QStringLiteral("The local Colors Catalog does not contain Rebrickable Color %1. Update local Rebrickable catalog data and try again.").arg(*selection.rebrickableColorId);
+            return false;
+        }
+        colorId = color->id();
+        colorName = color->name();
+    }
+    if (m_modeCombo->currentIndex() != 1) m_modeCombo->setCurrentIndex(1);
+    const Part& part = resolved.part;
+    auto found = std::find_if(m_criteria.begin(), m_criteria.end(), [&](const auto& value) {
+        return value.partId == part.id() && value.colorId == colorId;
+    });
+    if (found != m_criteria.end()) found->quantity += selection.quantity;
+    else {
+        if (m_criteria.size() >= 20) {
+            if (statusMessage) *statusMessage = QStringLiteral("What Can I Build already contains the maximum of 20 Part criteria.");
+            return false;
+        }
+        m_criteria.append({part.id(), part.partNumber(), part.name(), colorId,
+                           colorName, selection.quantity});
+    }
+    renderCriteria();
+    markStale();
+    updateControls();
+    m_searchButton->setFocus(Qt::OtherFocusReason);
+    if (statusMessage) *statusMessage = selection.rebrickableColorId
+        ? QStringLiteral("Added Part %1 in %2 to What Can I Build.").arg(part.partNumber(), colorName)
+        : QStringLiteral("Added Part %1 to What Can I Build.").arg(part.partNumber());
+    return true;
+}
+
 void WhatCanIBuildWidget::updateResolvedPartSelection()
 {
     m_resolvedPart.reset();

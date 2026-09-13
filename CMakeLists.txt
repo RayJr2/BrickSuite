@@ -48,6 +48,8 @@ qt_add_executable(BrickSuite
     src/app/WorkspaceContext.h
     src/app/WorkspaceContext.cpp
 
+    src/models/WhatCanIBuildPartSelection.h
+
     src/network/BrickSuiteProtocol.h
     src/network/BrickSuiteProtocol.cpp
     src/network/BrickSuiteAuthentication.h
@@ -1790,6 +1792,12 @@ if(BUILD_TESTING)
         BRICKSUITE_VERSION="${PROJECT_VERSION}" BRICKSUITE_TESTING=1)
     target_link_libraries(BricksetUsagePolicyTest PRIVATE Qt6::Core Qt6::Network)
     add_test(NAME BricksetUsagePolicy COMMAND BricksetUsagePolicyTest)
+
+    qt_add_executable(WhatCanIBuildLaunchSelectionTest EXCLUDE_FROM_ALL
+        tests/WhatCanIBuildLaunchSelectionTest.cpp
+        src/models/WhatCanIBuildPartSelection.h)
+    target_link_libraries(WhatCanIBuildLaunchSelectionTest PRIVATE Qt6::Core)
+    add_test(NAME WhatCanIBuildLaunchSelection COMMAND WhatCanIBuildLaunchSelectionTest)
 endif()
 
 if(WIN32)

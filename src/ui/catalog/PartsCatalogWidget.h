@@ -25,6 +25,7 @@
 #include <QWidget>
 
 #include "../../api/rebrickable/RebrickableService.h"
+#include "../../models/WhatCanIBuildPartSelection.h"
 
 class QComboBox;
 class QLineEdit;
@@ -57,6 +58,7 @@ private slots:
 signals:
     void addPartToInventoryRequested(int partId);
     void addPartToReferenceRequested(int partId);
+    void findSetsUsingPartRequested(const WhatCanIBuildPartSelection& selection);
 
 private:
     void loadCategories();

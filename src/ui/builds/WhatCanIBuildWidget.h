@@ -3,6 +3,7 @@
 #include "../../models/PartUsageDiscovery.h"
 #include "../../models/InventoryBuildability.h"
 #include "../../models/Part.h"
+#include "../../models/WhatCanIBuildPartSelection.h"
 #include "../../services/application/dto/RemoteBuildabilityDtos.h"
 #include <QWidget>
 #include <optional>
@@ -32,6 +33,8 @@ public:
     void invalidateCatalog();
     void invalidateOperationalData();
     void setRemoteSessionConnected(bool connected);
+    bool addPartSelection(const WhatCanIBuildPartSelection& selection,
+                          QString* statusMessage = nullptr);
 
 signals:
     void createBuildRequested(int setCatalogId, const QString& inventoryMode);

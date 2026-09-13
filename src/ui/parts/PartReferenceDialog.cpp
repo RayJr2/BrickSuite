@@ -274,10 +274,12 @@ void PartReferenceDialog::initializeUi()
 
     m_copyButton = new QPushButton(tr("Copy Part #"), this);
     m_sendButton = new QPushButton(tr("Send to Add Inventory"), this);
+    m_findSetsButton = new QPushButton(tr("Find Sets Using This Part"), this);
     m_addReferenceButton = new QPushButton(tr("Add Part to Reference..."), this);
     m_removeReferenceButton = new QPushButton(tr("Remove from Part Reference"), this);
     m_copyButton->setEnabled(false);
     m_sendButton->setEnabled(false);
+    m_findSetsButton->setEnabled(false);
     m_removeReferenceButton->setEnabled(false);
     if (m_remoteReads) {
         m_addReferenceButton->setEnabled(m_remoteMutations && m_remoteMutations->isAvailableFor(
@@ -290,6 +292,7 @@ void PartReferenceDialog::initializeUi()
     selectedRow->addWidget(m_selectedLabel, 1);
     selectedRow->addWidget(m_copyButton);
     selectedRow->addWidget(m_sendButton);
+    selectedRow->addWidget(m_findSetsButton);
     selectedRow->addWidget(m_addReferenceButton);
     selectedRow->addWidget(m_removeReferenceButton);
     mainLayout->addLayout(selectedRow);
@@ -319,6 +322,7 @@ void PartReferenceDialog::initializeUi()
 
     connect(m_copyButton, &QPushButton::clicked, this, &PartReferenceDialog::copySelectedPart);
     connect(m_sendButton, &QPushButton::clicked, this, &PartReferenceDialog::sendSelectedPartToInventory);
+    connect(m_findSetsButton, &QPushButton::clicked, this, &PartReferenceDialog::findSetsUsingSelectedPart);
     connect(m_addReferenceButton, &QPushButton::clicked, this, &PartReferenceDialog::addPartToReference);
     connect(m_removeReferenceButton, &QPushButton::clicked, this, &PartReferenceDialog::removeSelectedCustomization);
 }
@@ -854,6 +858,7 @@ QToolButton* PartReferenceDialog::createPartCard(QWidget* parent, const PartRefe
                 QAction* copyAction = menu.addAction(tr("Copy Part #"));
                 QAction* sendAction = menu.addAction(tr("Send to Add Inventory"));
                 sendAction->setEnabled(m_sendButton && m_sendButton->isEnabled());
+                QAction* findSetsAction = menu.addAction(tr("Find Sets Using This Part"));
                 QAction* addAction = menu.addAction(tr("Add Part to Reference..."));
                 addAction->setEnabled(!m_remoteReads || (m_remoteMutations && m_remoteMutations->isAvailableFor(QStringLiteral("partReference.customizations.add"))));
                 QAction* removeAction = menu.addAction(tr("Remove from Part Reference"));
@@ -865,6 +870,8 @@ QToolButton* PartReferenceDialog::createPartCard(QWidget* parent, const PartRefe
                     copySelectedPart();
                 else if (chosen == sendAction)
                     sendSelectedPartToInventory();
+                else if (chosen == findSetsAction)
+                    findSetsUsingSelectedPart();
                 else if (chosen == addAction)
                     addPartToReference();
                 else if (chosen == removeAction)
@@ -949,6 +956,7 @@ void PartReferenceDialog::selectPart(const QString& partNumber, const QString& p
 
     m_copyButton->setEnabled(!m_selectedPartNumber.isEmpty());
     m_sendButton->setEnabled(m_addInventoryAvailable && !m_selectedPartNumber.isEmpty());
+    m_findSetsButton->setEnabled(!m_selectedPartNumber.isEmpty());
     const PartReferenceEntry* selected = findEffectiveEntry(m_selectedPartNumber);
     m_selectedUserEntryId = selected ? selected->userEntryId : 0;
     if (m_removeReferenceButton)
@@ -1001,6 +1009,12 @@ void PartReferenceDialog::sendSelectedPartToInventory()
         return;
 
     emit sendToAddInventoryRequested(m_selectedPartNumber);
+}
+
+void PartReferenceDialog::findSetsUsingSelectedPart()
+{
+    if (!m_selectedPartNumber.isEmpty())
+        emit findSetsUsingPartRequested({m_selectedPartNumber, std::nullopt, 1});
 }
 
 const PartReferenceEntry* PartReferenceDialog::findEffectiveEntry(const QString& partNumber) const

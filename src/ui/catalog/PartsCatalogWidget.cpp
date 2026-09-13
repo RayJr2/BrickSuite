@@ -451,13 +451,14 @@ void PartsCatalogWidget::searchParts(const QString& loadingMessage)
 
         actionCombo->addItem("Add to Inventory", "add");
         actionCombo->addItem("Add to Part Reference...", "reference");
+        actionCombo->addItem("Find Sets Using This Part", "find-sets");
 
         const int partId = part.id();
 
         connect(actionCombo,
                 &QComboBox::currentIndexChanged,
                 this,
-                [this, actionCombo, partId](int index) {
+                [this, actionCombo, partId, partNumber](int index) {
                     if (index <= 0)
                         return;
 
@@ -471,6 +472,8 @@ void PartsCatalogWidget::searchParts(const QString& loadingMessage)
                         emit addPartToInventoryRequested(partId);
                     } else if (action == "reference") {
                         emit addPartToReferenceRequested(partId);
+                    } else if (action == "find-sets") {
+                        emit findSetsUsingPartRequested({partNumber, std::nullopt, 1});
                     }
 
                     // Return to neutral state.

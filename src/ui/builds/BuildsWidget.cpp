@@ -196,6 +196,15 @@ void BuildsWidget::invalidateRemoteBuildability()
         m_whatCanIBuildWidget->invalidateOperationalData();
 }
 
+bool BuildsWidget::openWhatCanIBuildForPart(const WhatCanIBuildPartSelection& selection,
+    QString* statusMessage)
+{
+    if (!m_whatCanIBuildWidget) return false;
+    if (!m_whatCanIBuildWidget->addPartSelection(selection, statusMessage)) return false;
+    m_buildTabs->setCurrentWidget(m_whatCanIBuildWidget);
+    return true;
+}
+
 BuildsWidget::BuildsWidget(
     WorkspaceContext& workspaceContext,
     SessionStorageSelectionService& sessionStorageSelectionService,

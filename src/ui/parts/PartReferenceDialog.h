@@ -9,6 +9,7 @@
 #pragma once
 
 #include "../../models/PartReferenceEntry.h"
+#include "../../models/WhatCanIBuildPartSelection.h"
 #include "../../services/parts/PartReferenceManifest.h"
 #include "../../services/application/dto/RemotePartReferenceMutationDtos.h"
 
@@ -55,6 +56,7 @@ public:
 
 signals:
     void sendToAddInventoryRequested(const QString& partNumber);
+    void findSetsUsingPartRequested(const WhatCanIBuildPartSelection& selection);
     void remoteCustomizationsRefreshFinished(bool succeeded);
     void hostCustomizationMutationCommitted(const QString& partNumber);
 
@@ -122,6 +124,7 @@ private:
     void setPartCardsSelected(const QString& partNumber, bool selected);
     void copySelectedPart();
     void sendSelectedPartToInventory();
+    void findSetsUsingSelectedPart();
     void addPartToReference();
     void removeSelectedCustomization();
     const PartReferenceEntry* findEffectiveEntry(const QString& partNumber) const;
@@ -141,6 +144,7 @@ private:
     QLabel* m_selectedLabel = nullptr;
     QPushButton* m_copyButton = nullptr;
     QPushButton* m_sendButton = nullptr;
+    QPushButton* m_findSetsButton = nullptr;
     QPushButton* m_addReferenceButton = nullptr;
     QPushButton* m_removeReferenceButton = nullptr;
 

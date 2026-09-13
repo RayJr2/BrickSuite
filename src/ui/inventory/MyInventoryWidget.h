@@ -29,6 +29,7 @@
 #include <optional>
 #include "../../services/application/dto/RemoteReadDtos.h"
 #include "../../services/application/AsyncReadResult.h"
+#include "../../models/WhatCanIBuildPartSelection.h"
 
 class WorkspaceContext;
 class SessionStorageSelectionService;
@@ -90,6 +91,7 @@ signals:
     void remoteInventoryRefreshFinished(bool succeeded);
     void remoteLocationsRefreshFinished(bool succeeded);
     void remoteHistoryRefreshFinished(bool succeeded);
+    void findSetsUsingPartRequested(const WhatCanIBuildPartSelection& selection);
 
 protected:
     void showEvent(QShowEvent* event) override;
