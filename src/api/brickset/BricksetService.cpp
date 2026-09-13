@@ -4,6 +4,7 @@
  * Copyright (C) 2026 RF StateSide, LLC
  */
 #include "BricksetService.h"
+#include "BricksetUsagePolicy.h"
 
 #include "../ApiNetworkService.h"
 #include "../ApiProvider.h"
@@ -18,6 +19,7 @@
 #include <QNetworkRequest>
 #include <QUrl>
 #include <QUrlQuery>
+#include <limits>
 
 namespace {
 QByteArray brickSuiteUserAgent()
@@ -25,12 +27,6 @@ QByteArray brickSuiteUserAgent()
     return QStringLiteral("BrickSuite/%1").arg(AppVersion::version()).toUtf8();
 }
 }
-
-int BricksetService::s_sessionGetSetsCallCount = 0;
-bool BricksetService::s_keyUsageKnown = false;
-QString BricksetService::s_keyUsageDate;
-int BricksetService::s_authoritativeTodayGetSetsCount = 0;
-int BricksetService::s_sessionGetSetsCountAtUsageRefresh = 0;
 
 BricksetService::BricksetService(QObject* parent)
     : QObject(parent)
@@ -181,8 +177,6 @@ void BricksetService::getSetDetails(const QString& fullSetNumber,
     context.provider = ApiProvider::Brickset;
     context.operation = QStringLiteral("GetSetDetails");
 
-    ++s_sessionGetSetsCallCount;
-
     QNetworkReply* reply = m_networkService->post(request, body, context);
 
     connect(reply, &QNetworkReply::finished, this,
@@ -226,11 +220,13 @@ void BricksetService::handleSetDetailsReply(QNetworkReply* reply,
     if (reply->error() != QNetworkReply::NoError) {
         if (!providerMessage.isEmpty()) {
             result.message = providerMessage;
-            result.error.type =
-                providerMessage.contains(QStringLiteral("Invalid API key"),
-                                         Qt::CaseInsensitive)
-                    ? ApiErrorType::Authentication
-                    : ApiErrorType::Provider;
+            if (providerMessage.contains(QStringLiteral("Invalid API key"), Qt::CaseInsensitive))
+                result.error.type = ApiErrorType::Authentication;
+            else if (providerMessage.contains(QStringLiteral("API limit exceeded"), Qt::CaseInsensitive)
+                     || result.httpStatusCode == 429)
+                result.error.type = ApiErrorType::RateLimit;
+            else
+                result.error.type = ApiErrorType::Provider;
             result.error.providerMessage = providerMessage;
         } else {
             QString bodyHint = QString::fromUtf8(responseData).trimmed();
@@ -252,6 +248,9 @@ void BricksetService::handleSetDetailsReply(QNetworkReply* reply,
         }
 
         result.error.message = result.message;
+
+        if (result.error.type == ApiErrorType::RateLimit)
+            BricksetUsagePolicy::instance().noteQuotaResponse();
 
         reply->deleteLater();
         emit setDetailsFinished(result);
@@ -284,6 +283,9 @@ void BricksetService::handleSetDetailsReply(QNetworkReply* reply,
         }
         result.error.message = result.message;
         result.error.providerMessage = providerMessage;
+
+        if (result.error.type == ApiErrorType::RateLimit)
+            BricksetUsagePolicy::instance().noteQuotaResponse();
 
         reply->deleteLater();
         emit setDetailsFinished(result);
@@ -378,7 +380,7 @@ void BricksetService::handleSetDetailsReply(QNetworkReply* reply,
 
 int BricksetService::sessionGetSetsCallCount()
 {
-    return s_sessionGetSetsCallCount;
+    return BricksetUsagePolicy::instance().sessionCallCount();
 }
 
 void BricksetService::getKeyUsageStats(const QString& apiKey)
@@ -408,13 +410,16 @@ void BricksetService::getKeyUsageStats(const QString& apiKey)
     context.operation = QStringLiteral("GetKeyUsageStats");
 
     QNetworkReply* reply = m_networkService->get(request, context);
+    const quint64 credentialGeneration =
+        BricksetUsagePolicy::instance().credentialGeneration();
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        handleKeyUsageStatsReply(reply);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, credentialGeneration]() {
+        handleKeyUsageStatsReply(reply, credentialGeneration);
     });
 }
 
-void BricksetService::handleKeyUsageStatsReply(QNetworkReply* reply)
+void BricksetService::handleKeyUsageStatsReply(
+    QNetworkReply* reply, quint64 credentialGeneration)
 {
     KeyUsageResult result;
 
@@ -435,107 +440,102 @@ void BricksetService::handleKeyUsageStatsReply(QNetworkReply* reply)
         result.error.type = ApiErrorType::Network;
         result.error.message = result.message;
 
+        BricksetUsagePolicy::instance().completeRefresh(
+            credentialGeneration, false, 0, {});
         reply->deleteLater();
         emit keyUsageStatsFinished(result);
         return;
     }
 
-    const QJsonDocument document = QJsonDocument::fromJson(responseData);
-
-    if (!document.isObject()) {
-        result.message = QStringLiteral("Brickset returned an unexpected usage response.");
-        result.error.type = ApiErrorType::InvalidResponse;
-        result.error.message = result.message;
-
-        reply->deleteLater();
-        emit keyUsageStatsFinished(result);
-        return;
-    }
-
-    const QJsonObject root = document.object();
-    const QString status = root.value(QStringLiteral("status")).toString();
-    const QString providerMessage = root.value(QStringLiteral("message")).toString();
-
-    if (status.compare(QStringLiteral("success"), Qt::CaseInsensitive) != 0) {
-        result.message = providerMessage.isEmpty()
-                             ? QStringLiteral("Brickset returned a provider error.")
-                             : providerMessage;
-        result.error.type =
-            providerMessage.contains(QStringLiteral("Invalid API key"), Qt::CaseInsensitive)
-                ? ApiErrorType::Authentication
-                : ApiErrorType::Provider;
-        result.error.message = result.message;
-        result.error.providerMessage = providerMessage;
-
-        reply->deleteLater();
-        emit keyUsageStatsFinished(result);
-        return;
-    }
-
-    result.matches = root.value(QStringLiteral("matches")).toInt();
-
-    const QString today = QDateTime::currentDateTimeUtc().date().toString(Qt::ISODate);
-    const QJsonArray usage = root.value(QStringLiteral("apiKeyUsage")).toArray();
-
-    for (const QJsonValue& value : usage) {
-        if (!value.isObject())
-            continue;
-
-        const QJsonObject object = value.toObject();
-
-        KeyUsageEntry entry;
-        entry.dateStamp = object.value(QStringLiteral("dateStamp")).toString();
-        entry.count = object.value(QStringLiteral("count")).toInt();
-
-        result.entries.append(entry);
-
-        if (entry.dateStamp.startsWith(today))
-            result.todayCount = entry.count;
-    }
-
-    result.success = true;
-
-    s_keyUsageKnown = true;
-    s_keyUsageDate = today;
-    s_authoritativeTodayGetSetsCount = result.todayCount;
-    s_sessionGetSetsCountAtUsageRefresh = s_sessionGetSetsCallCount;
-
-    result.message =
-        QStringLiteral("Brickset key usage statistics retrieved. Today's getSets count: %1.")
-            .arg(result.todayCount);
+    result = parseKeyUsageResponse(responseData, QDateTime::currentDateTimeUtc().date());
+    result.httpStatusCode = statusAttribute.isValid() ? statusAttribute.toInt() : 0;
+    result.error.httpStatusCode = result.httpStatusCode;
+    BricksetUsagePolicy::instance().completeRefresh(
+        credentialGeneration, result.success, result.todayCount,
+        QDateTime::currentDateTimeUtc().date());
 
     reply->deleteLater();
     emit keyUsageStatsFinished(result);
 }
 
+BricksetService::KeyUsageResult BricksetService::parseKeyUsageResponse(
+    const QByteArray& data, const QDate& currentDateUtc)
+{
+    KeyUsageResult result;
+    const QJsonDocument document = QJsonDocument::fromJson(data);
+    if (!document.isObject()) {
+        result.message = QStringLiteral("Brickset returned an unexpected usage response.");
+        result.error.type = ApiErrorType::InvalidResponse;
+        result.error.message = result.message;
+        return result;
+    }
+    const QJsonObject root = document.object();
+    const QString status = root.value(QStringLiteral("status")).toString();
+    const QString providerMessage = root.value(QStringLiteral("message")).toString();
+    if (status.compare(QStringLiteral("success"), Qt::CaseInsensitive) != 0) {
+        result.message = providerMessage.isEmpty()
+            ? QStringLiteral("Brickset returned a provider error.") : providerMessage;
+        result.error.type = providerMessage.contains(QStringLiteral("Invalid API key"), Qt::CaseInsensitive)
+            ? ApiErrorType::Authentication : ApiErrorType::Provider;
+        result.error.message = result.message;
+        result.error.providerMessage = providerMessage;
+        return result;
+    }
+    if (!root.value(QStringLiteral("matches")).isDouble()
+        || !root.value(QStringLiteral("apiKeyUsage")).isArray()) {
+        result.message = QStringLiteral("Brickset returned an unexpected usage response.");
+        result.error.type = ApiErrorType::InvalidResponse;
+        result.error.message = result.message;
+        return result;
+    }
+    result.matches = root.value(QStringLiteral("matches")).toInt();
+    const QString today = currentDateUtc.toString(Qt::ISODate);
+    for (const QJsonValue& value : root.value(QStringLiteral("apiKeyUsage")).toArray()) {
+        if (!value.isObject()) {
+            result.message = QStringLiteral("Brickset returned a malformed usage entry.");
+            result.error.type = ApiErrorType::InvalidResponse;
+            result.error.message = result.message;
+            return result;
+        }
+        const QJsonObject object = value.toObject();
+        if (!object.value(QStringLiteral("dateStamp")).isString()
+            || !object.value(QStringLiteral("count")).isDouble()
+            || object.value(QStringLiteral("count")).toInt(-1) < 0) {
+            result.message = QStringLiteral("Brickset returned a malformed usage entry.");
+            result.error.type = ApiErrorType::InvalidResponse;
+            result.error.message = result.message;
+            return result;
+        }
+        KeyUsageEntry entry{object.value(QStringLiteral("dateStamp")).toString(),
+                            object.value(QStringLiteral("count")).toInt()};
+        result.entries.append(entry);
+        if (entry.dateStamp.startsWith(today)) result.todayCount = entry.count;
+    }
+    result.success = true;
+    result.message = QStringLiteral("Brickset key usage statistics retrieved. Today's getSets count: %1.")
+        .arg(result.todayCount);
+    return result;
+}
+
 bool BricksetService::keyUsageKnown()
 {
-    return s_keyUsageKnown
-           && s_keyUsageDate == QDateTime::currentDateTimeUtc().date().toString(Qt::ISODate);
+    return BricksetUsagePolicy::instance().state(std::numeric_limits<int>::max()).snapshotAvailable;
 }
 
 int BricksetService::authoritativeTodayGetSetsCount()
 {
-    return keyUsageKnown() ? s_authoritativeTodayGetSetsCount : -1;
+    const auto state = BricksetUsagePolicy::instance().state(std::numeric_limits<int>::max());
+    return state.snapshotAvailable ? state.authoritativeCount : -1;
 }
 
 int BricksetService::effectiveTodayGetSetsCount()
 {
-    if (!keyUsageKnown())
-        return -1;
-
-    const int callsSinceRefresh =
-        qMax(0, s_sessionGetSetsCallCount - s_sessionGetSetsCountAtUsageRefresh);
-
-    return s_authoritativeTodayGetSetsCount + callsSinceRefresh;
+    return BricksetUsagePolicy::instance().state(std::numeric_limits<int>::max()).effectiveCount;
 }
 
 void BricksetService::invalidateKeyUsageCache()
 {
-    s_keyUsageKnown = false;
-    s_keyUsageDate.clear();
-    s_authoritativeTodayGetSetsCount = 0;
-    s_sessionGetSetsCountAtUsageRefresh = s_sessionGetSetsCallCount;
+    BricksetUsagePolicy::instance().invalidateForCredentialChange();
 }
 
 void BricksetService::getInstructions2(const QString& setNumber,

@@ -34,6 +34,7 @@
 #include "../../network/BrickSuitePairingService.h"
 #include "../../network/PairedDeviceAdministrationService.h"
 #include "../../api/brickset/BricksetService.h"
+#include "../../api/brickset/BricksetUsagePolicy.h"
 #include "../../api/ApiProviderStatusRegistry.h"
 #include "../../settings/ThemeManager.h"
 #include "../../settings/UserSettings.h"
@@ -53,6 +54,7 @@
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QInputDialog>
+#include <QLocale>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
@@ -116,6 +118,9 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
 
     m_rebrickableApiClient = new RebrickableApiClient(this);
     m_bricksetService = new BricksetService(this);
+    connect(&BricksetUsagePolicy::instance(), &BricksetUsagePolicy::stateChanged,
+            this, &SettingsDialog::updateBricksetUsagePresentation,
+            Qt::QueuedConnection);
 
     connect(&m_networkManager, &BrickSuiteNetworkManager::statusChanged,
             this, &SettingsDialog::updateNetworkPresentation);
@@ -268,8 +273,10 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
                     settings.setBricksetConnectionPreviouslyVerified(true);
 
                     const QString apiKey = m_bricksetApiKeyEdit->text().trimmed();
-                    if (!apiKey.isEmpty())
-                        m_bricksetService->getKeyUsageStats(apiKey);
+                    if (!apiKey.isEmpty()) {
+                        BricksetUsagePolicy::instance().requestRefresh(
+                            {}, [this, apiKey] { m_bricksetService->getKeyUsageStats(apiKey); }, true);
+                    }
                 } else {
                     settings.setBricksetConnectionPreviouslyVerified(false);
 
@@ -292,16 +299,8 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
             &BricksetService::keyUsageStatsFinished,
             this,
             [this](const BricksetService::KeyUsageResult& result) {
-                if (!m_bricksetUsageLabel)
-                    return;
-
-                if (result.success) {
-                    m_bricksetUsageLabel->setText(
-                        QString("%1 calls today").arg(
-                            BricksetService::effectiveTodayGetSetsCount()));
-                } else {
-                    m_bricksetUsageLabel->setText("Unavailable");
-                }
+                Q_UNUSED(result);
+                updateBricksetUsagePresentation();
             });
 
     loadWorkspaces();
@@ -376,16 +375,11 @@ void SettingsDialog::loadSettings()
     }
 
     m_originalBricksetApiKey = settings.bricksetApiKey();
+    m_lastBricksetUsageKeyText = m_originalBricksetApiKey.trimmed();
     m_bricksetApiKeyEdit->setText(m_originalBricksetApiKey);
     m_bricksetDailyThresholdSpin->setValue(settings.bricksetDailyGetSetsThreshold());
 
-    if (BricksetService::keyUsageKnown()) {
-        m_bricksetUsageLabel->setText(
-            QString("%1 calls today").arg(
-                BricksetService::effectiveTodayGetSetsCount()));
-    } else {
-        m_bricksetUsageLabel->setText("Not checked");
-    }
+    updateBricksetUsagePresentation();
 
     if (m_originalBricksetApiKey.trimmed().isEmpty()) {
         setBricksetConnectionStatus(ApiConnectionStatus::NotConfigured);
@@ -725,6 +719,10 @@ void SettingsDialog::backupNow()
 void SettingsDialog::cancelSettings()
 {
     m_networkManager.client()->cancelPairing();
+    if (m_bricksetApiKeyEdit
+        && m_bricksetApiKeyEdit->text().trimmed() != m_originalBricksetApiKey.trimmed()) {
+        BricksetService::invalidateKeyUsageCache();
+    }
     const auto originalTheme = static_cast<UserSettings::Theme>(m_originalThemeValue);
 
     if (QApplication* application = qobject_cast<QApplication*>(QApplication::instance())) {
@@ -1487,6 +1485,10 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
         new QLabel(apiConnectionStatusText(ApiConnectionStatus::NotConfigured), apiGroup);
 
     m_bricksetUsageLabel = new QLabel("Not checked", apiGroup);
+    m_bricksetProviderUsageLabel = new QLabel("Not available", apiGroup);
+    m_bricksetUsageStatusLabel = new QLabel("Usage unavailable", apiGroup);
+    m_bricksetCallsRemainingLabel = new QLabel("Not available", apiGroup);
+    m_bricksetUsageRefreshLabel = new QLabel("Never", apiGroup);
 
     m_bricksetDailyThresholdSpin = new QSpinBox(apiGroup);
     m_bricksetDailyThresholdSpin->setRange(
@@ -1507,10 +1509,11 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
                                         ? ApiConnectionStatus::NotConfigured
                                         : ApiConnectionStatus::Unknown);
 
-        if (text.trimmed() != m_originalBricksetApiKey.trimmed()) {
+        const QString trimmed = text.trimmed();
+        if (trimmed != m_lastBricksetUsageKeyText) {
             BricksetService::invalidateKeyUsageCache();
-            if (m_bricksetUsageLabel)
-                m_bricksetUsageLabel->setText("Not checked");
+            m_lastBricksetUsageKeyText = trimmed;
+            updateBricksetUsagePresentation();
         }
     });
 
@@ -1526,6 +1529,9 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
 
     m_testBricksetConnectionButton = new QPushButton("Test Connection", apiGroup);
 
+    connect(m_bricksetDailyThresholdSpin, qOverload<int>(&QSpinBox::valueChanged),
+            this, [this](int) { updateBricksetUsagePresentation(); });
+
     connect(m_testBricksetConnectionButton,
             &QPushButton::clicked,
             this,
@@ -1534,8 +1540,12 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
     apiLayout->addRow("API Key:", m_bricksetApiKeyEdit);
     apiLayout->addRow(QString(), m_showBricksetApiKeyCheck);
     apiLayout->addRow("Connection Status:", m_bricksetStatusLabel);
-    apiLayout->addRow("Today's getSets Usage:", m_bricksetUsageLabel);
     apiLayout->addRow("Daily getSets Threshold:", m_bricksetDailyThresholdSpin);
+    apiLayout->addRow("Usage Status:", m_bricksetUsageStatusLabel);
+    apiLayout->addRow("Provider-Reported getSets Usage:", m_bricksetProviderUsageLabel);
+    apiLayout->addRow("Today's Effective getSets Usage:", m_bricksetUsageLabel);
+    apiLayout->addRow("Calls Remaining Before Threshold:", m_bricksetCallsRemainingLabel);
+    apiLayout->addRow("Last Successful Usage Refresh:", m_bricksetUsageRefreshLabel);
     apiLayout->addRow(QString(), m_testBricksetConnectionButton);
 
     auto* noteLabel = new QLabel(
@@ -1556,7 +1566,32 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
             this,
             &SettingsDialog::showBricksetApiKeyToggled);
 
+    updateBricksetUsagePresentation();
+
     return page;
+}
+
+void SettingsDialog::updateBricksetUsagePresentation()
+{
+    if (!m_bricksetUsageLabel || !m_bricksetDailyThresholdSpin) return;
+    const auto state = BricksetUsagePolicy::instance().state(m_bricksetDailyThresholdSpin->value());
+    QString status;
+    switch (state.status) {
+    case BricksetUsagePolicy::Status::Available: status = tr("Available"); break;
+    case BricksetUsagePolicy::Status::Refreshing: status = tr("Refreshing"); break;
+    case BricksetUsagePolicy::Status::ThresholdReached: status = tr("Threshold reached"); break;
+    case BricksetUsagePolicy::Status::Unavailable: status = tr("Usage unavailable"); break;
+    }
+    m_bricksetUsageStatusLabel->setText(status);
+    m_bricksetProviderUsageLabel->setText(state.snapshotAvailable
+        ? tr("%1 calls today").arg(state.authoritativeCount) : tr("Not available"));
+    m_bricksetUsageLabel->setText(state.effectiveCount >= 0
+        ? tr("%1 calls today").arg(state.effectiveCount) : tr("Not available"));
+    m_bricksetCallsRemainingLabel->setText(state.effectiveCount >= 0
+        ? QString::number(state.safeCallsRemaining) : tr("Not available"));
+    m_bricksetUsageRefreshLabel->setText(state.lastSuccessfulRefreshUtc.isValid()
+        ? QLocale().toString(state.lastSuccessfulRefreshUtc.toLocalTime(), QLocale::ShortFormat)
+        : tr("Never"));
 }
 
 void SettingsDialog::showApiKeyToggled(bool checked)

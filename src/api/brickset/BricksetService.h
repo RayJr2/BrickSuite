@@ -10,6 +10,7 @@
 #include <QObject>
 #include <QString>
 #include <QList>
+#include <QDate>
 
 class ApiNetworkService;
 class QNetworkReply;
@@ -128,6 +129,9 @@ public:
 
     void getKeyUsageStats(const QString& apiKey);
 
+    static KeyUsageResult parseKeyUsageResponse(const QByteArray& data,
+                                                const QDate& currentDateUtc);
+
     void getInstructions2(const QString& setNumber,
                           const QString& apiKey);
 
@@ -153,18 +157,13 @@ private:
     void handleSetDetailsReply(QNetworkReply* reply,
                                const QString& requestedSetNumber);
 
-    void handleKeyUsageStatsReply(QNetworkReply* reply);
+    void handleKeyUsageStatsReply(QNetworkReply* reply, quint64 credentialGeneration);
 
     void handleInstructionsReply(QNetworkReply* reply,
                                  const QString& setNumber);
 
     ApiNetworkService* m_networkService = nullptr;
 
-    static int s_sessionGetSetsCallCount;
-    static bool s_keyUsageKnown;
-    static QString s_keyUsageDate;
-    static int s_authoritativeTodayGetSetsCount;
-    static int s_sessionGetSetsCountAtUsageRefresh;
 };
 
 Q_DECLARE_METATYPE(BricksetService::ConnectionResult)
@@ -176,4 +175,3 @@ Q_DECLARE_METATYPE(BricksetService::KeyUsageResult)
 
 Q_DECLARE_METATYPE(BricksetService::Instruction)
 Q_DECLARE_METATYPE(BricksetService::InstructionsResult)
-

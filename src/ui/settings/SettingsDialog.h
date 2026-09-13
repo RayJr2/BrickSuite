@@ -99,6 +99,7 @@ private:
 
     void setBricksetConnectionStatus(ApiConnectionStatus status);
     void startBricksetConnectionTest(const QString& apiKey);
+    void updateBricksetUsagePresentation();
 
     void loadSettings();
     void loadWorkspaces();
@@ -139,11 +140,16 @@ private:
     QLineEdit* m_bricksetApiKeyEdit = nullptr;
     QLabel* m_bricksetStatusLabel = nullptr;
     QLabel* m_bricksetUsageLabel = nullptr;
+    QLabel* m_bricksetProviderUsageLabel = nullptr;
+    QLabel* m_bricksetUsageStatusLabel = nullptr;
+    QLabel* m_bricksetCallsRemainingLabel = nullptr;
+    QLabel* m_bricksetUsageRefreshLabel = nullptr;
     QCheckBox* m_showBricksetApiKeyCheck = nullptr;
     QPushButton* m_testBricksetConnectionButton = nullptr;
     QSpinBox* m_bricksetDailyThresholdSpin = nullptr;
     ApiConnectionStatus m_bricksetConnectionStatus = ApiConnectionStatus::NotConfigured;
     QString m_originalBricksetApiKey;
+    QString m_lastBricksetUsageKeyText;
 
     BricksetService* m_bricksetService = nullptr;
 

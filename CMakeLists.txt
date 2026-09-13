@@ -373,6 +373,8 @@ qt_add_executable(BrickSuite
     src/api/rebrickable/RebrickableService.cpp
     src/api/brickset/BricksetService.h
     src/api/brickset/BricksetService.cpp
+    src/api/brickset/BricksetUsagePolicy.h
+    src/api/brickset/BricksetUsagePolicy.cpp
     src/services/RebrickableApiClient.h
     src/services/RebrickableApiClient.cpp
     src/services/images/PartImageService.cpp src/services/images/PartImageService.h
@@ -1735,6 +1737,16 @@ if(BUILD_TESTING)
         src/api/ApiProviderStatusRegistry.h src/api/ApiProviderStatusRegistry.cpp)
     target_link_libraries(RebrickableCoordinationPolicyTest PRIVATE Qt6::Core)
     add_test(NAME RebrickableCoordinationPolicy COMMAND RebrickableCoordinationPolicyTest)
+
+    qt_add_executable(BricksetUsagePolicyTest EXCLUDE_FROM_ALL
+        tests/BricksetUsagePolicyTest.cpp
+        src/api/brickset/BricksetUsagePolicy.h src/api/brickset/BricksetUsagePolicy.cpp
+        src/api/brickset/BricksetService.h src/api/brickset/BricksetService.cpp
+        src/api/ApiNetworkService.h src/api/ApiNetworkService.cpp)
+    target_compile_definitions(BricksetUsagePolicyTest PRIVATE
+        BRICKSUITE_VERSION="${PROJECT_VERSION}" BRICKSUITE_TESTING=1)
+    target_link_libraries(BricksetUsagePolicyTest PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME BricksetUsagePolicy COMMAND BricksetUsagePolicyTest)
 endif()
 
 if(WIN32)

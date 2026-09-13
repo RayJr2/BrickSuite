@@ -8,8 +8,10 @@
 #include "../../services/RebrickableApiClient.h"
 #include "../../settings/UserSettings.h"
 #include "../../api/ApiProviderStatusRegistry.h"
+#include "../../api/brickset/BricksetUsagePolicy.h"
 
 #include <QDebug>
+#include <QPointer>
 
 SetDetailsProviderService::SetDetailsProviderService(QObject* parent)
     : QObject(parent)
@@ -51,19 +53,6 @@ SetDetailsProviderService::SetDetailsProviderService(QObject* parent)
                 }
 
                 requestRebrickable(true, bricksetResult.message);
-            });
-
-    connect(m_bricksetService,
-            &BricksetService::keyUsageStatsFinished,
-            this,
-            [this](const BricksetService::KeyUsageResult& usageResult) {
-                if (!usageResult.success) {
-                    qWarning() << "Brickset key usage could not be refreshed; "
-                                  "continuing with normal provider selection."
-                               << "Message:" << usageResult.message;
-                }
-
-                requestPreferredProvider();
             });
 
     connect(m_rebrickableApiClient,
@@ -110,19 +99,6 @@ void SetDetailsProviderService::requestDetails(const QString& setNumber)
 
     m_usedFallback = false;
 
-    UserSettings& settings = UserSettings::instance();
-    const QString bricksetApiKey = settings.bricksetApiKey().trimmed();
-
-    const bool bricksetConnected =
-        ApiProviderStatusRegistry::instance().isConnected(ApiProvider::Brickset);
-
-    if (!bricksetApiKey.isEmpty()
-        && bricksetConnected
-        && !BricksetService::keyUsageKnown()) {
-        m_bricksetService->getKeyUsageStats(bricksetApiKey);
-        return;
-    }
-
     requestPreferredProvider();
 }
 
@@ -138,25 +114,26 @@ void SetDetailsProviderService::requestPreferredProvider()
     if (!bricksetApiKey.isEmpty()
         && providerStatus.isConnected(ApiProvider::Brickset)) {
         const int threshold = settings.bricksetDailyGetSetsThreshold();
-        const int effectiveUsage = BricksetService::effectiveTodayGetSetsCount();
-
-        if (effectiveUsage >= 0 && effectiveUsage >= threshold) {
-            const QString reason =
-                QStringLiteral("Brickset daily getSets threshold reached (%1 / %2).")
-                    .arg(effectiveUsage)
-                    .arg(threshold);
-
-            qInfo() << "Brickset Set Details enrichment skipped."
-                    << "Set:" << m_setNumber
-                    << "EffectiveUsage:" << effectiveUsage
-                    << "Threshold:" << threshold;
-
-            requestRebrickable(true, reason);
-            return;
-        }
-
-        m_bricksetAttempted = true;
-        m_bricksetService->getSetDetails(m_setNumber, bricksetApiKey);
+        QPointer<SetDetailsProviderService> self(this);
+        BricksetUsagePolicy::instance().requestAdmission(
+            threshold,
+            [self, bricksetApiKey, threshold](BricksetUsagePolicy::Decision decision) {
+                if (!self) return;
+                if (decision == BricksetUsagePolicy::Decision::Admitted) {
+                    self->m_bricksetAttempted = true;
+                    self->m_bricksetService->getSetDetails(self->m_setNumber, bricksetApiKey);
+                    return;
+                }
+                const auto usage = BricksetUsagePolicy::instance().state(threshold);
+                const QString reason = decision == BricksetUsagePolicy::Decision::ThresholdReached
+                    ? QStringLiteral("Brickset daily getSets threshold reached (%1 / %2).")
+                          .arg(usage.effectiveCount).arg(threshold)
+                    : QStringLiteral("Brickset getSets usage could not be verified safely.");
+                self->requestRebrickable(true, reason);
+            },
+            [self, bricksetApiKey]() {
+                if (self) self->m_bricksetService->getKeyUsageStats(bricksetApiKey);
+            });
         return;
     }
 

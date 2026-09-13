@@ -173,18 +173,23 @@ instead of making large numbers of repeated API requests. See
 <p>Enter your Brickset API key and choose <b>Test Connection</b>. When the test succeeds,
 <b>Connection Status</b> shows <b>Connected</b>.</p>
 
-<p>The Brickset page also displays <b>Today's Usage</b> and a configurable
-<b>Daily Request Threshold</b>. The threshold lets BrickSuite stop using Brickset for normal
-enrichment before reaching the provider's daily request allowance.</p>
+<p>The Brickset page displays the provider-reported usage for the current day, BrickSuite's
+effective usage, the configured <b>Daily getSets Threshold</b>, calls remaining before that
+threshold, usage status, and the last successful usage refresh. Effective usage includes local
+<code>getSets</code> calls made after the most recent provider report.</p>
 
 <p>When Brickset is connected and is within the configured threshold, supported Set Details
 workflows can use Brickset enrichment. This can provide additional information such as theme and
 subtheme data, availability, ratings, instruction information, additional-image counts, and a
 provider link.</p>
 
-<p>If Brickset is unavailable or the configured daily threshold has been reached, supported
-workflows can fall back to Rebrickable. BrickSuite identifies the active provider in the Set
-Details dialog so you can see which source supplied the information.</p>
+<p>If Brickset usage cannot be verified safely, or the configured daily threshold has been reached,
+BrickSuite conservatively avoids additional charged <code>getSets</code> calls. Supported workflows
+can fall back to Rebrickable. Instruction retrieval is independent of the <code>getSets</code>
+threshold.</p>
+
+<p>Brickset API keys and usage state remain local to each BrickSuite installation. They are not
+shared or coordinated through BrickSuite Host.</p>
 
 <p>See <a href="sets_catalog.html"><b>Sets Catalog</b></a> for the Set Details workflow.</p>
 
