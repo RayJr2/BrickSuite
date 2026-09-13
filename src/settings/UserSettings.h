@@ -122,6 +122,12 @@ public:
     void setWhatCanIBuildRowsPerPage(int value);
     bool whatCanIBuildRequireAllParts() const;
     void setWhatCanIBuildRequireAllParts(bool value);
+    int whatCanIBuildMinimumBuildability() const;
+    void setWhatCanIBuildMinimumBuildability(int value);
+    bool whatCanIBuildFullyBuildableFirst() const;
+    void setWhatCanIBuildFullyBuildableFirst(bool value);
+    int whatCanIBuildMinimumSetParts() const;
+    void setWhatCanIBuildMinimumSetParts(int value);
 
     static QString themeToString(Theme theme);
     static Theme themeFromString(const QString& value);

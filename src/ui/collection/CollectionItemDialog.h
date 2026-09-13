@@ -6,6 +6,7 @@ class QComboBox;
 class QLabel;
 class QLineEdit;
 class QTextEdit;
+class QCheckBox;
 
 class CollectionItemDialog : public QDialog
 {
@@ -19,7 +20,7 @@ signals:
 private:
     void save();
     int m_itemId = 0;
-    int m_allowPartsSource = 0;
+    QCheckBox* m_allowPartsSourceCheck = nullptr;
     QComboBox* m_stateCombo = nullptr;
     QComboBox* m_conditionCombo = nullptr;
     QComboBox* m_completenessCombo = nullptr;

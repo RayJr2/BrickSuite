@@ -57,3 +57,41 @@ QList<ThemeCatalogItem> ThemeCatalogRepository::activeFilterHierarchy() const
     }
     return themes;
 }
+
+QList<ThemeCatalogItem> ThemeCatalogRepository::activeSetFilterHierarchy() const
+{
+    QList<ThemeCatalogItem> themes;
+    QSqlQuery query(DatabaseManager::instance().database());
+    if (!query.exec(R"(
+        WITH RECURSIVE used(id) AS (
+            SELECT DISTINCT sc.theme_id FROM set_catalog sc
+             WHERE sc.theme_id > 0
+            UNION
+            SELECT tc.parent_theme_catalog_id
+              FROM theme_catalog tc JOIN used u ON u.id=tc.id
+             WHERE tc.parent_theme_catalog_id IS NOT NULL
+        ), tree(id,name,parent_id,depth,path,qualified_name) AS (
+            SELECT tc.id,tc.name,tc.parent_theme_catalog_id,0,
+                   printf('%08d',tc.id),tc.name
+              FROM theme_catalog tc
+             WHERE tc.parent_theme_catalog_id IS NULL AND tc.is_active=1 AND tc.id IN used
+            UNION ALL
+            SELECT tc.id,tc.name,tc.parent_theme_catalog_id,tree.depth+1,
+                   tree.path||'/'||printf('%08d',tc.id),
+                   tree.qualified_name||' → '||tc.name
+              FROM theme_catalog tc JOIN tree ON tc.parent_theme_catalog_id=tree.id
+             WHERE tc.is_active=1 AND tc.id IN used
+        )
+        SELECT id,name,COALESCE(parent_id,0),depth,qualified_name
+          FROM tree ORDER BY path
+    )")) {
+        qCritical() << "Unable to load Set Theme filter hierarchy:" << query.lastError().text();
+        return themes;
+    }
+    while(query.next()) {
+        ThemeCatalogItem item;item.id=query.value(0).toInt();item.name=query.value(1).toString();
+        item.parentThemeCatalogId=query.value(2).toInt();item.depth=query.value(3).toInt();
+        item.qualifiedName=query.value(4).toString();themes.append(item);
+    }
+    return themes;
+}

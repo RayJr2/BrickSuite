@@ -122,6 +122,9 @@ private:
     QSpinBox* m_whatCanIBuildMaximumResultsSpin = nullptr;
     QComboBox* m_whatCanIBuildRowsPerPageCombo = nullptr;
     QCheckBox* m_whatCanIBuildRequireAllCheck = nullptr;
+    QSpinBox* m_whatCanIBuildMinimumBuildabilitySpin = nullptr;
+    QCheckBox* m_whatCanIBuildFullyBuildableFirstCheck = nullptr;
+    QSpinBox* m_whatCanIBuildMinimumSetPartsSpin = nullptr;
 
     // Appearance
     QComboBox* m_themeCombo = nullptr;

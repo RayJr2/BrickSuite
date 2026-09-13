@@ -9,6 +9,7 @@
 #include "../../services/collection/CollectionItemService.h"
 
 #include <QComboBox>
+#include <QCheckBox>
 #include <QDateTime>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -56,7 +57,6 @@ CollectionItemDialog::CollectionItemDialog(int collectionItemId, QWidget* parent
     }
 
     const CollectionItem& item = result->item;
-    m_allowPartsSource = item.allowPartsSource;
     form->addRow("Type:", new QLabel(collectionItemTypeToString(item.type), this));
     form->addRow("Reference:", new QLabel(result->displayReference, this));
     form->addRow("Name:", new QLabel(result->displayName, this));
@@ -113,6 +113,12 @@ CollectionItemDialog::CollectionItemDialog(int collectionItemId, QWidget* parent
     form->addRow("State:", m_stateCombo);
     form->addRow("Condition:", m_conditionCombo);
     form->addRow("Completeness:", m_completenessCombo);
+    if (item.type == CollectionItemType::Set) {
+        m_allowPartsSourceCheck = new QCheckBox(QStringLiteral("Consider for What Can I Build"), this);
+        m_allowPartsSourceCheck->setChecked(item.allowPartsSource);
+        m_allowPartsSourceCheck->setToolTip(QStringLiteral("Use this complete Set as an advisory piece source. BrickSuite will not reserve or consume it."));
+        form->addRow("Buildability:", m_allowPartsSourceCheck);
+    }
     form->addRow("Collection Location:", m_locationCombo);
     form->addRow("Nickname:", m_nicknameEdit);
     form->addRow("Notes:", m_notesEdit);
@@ -134,7 +140,7 @@ void CollectionItemDialog::save()
         m_itemId,
         static_cast<CollectionItemState>(m_stateCombo->currentData().toInt()),
         m_locationCombo->currentData().toInt(), m_nicknameEdit->text(),
-        m_notesEdit->toPlainText(), m_allowPartsSource != 0,
+        m_notesEdit->toPlainText(), m_allowPartsSourceCheck && m_allowPartsSourceCheck->isChecked(),
         static_cast<CollectionItemCondition>(m_conditionCombo->currentData().toInt()),
         static_cast<CollectionItemCompleteness>(m_completenessCombo->currentData().toInt()));
     if (!result.success) {

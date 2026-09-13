@@ -8,4 +8,5 @@ class ThemeCatalogRepository
 {
 public:
     QList<ThemeCatalogItem> activeFilterHierarchy() const;
+    QList<ThemeCatalogItem> activeSetFilterHierarchy() const;
 };

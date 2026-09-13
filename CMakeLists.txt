@@ -409,6 +409,9 @@ qt_add_executable(BrickSuite
     src/models/PartUsageDiscovery.h
     src/repositories/PartUsageDiscoveryRepository.cpp src/repositories/PartUsageDiscoveryRepository.h
     src/services/builds/PartUsageDiscoveryService.cpp src/services/builds/PartUsageDiscoveryService.h
+    src/models/InventoryBuildability.h src/models/InventoryBuildability.cpp
+    src/repositories/InventoryBuildabilityRepository.h src/repositories/InventoryBuildabilityRepository.cpp
+    src/services/builds/InventoryBuildabilityService.h src/services/builds/InventoryBuildabilityService.cpp
     src/models/BuildRequirement.h
     src/models/BuildRequirement.cpp
     src/repositories/BuildRequirementRepository.h
@@ -654,6 +657,15 @@ if(BUILD_TESTING)
         src/services/builds/PartUsageDiscoveryService.cpp)
     target_link_libraries(PartUsageDiscoveryServiceTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME PartUsageDiscoveryService COMMAND PartUsageDiscoveryServiceTest)
+
+    qt_add_executable(InventoryBuildabilityTest EXCLUDE_FROM_ALL
+        tests/InventoryBuildabilityTest.cpp
+        src/models/InventoryBuildability.h src/models/InventoryBuildability.cpp
+        src/repositories/RepositoryConnection.h
+        src/repositories/InventoryBuildabilityRepository.h
+        src/repositories/InventoryBuildabilityRepository.cpp)
+    target_link_libraries(InventoryBuildabilityTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME InventoryBuildability COMMAND InventoryBuildabilityTest)
 
     qt_add_executable(PartExternalIdEnrichmentServiceTest EXCLUDE_FROM_ALL
         tests/PartExternalIdEnrichmentServiceTest.cpp

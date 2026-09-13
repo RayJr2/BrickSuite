@@ -34,18 +34,41 @@ int main(int argc, char** argv)
                 "Part Usage rows-per-page default");
     ok &= check(settings.whatCanIBuildRequireAllParts(),
                 "Part Usage require-all default");
+    ok &= check(settings.whatCanIBuildMinimumBuildability() == 75,
+                "Inventory buildability minimum default");
+    ok &= check(settings.whatCanIBuildFullyBuildableFirst(),
+                "Inventory fully-buildable-first default");
+    ok &= check(settings.whatCanIBuildMinimumSetParts() == 25,
+                "Minimum Set Parts default");
     settings.setWhatCanIBuildMaximumResults(750);
     settings.setWhatCanIBuildRowsPerPage(250);
     settings.setWhatCanIBuildRequireAllParts(false);
+    settings.setWhatCanIBuildMinimumBuildability(82);
+    settings.setWhatCanIBuildFullyBuildableFirst(false);
+    settings.setWhatCanIBuildMinimumSetParts(40);
     ok &= check(settings.whatCanIBuildMaximumResults() == 750
                 && settings.whatCanIBuildRowsPerPage() == 250
                 && !settings.whatCanIBuildRequireAllParts(),
                 "Part Usage defaults persist");
+    ok &= check(settings.whatCanIBuildMinimumBuildability() == 82
+                && !settings.whatCanIBuildFullyBuildableFirst(),
+                "Inventory buildability defaults persist");
+    ok &= check(settings.whatCanIBuildMinimumSetParts() == 40,
+                "Minimum Set Parts persists");
     settings.setWhatCanIBuildMaximumResults(1);
     settings.setWhatCanIBuildRowsPerPage(7);
+    settings.setWhatCanIBuildMinimumBuildability(150);
+    settings.setWhatCanIBuildMinimumSetParts(0);
     ok &= check(settings.whatCanIBuildMaximumResults() == 50
                 && settings.whatCanIBuildRowsPerPage() == 100,
                 "Part Usage defaults are validated");
+    ok &= check(settings.whatCanIBuildMinimumBuildability() == 100,
+                "Inventory buildability minimum is validated");
+    ok &= check(settings.whatCanIBuildMinimumSetParts() == 1,
+                "Minimum Set Parts lower bound");
+    settings.setWhatCanIBuildMinimumSetParts(10001);
+    ok &= check(settings.whatCanIBuildMinimumSetParts() == 10000,
+                "Minimum Set Parts upper bound");
     ok &= check(settings.sharedDataSource() == SharedDataSource::ThisComputer,
                 "default is This Computer");
     ok &= check(!settings.brickSuiteServerEnabled(), "server disabled by default");

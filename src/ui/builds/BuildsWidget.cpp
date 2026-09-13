@@ -631,6 +631,8 @@ void BuildsWidget::workspaceChanged(int workspaceId)
 
 void BuildsWidget::refresh()
 {
+    if (m_whatCanIBuildWidget)
+        m_whatCanIBuildWidget->invalidateOperationalData();
     loadBuilds();
     loadRequirements();
     updateUiState();

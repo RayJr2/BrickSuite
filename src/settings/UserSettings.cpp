@@ -96,6 +96,9 @@ constexpr auto kWhatCanIBuildGroup = "WhatCanIBuild";
 constexpr auto kMaximumQualifyingResultsKey = "MaximumQualifyingResults";
 constexpr auto kRowsPerPageKey = "RowsPerPage";
 constexpr auto kRequireAllSelectedPartsKey = "RequireAllSelectedParts";
+constexpr auto kMinimumBuildabilityKey = "MinimumBuildability";
+constexpr auto kFullyBuildableFirstKey = "FullyBuildableFirst";
+constexpr auto kMinimumSetPartsKey = "MinimumSetParts";
 
 constexpr auto kGroupAutomaticDatabaseBackup = "AutomaticDatabaseBackup";
 constexpr auto kEnabledKey = "Enabled";
@@ -1097,6 +1100,42 @@ void UserSettings::setWhatCanIBuildRequireAllParts(bool value)
     settings.beginGroup(kGroupBuilds);
     settings.beginGroup(kWhatCanIBuildGroup);
     settings.setValue(kRequireAllSelectedPartsKey, value);
+}
+
+int UserSettings::whatCanIBuildMinimumBuildability() const
+{
+    QSettings settings; settings.beginGroup(kGroupBuilds); settings.beginGroup(kWhatCanIBuildGroup);
+    return qBound(0, settings.value(kMinimumBuildabilityKey, 75).toInt(), 100);
+}
+
+void UserSettings::setWhatCanIBuildMinimumBuildability(int value)
+{
+    QSettings settings; settings.beginGroup(kGroupBuilds); settings.beginGroup(kWhatCanIBuildGroup);
+    settings.setValue(kMinimumBuildabilityKey, qBound(0, value, 100));
+}
+
+bool UserSettings::whatCanIBuildFullyBuildableFirst() const
+{
+    QSettings settings; settings.beginGroup(kGroupBuilds); settings.beginGroup(kWhatCanIBuildGroup);
+    return settings.value(kFullyBuildableFirstKey, true).toBool();
+}
+
+void UserSettings::setWhatCanIBuildFullyBuildableFirst(bool value)
+{
+    QSettings settings; settings.beginGroup(kGroupBuilds); settings.beginGroup(kWhatCanIBuildGroup);
+    settings.setValue(kFullyBuildableFirstKey, value);
+}
+
+int UserSettings::whatCanIBuildMinimumSetParts() const
+{
+    QSettings settings;settings.beginGroup(kGroupBuilds);settings.beginGroup(kWhatCanIBuildGroup);
+    return qBound(1,settings.value(kMinimumSetPartsKey,25).toInt(),10000);
+}
+
+void UserSettings::setWhatCanIBuildMinimumSetParts(int value)
+{
+    QSettings settings;settings.beginGroup(kGroupBuilds);settings.beginGroup(kWhatCanIBuildGroup);
+    settings.setValue(kMinimumSetPartsKey,qBound(1,value,10000));
 }
 
 namespace {

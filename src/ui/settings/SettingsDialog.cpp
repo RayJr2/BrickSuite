@@ -344,6 +344,9 @@ void SettingsDialog::loadSettings()
     m_whatCanIBuildRowsPerPageCombo->setCurrentIndex(
         m_whatCanIBuildRowsPerPageCombo->findData(settings.whatCanIBuildRowsPerPage()));
     m_whatCanIBuildRequireAllCheck->setChecked(settings.whatCanIBuildRequireAllParts());
+    m_whatCanIBuildMinimumBuildabilitySpin->setValue(settings.whatCanIBuildMinimumBuildability());
+    m_whatCanIBuildFullyBuildableFirstCheck->setChecked(settings.whatCanIBuildFullyBuildableFirst());
+    m_whatCanIBuildMinimumSetPartsSpin->setValue(settings.whatCanIBuildMinimumSetParts());
 
     const int workspaceIndex = m_defaultWorkspaceCombo->findData(settings.defaultWorkspaceId());
 
@@ -478,6 +481,9 @@ void SettingsDialog::saveSettings()
     settings.setWhatCanIBuildMaximumResults(m_whatCanIBuildMaximumResultsSpin->value());
     settings.setWhatCanIBuildRowsPerPage(m_whatCanIBuildRowsPerPageCombo->currentData().toInt());
     settings.setWhatCanIBuildRequireAllParts(m_whatCanIBuildRequireAllCheck->isChecked());
+    settings.setWhatCanIBuildMinimumBuildability(m_whatCanIBuildMinimumBuildabilitySpin->value());
+    settings.setWhatCanIBuildFullyBuildableFirst(m_whatCanIBuildFullyBuildableFirstCheck->isChecked());
+    settings.setWhatCanIBuildMinimumSetParts(m_whatCanIBuildMinimumSetPartsSpin->value());
 
     if (m_workspaceService.status().isAvailable())
         settings.setDefaultWorkspaceId(defaultWorkspaceId);
@@ -1010,10 +1016,19 @@ void SettingsDialog::buildBuildsTab()
     for (int value : {100, 250, 500})
         m_whatCanIBuildRowsPerPageCombo->addItem(QString::number(value), value);
     m_whatCanIBuildRequireAllCheck = new QCheckBox(QStringLiteral("Require all selected Parts"), group);
+    m_whatCanIBuildMinimumBuildabilitySpin = new QSpinBox(group);
+    m_whatCanIBuildMinimumBuildabilitySpin->setRange(0, 100);
+    m_whatCanIBuildMinimumBuildabilitySpin->setSuffix(QStringLiteral("%"));
+    m_whatCanIBuildFullyBuildableFirstCheck = new QCheckBox(QStringLiteral("Show fully buildable Sets first"), group);
+    m_whatCanIBuildMinimumSetPartsSpin = new QSpinBox(group);
+    m_whatCanIBuildMinimumSetPartsSpin->setRange(1, 10000);
     form->addRow(QStringLiteral("Maximum Qualifying Results:"), m_whatCanIBuildMaximumResultsSpin);
     form->addRow(QStringLiteral("Rows Per Page:"), m_whatCanIBuildRowsPerPageCombo);
     form->addRow(QString(), m_whatCanIBuildRequireAllCheck);
-    auto* note = new QLabel(QStringLiteral("These values initialize new Part Usage searches. Changes made on the discovery page are temporary."), group);
+    form->addRow(QStringLiteral("Minimum Inventory Buildability:"), m_whatCanIBuildMinimumBuildabilitySpin);
+    form->addRow(QStringLiteral("Minimum Set Parts:"), m_whatCanIBuildMinimumSetPartsSpin);
+    form->addRow(QString(), m_whatCanIBuildFullyBuildableFirstCheck);
+    auto* note = new QLabel(QStringLiteral("These values initialize What Can I Build discovery. Changes made on the discovery page are temporary."), group);
     note->setWordWrap(true); form->addRow(QString(), note);
     layout->addWidget(group); layout->addStretch();
     m_tabWidget->addTab(tab, QStringLiteral("Builds"));

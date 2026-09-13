@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../models/PartUsageDiscovery.h"
+#include "../../models/InventoryBuildability.h"
 #include "../../models/Part.h"
 #include <QWidget>
 #include <optional>
@@ -9,6 +10,7 @@ class WorkspaceContext;
 class RemoteReadApplicationServices;
 class RemoteCollectionMutationApplicationService;
 class PartUsageDiscoveryService;
+class InventoryBuildabilityService;
 class SetImageService;
 class QComboBox;
 class QLabel;
@@ -16,6 +18,8 @@ class QLineEdit;
 class QPushButton;
 class QSpinBox;
 class QTableWidget;
+class QCheckBox;
+class QStackedWidget;
 
 class WhatCanIBuildWidget : public QWidget
 {
@@ -25,6 +29,7 @@ public:
         QWidget* parent = nullptr, RemoteReadApplicationServices* remoteReads = nullptr,
         RemoteCollectionMutationApplicationService* remoteCollection = nullptr);
     void invalidateCatalog();
+    void invalidateOperationalData();
 
 signals:
     void createBuildRequested(int setCatalogId, const QString& inventoryMode);
@@ -33,11 +38,16 @@ signals:
 private:
     void addCriterion();
     void search();
+    void searchInventory();
     void markStale();
     void showPage();
     void showDetails(int setCatalogId);
+    void showMissingParts(const InventoryBuildabilitySetResult& result);
+    void showSources(const InventoryBuildabilitySetResult& result);
+    void modeChanged();
     void updateControls();
     void loadColors();
+    void loadThemes();
     void renderCriteria();
     void updateResolvedPartSelection();
 
@@ -45,9 +55,11 @@ private:
     RemoteReadApplicationServices* m_remoteReads = nullptr;
     RemoteCollectionMutationApplicationService* m_remoteCollection = nullptr;
     PartUsageDiscoveryService* m_service = nullptr;
+    InventoryBuildabilityService* m_inventoryService = nullptr;
     SetImageService* m_images = nullptr;
     QList<PartUsageCriterion> m_criteria;
     QList<PartUsageSetResult> m_results;
+    QList<InventoryBuildabilitySetResult> m_inventoryResults;
     bool m_capReached = false;
     bool m_stale = false;
     bool m_hasSearched = false;
@@ -55,7 +67,10 @@ private:
     int m_page = 0;
     quint64 m_generation = 0;
     std::optional<Part> m_resolvedPart;
+    bool m_inventoryMode = true;
 
+    QComboBox* m_modeCombo = nullptr;
+    QStackedWidget* m_modeStack = nullptr;
     QLineEdit* m_partEdit = nullptr;
     QComboBox* m_colorCombo = nullptr;
     QSpinBox* m_quantitySpin = nullptr;
@@ -65,6 +80,18 @@ private:
     QComboBox* m_matchCombo = nullptr;
     QComboBox* m_pageSizeCombo = nullptr;
     QPushButton* m_searchButton = nullptr;
+    QSpinBox* m_minimumSpin = nullptr;
+    QSpinBox* m_minimumSetPartsSpin = nullptr;
+    QSpinBox* m_yearFromSpin = nullptr;
+    QSpinBox* m_yearToSpin = nullptr;
+    QComboBox* m_themeCombo = nullptr;
+    QCheckBox* m_fullyOnly = nullptr;
+    QCheckBox* m_includeCollection = nullptr;
+    QCheckBox* m_fullyFirst = nullptr;
+    QLabel* m_collectionStatus = nullptr;
+    QLabel* m_remoteInventoryNotice = nullptr;
+    QLineEdit* m_inventorySearchEdit = nullptr;
+    QPushButton* m_inventorySearchButton = nullptr;
     QLabel* m_status = nullptr;
     QTableWidget* m_resultsTable = nullptr;
     QPushButton* m_previous = nullptr;
