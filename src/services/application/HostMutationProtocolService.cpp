@@ -1,5 +1,6 @@
 #include "HostMutationProtocolService.h"
 #include "../../network/BrickSuiteOperationDispatcher.h"
+#include "../../network/HostRequestContext.h"
 #include <QDebug>
 
 HostMutationProtocolService::HostMutationProtocolService(
@@ -36,8 +37,17 @@ void HostMutationProtocolService::registerInternalOperation(
                     QStringLiteral("The Host database changed before this request could execute.")));
                 return;
             }
+            const HostRequestContext* hostContext = HostRequestContext::current();
+            const QString clientIdentity = hostContext
+                ? hostContext->mutationClientIdentity() : QString();
+            if (clientIdentity.isEmpty()) {
+                completion(BrickSuiteProtocol::errorResponse(request,
+                    QStringLiteral("INTERNAL_ERROR"),
+                    QStringLiteral("The Host could not establish trusted request identity.")));
+                return;
+            }
             RemoteMutationDto::RequestContext context{operation, metadata.workspaceId,
-                metadata.mutationId, QStringLiteral("FullBrickSuiteClient"),
+                metadata.mutationId, clientIdentity,
                 request.protocolMajor, request.protocolMinor};
             m_executor.enqueue(context, RemoteMutationDto::requestHash(operation, metadata),
                 mutation, this,
@@ -91,8 +101,17 @@ void HostMutationProtocolService::registerOperation(
                     error.retryable));
                 return;
             }
+            const HostRequestContext* hostContext = HostRequestContext::current();
+            const QString clientIdentity = hostContext
+                ? hostContext->mutationClientIdentity() : QString();
+            if (clientIdentity.isEmpty()) {
+                completion(BrickSuiteProtocol::errorResponse(request,
+                    QStringLiteral("INTERNAL_ERROR"),
+                    QStringLiteral("The Host could not establish trusted request identity.")));
+                return;
+            }
             RemoteMutationDto::RequestContext context{operation, metadata.workspaceId,
-                metadata.mutationId, QStringLiteral("FullBrickSuiteClient"),
+                metadata.mutationId, clientIdentity,
                 request.protocolMajor, request.protocolMinor};
             m_executor.enqueue(context, RemoteMutationDto::requestHash(operation, metadata),
                 std::move(mutation), this,

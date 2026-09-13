@@ -205,6 +205,45 @@ int main(int argc, char** argv)
         if (!check(!rolledBack.success, "failure returned")) return 1;
     }
 
+    // A committed mutation remains replayable when its response context is
+    // destroyed before delivery (for example, a socket disconnect).
+    const QString lostResponseMutationId = RemoteMutationDto::newMutationId();
+    RemoteMutationDto::Metadata lostResponseMetadata{
+        1, lostResponseMutationId, {}, {{QStringLiteral("response"), QStringLiteral("lost")}}};
+    const QString lostResponseHash = RemoteMutationDto::requestHash(
+        QStringLiteral("test.mutation"), lostResponseMetadata);
+    {
+        HostWriteExecutor executor(path);
+        QSemaphore entered;
+        QSemaphore release;
+        auto* responseContext = new QObject;
+        executor.enqueue(context(lostResponseMutationId), lostResponseHash,
+            [&, mutation](const QSqlDatabase& db) {
+                entered.release();
+                release.acquire();
+                return mutation(db);
+            }, responseContext, [](const auto&) {}, [](const auto&) {});
+        entered.acquire();
+        delete responseContext;
+        release.release();
+        QEventLoop drain;
+        QTimer poll;
+        QObject::connect(&poll, &QTimer::timeout, &drain, [&] {
+            if (executor.isIdle()) drain.quit();
+        });
+        poll.start(5);
+        QTimer::singleShot(10000, &drain, &QEventLoop::quit);
+        drain.exec();
+        if (!check(executor.isIdle(), "mutation commits after response context is lost")) return 1;
+    }
+    {
+        HostWriteExecutor restarted(path);
+        const Awaited replayed = run(restarted, context(lostResponseMutationId),
+                                     lostResponseHash, mutation);
+        if (!check(replayed.success && replayed.result.replayed,
+                   "lost mutation response is recovered from persisted receipt")) return 1;
+    }
+
     // Keep one mutation executing so the bounded queue can be filled without sleeps.
     {
         HostWriteExecutor queued(path);
@@ -270,7 +309,11 @@ int main(int argc, char** argv)
         if (!check(retry.success && !retry.result.replayed, "retry after atomic rollback succeeds once")) return 1;
     }
 
-    // Exercise the actual protocol registration gate; production registers no mutation operation yet.
+    QString pairedMutationId;
+    QString pairedReconnectMutationId;
+    QString otherDeviceMutationId;
+    QString legacyMutationId;
+    // Exercise the actual protocol registration gate and trusted Host attribution.
     {
         const QString hostEpoch = QStringLiteral("11111111-1111-4111-8111-111111111111");
         HostMutationProtocolService protocol(path, {}, hostEpoch);
@@ -304,6 +347,63 @@ int main(int argc, char** argv)
         if (!check(response.error.code == QStringLiteral("STALE_DATA_EPOCH")
                        && !response.error.retryable,
                    "stale data epoch is rejected before mutation execution")) return 1;
+
+        auto dispatchMutation = [&](const HostRequestContext& hostContext,
+                                    const QString& mutationId,
+                                    BrickSuiteProtocol::Message* result) {
+            BrickSuiteProtocol::Message attributedRequest = BrickSuiteProtocol::request(
+                QStringLiteral("test.mutation"), {{QStringLiteral("workspaceId"), 1},
+                    {QStringLiteral("mutationId"), mutationId},
+                    {QStringLiteral("expected"), QJsonObject{}},
+                    {QStringLiteral("mutation"), QJsonObject{}}});
+            attributedRequest.protocolMinor = hostContext.protocolMinor;
+            QEventLoop loop;
+            dispatcher.dispatchAsync(attributedRequest, true, hostContext,
+                [&](auto value) { *result = value; loop.quit(); });
+            QTimer::singleShot(20000, &loop, &QEventLoop::quit);
+            loop.exec();
+            return result->error.code.isEmpty();
+        };
+
+        const QString firstDevice = QStringLiteral("AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA");
+        const QString secondDevice = QStringLiteral("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+        pairedMutationId = RemoteMutationDto::newMutationId();
+        HostRequestContext pairedContext{QStringLiteral("paired-session-1"), {}, 3,
+            HostRequestContext::AuthenticationKind::PairedDevice, firstDevice};
+        BrickSuiteProtocol::Message spoofedRequest = BrickSuiteProtocol::request(
+            QStringLiteral("test.mutation"), {{QStringLiteral("workspaceId"), 1},
+                {QStringLiteral("mutationId"), RemoteMutationDto::newMutationId()},
+                {QStringLiteral("expected"), QJsonObject{}},
+                {QStringLiteral("mutation"), QJsonObject{}},
+                {QStringLiteral("clientIdentity"), QStringLiteral("PairedDevice:spoofed")}});
+        spoofedRequest.protocolMinor = 3;
+        dispatcher.dispatchAsync(spoofedRequest, true, pairedContext,
+                                 [&](auto value) { response = value; });
+        if (!check(response.error.code == QStringLiteral("INVALID_ARGUMENT"),
+                   "client-supplied receipt identity is rejected")) return 1;
+        if (!check(dispatchMutation(pairedContext, pairedMutationId, &response),
+                   "Protocol 1.3 paired mutation succeeds")) return 1;
+
+        pairedReconnectMutationId = RemoteMutationDto::newMutationId();
+        pairedContext.sessionId = QStringLiteral("paired-session-2");
+        if (!check(dispatchMutation(pairedContext, pairedReconnectMutationId, &response),
+                   "same paired device mutation after reconnect succeeds")) return 1;
+
+        otherDeviceMutationId = RemoteMutationDto::newMutationId();
+        HostRequestContext otherDevice{QStringLiteral("paired-session-3"), {}, 3,
+            HostRequestContext::AuthenticationKind::PairedDevice, secondDevice};
+        if (!check(dispatchMutation(otherDevice, otherDeviceMutationId, &response),
+                   "different paired device mutation succeeds")) return 1;
+
+        legacyMutationId = RemoteMutationDto::newMutationId();
+        HostRequestContext legacyContext{QStringLiteral("legacy-session"), {}, 2,
+            HostRequestContext::AuthenticationKind::LegacySharedToken, {}};
+        if (!check(dispatchMutation(legacyContext, legacyMutationId, &response),
+                   "Protocol 1.2 legacy mutation succeeds")) return 1;
+
+        if (!check(dispatchMutation(pairedContext, pairedMutationId, &response)
+                       && response.payload.value(QStringLiteral("replayed")).toBool(),
+                   "receipt replay remains independent of reconnecting session")) return 1;
     }
 
     // A Host-local exclusive writer causes a bounded, retryable BUSY result.
@@ -334,11 +434,27 @@ int main(int argc, char** argv)
     verify.setDatabaseName(path); verify.open();
     QSqlQuery query(verify);
     if (!check(query.exec(QStringLiteral("SELECT value FROM mutation_probe")) && query.next()
-               && query.value(0).toInt()==3, "domain rollback and committed mutations execute once")) return 1;
+               && query.value(0).toInt()==8, "domain rollback and committed mutations execute once")) return 1;
     query.prepare(QStringLiteral("SELECT COUNT(*) FROM remote_mutation_receipt WHERE mutation_id=:id"));
     query.bindValue(QStringLiteral(":id"), failedMutationId);
     if (!check(query.exec() && query.next() && query.value(0).toInt()==0,
                "failed mutation receipt rolled back")) return 1;
+    query.prepare(QStringLiteral("SELECT client_identity FROM remote_mutation_receipt "
+                                 "WHERE mutation_id=:id"));
+    auto receiptIdentity = [&](const QString& mutationId) {
+        query.bindValue(QStringLiteral(":id"), mutationId);
+        return query.exec() && query.next() ? query.value(0).toString() : QString();
+    };
+    const QString firstIdentity = QStringLiteral("PairedDevice:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    if (!check(receiptIdentity(pairedMutationId) == firstIdentity,
+               "Protocol 1.3 receipt uses normalized trusted paired-device identity")
+        || !check(receiptIdentity(pairedReconnectMutationId) == firstIdentity,
+                  "same paired device attribution is stable across sessions")
+        || !check(receiptIdentity(otherDeviceMutationId)
+                      == QStringLiteral("PairedDevice:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+                  "different paired device has distinct attribution")
+        || !check(receiptIdentity(legacyMutationId) == QStringLiteral("LegacySharedToken"),
+                  "Protocol 1.2 receipt uses explicit legacy attribution")) return 1;
     verify.close(); verify={}; QSqlDatabase::removeDatabase(verifyName);
     std::cout << "Remote mutation foundation tests passed.\n";
     return 0;

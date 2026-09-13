@@ -1,6 +1,8 @@
 #include "../src/database/DatabaseManager.h"
 #include "../src/database/DatabaseSchema.h"
 #include "../src/network/HostDataEpoch.h"
+#include "../src/network/PairedDeviceRegistry.h"
+#include "../src/network/RemoteSessionState.h"
 #include "../src/services/database/DatabaseFileValidator.h"
 #include "../src/services/database/DatabaseRestoreTransaction.h"
 
@@ -12,6 +14,8 @@
 #include <QSaveFile>
 #include <QSqlDatabase>
 #include <QSqlQuery>
+#include <QStandardPaths>
+#include <QSettings>
 #include <QTemporaryDir>
 #include <QUuid>
 #include <QDebug>
@@ -98,11 +102,16 @@ bool writeJournal(const QString& path, const QString& live, const QString& previ
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("BrickSuiteM26Test"));
+    QCoreApplication::setApplicationName(QStringLiteral("DatabaseRestoreHardeningTest"));
+    QStandardPaths::setTestModeEnabled(true);
+    QSettings().clear();
     QTemporaryDir temporary;
     bool ok = require(temporary.isValid(), QStringLiteral("Temporary directory unavailable."));
     const QString state = QDir(temporary.path()).filePath(QStringLiteral("state"));
     const QString live = QDir(temporary.path()).filePath(QStringLiteral("BrickSuite.db"));
     const QString candidate = QDir(temporary.path()).filePath(QStringLiteral("candidate.db"));
+    const QString registryPath = QDir(state).filePath(QStringLiteral("paired-devices.json"));
     ok &= require(createDatabase(live, QStringLiteral("Database A")), QStringLiteral("DB A fixture failed."));
     ok &= require(createDatabase(candidate, QStringLiteral("Database B")), QStringLiteral("DB B fixture failed."));
 
@@ -111,6 +120,23 @@ int main(int argc, char** argv)
     ok &= require(bootstrap.success && bootstrap.bootstrapped && reload.success
                       && bootstrap.epoch == reload.epoch,
                   QStringLiteral("Epoch bootstrap/reload did not preserve identity."));
+    PairedDeviceRegistry registry(registryPath);
+    QString registryError;
+    ok &= require(registry.load(&registryError), QStringLiteral("Pairing registry fixture failed."));
+    const PairedDeviceRecord activeDevice{QStringLiteral("11111111-1111-4111-8111-111111111111"), QStringLiteral("Active"),
+        QStringLiteral("2026-01-01T00:00:00.000Z"), QStringLiteral("2026-01-01T00:00:00.000Z"),
+        QStringLiteral("0.4.0"), QStringLiteral("Windows"), QStringLiteral("credential-active"), true};
+    const PairedDeviceRecord revokedDevice{QStringLiteral("22222222-2222-4222-8222-222222222222"), QStringLiteral("Revoked"),
+        QStringLiteral("2026-01-01T00:00:00.000Z"), QStringLiteral("2026-01-01T00:00:00.000Z"),
+        QStringLiteral("0.4.0"), QStringLiteral("Windows"), QStringLiteral("credential-revoked"), true};
+    ok &= require(registry.add(activeDevice, &registryError)
+                      && registry.add(revokedDevice, &registryError)
+                      && registry.deactivate(revokedDevice.deviceId, &registryError),
+                  QStringLiteral("Paired/revoked security fixture failed."));
+    const QString hostFingerprint(64, QLatin1Char('A'));
+    RemoteSessionState remoteSession;
+    remoteSession.authenticatedWithEpoch(hostFingerprint, bootstrap.epoch, true);
+    const auto epochASnapshot = remoteSession.snapshot();
     ok &= require(DatabaseFileValidator::validate(live).valid,
                   QStringLiteral("Valid BrickSuite DB was rejected."));
     const int beforeConnections = QSqlDatabase::connectionNames().size();
@@ -222,6 +248,17 @@ int main(int argc, char** argv)
                       && epochB.epoch != bootstrap.epoch && hasWorkspace(live, QStringLiteral("Database B"))
                       && QFile::exists(safety1),
                   QStringLiteral("Successful Restore did not install DB B and advance once."));
+    PairedDeviceRegistry restoredRegistry(registryPath);
+    ok &= require(restoredRegistry.load(&registryError)
+                      && restoredRegistry.find(activeDevice.deviceId).has_value()
+                      && restoredRegistry.find(activeDevice.deviceId)->active
+                      && restoredRegistry.find(revokedDevice.deviceId).has_value()
+                      && !restoredRegistry.find(revokedDevice.deviceId)->active,
+                  QStringLiteral("Database Restore replaced Host-local device security state."));
+    remoteSession.authenticatedWithEpoch(hostFingerprint, epochB.epoch, true);
+    ok &= require(!remoteSession.accepts(epochASnapshot)
+                      && remoteSession.dataEpoch() == epochB.epoch,
+                  QStringLiteral("Epoch-A Remote state remained valid after Restore."));
 
     const QString safety2 = QDir(temporary.path()).filePath(QStringLiteral("safety2.db"));
     const auto second = DatabaseRestoreTransaction::execute(candidate, live, safety2, state, state);
@@ -276,5 +313,6 @@ int main(int argc, char** argv)
     QFile::remove(QDir(missingState).filePath(QStringLiteral("host-data-epoch.json")));
     ok &= require(!HostDataEpoch::loadOrBootstrap(missingState).success,
                   QStringLiteral("Unexpected epoch loss was silently regenerated."));
+    QSettings().clear();
     return ok ? 0 : 1;
 }

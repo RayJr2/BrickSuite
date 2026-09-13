@@ -19,6 +19,15 @@ struct HostRequestContext
             : QStringLiteral("session:") + sessionId;
     }
 
+    QString mutationClientIdentity() const
+    {
+        if (authenticationKind == AuthenticationKind::LegacySharedToken)
+            return QStringLiteral("LegacySharedToken");
+        const QString deviceId = pairedDeviceId.trimmed().toLower();
+        return deviceId.isEmpty() ? QString()
+                                  : QStringLiteral("PairedDevice:") + deviceId;
+    }
+
     static const HostRequestContext* current() { return s_current; }
 
 private:

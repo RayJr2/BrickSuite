@@ -134,6 +134,6 @@ BrickSuitePairingService::Result BrickSuitePairingService::pair(
         m_remove(reference, nullptr);
         return {false, {}, {}, QStringLiteral("PAIRING_PERSISTENCE_FAILED"), registryError};
     }
-    qInfo().noquote() << "BrickSuite paired device created" << deviceId << name;
+    qInfo().noquote() << "BrickSuite paired device created" << deviceId;
     return {true, deviceId, credential, {}, {}};
 }

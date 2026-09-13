@@ -1,6 +1,8 @@
 #include "../src/database/DatabaseManager.h"
 #include "../src/database/DatabaseSchema.h"
 #include "../src/services/application/HostReadExecutor.h"
+#include "../src/services/application/HostWriteExecutor.h"
+#include "../src/services/application/HostMaintenanceCoordinator.h"
 #include "../src/services/application/HostReadProtocolService.h"
 #include "../src/services/application/RemoteReadApplicationServices.h"
 #include "../src/services/application/dto/RemoteReadJson.h"
@@ -392,6 +394,62 @@ int main(int argc, char** argv)
         ok &= check(!executor.isAccepting(), "shutdown stops task acceptance");
     }
     ok &= check(!QSqlDatabase::contains(connectionName), "named worker connection removed");
+    {
+        BrickSuiteWebSocketServer maintenanceServer;
+        HostReadExecutor maintenanceReads(hostPath);
+        HostWriteExecutor maintenanceWrites(hostPath);
+        HostMaintenanceCoordinator maintenance(
+            maintenanceServer, maintenanceReads, maintenanceWrites);
+        QSemaphore readEntered, releaseRead, writeEntered, releaseWrite;
+        std::atomic_int sessionARuns{0};
+        std::atomic_int sessionBRuns{0};
+        maintenanceReads.enqueueForTesting(QStringLiteral("session-A"), QStringLiteral("running-A"),
+            [&] { readEntered.release(); releaseRead.acquire(); ++sessionARuns; }, &app);
+        readEntered.acquire();
+        maintenanceReads.enqueueForTesting(QStringLiteral("session-A"), QStringLiteral("queued-A"),
+            [&] { ++sessionARuns; }, &app);
+        maintenanceReads.enqueueForTesting(QStringLiteral("session-B"), QStringLiteral("queued-B"),
+            [&] { ++sessionBRuns; }, &app);
+        const RemoteMutationDto::RequestContext writeContext{
+            QStringLiteral("test.maintenance"), 1, RemoteMutationDto::newMutationId(),
+            QStringLiteral("PairedDevice:maintenance-device"), 1, 3};
+        maintenanceWrites.enqueue(writeContext, QStringLiteral("maintenance-write"),
+            [&](const QSqlDatabase&) {
+                writeEntered.release();
+                releaseWrite.acquire();
+                HostWriteExecutor::MutationOutcome result;
+                result.success = true;
+                return result;
+            }, &app, [](const auto&) {}, [](const auto&) {});
+        writeEntered.acquire();
+        ok &= check(maintenance.requestEnterMaintenance(5000)
+                        && !maintenanceServer.operationalAdmissionOpen()
+                        && !maintenanceReads.isAccepting()
+                        && !maintenanceWrites.isAccepting(),
+                    "Maintenance atomically closes operational and executor admission");
+        ok &= check(maintenanceReads.cancelQueuedReadsForSession(QStringLiteral("session-A")) == 1
+                        && maintenanceReads.queuedReadCount() == 1,
+                    "disconnected session loses only its queued read during Maintenance");
+        int rejectedReadRuns = 0;
+        maintenanceReads.enqueueForTesting(QStringLiteral("session-C"), QStringLiteral("rejected"),
+            [&] { ++rejectedReadRuns; }, &app);
+        ok &= check(maintenance.state() == HostMaintenanceCoordinator::State::EnteringMaintenance
+                        && maintenance.activeReads() == 1
+                        && maintenance.activeWrites() == 1,
+                    "running read and admitted mutation remain counted while Maintenance drains");
+        releaseRead.release();
+        releaseWrite.release();
+        ok &= check(waitUntil([&] {
+                        return maintenance.state() == HostMaintenanceCoordinator::State::Maintenance;
+                    }, 10000),
+                    "Maintenance reaches drained state");
+        ok &= check(sessionARuns.load() == 1 && sessionBRuns.load() == 1
+                        && rejectedReadRuns == 0
+                        && maintenanceReads.isIdle() && maintenanceWrites.isIdle(),
+                    "surviving owner completes and cancelled/rejected reads do not execute");
+        maintenanceReads.shutdown();
+        maintenanceWrites.shutdown();
+    }
     {
         BrickSuiteOperationDispatcher dispatcher;
         HostReadProtocolService protocol(hostPath);

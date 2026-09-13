@@ -1437,6 +1437,16 @@ if(BUILD_TESTING)
         src/services/application/ApplicationServices.cpp
         src/services/application/ApplicationServicesCore.cpp
         src/services/application/HostReadExecutor.h src/services/application/HostReadExecutor.cpp
+        src/services/application/HostWriteExecutor.h src/services/application/HostWriteExecutor.cpp
+        src/services/application/HostMaintenanceCoordinator.h src/services/application/HostMaintenanceCoordinator.cpp
+        src/services/application/HostOperationalGate.h
+        src/services/application/HostMutationPublicationService.h
+        src/services/application/HostMutationPublicationService.cpp
+        src/services/application/dto/RemoteMutationDtos.h
+        src/services/application/dto/RemoteMutationDtos.cpp
+        src/models/RemoteMutationReceipt.h
+        src/repositories/RemoteMutationReceiptRepository.h
+        src/repositories/RemoteMutationReceiptRepository.cpp
         src/services/application/HostReadProtocolService.h src/services/application/HostReadProtocolService.cpp
         src/services/application/RemoteReadApplicationServices.h src/services/application/RemoteReadApplicationServices.cpp
         src/network/RemoteSessionState.h src/network/RemoteSessionState.cpp
@@ -1685,6 +1695,8 @@ if(BUILD_TESTING)
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp
         src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
         src/network/HostDataEpoch.h src/network/HostDataEpoch.cpp
+        src/network/PairedDeviceRegistry.h src/network/PairedDeviceRegistry.cpp
+        src/network/RemoteSessionState.h src/network/RemoteSessionState.cpp
         src/services/database/DatabaseFileValidator.h
         src/services/database/DatabaseFileValidator.cpp
         src/services/database/DatabaseRestoreTransaction.h
