@@ -81,7 +81,7 @@ void BrickSuiteWebSocketClient::configurePairedDevice(
     m_reconnectAutomatically = reconnectAutomatically;
     clearPairingIntent();
     m_connectWhenDisconnected = false;
-    m_requestedProtocolMinor = 3;
+    m_requestedProtocolMinor = BrickSuiteProtocol::Minor;
 }
 
 void BrickSuiteWebSocketClient::beginPairing(
@@ -97,7 +97,7 @@ void BrickSuiteWebSocketClient::beginPairing(
     m_reconnectAutomatically = false;
     m_pairing = true;
     m_connectWhenDisconnected = false;
-    m_requestedProtocolMinor = 3;
+    m_requestedProtocolMinor = BrickSuiteProtocol::Minor;
 }
 
 void BrickSuiteWebSocketClient::cancelPairing()
@@ -394,6 +394,12 @@ void BrickSuiteWebSocketClient::handleText(const QString& text)
                       QStringLiteral("This device has been revoked by the Host. Pair this device again to reconnect."));
             m_socket.close(QWebSocketProtocol::CloseCodePolicyViolated,
                            QStringLiteral("Device authorization revoked."));
+            return;
+        }
+        if (m_authenticated
+            && parsed.message.operation == QStringLiteral("apiCoordination.rebrickable.changed")
+            && supportsCapability(QStringLiteral("apiCoordination.rebrickable"))) {
+            emit rebrickableCoordinationReceived(parsed.message.payload);
             return;
         }
         if (!m_authenticated || parsed.message.operation != OperationalInvalidation::Operation) {

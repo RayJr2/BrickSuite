@@ -26,6 +26,7 @@
 #include "../../services/RebrickableApiClient.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/HostMaintenanceCoordinator.h"
+#include "../../services/application/RebrickableCoordinationService.h"
 #include "../../network/BrickSuiteNetworkManager.h"
 #include "../../network/BrickSuiteWebSocketClient.h"
 #include "../../network/BrickSuiteWebSocketServer.h"
@@ -118,6 +119,10 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
 
     connect(&m_networkManager, &BrickSuiteNetworkManager::statusChanged,
             this, &SettingsDialog::updateNetworkPresentation);
+    if (auto* coordination = m_networkManager.rebrickableCoordination()) {
+        connect(coordination, &RebrickableCoordinationService::stateChanged,
+                this, &SettingsDialog::updateRebrickableCoordinationPresentation);
+    }
     connect(m_networkManager.pairedDeviceAdministration(),
             &PairedDeviceAdministrationService::devicesChanged,
             this, &SettingsDialog::refreshPairedDevices);
@@ -537,6 +542,7 @@ void SettingsDialog::saveSettings()
 
     const int rebrickableRequestIntervalMs = m_rebrickableRequestIntervalSpin->value();
     settings.setRebrickableMinimumRequestIntervalMs(rebrickableRequestIntervalMs);
+    m_networkManager.refreshRebrickableCoordination();
     settings.setAutomaticBackupEnabled(m_automaticBackupEnabledCheck->isChecked());
     settings.setAutomaticBackupRoot(backupRoot);
     settings.setAutomaticBackupFrequencyHours(m_backupFrequencyCombo->currentData().toInt());
@@ -1376,6 +1382,9 @@ QWidget* SettingsDialog::buildRebrickableApiPage(QWidget* parent)
 
     m_rebrickableStatusLabel = new QLabel(apiConnectionStatusText(ApiConnectionStatus::NotConfigured),
                                          apiGroup);
+    m_rebrickableCoordinationLabel = new QLabel(apiGroup);
+    m_rebrickableParticipantsLabel = new QLabel(apiGroup);
+    m_rebrickableEffectiveIntervalLabel = new QLabel(apiGroup);
 
     connect(m_apiKeyEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
         if (m_rebrickableConnectionStatus == ApiConnectionStatus::Testing)
@@ -1414,6 +1423,9 @@ QWidget* SettingsDialog::buildRebrickableApiPage(QWidget* parent)
     apiLayout->addRow(QString(), m_showApiKeyCheck);
     apiLayout->addRow("Connection Status:", m_rebrickableStatusLabel);
     apiLayout->addRow("Minimum Request Interval:", m_rebrickableRequestIntervalSpin);
+    apiLayout->addRow("Coordination:", m_rebrickableCoordinationLabel);
+    apiLayout->addRow("Active API Participants:", m_rebrickableParticipantsLabel);
+    apiLayout->addRow("Effective Minimum Interval:", m_rebrickableEffectiveIntervalLabel);
     apiLayout->addRow(QString(), m_testConnectionButton);
 
     auto* noteLabel = new QLabel("BrickSuite throttles all Rebrickable API requests "
@@ -1431,8 +1443,30 @@ QWidget* SettingsDialog::buildRebrickableApiPage(QWidget* parent)
     layout->addStretch();
 
     connect(m_showApiKeyCheck, &QCheckBox::toggled, this, &SettingsDialog::showApiKeyToggled);
+    updateRebrickableCoordinationPresentation();
 
     return page;
+}
+
+void SettingsDialog::updateRebrickableCoordinationPresentation()
+{
+    if (!m_rebrickableCoordinationLabel) return;
+    const auto* service = m_networkManager.rebrickableCoordination();
+    const auto state = service ? service->state() : RebrickableCoordinationService::State{};
+    const bool localIntervalEditable =
+        RebrickableCoordinationService::localIntervalEditable(state.participantCount);
+    m_rebrickableRequestIntervalSpin->setEnabled(localIntervalEditable);
+    m_rebrickableRequestIntervalSpin->setToolTip(localIntervalEditable
+        ? tr("Minimum time between Rebrickable API requests.")
+        : tr("The local interval is locked while multiple BrickSuite installations "
+             "are sharing API coordination."));
+    const bool remote = UserSettings::instance().sharedDataSource() == SharedDataSource::BrickSuiteHost;
+    m_rebrickableCoordinationLabel->setText(state.coordinated
+        ? tr("Coordinated") : (remote ? tr("Host unavailable / local fallback") : tr("Local only")));
+    m_rebrickableParticipantsLabel->setText(state.coordinated
+        ? QString::number(state.participantCount) : tr("Not available"));
+    m_rebrickableEffectiveIntervalLabel->setText(
+        tr("%1 ms").arg(RebrickableService::effectiveMinimumRequestIntervalMs()));
 }
 
 QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)

@@ -28,6 +28,9 @@ ApiConnectionStatus ApiProviderStatusRegistry::status(ApiProvider provider) cons
 void ApiProviderStatusRegistry::setStatus(ApiProvider provider,
                                           ApiConnectionStatus status)
 {
+    if (this->status(provider) == status)
+        return;
+
     switch (provider) {
     case ApiProvider::Rebrickable:
         m_rebrickableStatus = status;
@@ -39,6 +42,8 @@ void ApiProviderStatusRegistry::setStatus(ApiProvider provider,
         m_bricksetStatus = status;
         break;
     }
+
+    emit statusChanged(provider, status);
 }
 
 bool ApiProviderStatusRegistry::isConnected(ApiProvider provider) const

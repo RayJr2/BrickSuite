@@ -8,8 +8,11 @@
 #include "ApiConnectionStatus.h"
 #include "ApiProvider.h"
 
-class ApiProviderStatusRegistry
+#include <QObject>
+
+class ApiProviderStatusRegistry : public QObject
 {
+    Q_OBJECT
 public:
     static ApiProviderStatusRegistry& instance();
 
@@ -17,6 +20,9 @@ public:
     void setStatus(ApiProvider provider, ApiConnectionStatus status);
 
     bool isConnected(ApiProvider provider) const;
+
+signals:
+    void statusChanged(ApiProvider provider, ApiConnectionStatus status);
 
 private:
     ApiProviderStatusRegistry() = default;

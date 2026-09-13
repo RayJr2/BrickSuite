@@ -2056,6 +2056,8 @@ void MainWindow::initializeProviderStatuses()
                             << "Message:" << result.message;
                     }
 
+                    m_networkManager.refreshRebrickableCoordination();
+
                     rebrickableService->deleteLater();
                 });
 

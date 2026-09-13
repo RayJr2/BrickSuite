@@ -74,6 +74,7 @@ signals:
     void invalidationReceived(const OperationalInvalidation& invalidation,
                               quint64 authenticatedSessionGeneration);
     void hostMaintenanceEnded();
+    void rebrickableCoordinationReceived(const QJsonObject& payload);
 
 private:
     struct Pending {

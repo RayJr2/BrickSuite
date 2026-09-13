@@ -15,6 +15,8 @@
 #include <QElapsedTimer>
 #include <QObject>
 #include <QTimer>
+#include <QJsonObject>
+#include <QStringList>
 #include <memory>
 
 class QWebSocket;
@@ -46,6 +48,8 @@ public:
     PairedDeviceRegistry* pairedDeviceRegistry() const { return m_registry.get(); }
     BrickSuiteOperationDispatcher& operationDispatcher();
     int broadcastInvalidation(OperationalInvalidation invalidation);
+    int broadcastEventToDevices(const QString& operation, const QJsonObject& payload,
+                                const QStringList& deviceIds, int minimumProtocolMinor);
     void setOperationalAdmissionOpen(bool open);
     bool operationalAdmissionOpen() const { return m_operationalAdmissionOpen; }
     void broadcastFullOperationalInvalidation();

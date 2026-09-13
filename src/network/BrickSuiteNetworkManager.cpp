@@ -5,6 +5,7 @@
 #include "BrickSuiteWebSocketServer.h"
 #include "RemoteSessionState.h"
 #include "OperationalInvalidationPublisher.h"
+#include "../services/application/RebrickableCoordinationService.h"
 #include "HostDataEpoch.h"
 #include "PairedDeviceAdministrationService.h"
 #include "../database/DatabaseManager.h"
@@ -30,6 +31,7 @@
 #include "../services/application/HostWriteExecutor.h"
 #include "../services/CredentialStore.h"
 #include "../settings/UserSettings.h"
+#include "../api/ApiProviderStatusRegistry.h"
 
 #include <QHostAddress>
 
@@ -56,6 +58,8 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
     m_pairedDeviceAdministration = std::make_unique<PairedDeviceAdministrationService>(
         *m_server->pairedDeviceRegistry(), *m_server, PairedDeviceAdministrationService::CredentialReader{},
         PairedDeviceAdministrationService::CredentialRemover{}, this);
+    m_rebrickableCoordination = std::make_unique<RebrickableCoordinationService>(
+        *m_server, *m_client, this);
     m_remoteReads = std::make_unique<RemoteReadApplicationServices>(*m_client,
                                                                      m_remoteSession.get(), this);
     m_remoteMutations = std::make_unique<RemoteMutationApplicationServices>(*m_client, this);
@@ -136,10 +140,18 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
         *m_server, m_hostReads->executor(), m_hostMutations->executor(), this);
     connect(m_server, &BrickSuiteWebSocketServer::sessionDisconnected,
             &m_hostReads->executor(), &HostReadExecutor::cancelQueuedReadsForSession);
+    connect(m_server, &BrickSuiteWebSocketServer::sessionDisconnected,
+            m_rebrickableCoordination.get(), &RebrickableCoordinationService::sessionDisconnected);
     connect(m_server, &BrickSuiteWebSocketServer::statusChanged,
             this, &BrickSuiteNetworkManager::statusChanged);
     connect(m_client, &BrickSuiteWebSocketClient::statusChanged,
             this, [this](const BrickSuiteConnectionStatus&) { emit statusChanged(); });
+    connect(&ApiProviderStatusRegistry::instance(),
+            &ApiProviderStatusRegistry::statusChanged,
+            this, [this](ApiProvider provider, ApiConnectionStatus) {
+        if (provider == ApiProvider::Rebrickable)
+            refreshRebrickableCoordination();
+    });
     connect(m_client, &BrickSuiteWebSocketClient::deviceRevoked, this, [this]() {
         QString error;
         if (!savePairedClientCredential(QString(), &error))
@@ -165,6 +177,7 @@ BrickSuiteNetworkManager::~BrickSuiteNetworkManager() { stop(); }
 void BrickSuiteNetworkManager::startConfiguredMode()
 {
     UserSettings& settings = UserSettings::instance();
+    refreshRebrickableCoordination();
     if (settings.sharedDataSource() == SharedDataSource::ThisComputer) {
         if (settings.brickSuiteServerEnabled()) {
             QString error;
@@ -193,6 +206,17 @@ void BrickSuiteNetworkManager::startConfiguredMode()
     }
     if (settings.brickSuiteReconnectAutomatically())
         m_client->connectToHost();
+}
+
+void BrickSuiteNetworkManager::refreshRebrickableCoordination()
+{
+    if (!m_rebrickableCoordination) return;
+    const UserSettings& settings = UserSettings::instance();
+    const bool participating =
+        ApiProviderStatusRegistry::instance().isConnected(ApiProvider::Rebrickable);
+    const bool host = settings.sharedDataSource() == SharedDataSource::ThisComputer;
+    m_rebrickableCoordination->configureHost(host, participating);
+    m_rebrickableCoordination->configureRemote(!host, participating);
 }
 
 bool BrickSuiteNetworkManager::restartServer(QString* error)
@@ -379,3 +403,6 @@ PairedDeviceAdministrationService* BrickSuiteNetworkManager::pairedDeviceAdminis
 {
     return m_pairedDeviceAdministration.get();
 }
+
+RebrickableCoordinationService* BrickSuiteNetworkManager::rebrickableCoordination() const
+{ return m_rebrickableCoordination.get(); }

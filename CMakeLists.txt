@@ -84,6 +84,8 @@ qt_add_executable(BrickSuite
     src/network/RemoteSessionState.cpp
     src/services/application/RemoteRefreshCoordinator.h
     src/services/application/RemoteRefreshCoordinator.cpp
+    src/services/application/RebrickableCoordinationService.h
+    src/services/application/RebrickableCoordinationService.cpp
     src/services/application/HostMaintenanceCoordinator.h
     src/services/application/HostMaintenanceCoordinator.cpp
     src/services/application/HostOperationalGate.h
@@ -1726,6 +1728,13 @@ if(BUILD_TESTING)
         target_link_libraries(PairingFoundationTest PRIVATE "-framework Security")
     endif()
     add_test(NAME PairingFoundation COMMAND PairingFoundationTest)
+
+    qt_add_executable(RebrickableCoordinationPolicyTest EXCLUDE_FROM_ALL
+        tests/RebrickableCoordinationPolicyTest.cpp
+        src/services/application/RebrickableCoordinationService.h
+        src/api/ApiProviderStatusRegistry.h src/api/ApiProviderStatusRegistry.cpp)
+    target_link_libraries(RebrickableCoordinationPolicyTest PRIVATE Qt6::Core)
+    add_test(NAME RebrickableCoordinationPolicy COMMAND RebrickableCoordinationPolicyTest)
 endif()
 
 if(WIN32)

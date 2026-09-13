@@ -109,6 +109,24 @@ QQueue<RebrickableService::QueuedRequest> RebrickableService::s_backgroundReques
 QElapsedTimer RebrickableService::s_lastRequestTimer;
 
 QTimer* RebrickableService::s_requestTimer = nullptr;
+int RebrickableService::s_coordinationMinimumIntervalMs = 0;
+
+void RebrickableService::setCoordinationMinimumIntervalMs(int intervalMs)
+{
+    s_coordinationMinimumIntervalMs = qMax(0, intervalMs);
+    processRequestQueue();
+}
+
+int RebrickableService::coordinationMinimumIntervalMs()
+{
+    return s_coordinationMinimumIntervalMs;
+}
+
+int RebrickableService::effectiveMinimumRequestIntervalMs()
+{
+    return qMax(UserSettings::instance().rebrickableMinimumRequestIntervalMs(),
+                s_coordinationMinimumIntervalMs);
+}
 
 RebrickableService::RebrickableService(QObject* parent)
     : QObject(parent)
@@ -1382,7 +1400,7 @@ void RebrickableService::processRequestQueue()
         return;
     }
 
-    const int minimumIntervalMs = UserSettings::instance().rebrickableMinimumRequestIntervalMs();
+    const int minimumIntervalMs = effectiveMinimumRequestIntervalMs();
 
     if (s_lastRequestTimer.isValid()) {
         const qint64 elapsedMs = s_lastRequestTimer.elapsed();

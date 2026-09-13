@@ -95,6 +95,7 @@ private:
     void setRebrickableConnectionStatus(ApiConnectionStatus status);
     static QString apiConnectionStatusText(ApiConnectionStatus status);
     void startRebrickableConnectionTest(const QString& apiKey);
+    void updateRebrickableCoordinationPresentation();
 
     void setBricksetConnectionStatus(ApiConnectionStatus status);
     void startBricksetConnectionTest(const QString& apiKey);
@@ -123,6 +124,9 @@ private:
     QTabWidget* m_apiTabWidget = nullptr;
     QLineEdit* m_apiKeyEdit = nullptr;
     QLabel* m_rebrickableStatusLabel = nullptr;
+    QLabel* m_rebrickableCoordinationLabel = nullptr;
+    QLabel* m_rebrickableParticipantsLabel = nullptr;
+    QLabel* m_rebrickableEffectiveIntervalLabel = nullptr;
     QCheckBox* m_showApiKeyCheck = nullptr;
     QPushButton* m_testConnectionButton = nullptr;
     QSpinBox* m_rebrickableRequestIntervalSpin = nullptr;

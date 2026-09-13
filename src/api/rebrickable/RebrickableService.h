@@ -47,6 +47,10 @@ class RebrickableService : public QObject
 public:
     enum class RequestPriority { Foreground, Background };
 
+    static void setCoordinationMinimumIntervalMs(int intervalMs);
+    static int coordinationMinimumIntervalMs();
+    static int effectiveMinimumRequestIntervalMs();
+
     struct ConnectionResult
     {
         bool success = false;
@@ -405,6 +409,7 @@ private:
     static QElapsedTimer s_lastRequestTimer;
 
     static QTimer* s_requestTimer;
+    static int s_coordinationMinimumIntervalMs;
 };
 
 Q_DECLARE_METATYPE(RebrickableService::ConnectionResult)

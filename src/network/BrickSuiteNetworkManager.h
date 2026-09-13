@@ -23,6 +23,7 @@ class RemoteSessionState;
 class OperationalInvalidationPublisher;
 class BrickSuitePairingService;
 class PairedDeviceAdministrationService;
+class RebrickableCoordinationService;
 struct OperationalInvalidation;
 
 class BrickSuiteNetworkManager : public QObject
@@ -58,6 +59,8 @@ public:
     QString pairedClientCredential(QString* error = nullptr) const;
     BrickSuitePairingService* pairingService() const;
     PairedDeviceAdministrationService* pairedDeviceAdministration() const;
+    RebrickableCoordinationService* rebrickableCoordination() const;
+    void refreshRebrickableCoordination();
 
 signals:
     void statusChanged();
@@ -90,4 +93,5 @@ private:
     std::unique_ptr<RemoteSessionState> m_remoteSession;
     std::unique_ptr<OperationalInvalidationPublisher> m_invalidationPublisher;
     std::unique_ptr<PairedDeviceAdministrationService> m_pairedDeviceAdministration;
+    std::unique_ptr<RebrickableCoordinationService> m_rebrickableCoordination;
 };

@@ -145,6 +145,12 @@ keys are normally masked in the Settings dialog.</div>
 <b>Connection Status</b> shows <b>Connected</b>.</p>
 
 <p><b>Minimum Request Interval</b> controls the minimum spacing between Rebrickable API requests.
+It remains the local minimum for this installation. When a Protocol 1.4 paired BrickSuite Remote
+is connected to a Host, participating installations coordinate a safer shared-public-IP interval.
+The effective interval may therefore increase as installations connect; one paired installation
+counts once even if it has multiple sessions. API keys always remain on their owning installation
+and are never sent through the BrickSuite Host. If the Host becomes unavailable, BrickSuite briefly
+retains the safer coordinated interval and then returns to the local configured interval.
 BrickSuite sends Rebrickable requests through a shared request queue to reduce the risk of
 exceeding provider request limits.</p>
 

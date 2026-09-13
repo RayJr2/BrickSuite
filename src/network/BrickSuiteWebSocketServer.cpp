@@ -207,6 +207,21 @@ int BrickSuiteWebSocketServer::broadcastInvalidation(OperationalInvalidation inv
     return recipients;
 }
 
+int BrickSuiteWebSocketServer::broadcastEventToDevices(
+    const QString& operation, const QJsonObject& payload,
+    const QStringList& deviceIds, int minimumProtocolMinor)
+{
+    const auto message = BrickSuiteProtocol::event(operation, payload);
+    int recipients = 0;
+    for (auto it = m_sessions.constBegin(); it != m_sessions.constEnd(); ++it) {
+        if (!it->authenticated || it->protocolMinor < minimumProtocolMinor || !it.key()
+            || it->deviceId.isEmpty() || !deviceIds.contains(it->deviceId, Qt::CaseInsensitive))
+            continue;
+        if (send(it.key(), message)) ++recipients;
+    }
+    return recipients;
+}
+
 void BrickSuiteWebSocketServer::setOperationalAdmissionOpen(bool open)
 {
     m_operationalAdmissionOpen = open;
@@ -497,7 +512,9 @@ void BrickSuiteWebSocketServer::dispatch(QWebSocket* socket,
     }
     const bool maintenanceSafe = request.operation == QStringLiteral("system.capabilities")
         || request.operation == QStringLiteral("system.ping")
-        || request.operation == QStringLiteral("system.status");
+        || request.operation == QStringLiteral("system.status")
+        || request.operation == QStringLiteral("apiCoordination.rebrickable.register")
+        || request.operation == QStringLiteral("apiCoordination.rebrickable.status");
     if (!m_operationalAdmissionOpen && !maintenanceSafe) {
         reject(socket, request, QStringLiteral("HOST_MAINTENANCE"),
                QStringLiteral("BrickSuite Host is temporarily in maintenance. Try again after it returns."),
