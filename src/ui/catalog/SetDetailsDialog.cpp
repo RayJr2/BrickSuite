@@ -239,6 +239,7 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
             return;
         }
         loadComposition();
+        emit compositionChanged();
         QMessageBox::information(
             this, "Get Set Parts from Rebrickable",
             QString("Parts retrieved for %1 (%2).\n\n"
@@ -602,6 +603,7 @@ void SetDetailsDialog::importPartsList()
         return;
     }
     loadComposition();
+    emit compositionChanged();
     QMessageBox::information(this, "Import Set Parts List",
                              QString("Parts list imported for %1 (%2).\n\nCSV rows read: %3\nDistinct composition rows: %4")
                                  .arg(m_setName, m_setNumber).arg(result.rowsRead).arg(result.compositionRows));

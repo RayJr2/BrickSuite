@@ -92,6 +92,10 @@ constexpr auto kPartReferencePageIndexPrefix = "PageIndex";
 
 constexpr auto kGroupBuilds = "Builds";
 constexpr auto kShowArchivedBuildsKey = "ShowArchived";
+constexpr auto kWhatCanIBuildGroup = "WhatCanIBuild";
+constexpr auto kMaximumQualifyingResultsKey = "MaximumQualifyingResults";
+constexpr auto kRowsPerPageKey = "RowsPerPage";
+constexpr auto kRequireAllSelectedPartsKey = "RequireAllSelectedParts";
 
 constexpr auto kGroupAutomaticDatabaseBackup = "AutomaticDatabaseBackup";
 constexpr auto kEnabledKey = "Enabled";
@@ -1043,6 +1047,56 @@ void UserSettings::setShowArchivedBuilds(bool showArchived)
     settings.setValue(kShowArchivedBuildsKey, showArchived);
 
     settings.endGroup();
+}
+
+int UserSettings::whatCanIBuildMaximumResults() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBuilds);
+    settings.beginGroup(kWhatCanIBuildGroup);
+    return qBound(50, settings.value(kMaximumQualifyingResultsKey, 250).toInt(), 2000);
+}
+
+void UserSettings::setWhatCanIBuildMaximumResults(int value)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBuilds);
+    settings.beginGroup(kWhatCanIBuildGroup);
+    settings.setValue(kMaximumQualifyingResultsKey, qBound(50, value, 2000));
+}
+
+int UserSettings::whatCanIBuildRowsPerPage() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBuilds);
+    settings.beginGroup(kWhatCanIBuildGroup);
+    const int value = settings.value(kRowsPerPageKey, 100).toInt();
+    return value == 250 || value == 500 ? value : 100;
+}
+
+void UserSettings::setWhatCanIBuildRowsPerPage(int value)
+{
+    if (value != 100 && value != 250 && value != 500) value = 100;
+    QSettings settings;
+    settings.beginGroup(kGroupBuilds);
+    settings.beginGroup(kWhatCanIBuildGroup);
+    settings.setValue(kRowsPerPageKey, value);
+}
+
+bool UserSettings::whatCanIBuildRequireAllParts() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBuilds);
+    settings.beginGroup(kWhatCanIBuildGroup);
+    return settings.value(kRequireAllSelectedPartsKey, true).toBool();
+}
+
+void UserSettings::setWhatCanIBuildRequireAllParts(bool value)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupBuilds);
+    settings.beginGroup(kWhatCanIBuildGroup);
+    settings.setValue(kRequireAllSelectedPartsKey, value);
 }
 
 namespace {

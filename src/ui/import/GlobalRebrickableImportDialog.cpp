@@ -233,7 +233,7 @@ void GlobalRebrickableImportDialog::startImport()
         int imported = 0, noChanges = 0, failed = 0, blocked = 0, notImplemented = 0;
         for (const auto& entry : result->entries) {
             const bool completed = entry.status == RebrickableImportStatus::Imported || entry.status == RebrickableImportStatus::NoChanges;
-            if (completed) { imported += entry.status == RebrickableImportStatus::Imported; noChanges += entry.status == RebrickableImportStatus::NoChanges; parts |= entry.dataset == RebrickableDatasetId::Parts || entry.dataset == RebrickableDatasetId::PartCategories || entry.dataset == RebrickableDatasetId::PartRelationships; sets |= entry.dataset == RebrickableDatasetId::Sets; minifigs |= entry.dataset == RebrickableDatasetId::Minifigs; }
+            if (completed) { imported += entry.status == RebrickableImportStatus::Imported; noChanges += entry.status == RebrickableImportStatus::NoChanges; parts |= entry.dataset == RebrickableDatasetId::Parts || entry.dataset == RebrickableDatasetId::PartCategories || entry.dataset == RebrickableDatasetId::PartRelationships; sets |= entry.dataset == RebrickableDatasetId::Sets || entry.dataset == RebrickableDatasetId::Inventories || entry.dataset == RebrickableDatasetId::InventoryParts || entry.dataset == RebrickableDatasetId::InventoryMinifigs || entry.dataset == RebrickableDatasetId::InventorySets; minifigs |= entry.dataset == RebrickableDatasetId::Minifigs; }
             failed += entry.status == RebrickableImportStatus::Failed;
             blocked += entry.status == RebrickableImportStatus::BlockedByDependency;
             notImplemented += entry.status == RebrickableImportStatus::NotImplemented;

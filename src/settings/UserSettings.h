@@ -116,6 +116,13 @@ public:
     bool showArchivedBuilds() const;
     void setShowArchivedBuilds(bool showArchived);
 
+    int whatCanIBuildMaximumResults() const;
+    void setWhatCanIBuildMaximumResults(int value);
+    int whatCanIBuildRowsPerPage() const;
+    void setWhatCanIBuildRowsPerPage(int value);
+    bool whatCanIBuildRequireAllParts() const;
+    void setWhatCanIBuildRequireAllParts(bool value);
+
     static QString themeToString(Theme theme);
     static Theme themeFromString(const QString& value);
 

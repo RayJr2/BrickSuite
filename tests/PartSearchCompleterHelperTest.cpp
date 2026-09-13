@@ -70,7 +70,8 @@ int main(int argc, char** argv)
     for (const auto& part : {
              qMakePair(QStringLiteral("30010"), QStringLiteral("Brick 2 x 4 Variant")),
              qMakePair(QStringLiteral("3001"), QStringLiteral("Brick 2 x 4")),
-             qMakePair(QStringLiteral("brick-name"), QStringLiteral("3001 Named Match"))}) {
+             qMakePair(QStringLiteral("brick-name"), QStringLiteral("3001 Named Match")),
+             qMakePair(QStringLiteral("67245"), QStringLiteral("Aircraft Fuselage Curved Aft Section 8 x 12 x 2 Top"))}) {
         query.bindValue(0, part.first);
         query.bindValue(1, part.second);
         query.bindValue(2, categoryId);
@@ -146,6 +147,26 @@ int main(int argc, char** argv)
     if (!require(PartSearchCompleterHelper::canonicalPartNumber(&edit)
                     == QStringLiteral("30010"),
                  "Changing the selected suggestion did not change canonical identity."))
+        return 1;
+
+    edit.clear();
+    edit.setText(QStringLiteral("67245"));
+    QMetaObject::invokeMethod(searchTimer, "timeout", Qt::DirectConnection);
+    const QModelIndex fuselage = model->index(0, 0);
+    edit.setText(fuselage.data().toString());
+    QMetaObject::invokeMethod(edit.completer(), "activated", Qt::DirectConnection,
+                              Q_ARG(QModelIndex, fuselage));
+    if (!require(edit.text().contains(QStringLiteral("67245 — Aircraft Fuselage"))
+                 && PartSearchCompleterHelper::canonicalPartNumber(&edit)
+                        == QStringLiteral("67245"),
+                 "Representative descriptive Part selection lost canonical identity."))
+        return 1;
+    edit.setText(QStringLiteral("67245 — manually edited"));
+    if (!require(PartSearchCompleterHelper::canonicalPartNumber(&edit)
+                     != QStringLiteral("67245")
+                 && !PartSearchCompleterHelper::hasResolvablePart(&edit)
+                 && !addRequirementButton.isEnabled(),
+                 "Manual text edit retained stale selected Part identity."))
         return 1;
 
     edit.clear();

@@ -413,6 +413,14 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                                       m_networkManager.remotePulling(),
                                       m_networkManager.remoteCollectionMutations(),
                                       m_networkManager.remoteBuildMutations());
+    connect(m_buildsWidget, &BuildsWidget::createSetBuildRequested,
+            m_setsCatalogWidget, &SetsCatalogWidget::createBuildRequested);
+    connect(m_buildsWidget, &BuildsWidget::statusMessageRequested,
+            this, [this](const QString& message, int timeoutMs) {
+                statusBar()->showMessage(message, timeoutMs);
+            });
+    connect(m_setsCatalogWidget, &SetsCatalogWidget::catalogDataChanged,
+            m_buildsWidget, &BuildsWidget::invalidatePartUsageDiscovery);
     connect(&m_networkManager, &BrickSuiteNetworkManager::remotePullingMutationCommitted,
             this, [this](int workspaceId, int buildId) {
         if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
@@ -894,6 +902,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                 [this](bool parts, bool sets, bool minifigs) {
                     if (parts && m_partsCatalogWidget) m_partsCatalogWidget->refreshCatalog();
                     if (sets && m_setsCatalogWidget) m_setsCatalogWidget->refresh();
+                    if (sets && m_buildsWidget) m_buildsWidget->invalidatePartUsageDiscovery();
                     if (minifigs && m_minifigsCatalogWidget) m_minifigsCatalogWidget->refresh();
                 });
         dialog->show();

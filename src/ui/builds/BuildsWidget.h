@@ -48,6 +48,8 @@ class QWidget;
 class QSplitter;
 class QShowEvent;
 class QDialog;
+class QTabWidget;
+class WhatCanIBuildWidget;
 
 class BuildsWidget : public QWidget
 {
@@ -76,6 +78,7 @@ public:
     void reloadManufacturers();
     void setRemoteSessionConnected(bool connected);
     void refreshOpenLocalPulling(const std::optional<int>& buildId = std::nullopt);
+    void invalidatePartUsageDiscovery();
 
 signals:
     void collectionItemRequested(int collectionItemId);
@@ -87,6 +90,8 @@ signals:
     void hostBuildMetadataMutationCommitted(int workspaceId, int buildId);
     void hostBuildRequirementsMutationCommitted(int workspaceId, int buildId,
                                                 bool inventoryAffected);
+    void createSetBuildRequested(int setCatalogId, const QString& inventoryMode);
+    void statusMessageRequested(const QString& message, int timeoutMs);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -201,4 +206,6 @@ private:
 
     QGroupBox* m_newBuildGroup = nullptr;
     QWidget* m_newBuildContent = nullptr;
+    QTabWidget* m_buildTabs = nullptr;
+    WhatCanIBuildWidget* m_whatCanIBuildWidget = nullptr;
 };

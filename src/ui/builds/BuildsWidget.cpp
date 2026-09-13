@@ -35,6 +35,7 @@
 #include "EditBuildRequirementDialog.h"
 #include "ImportPullListDialog.h"
 #include "InteractiveBuildPullingDialog.h"
+#include "WhatCanIBuildWidget.h"
 #include "SetImportPreviewDialog.h"
 
 #include "../../models/Build.h"
@@ -107,6 +108,7 @@
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QTabWidget>
 #include <QTextEdit>
 #include <QTextStream>
 #include <QVBoxLayout>
@@ -182,6 +184,12 @@ RemoteBuildMutationDto::RequirementExpectedState expectedRequirementState(
 
 } // namespace
 
+void BuildsWidget::invalidatePartUsageDiscovery()
+{
+    if (m_whatCanIBuildWidget)
+        m_whatCanIBuildWidget->invalidateCatalog();
+}
+
 BuildsWidget::BuildsWidget(
     WorkspaceContext& workspaceContext,
     SessionStorageSelectionService& sessionStorageSelectionService,
@@ -203,7 +211,13 @@ BuildsWidget::BuildsWidget(
     , m_remoteBuildMutations(remoteBuildMutations)
     , m_remoteMode(remoteReads != nullptr)
 {
-    auto* mainLayout = new QVBoxLayout(this);
+    auto* outerLayout = new QVBoxLayout(this);
+    outerLayout->setContentsMargins(0, 0, 0, 0);
+    m_buildTabs = new QTabWidget(this);
+    auto* myBuildsPage = new QWidget(m_buildTabs);
+    auto* mainLayout = new QVBoxLayout(myBuildsPage);
+    m_buildTabs->addTab(myBuildsPage, QStringLiteral("My Builds"));
+    outerLayout->addWidget(m_buildTabs);
 
     auto* titleLabel = new QLabel("Builds", this);
     mainLayout->addWidget(titleLabel);
@@ -428,6 +442,14 @@ BuildsWidget::BuildsWidget(
     pagingLayout->addWidget(m_buildPageLabel);
     pagingLayout->addWidget(m_nextBuildPageButton);
     mainLayout->addLayout(pagingLayout);
+
+    m_whatCanIBuildWidget = new WhatCanIBuildWidget(
+        m_workspaceContext, m_buildTabs, m_remoteReads, m_remoteCollection);
+    connect(m_whatCanIBuildWidget, &WhatCanIBuildWidget::createBuildRequested,
+            this, &BuildsWidget::createSetBuildRequested);
+    connect(m_whatCanIBuildWidget, &WhatCanIBuildWidget::statusMessageRequested,
+            this, &BuildsWidget::statusMessageRequested);
+    m_buildTabs->addTab(m_whatCanIBuildWidget, QStringLiteral("What Can I Build?"));
     connect(m_previousBuildPageButton, &QPushButton::clicked, this, [this] {
         if (m_remoteMode && m_remoteBuildPage > 1) { --m_remoteBuildPage; loadRemoteBuilds(); }
     });

@@ -321,6 +321,8 @@ void SetsCatalogWidget::searchSets(const QString& loadingMessage)
                                 this, &SetsCatalogWidget::createStockBuildRequested);
                         connect(&dialog, &SetDetailsDialog::collectionItemCreated,
                                 this, &SetsCatalogWidget::collectionItemCreated);
+                        connect(&dialog, &SetDetailsDialog::compositionChanged,
+                                this, &SetsCatalogWidget::catalogDataChanged);
 
                         dialog.exec();
 
@@ -452,4 +454,5 @@ void SetsCatalogWidget::importSetsCsv()
                                  .arg(result.skipped));
 
     refresh();
+    emit catalogDataChanged();
 }

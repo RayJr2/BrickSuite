@@ -111,6 +111,7 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
     mainLayout->addWidget(m_buttonBox);
 
     buildGeneralTab();
+    buildBuildsTab();
     buildAppearanceTab();
     buildDatabaseBackupTab();
     buildServerTab();
@@ -339,6 +340,10 @@ void SettingsDialog::loadSettings()
     if (resultsIndex >= 0) {
         m_resultsPerPageCombo->setCurrentIndex(resultsIndex);
     }
+    m_whatCanIBuildMaximumResultsSpin->setValue(settings.whatCanIBuildMaximumResults());
+    m_whatCanIBuildRowsPerPageCombo->setCurrentIndex(
+        m_whatCanIBuildRowsPerPageCombo->findData(settings.whatCanIBuildRowsPerPage()));
+    m_whatCanIBuildRequireAllCheck->setChecked(settings.whatCanIBuildRequireAllParts());
 
     const int workspaceIndex = m_defaultWorkspaceCombo->findData(settings.defaultWorkspaceId());
 
@@ -470,6 +475,9 @@ void SettingsDialog::saveSettings()
     const QString bricksetApiKey = m_bricksetApiKeyEdit->text().trimmed();
 
     settings.setResultsPerPage(resultsPerPage);
+    settings.setWhatCanIBuildMaximumResults(m_whatCanIBuildMaximumResultsSpin->value());
+    settings.setWhatCanIBuildRowsPerPage(m_whatCanIBuildRowsPerPageCombo->currentData().toInt());
+    settings.setWhatCanIBuildRequireAllParts(m_whatCanIBuildRequireAllCheck->isChecked());
 
     if (m_workspaceService.status().isAvailable())
         settings.setDefaultWorkspaceId(defaultWorkspaceId);
@@ -988,6 +996,27 @@ void SettingsDialog::buildServerTab()
         m_renameDeviceButton->setEnabled(selected);
         m_revokeDeviceButton->setEnabled(selected);
     });
+}
+
+void SettingsDialog::buildBuildsTab()
+{
+    auto* tab = new QWidget(m_tabWidget);
+    auto* layout = new QVBoxLayout(tab);
+    auto* group = new QGroupBox(QStringLiteral("What Can I Build Defaults"), tab);
+    auto* form = new QFormLayout(group);
+    m_whatCanIBuildMaximumResultsSpin = new QSpinBox(group);
+    m_whatCanIBuildMaximumResultsSpin->setRange(50, 2000);
+    m_whatCanIBuildRowsPerPageCombo = new QComboBox(group);
+    for (int value : {100, 250, 500})
+        m_whatCanIBuildRowsPerPageCombo->addItem(QString::number(value), value);
+    m_whatCanIBuildRequireAllCheck = new QCheckBox(QStringLiteral("Require all selected Parts"), group);
+    form->addRow(QStringLiteral("Maximum Qualifying Results:"), m_whatCanIBuildMaximumResultsSpin);
+    form->addRow(QStringLiteral("Rows Per Page:"), m_whatCanIBuildRowsPerPageCombo);
+    form->addRow(QString(), m_whatCanIBuildRequireAllCheck);
+    auto* note = new QLabel(QStringLiteral("These values initialize new Part Usage searches. Changes made on the discovery page are temporary."), group);
+    note->setWordWrap(true); form->addRow(QString(), note);
+    layout->addWidget(group); layout->addStretch();
+    m_tabWidget->addTab(tab, QStringLiteral("Builds"));
 }
 
 void SettingsDialog::updateNetworkPresentation()

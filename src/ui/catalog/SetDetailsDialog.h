@@ -49,6 +49,7 @@ public:
 signals:
     void createBuildRequested(int setCatalogId, const QString& buildName);
     void collectionItemCreated(int collectionItemId);
+    void compositionChanged();
 
 private:
     bool loadSet();

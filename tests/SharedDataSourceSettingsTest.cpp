@@ -28,6 +28,24 @@ int main(int argc, char** argv)
 
     UserSettings& settings = UserSettings::instance();
     bool ok = true;
+    ok &= check(settings.whatCanIBuildMaximumResults() == 250,
+                "Part Usage maximum result default");
+    ok &= check(settings.whatCanIBuildRowsPerPage() == 100,
+                "Part Usage rows-per-page default");
+    ok &= check(settings.whatCanIBuildRequireAllParts(),
+                "Part Usage require-all default");
+    settings.setWhatCanIBuildMaximumResults(750);
+    settings.setWhatCanIBuildRowsPerPage(250);
+    settings.setWhatCanIBuildRequireAllParts(false);
+    ok &= check(settings.whatCanIBuildMaximumResults() == 750
+                && settings.whatCanIBuildRowsPerPage() == 250
+                && !settings.whatCanIBuildRequireAllParts(),
+                "Part Usage defaults persist");
+    settings.setWhatCanIBuildMaximumResults(1);
+    settings.setWhatCanIBuildRowsPerPage(7);
+    ok &= check(settings.whatCanIBuildMaximumResults() == 50
+                && settings.whatCanIBuildRowsPerPage() == 100,
+                "Part Usage defaults are validated");
     ok &= check(settings.sharedDataSource() == SharedDataSource::ThisComputer,
                 "default is This Computer");
     ok &= check(!settings.brickSuiteServerEnabled(), "server disabled by default");

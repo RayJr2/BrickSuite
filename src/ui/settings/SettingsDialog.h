@@ -89,6 +89,7 @@ private:
     void buildApisTab();
     void buildDatabaseBackupTab();
     void buildServerTab();
+    void buildBuildsTab();
     QWidget* buildRebrickableApiPage(QWidget* parent);
     QWidget* buildBricksetApiPage(QWidget* parent);
 
@@ -116,6 +117,11 @@ private:
     QComboBox* m_defaultWorkspaceCombo = nullptr;
     QComboBox* m_sharedDataSourceCombo = nullptr;
     SharedDataSource m_originalSharedDataSource = SharedDataSource::ThisComputer;
+
+    // Builds / What Can I Build
+    QSpinBox* m_whatCanIBuildMaximumResultsSpin = nullptr;
+    QComboBox* m_whatCanIBuildRowsPerPageCombo = nullptr;
+    QCheckBox* m_whatCanIBuildRequireAllCheck = nullptr;
 
     // Appearance
     QComboBox* m_themeCombo = nullptr;
