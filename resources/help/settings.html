@@ -176,7 +176,10 @@ instead of making large numbers of repeated API requests. See
 <p>The Brickset page displays the provider-reported usage for the current day, BrickSuite's
 effective usage, the configured <b>Daily getSets Threshold</b>, calls remaining before that
 threshold, usage status, and the last successful usage refresh. Effective usage includes local
-<code>getSets</code> calls made after the most recent provider report.</p>
+<code>getSets</code> calls made after the most recent provider report. Usage refresh is demand-driven;
+BrickSuite does not poll Brickset in the background. Same-process usage changes can update an open
+Settings dialog, while activity from another BrickSuite installation is reconciled when this
+installation next refreshes provider usage.</p>
 
 <p>When Brickset is connected and is within the configured threshold, supported Set Details
 workflows can use Brickset enrichment. This can provide additional information such as theme and

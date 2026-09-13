@@ -42,6 +42,7 @@
 #include "../services/Updater.h"
 #include "../api/ApiProviderStatusRegistry.h"
 #include "../api/brickset/BricksetService.h"
+#include "../api/brickset/BricksetUsagePolicy.h"
 #include "../services/images/BackgroundPartColorImageCacheService.h"
 #include "../services/images/PartImageService.h"
 #include "../services/builds/MinifigBuildCreationService.h"
@@ -87,6 +88,8 @@
 #include "../services/application/RemoteRefreshCoordinator.h"
 #include "../services/application/HostMutationPublicationService.h"
 #include "../network/OperationalInvalidationPublisher.h"
+
+#include <QPointer>
 
 #include <QAction>
 #include <QApplication>
@@ -1398,7 +1401,28 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                     bricksetService->deleteLater();
                 });
 
-        bricksetService->getSetDetails(setNumber, apiKey);
+        const int threshold = UserSettings::instance().bricksetDailyGetSetsThreshold();
+        QPointer<BricksetService> guardedService(bricksetService);
+        BricksetUsagePolicy::instance().requestAdmission(
+            threshold,
+            [this, guardedService, setNumber, apiKey](BricksetUsagePolicy::Decision decision) {
+                if (!guardedService) return;
+                if (decision == BricksetUsagePolicy::Decision::Admitted) {
+                    guardedService->getSetDetails(setNumber, apiKey);
+                    return;
+                }
+
+                const QString reason = decision == BricksetUsagePolicy::Decision::ThresholdReached
+                    ? QStringLiteral("The configured daily Brickset getSets threshold has been reached.")
+                    : QStringLiteral("Brickset getSets usage could not be verified safely.");
+                QMessageBox::information(
+                    this, QStringLiteral("Brickset Set Details"),
+                    reason + QStringLiteral("\n\nThe developer request was not sent."));
+                guardedService->deleteLater();
+            },
+            [guardedService, apiKey] {
+                if (guardedService) guardedService->getKeyUsageStats(apiKey);
+            });
     });
 
     connect(partDetailsAction, &QAction::triggered, this, [this]() {

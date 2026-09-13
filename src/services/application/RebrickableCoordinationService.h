@@ -25,6 +25,7 @@ public:
     static constexpr int SafetyMarginMs = 250;
     static constexpr int RemovalGraceMs = 10000;
     static constexpr int FallbackGraceMs = 10000;
+    static constexpr int MinimumProtocolMinor = 4;
     static const QString Capability;
     static const QString RegisterOperation;
     static const QString StatusOperation;

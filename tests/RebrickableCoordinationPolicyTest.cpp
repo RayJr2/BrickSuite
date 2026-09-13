@@ -12,6 +12,8 @@ int main(int argc, char** argv)
     QCoreApplication app(argc, argv);
     using C = RebrickableCoordinationService;
     bool ok = true;
+    ok &= check(C::MinimumProtocolMinor == 4,
+                "Rebrickable coordination remains a Protocol 1.4 capability");
     ok &= check(C::coordinatedIntervalForParticipants(0) == 0, "zero participants");
     ok &= check(C::coordinatedIntervalForParticipants(1) == 1250, "one participant");
     ok &= check(C::coordinatedIntervalForParticipants(2) == 2250, "two participants");

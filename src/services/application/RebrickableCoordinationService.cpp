@@ -93,7 +93,7 @@ void RebrickableCoordinationService::registerOperations()
             registerParticipant(context->sessionId, context->pairedDeviceId,
                                 request.payload.value(QStringLiteral("participating")).toBool());
             completion(BrickSuiteProtocol::response(request, statePayload()));
-        }, 4, Capability);
+        }, MinimumProtocolMinor, Capability);
     dispatcher.registerAsyncOperation(StatusOperation, true,
         [this](const BrickSuiteProtocol::Message& request,
                BrickSuiteOperationDispatcher::Completion completion) {
@@ -103,7 +103,7 @@ void RebrickableCoordinationService::registerOperations()
                 return;
             }
             completion(BrickSuiteProtocol::response(request, statePayload()));
-        }, 4, Capability);
+        }, MinimumProtocolMinor, Capability);
 }
 
 void RebrickableCoordinationService::registerParticipant(
@@ -201,7 +201,8 @@ void RebrickableCoordinationService::applyRemoteState(const QJsonObject& payload
 void RebrickableCoordinationService::publishHostState()
 {
     if (!m_hostActive) return;
-    m_server.broadcastEventToDevices(ChangedEvent, statePayload(), m_deviceSessions.keys(), 4);
+    m_server.broadcastEventToDevices(
+        ChangedEvent, statePayload(), m_deviceSessions.keys(), MinimumProtocolMinor);
 }
 
 void RebrickableCoordinationService::beginFallback()
