@@ -87,8 +87,8 @@ private slots:
 
 private:
     void loadPart();
-    void loadAllColors();
-    void loadKnownColors();
+    void loadAllColors(int preferredColorId = 0);
+    void loadKnownColors(int preferredColorId = 0);
     void applyKnownColors(int preferredColorId = 0);
     void loadStorageLocations();
     void loadManufacturers();
@@ -138,6 +138,7 @@ private:
     RebrickableApiClient* m_rebrickableApiClient = nullptr;
 
     QList<int> m_knownRebrickableColorIds;
+    int m_pendingPreferredColorId = 0;
 
     QString m_partNumber;
     QString m_pendingAliasLookupPartNumber;

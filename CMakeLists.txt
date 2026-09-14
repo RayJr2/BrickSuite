@@ -322,6 +322,7 @@ qt_add_executable(BrickSuite
     src/ui/inventory/MyInventoryWidget.h
     src/ui/inventory/AddInventoryDialog.h
     src/ui/inventory/AddInventoryDialog.cpp
+    src/ui/inventory/AddInventoryColorSelection.h
     src/ui/inventory/AddInventoryDialogButtonState.h
     src/import/RebrickableInventoryImporter.h
     src/import/BrickOwlInventoryImporter.cpp
@@ -1205,6 +1206,13 @@ if(BUILD_TESTING)
     )
     target_link_libraries(ColorComboHelperTest PRIVATE Qt6::Widgets)
     add_test(NAME ColorComboHelper COMMAND ColorComboHelperTest -platform offscreen)
+    qt_add_executable(AddInventoryColorSelectionTest EXCLUDE_FROM_ALL
+        tests/AddInventoryColorSelectionTest.cpp
+        src/models/Color.h src/models/Color.cpp
+        src/ui/inventory/AddInventoryColorSelection.h
+    )
+    target_link_libraries(AddInventoryColorSelectionTest PRIVATE Qt6::Core)
+    add_test(NAME AddInventoryColorSelection COMMAND AddInventoryColorSelectionTest)
     qt_add_executable(PartSearchCompleterHelperTest EXCLUDE_FROM_ALL
         tests/PartSearchCompleterHelperTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp

@@ -20,6 +20,7 @@
 
 #include "AddInventoryDialog.h"
 #include "AddInventoryDialogButtonState.h"
+#include "AddInventoryColorSelection.h"
 
 #include "../../app/WorkspaceContext.h"
 
@@ -348,7 +349,8 @@ void AddInventoryDialog::initializeUi()
                 // Preserve the user's current selection in case
                 // the color list is rebuilt underneath them.
                 //
-                const int previouslySelectedColorId = m_colorCombo->currentData().toInt();
+                const int previouslySelectedColorId = m_pendingPreferredColorId;
+                m_pendingPreferredColorId = 0;
 
                 if (!result.success) {
                     //
@@ -357,7 +359,7 @@ void AddInventoryDialog::initializeUi()
                     // user choice, not an internal/provider fallback state.
                     //
                     if (!m_showAllColorsCheck->isChecked()) {
-                        loadAllColors();
+                        loadAllColors(previouslySelectedColorId);
                     }
 
                     updateAddButtonState();
@@ -463,7 +465,11 @@ void AddInventoryDialog::setPartFromReference(const QString& partNumber)
     if (!part) {
         m_partId = 0;
         m_partNumber.clear();
+        m_knownRebrickableColorIds.clear();
+        m_pendingPreferredColorId = 0;
         m_partSearchEdit->setText(requested);
+        m_colorCombo->clear();
+        m_colorCombo->setEnabled(false);
 
         if (m_partResolutionLabel) {
             m_partResolutionLabel->setText(QStringLiteral("Part Reference selection is not available in the local catalog."));
@@ -658,6 +664,8 @@ void AddInventoryDialog::addInventory()
     if (m_remoteMutations) {
         const auto color=ColorRepository().getById(colorId);
         if(!color||color->rebrickableId()<0){QMessageBox::warning(this,"BrickSuite","The selected Color has no portable Rebrickable identity.");return;}
+        if (m_quickEntryMode && m_keepOpenCheck && m_keepOpenCheck->isChecked())
+            m_quickEntryColorId = colorId;
         RemoteInventoryMutationDto::Request request;request.workspaceId=m_workspaceContext.currentWorkspaceId();
         request.mutationId=m_remoteMutationId.isEmpty()?RemoteMutationDto::newMutationId():m_remoteMutationId;
         request.partNumber=m_partNumber;request.colorExternalId=color->rebrickableId();
@@ -727,11 +735,12 @@ void AddInventoryDialog::addInventory()
     accept();
 }
 
-void AddInventoryDialog::loadKnownColors()
+void AddInventoryDialog::loadKnownColors(int preferredColorId)
 {
     m_colorCombo->clear();
 
     m_knownRebrickableColorIds.clear();
+    m_pendingPreferredColorId = preferredColorId;
 
     const QString apiKey = UserSettings::instance().rebrickableApiKey();
 
@@ -741,7 +750,8 @@ void AddInventoryDialog::loadKnownColors()
         // catalog as a fallback. Do not toggle Show All Colors here; only
         // the user should change that preference.
         //
-        loadAllColors();
+        m_pendingPreferredColorId = 0;
+        loadAllColors(preferredColorId);
 
         return;
     }
@@ -755,19 +765,25 @@ void AddInventoryDialog::loadKnownColors()
     m_rebrickableApiClient->getPartColors(m_partNumber, apiKey);
 }
 
-void AddInventoryDialog::loadAllColors()
+void AddInventoryDialog::loadAllColors(int preferredColorId)
 {
     m_colorCombo->clear();
 
     ColorRepository repository;
 
-    const QList<Color> colors = repository.getAll();
+    const QList<Color> colors = AddInventoryColorSelection::visibleColors(
+        repository.getAll(), m_knownRebrickableColorIds, true);
 
     for (const Color& color : colors) {
         ColorComboHelper::addColorItem(m_colorCombo, color.name(), color.id(), color.rgb(), true);
     }
 
     m_colorCombo->setEnabled(true);
+
+    const int retainedColorId =
+        AddInventoryColorSelection::retainedColorId(colors, preferredColorId);
+    if (retainedColorId > 0)
+        m_colorCombo->setCurrentIndex(m_colorCombo->findData(retainedColorId));
 
     updateAddButtonState();
 }
@@ -778,13 +794,10 @@ void AddInventoryDialog::applyKnownColors(int preferredColorId)
 
     ColorRepository repository;
 
-    const QList<Color> colors = repository.getAll();
+    const QList<Color> colors = AddInventoryColorSelection::visibleColors(
+        repository.getAll(), m_knownRebrickableColorIds, false);
 
     for (const Color& color : colors) {
-        if (!m_knownRebrickableColorIds.contains(color.rebrickableId())) {
-            continue;
-        }
-
         //
         // Use the same helper as the rest of BrickSuite.
         // The internal BrickSuite Color ID remains the
@@ -800,13 +813,10 @@ void AddInventoryDialog::applyKnownColors(int preferredColorId)
     // this list was rebuilt, restore that exact
     // BrickSuite Color ID.
     //
-    if (preferredColorId > 0) {
-        const int preferredIndex = m_colorCombo->findData(preferredColorId);
-
-        if (preferredIndex >= 0) {
-            m_colorCombo->setCurrentIndex(preferredIndex);
-        }
-    }
+    const int retainedColorId =
+        AddInventoryColorSelection::retainedColorId(colors, preferredColorId);
+    if (retainedColorId > 0)
+        m_colorCombo->setCurrentIndex(m_colorCombo->findData(retainedColorId));
 
     //
     // Defensive fallback:
@@ -818,7 +828,7 @@ void AddInventoryDialog::applyKnownColors(int preferredColorId)
         // Defensive provider/mapping fallback. Keep the checkbox untouched
         // so this internal condition cannot masquerade as a user selection.
         //
-        loadAllColors();
+        loadAllColors(preferredColorId);
     }
 
     updateAddButtonState();
@@ -826,16 +836,18 @@ void AddInventoryDialog::applyKnownColors(int preferredColorId)
 
 void AddInventoryDialog::showAllColorsToggled(bool checked)
 {
+    const int previouslySelectedColorId = m_colorCombo->currentData().toInt();
+
     if (checked) {
-        loadAllColors();
+        loadAllColors(previouslySelectedColorId);
 
         return;
     }
 
     if (!m_knownRebrickableColorIds.isEmpty()) {
-        applyKnownColors();
+        applyKnownColors(previouslySelectedColorId);
     } else {
-        loadKnownColors();
+        loadKnownColors(previouslySelectedColorId);
     }
 }
 
@@ -1341,33 +1353,10 @@ void AddInventoryDialog::applyResolvedPart(
     // During rapid Keep-Open entry, preserve the user's
     // working color across Parts.
     //
-    if (m_quickEntryMode && m_keepOpenCheck->isChecked() && m_quickEntryColorId > 0) {
-        //
-        // The user is physically sorting by this color,
-        // so make the complete local color catalog
-        // available rather than allowing the Part's
-        // Rebrickable known-color list to remove it.
-        //
-        //
-        // Load the complete catalog so the preserved working color remains
-        // available even when the next Part's known-color list would omit it.
-        // This is a rapid-entry convenience, not a change to the user's
-        // Show All Colors preference.
-        //
-        loadAllColors();
-
-        const int colorIndex = m_colorCombo->findData(m_quickEntryColorId);
-
-        if (colorIndex >= 0) {
-            m_colorCombo->setCurrentIndex(colorIndex);
-        }
-
-        updateAddButtonState();
-    } else {
-        loadKnownColors();
-
-        updateAddButtonState();
-    }
+    const int preferredColorId =
+        m_quickEntryMode && m_keepOpenCheck->isChecked() ? m_quickEntryColorId : 0;
+    loadKnownColors(preferredColorId);
+    updateAddButtonState();
 }
 
 void AddInventoryDialog::clearPartSelection()
@@ -1378,6 +1367,7 @@ void AddInventoryDialog::clearPartSelection()
     m_partNumber.clear();
 
     m_knownRebrickableColorIds.clear();
+    m_pendingPreferredColorId = 0;
 
     if (m_partSearchTimer) {
         m_partSearchTimer->stop();
@@ -1405,6 +1395,7 @@ void AddInventoryDialog::clearPartSelection()
     // There is no valid Part selected yet, so Add
     // remains disabled. Do not reset Quantity.
     //
+    m_colorCombo->clear();
     m_colorCombo->setEnabled(false);
 
     updateAddButtonState();
