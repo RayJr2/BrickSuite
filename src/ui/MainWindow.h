@@ -54,6 +54,7 @@ class RemoteReadApplicationServices;
 class RemoteRefreshCoordinator;
 struct WhatCanIBuildPartSelection;
 class DatabaseRestoreCoordinator;
+class InventoryColorAuditReviewDialog;
 
 class MainWindow : public QMainWindow
 {
@@ -122,6 +123,9 @@ private:
     LogViewerDialog* m_logViewerDialog = nullptr;
     PartReferenceDialog* m_partReferenceDialog = nullptr;
     DatabaseStatusDialog* m_databaseStatusDialog = nullptr;
+#ifndef NDEBUG
+    InventoryColorAuditReviewDialog* m_inventoryColorAuditReviewDialog = nullptr;
+#endif
     QAction* m_backupDatabaseAction = nullptr;
     QAction* m_restoreDatabaseAction = nullptr;
     QAction* m_applicationLogAction = nullptr;

@@ -331,6 +331,8 @@ qt_add_executable(BrickSuite
     src/ui/inventory/ImportInventoryDialog.cpp
     src/ui/inventory/EditInventoryDialog.h
     src/ui/inventory/EditInventoryDialog.cpp
+    src/ui/inventory/InventoryColorAuditReviewDialog.h
+    src/ui/inventory/InventoryColorAuditReviewDialog.cpp
     src/ui/inventory/CorrectInventoryDialog.h
     src/ui/inventory/CorrectInventoryDialog.cpp
     src/ui/inventory/RemoveInventoryDialog.h
@@ -363,6 +365,8 @@ qt_add_executable(BrickSuite
     src/import/InventoryImportTypes.h
     src/services/inventory/RebrickableInventoryDiffCsvWriter.h
     src/services/inventory/RebrickableInventoryDiffCsvWriter.cpp
+    src/services/inventory/InventoryColorAuditCsv.h
+    src/services/inventory/InventoryColorAuditCsv.cpp
     src/ui/inventory/InventoryImportPreviewDialog.h
     src/ui/inventory/InventoryImportPreviewDialog.cpp
     src/api/ApiProvider.h
@@ -1213,6 +1217,13 @@ if(BUILD_TESTING)
     )
     target_link_libraries(AddInventoryColorSelectionTest PRIVATE Qt6::Core)
     add_test(NAME AddInventoryColorSelection COMMAND AddInventoryColorSelectionTest)
+    qt_add_executable(InventoryColorAuditCsvTest EXCLUDE_FROM_ALL
+        tests/InventoryColorAuditCsvTest.cpp
+        src/services/inventory/InventoryColorAuditCsv.h
+        src/services/inventory/InventoryColorAuditCsv.cpp
+    )
+    target_link_libraries(InventoryColorAuditCsvTest PRIVATE Qt6::Core)
+    add_test(NAME InventoryColorAuditCsv COMMAND InventoryColorAuditCsvTest)
     qt_add_executable(PartSearchCompleterHelperTest EXCLUDE_FROM_ALL
         tests/PartSearchCompleterHelperTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp

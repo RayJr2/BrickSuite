@@ -64,6 +64,9 @@
 #include "catalog/MinifigsCatalogWidget.h"
 #include "inventory/AddInventoryDialog.h"
 #include "inventory/MyInventoryWidget.h"
+#ifndef NDEBUG
+#include "inventory/InventoryColorAuditReviewDialog.h"
+#endif
 #include "import/GlobalRebrickableImportDialog.h"
 #include "collection/MyCollectionWidget.h"
 #include "parts/PartResolverTestDialog.h"
@@ -899,6 +902,42 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     // Tools menu
     auto* toolsMenu = menuBar()->addMenu("Tools");
+
+#ifndef NDEBUG
+    auto* inventoryColorAuditAction =
+        toolsMenu->addAction(QStringLiteral("Inventory Color Audit Review..."));
+    connect(inventoryColorAuditAction, &QAction::triggered, this, [this]() {
+        if (m_remoteReads) {
+            QMessageBox::information(
+                this, QStringLiteral("Inventory Color Audit Review"),
+                QStringLiteral("This local recovery utility is unavailable while BrickSuite "
+                               "is operating as a Remote Client."));
+            return;
+        }
+        if (m_inventoryColorAuditReviewDialog) {
+            m_inventoryColorAuditReviewDialog->show();
+            m_inventoryColorAuditReviewDialog->raise();
+            m_inventoryColorAuditReviewDialog->activateWindow();
+            return;
+        }
+        const QString fileName = QFileDialog::getOpenFileName(
+            this, QStringLiteral("Open Inventory Color Audit Report"), QString(),
+            QStringLiteral("CSV files (*.csv);;All files (*)"));
+        if (fileName.isEmpty()) return;
+        auto* dialog = new InventoryColorAuditReviewDialog(fileName, m_workspaceContext, this);
+        if (!dialog->isReady()) { delete dialog; return; }
+        m_inventoryColorAuditReviewDialog = dialog;
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dialog, &InventoryColorAuditReviewDialog::statusMessageRequested,
+                this, [this](const QString& message) { statusBar()->showMessage(message, 5000); });
+        connect(dialog, &QObject::destroyed, this, [this] {
+            m_inventoryColorAuditReviewDialog = nullptr;
+        });
+        dialog->show();
+        statusBar()->showMessage(QStringLiteral("Opened Inventory Color Audit review."), 5000);
+    });
+    toolsMenu->addSeparator();
+#endif
 
     auto* importRebrickableDataAction =
         toolsMenu->addAction("Import Rebrickable Data Files...");
