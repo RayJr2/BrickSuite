@@ -46,6 +46,7 @@ private slots:
 
 private:
     bool loadInventoryRecord();
+    void updateSaveEnabledState();
 
     void loadAllColors();
     void loadKnownColors();
@@ -80,6 +81,8 @@ private:
     QString m_partNumber;
 
     int m_originalColorId = 0;
+    bool m_recordLoaded = false;
+    bool m_knownColorsLoading = false;
 
     int m_storageLocationId = 0;
 };

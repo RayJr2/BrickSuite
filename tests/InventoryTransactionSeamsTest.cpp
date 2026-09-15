@@ -507,7 +507,7 @@ int main(int argc, char** argv)
     const int localCorrect = fixture.addRecord(fixture.addPart(), 3);
     const int localReplacement = fixture.addPart();
     const int localMove = fixture.addRecord(fixture.addPart(), 3);
-    const int localUpdate = fixture.addRecord(fixture.addPart(), 3);
+    const int localUpdate = fixture.addRecord(fixture.addPart(), 1);
     const int localFoundPart = fixture.addPart();
     const int localAddPart = fixture.addPart();
     InventoryRecord localAdd;
@@ -520,7 +520,7 @@ int main(int argc, char** argv)
     localAdd.setOwnershipType(QStringLiteral("Owned"));
     localAdd.setQuantity(2);
     InventoryRecord localEdited = *repository.getById(localUpdate);
-    localEdited.setQuantity(4);
+    localEdited.setQuantity(2);
     QString localError;
     ok &= require(repository.removeEntry(localRemove, 1, {}, &localError)
                   && fixture.quantity(localRemove) == 2
@@ -531,7 +531,8 @@ int main(int argc, char** argv)
                   && repository.moveInventory(localMove, fixture.secondStorageId, 1)
                   && fixture.quantity(localMove) == 2
                   && repository.updateOrMerge(localEdited)
-                  && fixture.quantity(localUpdate) == 4
+                  && fixture.quantity(localUpdate) == 2
+                  && fixture.movements(localUpdate, "QuantityIncrease") == 1
                   && repository.addOrIncreaseQuantity(localAdd)
                   && localAdd.id() > 0 && fixture.quantity(localAdd.id()) == 2
                   && seedLost(localFoundPart, 2)

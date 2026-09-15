@@ -19,6 +19,7 @@
  */
 
 #include "EditInventoryDialog.h"
+#include "EditInventorySaveState.h"
 
 #include "../../app/WorkspaceContext.h"
 
@@ -87,6 +88,7 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
     m_ownershipCombo->addItem("Owned");
 
     m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
+    updateSaveEnabledState();
 
     layout->addRow("Part:", m_partLabel);
 
@@ -109,6 +111,8 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
             &RebrickableApiClient::partColorsFinished,
             this,
             [this](const RebrickableApiClient::PartColorsResult& result) {
+                m_knownColorsLoading = false;
+
                 if (!result.success) {
                     loadAllColors();
 
@@ -119,6 +123,7 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
                     }
 
                     m_showAllColorsCheck->setChecked(true);
+                    updateSaveEnabledState();
 
                     return;
                 }
@@ -136,17 +141,32 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
 
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
+    connect(m_colorCombo, &QComboBox::currentIndexChanged, this,
+            [this](int) { updateSaveEnabledState(); });
+
     loadAllColors();
     loadManufacturers();
 
     if (!loadInventoryRecord()) {
-        if (QPushButton* saveButton = m_buttonBox->button(QDialogButtonBox::Save)) {
-            saveButton->setEnabled(false);
-        }
+        updateSaveEnabledState();
         return;
     }
 
+    m_recordLoaded = true;
+
     loadKnownColors();
+}
+
+void EditInventoryDialog::updateSaveEnabledState()
+{
+    if (!m_buttonBox)
+        return;
+
+    if (QPushButton* saveButton = m_buttonBox->button(QDialogButtonBox::Save)) {
+        const int colorId = m_colorCombo ? m_colorCombo->currentData().toInt() : 0;
+        saveButton->setEnabled(EditInventorySaveState::canSave(
+            m_recordLoaded, m_knownColorsLoading, colorId));
+    }
 }
 
 void EditInventoryDialog::loadManufacturers()
@@ -174,6 +194,7 @@ void EditInventoryDialog::loadAllColors()
     }
 
     m_colorCombo->setEnabled(true);
+    updateSaveEnabledState();
 }
 
 bool EditInventoryDialog::loadInventoryRecord()
@@ -248,6 +269,19 @@ void EditInventoryDialog::saveChanges()
     if (!HostOperationalGate::localWritesAllowed()) {
         QMessageBox::information(this, tr("Host Maintenance"), tr("Host Maintenance prevents operational changes.")); return;
     }
+    const int colorId = m_colorCombo->currentData().toInt();
+
+    if (colorId <= 0) {
+        QMessageBox::warning(
+            this,
+            "BrickSuite",
+            m_knownColorsLoading
+                ? "Please wait for the Color list to finish loading."
+                : "Please select a valid Color.");
+        updateSaveEnabledState();
+        return;
+    }
+
     InventoryRecordRepository repository;
 
     const std::optional<InventoryRecord> existing = repository.getById(m_inventoryRecordId);
@@ -271,7 +305,7 @@ void EditInventoryDialog::saveChanges()
 
     InventoryRecord updated = *existing;
 
-    updated.setColorId(m_colorCombo->currentData().toInt());
+    updated.setColorId(colorId);
 
     updated.setStorageLocationId(m_storageLocationId);
 
@@ -310,6 +344,7 @@ void EditInventoryDialog::saveChanges()
 void EditInventoryDialog::loadKnownColors()
 {
     m_knownRebrickableColorIds.clear();
+    m_knownColorsLoading = false;
 
     const QString apiKey = UserSettings::instance().rebrickableApiKey();
 
@@ -323,15 +358,18 @@ void EditInventoryDialog::loadKnownColors()
         }
 
         m_showAllColorsCheck->setChecked(true);
+        updateSaveEnabledState();
 
         return;
     }
 
+    m_knownColorsLoading = true;
     m_colorCombo->clear();
 
     m_colorCombo->addItem("Loading known colors...");
 
     m_colorCombo->setEnabled(false);
+    updateSaveEnabledState();
 
     m_rebrickableApiClient->getPartColors(m_partNumber, apiKey);
 }
@@ -377,6 +415,8 @@ void EditInventoryDialog::applyKnownColors()
     if (originalIndex >= 0) {
         m_colorCombo->setCurrentIndex(originalIndex);
     }
+
+    updateSaveEnabledState();
 }
 
 void EditInventoryDialog::showAllColorsToggled(bool checked)

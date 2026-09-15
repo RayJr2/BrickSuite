@@ -331,6 +331,7 @@ qt_add_executable(BrickSuite
     src/ui/inventory/ImportInventoryDialog.cpp
     src/ui/inventory/EditInventoryDialog.h
     src/ui/inventory/EditInventoryDialog.cpp
+    src/ui/inventory/EditInventorySaveState.h
     src/ui/inventory/InventoryColorAuditReviewDialog.h
     src/ui/inventory/InventoryColorAuditReviewDialog.cpp
     src/ui/inventory/CorrectInventoryDialog.h
@@ -1217,6 +1218,12 @@ if(BUILD_TESTING)
     )
     target_link_libraries(AddInventoryColorSelectionTest PRIVATE Qt6::Core)
     add_test(NAME AddInventoryColorSelection COMMAND AddInventoryColorSelectionTest)
+    qt_add_executable(EditInventorySaveStateTest EXCLUDE_FROM_ALL
+        tests/EditInventorySaveStateTest.cpp
+        src/ui/inventory/EditInventorySaveState.h
+    )
+    target_link_libraries(EditInventorySaveStateTest PRIVATE Qt6::Core)
+    add_test(NAME EditInventorySaveState COMMAND EditInventorySaveStateTest)
     qt_add_executable(InventoryColorAuditCsvTest EXCLUDE_FROM_ALL
         tests/InventoryColorAuditCsvTest.cpp
         src/services/inventory/InventoryColorAuditCsv.h
