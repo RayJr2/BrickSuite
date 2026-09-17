@@ -5,6 +5,7 @@
 #include "../builds/BuildMutationService.h"
 #include "../builds/BuildRequirementMutationService.h"
 #include "../builds/BuildAllocationMutationService.h"
+#include "../builds/SetBuildCreationService.h"
 #include "../../repositories/BuildAllocationRepository.h"
 #include "../../repositories/BuildRepository.h"
 #include "../../repositories/BuildRequirementRepository.h"
@@ -178,7 +179,20 @@ HostWriteExecutor::Mutation HostBuildMutationService::createMutation(
                 bool ok=false;const auto matches=SetCatalogRepository(db).getExactMatchesBySetNumber(request.reference.trimmed(),&ok);
                 if(!ok)return failure("INTERNAL_ERROR","The Host could not resolve the Set reference.");
                 if(matches.size()>1)return failure("CONFLICT","The Set reference is ambiguous on the Host.",true);
-                if(matches.size()==1)build.setSetCatalogId(matches.first().id());
+                if(matches.size()==1){
+                    build.setSetCatalogId(matches.first().id());
+                    if(request.inventoryMode==QStringLiteral("Stock")){
+                        const auto created=SetBuildCreationService(db).createInCurrentTransaction(
+                            int(request.workspaceId),matches.first().id(),request.name);
+                        if(!created.success)return failure("INVALID_ARGUMENT",created.message);
+                        const auto updated=mutations.updateMetadataInCurrentTransaction(
+                            created.buildId,request.name,manufacturer,request.notes);
+                        auto out=mapMutation(db,updated);
+                        if(out.success)out.publicationWorkflow=
+                            HostMutationPublicationService::Workflow::BuildRequirements;
+                        return out;
+                    }
+                }
             }
             return mapMutation(db,mutations.createInCurrentTransaction(build));
         }

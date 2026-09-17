@@ -346,6 +346,28 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                     return;
                 }
 
+                if (inventoryMode == QStringLiteral("Stock")) {
+                    const auto result = SetBuildCreationService().create(
+                        m_workspaceContext.currentWorkspaceId(), setCatalogId, set->name());
+                    if (!result.success) {
+                        QMessageBox::critical(this, "Create Build", result.message);
+                        return;
+                    }
+
+                    m_tabWidget->setCurrentWidget(m_buildsWidget);
+                    m_buildsWidget->selectBuild(result.buildId);
+
+                    HostMutationPublicationService::Scope scope;
+                    scope.workspaceId = m_workspaceContext.currentWorkspaceId();
+                    scope.buildId = result.buildId;
+                    m_hostMutationPublications->publish(
+                        HostMutationPublicationService::Workflow::BuildRequirements, scope);
+
+                    statusBar()->showMessage(
+                        QString("Build created: %1").arg(set->name()), 5000);
+                    return;
+                }
+
                 Build build;
 
                 build.setWorkspaceId(m_workspaceContext.currentWorkspaceId());

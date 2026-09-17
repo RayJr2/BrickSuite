@@ -46,6 +46,9 @@ int main(int argc, char* argv[])
     if (!require(build && build->buildType()=="Set" && build->inventoryMode()=="Stock" && build->status()=="Planned" && build->setCatalogId()==setId && build->setNumber()=="1234-1", "Linked Set Build identity is incorrect.")) return 1;
     auto requirements = BuildRequirementRepository().getByBuild(created.buildId);
     if (!require(requirements.size()==1 && requirements.first().partId()>0 && requirements.first().colorId()>0 && requirements.first().quantityRequired()==2 && requirements.first().quantityPulled()==0 && requirements.first().quantityReleased()==0 && !requirements.first().isSpare() && requirements.first().substitutePartId()==0 && requirements.first().substituteColorId()==0, "Requirement snapshot semantics are incorrect.")) return 1;
+    if (!require(scalar(db, "SELECT COUNT(*) FROM build_allocation WHERE build_id="
+                            + QString::number(created.buildId)) == 0,
+                 "Set Build creation unexpectedly allocated Inventory.")) return 1;
     const int snapPart=requirements.first().partId(), snapColor=requirements.first().colorId(), snapQuantity=requirements.first().quantityRequired();
 
     const int callerOwnedBuildsBefore = scalar(db, "SELECT COUNT(*) FROM build");

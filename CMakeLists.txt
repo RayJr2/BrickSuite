@@ -823,6 +823,58 @@ if(BUILD_TESTING)
     target_link_libraries(RemoteBuildMutationTest PRIVATE Qt6::Core)
     add_test(NAME RemoteBuildMutation COMMAND RemoteBuildMutationTest)
 
+    qt_add_executable(HostSetBuildMutationTest EXCLUDE_FROM_ALL
+        tests/HostSetBuildMutationTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Workspace.h src/models/Workspace.cpp
+        src/models/Build.h src/models/Build.cpp
+        src/models/BuildRequirement.h src/models/BuildRequirement.cpp
+        src/models/BuildAllocation.h src/models/BuildAllocation.cpp
+        src/models/InventoryRecord.h src/models/InventoryRecord.cpp
+        src/models/InventoryMovement.h src/models/InventoryMovement.cpp
+        src/models/StorageLocation.h src/models/StorageLocation.cpp
+        src/models/CollectionItem.h src/models/CollectionItem.cpp
+        src/models/SetCatalogItem.h src/models/SetCatalogItem.cpp
+        src/models/MinifigCatalogItem.h src/models/MinifigCatalogItem.cpp
+        src/models/MinifigCatalogSearchCriteria.h src/models/MinifigCatalogSearchResult.h
+        src/models/MinifigExternalIdentifier.h
+        src/models/Part.h src/models/Part.cpp
+        src/models/Color.h src/models/Color.cpp
+        src/models/Manufacturer.h
+        src/repositories/RepositoryConnection.h
+        src/repositories/WorkspaceRepository.h src/repositories/WorkspaceRepository.cpp
+        src/repositories/BuildRepository.h src/repositories/BuildRepository.cpp
+        src/repositories/BuildRequirementRepository.h src/repositories/BuildRequirementRepository.cpp
+        src/repositories/BuildAllocationRepository.h src/repositories/BuildAllocationRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/SetCatalogRepository.h src/repositories/SetCatalogRepository.cpp
+        src/repositories/MinifigCatalogRepository.h src/repositories/MinifigCatalogRepository.cpp
+        src/repositories/EffectiveSetCompositionRepository.h src/repositories/EffectiveSetCompositionRepository.cpp
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
+        src/repositories/InventoryRecordRepository.h src/repositories/InventoryRecordRepository.cpp
+        src/repositories/InventoryMovementRepository.h src/repositories/InventoryMovementRepository.cpp
+        src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
+        src/repositories/CollectionRepository.h src/repositories/CollectionRepository.cpp
+        src/repositories/RemoteMutationReceiptRepository.h src/repositories/RemoteMutationReceiptRepository.cpp
+        src/services/application/HostOperationalGate.h
+        src/services/application/HostBuildMutationService.h src/services/application/HostBuildMutationService.cpp
+        src/services/application/HostWriteExecutor.h src/services/application/HostWriteExecutor.cpp
+        src/services/application/HostMutationPublicationService.h src/services/application/HostMutationPublicationService.cpp
+        src/services/application/dto/RemoteMutationDtos.h src/services/application/dto/RemoteMutationDtos.cpp
+        src/services/application/dto/RemoteBuildMutationDtos.h src/services/application/dto/RemoteBuildMutationDtos.cpp
+        src/services/builds/BuildMutationService.h src/services/builds/BuildMutationService.cpp
+        src/services/builds/BuildRequirementMutationService.h src/services/builds/BuildRequirementMutationService.cpp
+        src/services/builds/BuildAllocationMutationService.h src/services/builds/BuildAllocationMutationService.cpp
+        src/services/builds/BuildLifecycleService.h src/services/builds/BuildLifecycleService.cpp
+        src/services/builds/SetBuildCreationService.h src/services/builds/SetBuildCreationService.cpp
+        src/services/collection/CollectionItemService.h src/services/collection/CollectionItemService.cpp
+        src/network/OperationalInvalidation.h src/network/OperationalInvalidation.cpp
+    )
+    target_link_libraries(HostSetBuildMutationTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME HostSetBuildMutation COMMAND HostSetBuildMutationTest)
+
     qt_add_executable(RemoteCollectionStorageFilterTest EXCLUDE_FROM_ALL
         tests/RemoteCollectionStorageFilterTest.cpp
     )
