@@ -39,6 +39,10 @@ bool fromJson(const QJsonObject&, RemoteReadDto::CollectionSummary*, DecodeError
 QJsonObject toJson(const RemoteReadDto::CollectionDetail&);
 QJsonObject toJson(const RemoteReadDto::CollectionDetail&, bool includePartsSource);
 bool fromJson(const QJsonObject&, RemoteReadDto::CollectionDetail*, DecodeError* = nullptr);
+QJsonObject toJson(const RemoteReadDto::CollectionDisassemblyPlanRow&);
+bool fromJson(const QJsonObject&, RemoteReadDto::CollectionDisassemblyPlanRow*, DecodeError* = nullptr);
+QJsonObject toJson(const RemoteReadDto::CollectionDisassemblyPlan&);
+bool fromJson(const QJsonObject&, RemoteReadDto::CollectionDisassemblyPlan*, DecodeError* = nullptr);
 QJsonObject toJson(const RemoteReadDto::PartReferenceCustomization&);
 bool fromJson(const QJsonObject&, RemoteReadDto::PartReferenceCustomization*, DecodeError* = nullptr);
 QString utc(const QDateTime& value);

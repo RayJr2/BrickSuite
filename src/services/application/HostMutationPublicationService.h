@@ -19,6 +19,7 @@ public:
         CompleteSetSpare,
         Pulling,
         Collection,
+        CollectionDisassembly,
         PartReferenceCustomization
     };
 

@@ -41,13 +41,16 @@
 #include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../services/collection/CollectionItemService.h"
 #include "../../services/builds/BuildLifecycleService.h"
+#include "../help/HelpManager.h"
 
 #include <QDebug>
 #include <QAbstractItemView>
+#include <QApplication>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHeaderView>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
@@ -68,6 +71,8 @@ DisassembleSetDialog::DisassembleSetDialog(
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
     , m_collectOnly(collectOnly)
 {
+    qApp->installEventFilter(this);
+    setHelpContext(HelpContext::BuildDisassembly);
     setWindowTitle("Disassemble Complete Set");
 
     resize(1100, 700);
@@ -229,10 +234,33 @@ DisassembleSetDialog::DisassembleSetDialog(
 
 DisassembleSetDialog::DisassembleSetDialog(
     int workspaceId, const QString& itemName, const QString& reference,
+    const QString& inventoryMode,
+    const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
+    const QList<RemoteReadDto::StorageSummary>& storage, int excludedSparePieces,
+    SessionStorageSelectionService& sessionStorageSelectionService, QWidget* parent)
+    : DisassembleSetDialog(workspaceId, itemName, reference, inventoryMode, rows,
+                           storage, sessionStorageSelectionService, parent)
+{
+    setHelpContext(HelpContext::CollectionDisassembly);
+    m_disassemblyLabel = QStringLiteral("Collection item");
+    m_excludedCatalogSparePieces = excludedSparePieces;
+    m_linkedCollectionItemId = 1;
+    setWindowTitle(QStringLiteral("Disassemble Collection Item to Inventory"));
+    m_disassembleButton->setText(QStringLiteral("Disassemble to Inventory"));
+    m_collectionStateLabel->setText(QStringLiteral("Resulting Collection State:"));
+    m_collectionStateLabel->show();
+    m_collectionStateCombo->show();
+    setLinkedCollectionState(CollectionItemState::Unassembled, true);
+    updateSummary();
+}
+
+DisassembleSetDialog::DisassembleSetDialog(
+    int workspaceId, const QString& itemName, const QString& reference,
     const QList<AllocationRow>& rows, int excludedSparePieces,
     SessionStorageSelectionService& sessionStorageSelectionService, QWidget* parent)
     : DisassembleSetDialog(0, sessionStorageSelectionService, parent, true)
 {
+    setHelpContext(HelpContext::CollectionDisassembly);
     m_workspaceId = workspaceId;
     m_buildName = itemName;
     m_setNumber = reference;
@@ -246,6 +274,53 @@ DisassembleSetDialog::DisassembleSetDialog(
     if (!loadStorageLocations()) return;
     loadAllocationRows(rows, QStringLiteral("Required Qty"));
     updateSummary();
+}
+
+DisassembleSetDialog::HelpContext DisassembleSetDialog::helpContext() const
+{
+    return m_helpContext;
+}
+
+HelpTopic DisassembleSetDialog::helpTopicForContext(HelpContext context)
+{
+    return context == HelpContext::CollectionDisassembly
+        ? HelpTopic::MyCollection : HelpTopic::Builds;
+}
+
+QString DisassembleSetDialog::helpAnchorForContext(HelpContext)
+{
+    return QStringLiteral("disassembly");
+}
+
+void DisassembleSetDialog::setHelpContext(HelpContext context)
+{
+    m_helpContext = context;
+    HelpManager::setContextTopic(this, helpTopicForContext(context),
+                                 helpAnchorForContext(context));
+}
+
+bool DisassembleSetDialog::eventFilter(QObject* watched, QEvent* event)
+{
+    auto* widget = qobject_cast<QWidget*>(watched);
+    if (!widget || (widget != this && !isAncestorOf(widget)))
+        return QDialog::eventFilter(watched, event);
+
+    if (event->type() == QEvent::ShortcutOverride) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->key() == Qt::Key_F1 && keyEvent->modifiers() == Qt::NoModifier) {
+            event->accept();
+            return true;
+        }
+    } else if (event->type() == QEvent::KeyPress) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->key() == Qt::Key_F1 && keyEvent->modifiers() == Qt::NoModifier) {
+            HelpManager::showTopic(helpTopicForContext(m_helpContext),
+                                   helpAnchorForContext(m_helpContext), this);
+            return true;
+        }
+    }
+
+    return QDialog::eventFilter(watched, event);
 }
 
 void DisassembleSetDialog::loadRemoteRows(

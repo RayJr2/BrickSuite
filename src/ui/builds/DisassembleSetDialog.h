@@ -24,6 +24,7 @@
 #include <QList>
 #include "../../models/CollectionItem.h"
 #include "../../services/application/dto/RemoteReadDtos.h"
+#include "../help/HelpTopic.h"
 
 class QComboBox;
 class QLabel;
@@ -37,6 +38,8 @@ class DisassembleSetDialog : public QDialog
     Q_OBJECT
 
 public:
+    enum class HelpContext { BuildDisassembly, CollectionDisassembly };
+
     struct AllocationRow
     {
         int requirementId = 0;
@@ -76,6 +79,14 @@ public:
                          QWidget* parent = nullptr);
     DisassembleSetDialog(int workspaceId, const QString& itemName,
                          const QString& reference,
+                         const QString& inventoryMode,
+                         const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
+                         const QList<RemoteReadDto::StorageSummary>& storage,
+                         int excludedSparePieces,
+                         SessionStorageSelectionService& sessionStorageSelectionService,
+                         QWidget* parent = nullptr);
+    DisassembleSetDialog(int workspaceId, const QString& itemName,
+                         const QString& reference,
                          const QList<AllocationRow>& rows,
                          int excludedSparePieces,
                          SessionStorageSelectionService& sessionStorageSelectionService,
@@ -83,8 +94,13 @@ public:
     QList<ReturnSelection> returnSelections() const;
     int linkedCollectionState() const;
     void setLinkedCollectionState(CollectionItemState state, bool locked = false);
+    HelpContext helpContext() const;
+    static HelpTopic helpTopicForContext(HelpContext context);
+    static QString helpAnchorForContext(HelpContext context);
 
 private:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
     struct RowData
     {
         int requirementId = 0;
@@ -111,6 +127,7 @@ private:
     void applyDefaultDestination();
     void updateSummary();
     void disassembleSet();
+    void setHelpContext(HelpContext context);
 
     QString storagePath(int storageLocationId) const;
 
@@ -128,6 +145,7 @@ private:
     QString m_disassemblyLabel;
     int m_linkedCollectionItemId = 0;
     bool m_collectOnly = false;
+    HelpContext m_helpContext = HelpContext::BuildDisassembly;
     int m_excludedCatalogSparePieces = 0;
     QList<ReturnSelection> m_returnSelections;
 

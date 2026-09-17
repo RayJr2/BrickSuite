@@ -15,6 +15,7 @@
 #include "../parts/PartReferenceManifest.h"
 #include "../builds/BuildRequirementAvailabilityService.h"
 #include "../builds/BuildLifecycleService.h"
+#include "CollectionDisassemblyPlanService.h"
 
 #include <QElapsedTimer>
 #include <QHash>
@@ -662,6 +663,22 @@ void HostReadExecutor::buildDisassemblyReturnsPortable(int workspaceId, int buil
 done_disassembly:
         if(guard)QMetaObject::invokeMethod(guard,[guard,completion,result=std::move(result)]()mutable{if(guard)completion(result);},Qt::QueuedConnection);
     },context,std::move(failure));
+}
+
+void HostReadExecutor::collectionDisassemblyPlanPortable(int workspaceId,
+    int collectionItemId, QObject* context,
+    std::function<void(const CollectionDisassemblyPlanService::Result&)> completion,
+    ErrorCallback failure)
+{
+    QPointer<QObject> guard(context);
+    enqueue(QStringLiteral("collection.disassemblyPlan"),
+        [=, completion=std::move(completion)](ApplicationServices&, const QSqlDatabase& db) mutable {
+            const auto result = CollectionDisassemblyPlanService(db).preview(
+                workspaceId, collectionItemId);
+            if (guard) QMetaObject::invokeMethod(guard,
+                [guard, completion, result] { if (guard) completion(result); },
+                Qt::QueuedConnection);
+        }, context, std::move(failure));
 }
 
 void HostReadExecutor::searchInventoryPortable(const RemoteReadDto::InventorySearchRequest&r,QObject*context,std::function<void(const InventoryApplicationService::Page&)>completion,ErrorCallback failure)

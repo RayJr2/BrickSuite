@@ -133,6 +133,16 @@ int main(int argc, char** argv)
                  "Collection mapping or scope is incorrect"))
         return 1;
 
+    const auto collectionDisassembly = Service::invalidationFor(
+        Service::Workflow::CollectionDisassembly, scope);
+    if (!require(has(collectionDisassembly, D::Collection)
+                     && has(collectionDisassembly, D::Inventory)
+                     && has(collectionDisassembly, D::InventoryHistory)
+                     && collectionDisassembly.workspaceId == 4
+                     && collectionDisassembly.collectionItemId == 15,
+                 "Collection disassembly compound domains are incomplete"))
+        return 1;
+
     qInfo() << "Host mutation publication tests passed.";
     return 0;
 }

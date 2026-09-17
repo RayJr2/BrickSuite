@@ -114,10 +114,25 @@ CollectionDisassemblyService::Result CollectionDisassemblyService::disassemble(
         return resultFailure(Error::InvalidInput,"Host Maintenance prevents operational changes.");
     QSqlDatabase db=database();
     if (!db.transaction()) return resultFailure(Error::DatabaseFailure,db.lastError().text());
+    const Result result = disassembleInCurrentTransaction(
+        itemId, expectedModifiedUtc, assignments);
+    if (!result.success) { db.rollback(); return result; }
+    if (!db.commit()) { const QString error=db.lastError().text(); db.rollback();
+        return resultFailure(Error::DatabaseFailure,error); }
+    return result;
+}
+
+CollectionDisassemblyService::Result
+CollectionDisassemblyService::disassembleInCurrentTransaction(
+    int itemId, const QDateTime& expectedModifiedUtc,
+    const QList<DestinationAssignment>& assignments) const
+{
+    if (!expectedModifiedUtc.isValid()) return resultFailure(Error::InvalidInput,"The Collection version is invalid.");
+    QSqlDatabase db=database();
     const Plan plan=buildPlan(itemId);
-    if (!plan.success) { db.rollback(); return resultFailure(plan.error,plan.message); }
+    if (!plan.success) return resultFailure(plan.error,plan.message);
     if (plan.item.modifiedUtc != expectedModifiedUtc.toUTC()) {
-        db.rollback(); return resultFailure(Error::Stale,"The Collection item changed. Review it and try again.");
+        return resultFailure(Error::Stale,"The Collection item changed. Review it and try again.");
     }
     QMap<QPair<int,int>,int> requiredQuantities;
     QMap<QPair<int,int>,int> assignedQuantities;
@@ -130,22 +145,22 @@ CollectionDisassemblyService::Result CollectionDisassemblyService::disassemble(
         const QPair<int,int> key(assignment.partId,assignment.colorId);
         if (!requiredQuantities.contains(key) || assignment.quantity<=0
             || assignment.storageLocationId<=0) {
-            db.rollback(); return resultFailure(Error::InvalidInput,
+            return resultFailure(Error::InvalidInput,
                 "The Collection return plan contains an invalid Part, Color, quantity, or destination.");
         }
         if (!StorageLocationRepository(db).isValidInventoryDestination(
                 plan.item.workspaceId,assignment.storageLocationId)) {
-            db.rollback(); return resultFailure(Error::InvalidDestination,
+            return resultFailure(Error::InvalidDestination,
                 "Every returned Part requires an active Inventory-capable leaf destination in this Workspace.");
         }
         assignedQuantities[key]+=assignment.quantity;
     }
     if (assignedQuantities!=requiredQuantities) {
-        db.rollback(); return resultFailure(Error::InvalidInput,
+        return resultFailure(Error::InvalidInput,
             "The Collection return plan must include the full required quantity for every Part and Color.");
     }
     const int manufacturerId=ManufacturerRepository(db).legoManufacturerId();
-    if (manufacturerId<=0) { db.rollback(); return resultFailure(Error::DatabaseFailure,"The LEGO manufacturer identity is unavailable."); }
+    if (manufacturerId<=0) return resultFailure(Error::DatabaseFailure,"The LEGO manufacturer identity is unavailable.");
     InventoryRecordRepository inventory(db);
     Result result; result.collectionItemId=itemId;
     const QString reference=QString::number(itemId);
@@ -162,17 +177,16 @@ CollectionDisassemblyService::Result CollectionDisassemblyService::disassemble(
         InventoryRecordRepository::AddResult added;
         if (!inventory.addOrIncreaseQuantityInCurrentTransaction(record,
                 QStringLiteral("CollectionDisassembly"),QStringLiteral("Collection"),reference,notes,&added)) {
-            db.rollback(); return resultFailure(Error::DatabaseFailure,"Unable to add a Collection piece to Inventory.");
+            return resultFailure(Error::DatabaseFailure,"Unable to add a Collection piece to Inventory.");
         }
         result.affectedInventoryIds.append(added.inventoryRecordId);
         result.totalPieces+=assignment.quantity; ++result.distinctRows;
     }
     if (!CollectionRepository(db).transitionCatalogItemToUnassembled(
             itemId,plan.item.workspaceId,expectedModifiedUtc)) {
-        db.rollback(); return resultFailure(Error::Stale,
+        return resultFailure(Error::Stale,
             "The Collection item changed. No Inventory was added; review it and try again.");
     }
-    if (!db.commit()) { const QString error=db.lastError().text(); db.rollback(); return resultFailure(Error::DatabaseFailure,error); }
     result.success=true;
     result.message=QStringLiteral("Added %1 required piece(s) across %2 Inventory row(s). The Collection item is now Unassembled.")
         .arg(result.totalPieces).arg(result.distinctRows);

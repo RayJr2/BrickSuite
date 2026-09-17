@@ -56,6 +56,9 @@ public:
     Plan preview(int collectionItemId) const;
     Result disassemble(int collectionItemId, const QDateTime& expectedModifiedUtc,
                        const QList<DestinationAssignment>& assignments) const;
+    Result disassembleInCurrentTransaction(int collectionItemId,
+        const QDateTime& expectedModifiedUtc,
+        const QList<DestinationAssignment>& assignments) const;
 
 private:
     Plan buildPlan(int collectionItemId) const;

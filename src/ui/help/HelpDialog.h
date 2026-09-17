@@ -41,6 +41,7 @@ public:
     explicit HelpDialog(QWidget* parent = nullptr);
 
     void showTopic(HelpTopic topic);
+    void showTopic(HelpTopic topic, const QString& anchor);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -48,7 +49,7 @@ protected:
 private:
     void buildContents();
     void applySearch(const QString& searchText);
-    void loadTopic(HelpTopic topic);
+    void loadTopic(HelpTopic topic, const QString& anchor = {});
     void updateNavigationButtons();
     void syncContentsSelection(const QUrl& source);
 

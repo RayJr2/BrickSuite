@@ -1,9 +1,11 @@
 #pragma once
 #include "RemoteMutationDtos.h"
+#include <QList>
 
 namespace RemoteCollectionMutationDto {
 struct ExpectedState { QString modifiedUtc,type,setNumber,minifigNumber,state,condition,completeness,nickname,notes; qint64 storageId=0,sourceBuildId=0; bool active=true; bool allowPartsSource=false; };
-struct Request { qint64 workspaceId=0,collectionItemId=0,storageId=0,buildId=0; QString mutationId,sourceType,setNumber,minifigNumber,state,condition,completeness,nickname,notes; bool desiredActive=true; bool allowPartsSource=false; ExpectedState expected; };
+struct DisassemblyReturn { qint64 rowIndex=0,storageId=0; int quantity=0; };
+struct Request { qint64 workspaceId=0,collectionItemId=0,storageId=0,buildId=0; QString mutationId,sourceType,setNumber,minifigNumber,state,condition,completeness,nickname,notes,planId; bool desiredActive=true; bool allowPartsSource=false; ExpectedState expected; QList<DisassemblyReturn> returns; };
 struct Result { QString mutationId,operation; bool replayed=false; QJsonObject item; };
 RemoteMutationDto::Metadata toMetadata(const QString&,const Request&);
 bool fromMetadata(const QString&,const RemoteMutationDto::Metadata&,Request*,RemoteMutationDto::Error* = nullptr);

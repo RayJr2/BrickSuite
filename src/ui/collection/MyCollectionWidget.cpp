@@ -25,6 +25,7 @@
 #include "../../settings/UserSettings.h"
 
 #include <QComboBox>
+#include <QDialogButtonBox>
 #include <QHash>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -41,6 +42,7 @@
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
+#include <memory>
 
 namespace {
 constexpr int ItemIdRole = Qt::UserRole;
@@ -614,6 +616,16 @@ void MyCollectionWidget::populateRemotePage(const QList<RemoteReadDto::Collectio
         auto* actions = new QComboBox(m_table); actions->addItem("Actions..."); actions->addItem("Details", "details");
         if (m_remoteMutations && m_remoteMutations->isAvailableFor(QStringLiteral("collection.edit")))
             actions->addItem(QStringLiteral("Edit..."), QStringLiteral("edit"));
+        const bool potentiallyDisassemblable = value.active
+            && value.state == QStringLiteral("Assembled")
+            && value.completeness == QStringLiteral("Complete")
+            && (value.type == QStringLiteral("Set")
+                || value.type == QStringLiteral("Minifig")
+                || (value.type == QStringLiteral("MOC") && value.sourceBuildId > 0));
+        if (potentiallyDisassemblable && m_remoteMutations
+            && m_remoteMutations->isAvailableFor(QStringLiteral("collection.disassemble")))
+            actions->addItem(QStringLiteral("Disassemble to Inventory..."),
+                             QStringLiteral("disassemble"));
         if (m_remoteMutations && m_remoteMutations->isAvailableFor(QStringLiteral("collection.setActive")))
             actions->addItem(value.active ? QStringLiteral("Archive") : QStringLiteral("Reactivate"),
                              value.active ? QStringLiteral("archive") : QStringLiteral("reactivate"));
@@ -623,6 +635,7 @@ void MyCollectionWidget::populateRemotePage(const QList<RemoteReadDto::Collectio
             const QString action = actions->itemData(index).toString(); actions->setCurrentIndex(0);
             if (action == QStringLiteral("details")) showRemoteDetails(id);
             else if (action == QStringLiteral("edit")) openRemoteMutation(QStringLiteral("collection.edit"), id);
+            else if (action == QStringLiteral("disassemble")) openRemoteDisassembly(id);
             else openRemoteMutation(QStringLiteral("collection.setActive"), id);
         });
         if (value.type == QStringLiteral("Set") && !imageUrl.isEmpty()) m_setImages->requestSetImage(reference, imageUrl);
@@ -630,6 +643,108 @@ void MyCollectionWidget::populateRemotePage(const QList<RemoteReadDto::Collectio
     }
     m_messageLabel->setText(rows.isEmpty() ? QStringLiteral("No Collection items match the current filters.")
         : QStringLiteral("Showing %1 - %2 from BrickSuite Host.").arg(m_page * UserSettings::instance().resultsPerPage() + 1).arg(m_page * UserSettings::instance().resultsPerPage() + rows.size()));
+}
+
+void MyCollectionWidget::openRemoteDisassembly(int itemId)
+{
+    if (!m_remoteReads || !m_remoteMutations || m_remoteMutationDialog
+        || !m_remoteMutations->isAvailableFor(QStringLiteral("collection.disassemble")))
+        return;
+    const int workspaceId = m_workspaceContext.currentWorkspaceId();
+    m_remoteReads->collectionDisassemblyPlan(workspaceId, itemId, this,
+        [this, workspaceId](AsyncReadResult<RemoteReadDto::CollectionDisassemblyPlan> result) {
+            if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+            if (!result.succeeded()) {
+                QMessageBox::warning(this, QStringLiteral("Disassemble Collection Item"),
+                                     result.message);
+                refreshRemoteCurrentPage();
+                return;
+            }
+            const auto plan = *result.value;
+            m_remoteReads->listStorage(workspaceId, this,
+                [this, workspaceId, plan](AsyncReadResult<QList<RemoteReadDto::StorageSummary>> storage) {
+                    if (workspaceId != m_workspaceContext.currentWorkspaceId()
+                        || m_remoteMutationDialog) return;
+                    if (!storage.succeeded()) {
+                        QMessageBox::warning(this, QStringLiteral("Disassemble Collection Item"),
+                                             storage.message);
+                        return;
+                    }
+                    QList<RemoteReadDto::BuildCancellationReturnRow> rows;
+                    for (const auto& row : plan.rows)
+                        rows.append({row.rowIndex,row.partNumber,row.partNameFallback,
+                            row.colorNameFallback,row.manufacturerDisplay,row.quantity,row.spare});
+                    auto* dialog = new DisassembleSetDialog(plan.workspaceId, plan.name,
+                        plan.reference, plan.inventoryMode, rows, *storage.value,
+                        plan.excludedSparePieces, m_sessionStorageSelectionService, this);
+                    dialog->setObjectName(QStringLiteral("remoteCollectionWorkflow_disassemblyPlan"));
+                    dialog->setAttribute(Qt::WA_DeleteOnClose);
+                    m_remoteMutationDialog = dialog;
+                    connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged,
+                            dialog, &QDialog::reject);
+                    connect(dialog, &QDialog::accepted, this, [this, dialog, plan] {
+                        QList<RemoteCollectionMutationDto::DisassemblyReturn> returns;
+                        for (const auto& row : dialog->returnSelections())
+                            returns.append({row.requirementId,row.storageLocationId,row.quantity});
+                        m_remoteMutationDialog = nullptr;
+                        submitRemoteDisassembly(plan, returns);
+                    });
+                    dialog->open();
+                });
+        });
+}
+
+void MyCollectionWidget::submitRemoteDisassembly(
+    const RemoteReadDto::CollectionDisassemblyPlan& plan,
+    const QList<RemoteCollectionMutationDto::DisassemblyReturn>& returns)
+{
+    if (!m_remoteMutations || m_remoteMutationDialog) return;
+    auto* dialog = new QDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setObjectName(QStringLiteral("remoteCollectionWorkflow_disassemblyMutation"));
+    dialog->setWindowTitle(QStringLiteral("Disassemble Collection Item"));
+    auto* layout = new QVBoxLayout(dialog);
+    auto* question = new QLabel(QStringLiteral(
+        "Disassemble this Collection item? The Host will add the selected pieces to Inventory and mark the Collection item Unassembled."), dialog);
+    question->setWordWrap(true);
+    auto* status = new QLabel(dialog); status->setWordWrap(true);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel,dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Continue"));
+    layout->addWidget(question);layout->addWidget(status);layout->addWidget(buttons);
+    m_remoteMutationDialog=dialog;
+    auto request=std::make_shared<RemoteCollectionMutationDto::Request>();
+    request->workspaceId=plan.workspaceId;request->collectionItemId=plan.collectionItemId;
+    request->mutationId=RemoteMutationDto::newMutationId();request->planId=plan.planId;
+    request->returns=returns;
+    request->expected={plan.modifiedUtc.toUTC().toString(Qt::ISODateWithMs),plan.type,
+        plan.type==QStringLiteral("Set")?plan.reference:QString(),
+        plan.type==QStringLiteral("Minifig")?plan.reference:QString(),plan.state,
+        plan.condition,plan.completeness,plan.nickname,plan.notes,plan.storageId,
+        plan.sourceBuildId,plan.active,plan.allowPartsSource};
+    connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
+    connect(buttons,&QDialogButtonBox::accepted,dialog,
+        [this,dialog,buttons,status,request] {
+            buttons->setEnabled(false);status->setText(QStringLiteral("Saving to BrickSuite Host..."));
+            m_remoteMutations->submit(QStringLiteral("collection.disassemble"),*request,dialog,
+                [this,dialog](const RemoteCollectionMutationDto::Result& result) {
+                    dialog->accept();refreshRemoteCurrentPage();
+                    if(result.item.value(QStringLiteral("collectionItemId")).toInt()>0)
+                        selectCollectionItem(result.item.value(QStringLiteral("collectionItemId")).toInt());
+                },[this,dialog,buttons,status](const RemoteMutationDto::Error& error) {
+                    buttons->setEnabled(true);
+                    if(error.outcome==RemoteMutationDto::Outcome::Unknown){
+                        status->setText(QStringLiteral("The outcome is unknown. Retry Safely to check the same mutation."));
+                        buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Retry Safely"));
+                    }else{
+                        status->setText(error.message);
+                        if(error.code==QStringLiteral("STALE_VERSION")||error.code==QStringLiteral("CONFLICT")){
+                            refreshRemoteCurrentPage();dialog->reject();
+                        }
+                    }
+                });
+        });
+    connect(&m_workspaceContext,&WorkspaceContext::currentWorkspaceChanged,dialog,&QDialog::reject);
+    dialog->open();
 }
 
 void MyCollectionWidget::openRemoteMutation(const QString& operation, int itemId)

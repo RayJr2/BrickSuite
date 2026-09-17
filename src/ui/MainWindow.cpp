@@ -1118,8 +1118,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     helpContentsAction->setShortcutContext(Qt::ApplicationShortcut);
 
     connect(helpContentsAction, &QAction::triggered, this, [this]() {
-        if (const auto contextTopic = HelpManager::contextTopic(QApplication::activeWindow())) {
-            HelpManager::showTopic(*contextTopic, QApplication::activeWindow());
+        if (const auto context = HelpManager::context(QApplication::activeWindow())) {
+            HelpManager::showTopic(context->topic, context->anchor,
+                                   QApplication::activeWindow());
             return;
         }
 

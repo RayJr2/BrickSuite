@@ -16,7 +16,8 @@ class SessionStorageSelectionService;
 class RemoteReadApplicationServices;
 class RemoteCollectionMutationApplicationService;
 class QDialog;
-namespace RemoteReadDto { struct CollectionSummary; struct CollectionDetail; }
+namespace RemoteReadDto { struct CollectionSummary; struct CollectionDetail; struct CollectionDisassemblyPlan; }
+namespace RemoteCollectionMutationDto { struct DisassemblyReturn; }
 
 class MyCollectionWidget : public QWidget
 {
@@ -48,6 +49,10 @@ private:
     void populateRemotePage(const QList<RemoteReadDto::CollectionSummary>& rows);
     void showRemoteDetails(int itemId);
     void openRemoteMutation(const QString& operation, int itemId);
+    void openRemoteDisassembly(int itemId);
+    void submitRemoteDisassembly(
+        const RemoteReadDto::CollectionDisassemblyPlan& plan,
+        const QList<RemoteCollectionMutationDto::DisassemblyReturn>& returns);
     void handleAction(int itemId, bool active, const QString& action);
     QString effectiveCriteriaKey() const;
 

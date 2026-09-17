@@ -206,10 +206,15 @@ HelpDialog::HelpDialog(QWidget* parent)
 
 void HelpDialog::showTopic(HelpTopic topic)
 {
+    showTopic(topic, {});
+}
+
+void HelpDialog::showTopic(HelpTopic topic, const QString& anchor)
+{
     if (!m_searchEdit->text().isEmpty())
         m_searchEdit->clear();
 
-    loadTopic(topic);
+    loadTopic(topic, anchor);
 }
 
 void HelpDialog::closeEvent(QCloseEvent* event)
@@ -298,7 +303,7 @@ void HelpDialog::applySearch(const QString& searchText)
     }
 }
 
-void HelpDialog::loadTopic(HelpTopic topic)
+void HelpDialog::loadTopic(HelpTopic topic, const QString& anchor)
 {
     const QString resourcePath = HelpManager::resourcePath(topic);
 
@@ -314,7 +319,9 @@ void HelpDialog::loadTopic(HelpTopic topic)
     if (qrcPath.startsWith(":/"))
         qrcPath.replace(0, 2, "qrc:/");
 
-    m_browser->setSource(QUrl(qrcPath));
+    QUrl source(qrcPath);
+    source.setFragment(anchor);
+    m_browser->setSource(source);
 }
 
 void HelpDialog::updateNavigationButtons()

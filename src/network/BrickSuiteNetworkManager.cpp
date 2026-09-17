@@ -142,6 +142,14 @@ BrickSuiteNetworkManager::BrickSuiteNetworkManager(QObject* parent)
             return HostCollectionMutationService::createMutation(
                 collectionPartsSourceOperation, metadata, error);
         }, 5);
+    const QString collectionDisassemblyOperation = QStringLiteral("collection.disassemble");
+    m_hostMutations->registerOperation(m_server->operationDispatcher(),
+        collectionDisassemblyOperation, collectionDisassemblyOperation,
+        [collectionDisassemblyOperation](const RemoteMutationDto::Metadata& metadata,
+                                         RemoteMutationDto::Error* error) {
+            return HostCollectionMutationService::createMutation(
+                collectionDisassemblyOperation, metadata, error);
+        }, 5);
     const QStringList buildOperations={QStringLiteral("builds.add"),QStringLiteral("builds.edit"),QStringLiteral("builds.setActive"),QStringLiteral("builds.complete"),QStringLiteral("builds.cancel"),QStringLiteral("builds.disassemble"),QStringLiteral("builds.spare.store"),QStringLiteral("builds.requirements.add"),QStringLiteral("builds.requirements.edit"),QStringLiteral("builds.requirements.remove"),QStringLiteral("builds.allocations.set"),QStringLiteral("builds.allocateAvailable")};
     for(const QString&operation:buildOperations)m_hostMutations->registerOperation(m_server->operationDispatcher(),operation,operation,[operation](const RemoteMutationDto::Metadata&metadata,RemoteMutationDto::Error*error){return HostBuildMutationService::createMutation(operation,metadata,error);});
     m_maintenanceCoordinator = std::make_unique<HostMaintenanceCoordinator>(

@@ -61,6 +61,11 @@ OperationalInvalidation HostMutationPublicationService::invalidationFor(
         result.workspaceId = scope.workspaceId;
         result.collectionItemId = scope.collectionItemId;
         break;
+    case Workflow::CollectionDisassembly:
+        result.domains = {D::Collection, D::Inventory, D::InventoryHistory};
+        result.workspaceId = scope.workspaceId;
+        result.collectionItemId = scope.collectionItemId;
+        break;
     case Workflow::PartReferenceCustomization:
         result.domains = {D::PartReferenceCustomizations};
         result.partNumber = scope.partNumber.trimmed();

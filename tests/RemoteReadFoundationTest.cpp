@@ -244,6 +244,28 @@ int main(int argc, char** argv)
         && RemoteReadJson::fromJson(RemoteReadJson::toJson(collection, true),
             &decodedCollection, &decodeError) && decodedCollection.allowPartsSource,
         "Protocol-versioned Collection parts-source exposure failed");
+    RemoteReadDto::CollectionDisassemblyPlan plan;
+    plan.collectionItemId=1; plan.workspaceId=1; plan.authority="Catalog";
+    plan.planId="plan-hash"; plan.type="Set"; plan.reference="10300-1";
+    plan.name="Synthetic Collection Item"; plan.inventoryMode="Catalog";
+    plan.state="Assembled"; plan.condition="Used"; plan.completeness="Complete";
+    plan.active=true; plan.excludedSparePieces=2;
+    plan.modifiedUtc=QDateTime::fromString("2026-01-03T00:00:00.000Z",Qt::ISODateWithMs);
+    RemoteReadDto::CollectionDisassemblyPlanRow planRow;
+    planRow.rowIndex=1; planRow.partNumber="3001"; planRow.partNameFallback="Brick 2 x 4";
+    planRow.rebrickableColorId=1; planRow.colorNameFallback="Blue";
+    planRow.manufacturerDisplay="LEGO"; planRow.quantity=3;
+    plan.rows.append(planRow);
+    RemoteReadDto::CollectionDisassemblyPlan decodedPlan;
+    ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(plan),
+        &decodedPlan,&decodeError) && decodedPlan.planId==plan.planId
+        && decodedPlan.rows.size()==1 && decodedPlan.rows.first().quantity==3
+        && decodedPlan.excludedSparePieces==2,
+        "Collection disassembly plan round trip failed");
+    QJsonObject invalidPlan=RemoteReadJson::toJson(plan);
+    invalidPlan.insert("unexpected",true);
+    ok &= require(!RemoteReadJson::fromJson(invalidPlan,&decodedPlan,&decodeError),
+        "Collection disassembly plan accepted an unknown field");
     RemoteReadDto::PartReferenceCustomization customization;
     customization.customizationId=7; customization.partNumber="3001";
     customization.catalog="Bricks"; customization.section="Basic"; customization.displayOrder=12;
@@ -313,12 +335,21 @@ int main(int argc, char** argv)
            BrickSuiteOperationDispatcher::Completion completion) {
             completion(BrickSuiteProtocol::response(request));
         }, 5, QStringLiteral("collection.partsSource.set"));
+    dispatcher.registerAsyncOperation(QStringLiteral("collection.disassemblyPlan"), true,
+        [](const BrickSuiteProtocol::Message& request,
+           BrickSuiteOperationDispatcher::Completion completion) {
+            completion(BrickSuiteProtocol::response(request));
+        }, 5, QStringLiteral("collection.disassemble"));
     ok &= require(!dispatcher.operations(4).contains("buildability.inventory.search")
         && !dispatcher.capabilities(4).contains("buildability.inventory")
         && dispatcher.operations(5).contains("buildability.inventory.search")
         && !dispatcher.capabilities(4).contains("collection.partsSource.set")
         && dispatcher.capabilities(5).contains("buildability.inventory")
-        && dispatcher.capabilities(5).contains("collection.partsSource.set"),
+        && dispatcher.capabilities(5).contains("collection.partsSource.set")
+        && !dispatcher.operations(4).contains("collection.disassemblyPlan")
+        && dispatcher.operations(5).contains("collection.disassemblyPlan")
+        && !dispatcher.capabilities(4).contains("collection.disassemble")
+        && dispatcher.capabilities(5).contains("collection.disassemble"),
         "Protocol 1.5 operation/capability gating failed");
     BrickSuiteProtocol::Message oldRequest=BrickSuiteProtocol::request(
         QStringLiteral("buildability.inventory.search"));oldRequest.protocolMinor=4;

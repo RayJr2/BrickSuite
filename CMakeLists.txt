@@ -127,6 +127,8 @@ qt_add_executable(BrickSuite
     src/services/application/HostPartReferenceMutationService.cpp
     src/services/application/HostCollectionMutationService.h
     src/services/application/HostCollectionMutationService.cpp
+    src/services/application/CollectionDisassemblyPlanService.h
+    src/services/application/CollectionDisassemblyPlanService.cpp
     src/services/application/HostBuildMutationService.h
     src/services/application/HostBuildMutationService.cpp
     src/services/application/RemotePullingApplicationService.h
@@ -872,12 +874,21 @@ if(BUILD_TESTING)
         tests/RemoteCollectionMutationTest.cpp
         src/database/DatabaseManager.cpp src/database/DatabaseSchema.cpp src/services/database/AutomaticBackupPolicy.cpp
         src/models/Workspace.cpp src/models/StorageLocation.cpp src/models/CollectionItem.cpp
-        src/models/Build.cpp src/models/SetCatalogItem.cpp src/models/MinifigCatalogItem.cpp
+        src/models/Build.cpp src/models/BuildRequirement.cpp src/models/BuildAllocation.cpp
+        src/models/InventoryRecord.cpp src/models/InventoryMovement.cpp src/models/Part.cpp src/models/Color.cpp
+        src/models/SetCatalogItem.cpp src/models/MinifigCatalogItem.cpp
         src/repositories/WorkspaceRepository.cpp src/repositories/StorageLocationRepository.cpp
         src/repositories/CollectionRepository.cpp src/repositories/BuildRepository.cpp
+        src/repositories/BuildRequirementRepository.cpp src/repositories/BuildAllocationRepository.cpp
+        src/repositories/InventoryRecordRepository.cpp src/repositories/InventoryMovementRepository.cpp
+        src/repositories/PartRepository.cpp src/repositories/ColorRepository.cpp
+        src/repositories/EffectiveSetCompositionRepository.cpp src/repositories/MinifigCatalogPartRepository.cpp
         src/repositories/SetCatalogRepository.cpp src/repositories/MinifigCatalogRepository.cpp
         src/repositories/ManufacturerRepository.cpp
         src/services/collection/CollectionItemService.cpp
+        src/services/collection/CollectionDisassemblyService.cpp
+        src/services/builds/BuildLifecycleService.cpp
+        src/services/application/CollectionDisassemblyPlanService.cpp
         src/services/application/HostCollectionMutationService.cpp
         src/services/application/dto/RemoteCollectionMutationDtos.cpp
         src/services/application/dto/RemoteMutationDtos.cpp
@@ -1633,18 +1644,23 @@ if(BUILD_TESTING)
         src/repositories/MinifigCatalogRepository.h src/repositories/MinifigCatalogRepository.cpp
         src/repositories/UserPartReferenceRepository.h src/repositories/UserPartReferenceRepository.cpp
         src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/EffectiveSetCompositionRepository.h src/repositories/EffectiveSetCompositionRepository.cpp
+        src/repositories/MinifigCatalogPartRepository.h src/repositories/MinifigCatalogPartRepository.cpp
         src/services/builds/MissingPartsService.h src/services/builds/MissingPartsService.cpp
     src/services/builds/BuildPullingService.h src/services/builds/BuildPullingService.cpp
     src/services/builds/BuildRequirementAvailabilityService.h
     src/services/builds/BuildRequirementAvailabilityService.cpp
         src/services/builds/BuildLifecycleService.h src/services/builds/BuildLifecycleService.cpp
         src/services/collection/CollectionItemService.h src/services/collection/CollectionItemService.cpp
+        src/services/collection/CollectionDisassemblyService.h src/services/collection/CollectionDisassemblyService.cpp
         src/services/parts/PartReferenceManifest.h src/services/parts/PartReferenceManifest.cpp
         src/services/parts/PartReferenceCustomizationService.h src/services/parts/PartReferenceCustomizationService.cpp
         src/services/application/ApplicationServices.h
         src/services/application/ApplicationServices.cpp
         src/services/application/ApplicationServicesCore.cpp
         src/services/application/HostReadExecutor.h src/services/application/HostReadExecutor.cpp
+        src/services/application/CollectionDisassemblyPlanService.h
+        src/services/application/CollectionDisassemblyPlanService.cpp
         src/services/application/HostWriteExecutor.h src/services/application/HostWriteExecutor.cpp
         src/services/application/HostMaintenanceCoordinator.h src/services/application/HostMaintenanceCoordinator.cpp
         src/services/application/HostOperationalGate.h

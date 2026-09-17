@@ -3,6 +3,7 @@
 #include "ApplicationServices.h"
 #include "dto/RemoteReadDtos.h"
 #include "dto/RemoteBuildabilityDtos.h"
+#include "CollectionDisassemblyPlanService.h"
 #include "../../models/StorageLocation.h"
 
 #include <QObject>
@@ -109,6 +110,10 @@ public:
     void getCollection(int itemId, QObject* context,
                        std::function<void(const std::optional<CollectionSearchResult>&)> completion,
                        ErrorCallback failure = {});
+    void collectionDisassemblyPlanPortable(int workspaceId, int collectionItemId,
+        QObject* context,
+        std::function<void(const CollectionDisassemblyPlanService::Result&)> completion,
+        ErrorCallback failure = {});
     void effectivePartReference(const PartReferenceManifest& manifest, QObject* context,
                                 std::function<void(const QList<PartReferenceEntry>&,
                                                    const QString&)> completion,

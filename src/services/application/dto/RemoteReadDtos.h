@@ -117,6 +117,21 @@ struct CollectionSummary {
 };
 struct CollectionDetail : CollectionSummary { QString notes; QDateTime createdUtc; QDateTime modifiedUtc; };
 
+struct CollectionDisassemblyPlanRow {
+    qint64 rowIndex = 0; qint64 requirementId = 0;
+    QString partNumber; QString partNameFallback; int rebrickableColorId = -1;
+    QString colorNameFallback; QString manufacturerDisplay;
+    int quantity = 0; bool spare = false;
+};
+struct CollectionDisassemblyPlan {
+    qint64 collectionItemId = 0; qint64 workspaceId = 0; qint64 sourceBuildId = 0;
+    QString authority; QString planId; QString type; QString reference; QString name;
+    QString inventoryMode; QString state; QString condition; QString completeness;
+    qint64 storageId = 0; QString nickname; QString notes;
+    bool active = true; bool allowPartsSource = false; int excludedSparePieces = 0;
+    QDateTime modifiedUtc; QList<CollectionDisassemblyPlanRow> rows;
+};
+
 struct PartReferenceCustomization {
     qint64 customizationId = 0; QString partNumber; QString partNameFallback;
     QString catalog; QString section; int displayOrder = 0;

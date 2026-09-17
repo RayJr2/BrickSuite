@@ -36,10 +36,18 @@ struct HelpTopicInfo
     QString resourcePath;
 };
 
+struct HelpContext
+{
+    HelpTopic topic;
+    QString anchor;
+};
+
 class HelpManager
 {
 public:
     static void showTopic(HelpTopic topic, QWidget* parent = nullptr);
+    static void showTopic(HelpTopic topic, const QString& anchor,
+                          QWidget* parent = nullptr);
 
     static QList<HelpTopicInfo> topics();
     static HelpTopicInfo topicInfo(HelpTopic topic);
@@ -47,6 +55,8 @@ public:
     static QString resourcePath(HelpTopic topic);
     static QString title(HelpTopic topic);
 
-    static void setContextTopic(QWidget* window, HelpTopic topic);
+    static void setContextTopic(QWidget* window, HelpTopic topic,
+                                const QString& anchor = {});
     static std::optional<HelpTopic> contextTopic(const QWidget* window);
+    static std::optional<HelpContext> context(const QWidget* window);
 };

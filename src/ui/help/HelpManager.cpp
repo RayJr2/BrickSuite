@@ -64,6 +64,11 @@ const QList<HelpTopicInfo>& helpTopics()
 
 void HelpManager::showTopic(HelpTopic topic, QWidget* parent)
 {
+    showTopic(topic, {}, parent);
+}
+
+void HelpManager::showTopic(HelpTopic topic, const QString& anchor, QWidget* parent)
+{
     if (!s_helpDialog) {
         s_helpDialog = new HelpDialog(parent);
         s_helpDialog->setAttribute(Qt::WA_DeleteOnClose);
@@ -73,7 +78,7 @@ void HelpManager::showTopic(HelpTopic topic, QWidget* parent)
         });
     }
 
-    s_helpDialog->showTopic(topic);
+    s_helpDialog->showTopic(topic, anchor);
     s_helpDialog->show();
     s_helpDialog->raise();
     s_helpDialog->activateWindow();
@@ -104,10 +109,13 @@ QString HelpManager::title(HelpTopic topic)
     return topicInfo(topic).title;
 }
 
-void HelpManager::setContextTopic(QWidget* window, HelpTopic topic)
+void HelpManager::setContextTopic(QWidget* window, HelpTopic topic,
+                                  const QString& anchor)
 {
-    if (window)
+    if (window) {
         window->setProperty("brickSuiteHelpTopic", static_cast<int>(topic));
+        window->setProperty("brickSuiteHelpAnchor", anchor);
+    }
 }
 
 std::optional<HelpTopic> HelpManager::contextTopic(const QWidget* window)
@@ -125,4 +133,12 @@ std::optional<HelpTopic> HelpManager::contextTopic(const QWidget* window)
             return info.topic;
     }
     return std::nullopt;
+}
+
+std::optional<HelpContext> HelpManager::context(const QWidget* window)
+{
+    const auto topic = contextTopic(window);
+    if (!topic)
+        return std::nullopt;
+    return HelpContext{*topic, window->property("brickSuiteHelpAnchor").toString()};
 }
