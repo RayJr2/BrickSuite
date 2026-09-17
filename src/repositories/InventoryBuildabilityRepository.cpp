@@ -92,6 +92,7 @@ InventoryBuildabilitySearchResult InventoryBuildabilityRepository::search(
               FROM collection_item ci JOIN set_catalog sc ON sc.id=ci.set_catalog_id
              WHERE ci.workspace_id=:workspace AND ci.item_type='Set' AND ci.is_active=1
                AND ci.allow_parts_source=1 AND ci.completeness='Complete'
+               AND ci.state='Assembled'
                AND (EXISTS (SELECT 1 FROM set_inventory_revision sir
                              JOIN set_inventory_part sip ON sip.set_inventory_revision_id=sir.id
                             WHERE sir.set_catalog_id=ci.set_catalog_id
@@ -123,7 +124,7 @@ InventoryBuildabilitySearchResult InventoryBuildabilityRepository::search(
             SELECT COUNT(*) FROM collection_item ci
              WHERE ci.workspace_id=:workspace AND ci.item_type='Set'
                AND ci.allow_parts_source=1
-               AND (ci.is_active=0 OR ci.completeness<>'Complete'
+               AND (ci.is_active=0 OR ci.completeness<>'Complete' OR ci.state<>'Assembled'
                     OR NOT (EXISTS (SELECT 1 FROM set_inventory_revision sir
                                      JOIN set_inventory_part sip ON sip.set_inventory_revision_id=sir.id
                                     WHERE sir.set_catalog_id=ci.set_catalog_id
@@ -149,7 +150,8 @@ InventoryBuildabilitySearchResult InventoryBuildabilityRepository::search(
                                   AND ci.workspace_id=:workspace
                                   AND ci.item_type='Set' AND ci.is_active=1
                                   AND ci.allow_parts_source=1
-                                  AND ci.completeness='Complete')
+                                  AND ci.completeness='Complete'
+                                  AND ci.state='Assembled')
                  GROUP BY ep.set_id,ep.part_id,ep.color_id
             )");
             pieces.prepare(sql); pieces.bindValue(QStringLiteral(":workspace"),request.workspaceId);

@@ -95,6 +95,36 @@ int main(int argc, char** argv)
             "linked Minifig creation rolls back");
 
         const int itemId = fig.collectionItemId;
+        const auto blockedCatalogTransition = service.updateDetailsInCurrentTransaction(itemId,
+            CollectionItemState::Unassembled, 10, "", "", false,
+            CollectionItemCondition::Used, CollectionItemCompleteness::Unknown);
+        ok &= check(!blockedCatalogTransition.success
+                    && blockedCatalogTransition.error
+                        == CollectionItemService::Error::PhysicalTransitionRequired
+                    && scalar(db, QString("SELECT COUNT(*) FROM collection_item WHERE id=%1 AND state='Assembled'").arg(itemId)) == 1,
+                    "generic edit cannot bypass catalog Collection disassembly");
+
+        const int linkedItemId = linked.collectionItemId;
+        const auto blockedLinkedTransition = service.updateDetailsInCurrentTransaction(linkedItemId,
+            CollectionItemState::Unassembled, 10, "", "", false,
+            CollectionItemCondition::Used, CollectionItemCompleteness::Complete);
+        ok &= check(!blockedLinkedTransition.success
+                    && blockedLinkedTransition.error
+                        == CollectionItemService::Error::PhysicalTransitionRequired
+                    && blockedLinkedTransition.message.contains("linked to a Build")
+                    && scalar(db, QString("SELECT COUNT(*) FROM collection_item WHERE id=%1 AND state='Assembled'").arg(linkedItemId)) == 1,
+                    "generic edit cannot bypass Build-linked Set disassembly");
+
+        const int mocItemId = moc.collectionItemId;
+        const auto blockedMocTransition = service.updateDetailsInCurrentTransaction(mocItemId,
+            CollectionItemState::Unassembled, 10, "", "", false,
+            CollectionItemCondition::Used, CollectionItemCompleteness::Complete);
+        ok &= check(!blockedMocTransition.success
+                    && blockedMocTransition.error
+                        == CollectionItemService::Error::PhysicalTransitionRequired
+                    && scalar(db, QString("SELECT COUNT(*) FROM collection_item WHERE id=%1 AND state='Assembled'").arg(mocItemId)) == 1,
+                    "generic edit cannot bypass Build-linked MOC disassembly");
+
         ok &= check(db.transaction(), "begin edit rollback");
         const auto edited = service.updateDetailsInCurrentTransaction(itemId,
             CollectionItemState::PartiallyAssembled, 0, "Changed", "changed", false,

@@ -29,6 +29,8 @@ public:
     std::optional<CollectionSearchResult> displayById(int id) const;
     int count(const CollectionSearchCriteria& criteria) const;
     bool update(CollectionItem& item);
+    bool transitionCatalogItemToUnassembled(int itemId, int workspaceId,
+        const QDateTime& expectedModifiedUtc);
     bool updateStateForSourceBuild(int buildId, CollectionItemState state);
     bool setActive(int itemId, bool active);
 

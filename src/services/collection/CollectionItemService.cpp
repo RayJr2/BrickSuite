@@ -261,6 +261,17 @@ CollectionItemService::Result CollectionItemService::updateDetailsInCurrentTrans
     std::optional<CollectionItem> existing;
     if (!repository.tryGetById(itemId, existing)) return failure(Error::DatabaseFailure, "Unable to read the Collection item.");
     if (!existing) return failure(Error::ItemNotFound, "The Collection item is unavailable.");
+    if (existing->state == CollectionItemState::Assembled
+        && state == CollectionItemState::Unassembled) {
+        if (existing->sourceBuildId > 0) {
+            return failure(Error::PhysicalTransitionRequired,
+                "This Collection item is linked to a Build. Use the Build-linked "
+                "disassembly workflow to return its parts to Inventory.");
+        }
+        return failure(Error::PhysicalTransitionRequired,
+            "Use Disassemble to Inventory to change an assembled Collection item "
+            "to Unassembled so its parts are transferred to Inventory.");
+    }
     CollectionItem item = *existing;
     item.state = state; item.condition = condition; item.completeness = completeness;
     item.storageLocationId = storageLocationId; item.nickname = nickname;

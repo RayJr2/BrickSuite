@@ -12,6 +12,7 @@ class QLineEdit;
 class QPushButton;
 class QTableWidget;
 class CollectionApplicationService;
+class SessionStorageSelectionService;
 class RemoteReadApplicationServices;
 class RemoteCollectionMutationApplicationService;
 class QDialog;
@@ -22,6 +23,7 @@ class MyCollectionWidget : public QWidget
     Q_OBJECT
 public:
     explicit MyCollectionWidget(WorkspaceContext& workspaceContext,
+                                SessionStorageSelectionService& sessionStorageSelectionService,
                                 CollectionApplicationService& collectionService,
                                 RemoteReadApplicationServices* remoteReads = nullptr,
                                 RemoteCollectionMutationApplicationService* remoteMutations = nullptr,
@@ -36,6 +38,7 @@ signals:
     void remoteCollectionRefreshFinished(bool succeeded);
     void remoteLocationsRefreshFinished(bool succeeded);
     void hostCollectionMutationCommitted(int workspaceId, int collectionItemId);
+    void localCollectionDisassembled(int workspaceId, int collectionItemId);
 
 private:
     void loadLocations();
@@ -49,6 +52,7 @@ private:
     QString effectiveCriteriaKey() const;
 
     WorkspaceContext& m_workspaceContext;
+    SessionStorageSelectionService& m_sessionStorageSelectionService;
     CollectionApplicationService& m_collectionService;
     RemoteReadApplicationServices* m_remoteReads = nullptr;
     RemoteCollectionMutationApplicationService* m_remoteMutations = nullptr;

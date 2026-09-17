@@ -285,6 +285,28 @@ bool CollectionRepository::update(CollectionItem& item)
     return true;
 }
 
+bool CollectionRepository::transitionCatalogItemToUnassembled(
+    int itemId, int workspaceId, const QDateTime& expectedModifiedUtc)
+{
+    QSqlQuery query(repositoryDatabase());
+    query.prepare(R"(UPDATE collection_item
+        SET state='Unassembled',modified_utc=:modified
+        WHERE id=:id AND workspace_id=:workspace
+          AND modified_utc=:expected_modified
+          AND is_active=1 AND state='Assembled' AND completeness='Complete'
+          AND source_build_id IS NULL AND item_type IN ('Set','Minifig'))");
+    query.bindValue(":modified", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    query.bindValue(":id", itemId);
+    query.bindValue(":workspace", workspaceId);
+    query.bindValue(":expected_modified", expectedModifiedUtc.toUTC().toString(Qt::ISODateWithMs));
+    if (!query.exec()) {
+        qCritical() << "Unable to transition catalog Collection item after disassembly:"
+                    << query.lastError().text();
+        return false;
+    }
+    return query.numRowsAffected() == 1;
+}
+
 bool CollectionRepository::updateStateForSourceBuild(int buildId, CollectionItemState state)
 {
     QSqlQuery query(repositoryDatabase());

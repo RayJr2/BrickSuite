@@ -2,6 +2,7 @@
 
 #include "CollectionItemDialog.h"
 #include "RemoteCollectionMutationDialog.h"
+#include "../builds/DisassembleSetDialog.h"
 #include "../help/HelpManager.h"
 #include "../help/HelpTopic.h"
 #include "../helpers/LargeViewLoadingGuard.h"
@@ -11,6 +12,8 @@
 #include "../../models/StorageLocation.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/collection/CollectionItemService.h"
+#include "../../services/collection/CollectionDisassemblyService.h"
+#include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
 #include "../../services/application/RemoteCollectionMutationApplicationService.h"
@@ -57,11 +60,14 @@ QString locationPath(const StorageLocation& location, const QHash<int, StorageLo
 }
 
 MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext,
+                                       SessionStorageSelectionService& sessionStorageSelectionService,
                                        CollectionApplicationService& collectionService,
                                        RemoteReadApplicationServices* remoteReads,
                                        RemoteCollectionMutationApplicationService* remoteMutations,
                                        QWidget* parent)
-    : QWidget(parent), m_workspaceContext(workspaceContext), m_collectionService(collectionService),
+    : QWidget(parent), m_workspaceContext(workspaceContext),
+      m_sessionStorageSelectionService(sessionStorageSelectionService),
+      m_collectionService(collectionService),
       m_remoteReads(remoteReads), m_remoteMutations(remoteMutations)
 {
     HelpManager::setContextTopic(this, HelpTopic::MyCollection);
@@ -425,6 +431,13 @@ void MyCollectionWidget::loadPage(bool criteriaChanged, const QString& loadingMe
         m_table->setItem(row, 9, new QTableWidgetItem(source));
         auto* actions = new QComboBox(m_table);
         actions->addItem("Actions..."); actions->addItem("Details / Edit", "details");
+        if (result.item.isActive && result.item.sourceBuildId <= 0
+            && result.item.state == CollectionItemState::Assembled
+            && result.item.completeness == CollectionItemCompleteness::Complete
+            && (result.item.type == CollectionItemType::Set
+                || result.item.type == CollectionItemType::Minifig)
+            && CollectionDisassemblyService().preview(result.item.id).success)
+            actions->addItem("Disassemble to Inventory...", "disassemble");
         actions->addItem(result.item.isActive ? "Archive" : "Reactivate",
                          result.item.isActive ? "archive" : "reactivate");
         m_table->setCellWidget(row, 10, actions);
@@ -458,6 +471,33 @@ void MyCollectionWidget::handleAction(int itemId, bool active, const QString& ac
                 m_workspaceContext.currentWorkspaceId(), itemId);
         });
         dialog.exec();
+        return;
+    }
+    if (action == "disassemble") {
+        CollectionDisassemblyService service;
+        const auto plan=service.preview(itemId);
+        if(!plan.success){QMessageBox::warning(this,"Disassemble Collection Item",plan.message);return;}
+        QList<DisassembleSetDialog::AllocationRow> rows;
+        for(const auto&row:plan.rows)
+            rows.append({0,row.partId,row.colorId,0,row.partNumber,row.partName,
+                row.colorName,QStringLiteral("LEGO"),row.quantity,false});
+        DisassembleSetDialog dialog(plan.item.workspaceId,plan.name,plan.reference,rows,
+            plan.excludedSparePieces,m_sessionStorageSelectionService,this);
+        if(dialog.exec()!=QDialog::Accepted)return;
+        QList<CollectionDisassemblyService::DestinationAssignment> assignments;
+        for(const auto&selection:dialog.returnSelections())
+            assignments.append({selection.partId,selection.colorId,selection.quantity,
+                                selection.storageLocationId});
+        const auto answer=QMessageBox::question(this,"Disassemble to Inventory",
+            "Add the required pieces to loose Inventory at their selected destinations and mark this Collection item Unassembled?",
+            QMessageBox::Yes|QMessageBox::No,QMessageBox::No);
+        if(answer!=QMessageBox::Yes)return;
+        const auto result=service.disassemble(itemId,plan.item.modifiedUtc,assignments);
+        if(!result.success){QMessageBox::critical(this,"Disassemble Collection Item",result.message);return;}
+        QMessageBox::information(this,"Disassemble Collection Item",result.message);
+        refresh();
+        emit localCollectionDisassembled(
+            m_workspaceContext.currentWorkspaceId(), itemId);
         return;
     }
     const bool reactivate = action == "reactivate";

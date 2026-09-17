@@ -227,6 +227,27 @@ DisassembleSetDialog::DisassembleSetDialog(
     loadRemoteRows(rows,storage);updateSummary();
 }
 
+DisassembleSetDialog::DisassembleSetDialog(
+    int workspaceId, const QString& itemName, const QString& reference,
+    const QList<AllocationRow>& rows, int excludedSparePieces,
+    SessionStorageSelectionService& sessionStorageSelectionService, QWidget* parent)
+    : DisassembleSetDialog(0, sessionStorageSelectionService, parent, true)
+{
+    m_workspaceId = workspaceId;
+    m_buildName = itemName;
+    m_setNumber = reference;
+    m_inventoryMode = QStringLiteral("CompleteSet");
+    m_disassemblyLabel = QStringLiteral("Collection item");
+    m_excludedCatalogSparePieces = excludedSparePieces;
+    setWindowTitle(QStringLiteral("Disassemble Collection Item to Inventory"));
+    m_disassembleButton->setText(QStringLiteral("Disassemble to Inventory"));
+    m_buildLabel->setText(reference.isEmpty()
+        ? itemName : QStringLiteral("%1 — %2").arg(reference, itemName));
+    if (!loadStorageLocations()) return;
+    loadAllocationRows(rows, QStringLiteral("Required Qty"));
+    updateSummary();
+}
+
 void DisassembleSetDialog::loadRemoteRows(
     const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
     const QList<RemoteReadDto::StorageSummary>& storage)
@@ -240,24 +261,57 @@ void DisassembleSetDialog::loadRemoteRows(
     const int remembered=m_sessionStorageSelectionService.rememberedDestination(m_workspaceId);
     const int defaultIndex=m_defaultDestinationCombo->findData(remembered);
     if(defaultIndex>=0)m_defaultDestinationCombo->setCurrentIndex(defaultIndex);
-    m_table->setHorizontalHeaderItem(4,new QTableWidgetItem(m_inventoryMode==QStringLiteral("CompleteSet")?QStringLiteral("Set Qty"):QStringLiteral("Pulled Qty")));
-    m_table->setRowCount(0);m_rows.clear();int tableRow=0;
+    QList<AllocationRow> allocationRows;
     for(const auto&source:rows){
-        if(source.quantityPulled<=0)continue;m_table->insertRow(tableRow);
-        m_table->setItem(tableRow,0,new QTableWidgetItem(source.partNumber));
-        m_table->setItem(tableRow,1,new QTableWidgetItem(source.partNameFallback));
-        m_table->setItem(tableRow,2,new QTableWidgetItem(source.colorNameFallback));
-        m_table->setItem(tableRow,3,new QTableWidgetItem(source.manufacturerDisplay));
-        m_table->setItem(tableRow,4,new QTableWidgetItem(QString::number(source.quantityPulled)));
-        m_table->setItem(tableRow,5,new QTableWidgetItem(source.spare?QStringLiteral("Yes"):QStringLiteral("No")));
-        auto*quantity=new QSpinBox(m_table);quantity->setRange(source.quantityPulled,source.quantityPulled);quantity->setValue(source.quantityPulled);
-        auto*destination=new QComboBox(m_table);populateLocationCombo(destination);
-        m_table->setCellWidget(tableRow,6,quantity);m_table->setCellWidget(tableRow,7,destination);
-        RowData row;row.requirementId=int(source.requirementId);row.manufacturerName=source.manufacturerDisplay;
-        row.sourceQuantity=source.quantityPulled;row.isSpare=source.spare;row.quantitySpin=quantity;row.destinationCombo=destination;m_rows.append(row);
-        connect(destination,&QComboBox::currentIndexChanged,this,[this]{updateSummary();});++tableRow;
+        allocationRows.append({int(source.requirementId), 0, 0, 0,
+            source.partNumber, source.partNameFallback, source.colorNameFallback,
+            source.manufacturerDisplay, source.quantityPulled, source.spare});
     }
+    loadAllocationRows(allocationRows, m_inventoryMode == QStringLiteral("CompleteSet")
+        ? QStringLiteral("Set Qty") : QStringLiteral("Pulled Qty"));
     if(m_rows.isEmpty())m_statusLabel->setText(QStringLiteral("No pulled pieces require a return plan."));
+}
+
+void DisassembleSetDialog::loadAllocationRows(
+    const QList<AllocationRow>& rows, const QString& quantityHeading)
+{
+    m_table->setHorizontalHeaderItem(4, new QTableWidgetItem(quantityHeading));
+    m_table->setRowCount(0);
+    m_rows.clear();
+    int tableRow = 0;
+    for (const AllocationRow& source : rows) {
+        if (source.quantity <= 0) continue;
+        m_table->insertRow(tableRow);
+        m_table->setItem(tableRow, 0, new QTableWidgetItem(source.partNumber));
+        m_table->setItem(tableRow, 1, new QTableWidgetItem(source.partName));
+        m_table->setItem(tableRow, 2, new QTableWidgetItem(source.colorName));
+        m_table->setItem(tableRow, 3, new QTableWidgetItem(source.manufacturerName));
+        m_table->setItem(tableRow, 4, new QTableWidgetItem(QString::number(source.quantity)));
+        m_table->setItem(tableRow, 5, new QTableWidgetItem(
+            source.spare ? QStringLiteral("Yes") : QStringLiteral("No")));
+        auto* quantity = new QSpinBox(m_table);
+        quantity->setRange(source.quantity, source.quantity);
+        quantity->setValue(source.quantity);
+        quantity->setAlignment(Qt::AlignCenter);
+        auto* destination = new QComboBox(m_table);
+        populateLocationCombo(destination);
+        m_table->setCellWidget(tableRow, 6, quantity);
+        m_table->setCellWidget(tableRow, 7, destination);
+        RowData row;
+        row.requirementId = source.requirementId;
+        row.partId = source.partId;
+        row.colorId = source.colorId;
+        row.manufacturerId = source.manufacturerId;
+        row.manufacturerName = source.manufacturerName;
+        row.sourceQuantity = source.quantity;
+        row.isSpare = source.spare;
+        row.quantitySpin = quantity;
+        row.destinationCombo = destination;
+        m_rows.append(row);
+        connect(destination, &QComboBox::currentIndexChanged,
+                this, [this] { updateSummary(); });
+        ++tableRow;
+    }
 }
 
 bool DisassembleSetDialog::loadBuild()
@@ -366,7 +420,8 @@ bool DisassembleSetDialog::loadStorageLocations()
 
     for (const StorageLocation& location : locations) {
         // Only active leaf locations are valid disassembly destinations.
-        if (activeParentIds.contains(location.id())) {
+        if (activeParentIds.contains(location.id())
+            || !repository.isValidInventoryDestination(m_workspaceId, location.id())) {
             continue;
         }
 
@@ -720,10 +775,14 @@ void DisassembleSetDialog::updateSummary()
 
     m_summaryLabel->setText(QString("Regular pieces returned: %1     "
                                     "Spare pieces returned: %2     "
-                                    "Total loose pieces: %3")
+                                    "Total loose pieces: %3%4")
                                 .arg(regularPieces)
                                 .arg(sparePieces)
-                                .arg(returnedPieces));
+                                .arg(returnedPieces)
+                                .arg(m_excludedCatalogSparePieces > 0
+                                    ? QStringLiteral("     Catalog spare pieces excluded: %1")
+                                          .arg(m_excludedCatalogSparePieces)
+                                    : QString()));
 
     if (rowsWithoutDestination > 0) {
         m_statusLabel->setText(QString("%1 row(s) with returned pieces still "

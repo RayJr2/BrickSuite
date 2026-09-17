@@ -36,6 +36,20 @@ class DisassembleSetDialog : public QDialog
     Q_OBJECT
 
 public:
+    struct AllocationRow
+    {
+        int requirementId = 0;
+        int partId = 0;
+        int colorId = 0;
+        int manufacturerId = 0;
+        QString partNumber;
+        QString partName;
+        QString colorName;
+        QString manufacturerName;
+        int quantity = 0;
+        bool spare = false;
+    };
+
     struct ReturnSelection
     {
         int requirementId = 0;
@@ -57,6 +71,12 @@ public:
                          const QString& inventoryMode,
                          const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
                          const QList<RemoteReadDto::StorageSummary>& storage,
+                         SessionStorageSelectionService& sessionStorageSelectionService,
+                         QWidget* parent = nullptr);
+    DisassembleSetDialog(int workspaceId, const QString& itemName,
+                         const QString& reference,
+                         const QList<AllocationRow>& rows,
+                         int excludedSparePieces,
                          SessionStorageSelectionService& sessionStorageSelectionService,
                          QWidget* parent = nullptr);
     QList<ReturnSelection> returnSelections() const;
@@ -83,6 +103,8 @@ private:
     bool loadRequirements();
     void loadRemoteRows(const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
                         const QList<RemoteReadDto::StorageSummary>& storage);
+    void loadAllocationRows(const QList<AllocationRow>& rows,
+                            const QString& quantityHeading);
 
     void applyDefaultDestination();
     void updateSummary();
@@ -104,6 +126,7 @@ private:
     QString m_disassemblyLabel;
     int m_linkedCollectionItemId = 0;
     bool m_collectOnly = false;
+    int m_excludedCatalogSparePieces = 0;
     QList<ReturnSelection> m_returnSelections;
 
     QLabel* m_buildLabel = nullptr;

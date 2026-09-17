@@ -419,6 +419,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                                                   m_networkManager.remoteInventoryMutations());
 
     m_myCollectionWidget = new MyCollectionWidget(m_workspaceContext,
+                                                   m_sessionStorageSelectionService,
                                                    m_applicationServices.collection(),
                                                    m_remoteReads,
                                                    m_networkManager.remoteCollectionMutations(),
@@ -694,6 +695,21 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         scope.collectionItemId = itemId;
         if (!m_remoteReads) m_hostMutationPublications->publish(
             HostMutationPublicationService::Workflow::Collection, scope);
+    });
+    connect(m_myCollectionWidget, &MyCollectionWidget::localCollectionDisassembled, this,
+            [this](int workspaceId, int itemId) {
+        if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
+        m_myInventoryWidget->refresh();
+        HostMutationPublicationService::Scope inventoryScope;
+        inventoryScope.workspaceId = workspaceId;
+        m_hostMutationPublications->publish(
+            HostMutationPublicationService::Workflow::Inventory, inventoryScope);
+        HostMutationPublicationService::Scope collectionScope;
+        collectionScope.workspaceId = workspaceId;
+        collectionScope.collectionItemId = itemId;
+        m_hostMutationPublications->publish(
+            HostMutationPublicationService::Workflow::Collection, collectionScope);
+        statusBar()->showMessage("Collection item disassembled to Inventory.", 5000);
     });
 
     const auto showCollectionItem = [this](int collectionItemId) {

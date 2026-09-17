@@ -22,6 +22,7 @@ public:
         CatalogMatchNotFound,
         CatalogMatchAmbiguous,
         SourceBuildAlreadyLinked,
+        PhysicalTransitionRequired,
         ItemNotFound,
         DatabaseFailure
     };
