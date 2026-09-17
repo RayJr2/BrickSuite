@@ -39,6 +39,7 @@
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QVariant>
@@ -118,6 +119,10 @@ PartReferenceDialog::PartReferenceDialog(
 PartReferenceDialog::~PartReferenceDialog()
 {
     saveUiState();
+    // Cards are QObject children and are destroyed by the QDialog base class.
+    // Drop the guarded registry while this class's members are still alive so
+    // child teardown cannot leave any registry state behind.
+    m_cardsByPartNumber.clear();
 }
 
 void PartReferenceDialog::setAddInventoryAvailable(bool available)
@@ -828,16 +833,9 @@ QToolButton* PartReferenceDialog::createPartCard(QWidget* parent, const PartRefe
     button->setProperty("partName", partName);
     button->setProperty("userEntryId", entry.userEntryId);
 
-    m_cardsByPartNumber[normalizedKey(partNumber)].append(button);
-
-    connect(button, &QObject::destroyed, this, [this, key = normalizedKey(partNumber), button]() {
-        auto it = m_cardsByPartNumber.find(key);
-        if (it == m_cardsByPartNumber.end())
-            return;
-        it.value().removeAll(button);
-        if (it.value().isEmpty())
-            m_cardsByPartNumber.erase(it);
-    });
+    // Guarded pointers make card destruction self-cleaning without a destroyed
+    // callback that can outlive the dialog's C++ members during base teardown.
+    m_cardsByPartNumber.add(normalizedKey(partNumber), button);
 
     connect(button, &QToolButton::clicked, this, [this, partNumber, partName, entry]() {
         m_selectedUserEntryId = entry.userEntryId;
@@ -854,7 +852,9 @@ QToolButton* PartReferenceDialog::createPartCard(QWidget* parent, const PartRefe
                 m_selectedUserEntryId = entry.userEntryId;
                 selectPart(partNumber, partName);
 
-                QMenu menu(button);
+                // The selected action can rebuild and destroy this card. A
+                // stack menu must therefore not be owned by the card.
+                QMenu menu;
                 QAction* copyAction = menu.addAction(tr("Copy Part #"));
                 QAction* sendAction = menu.addAction(tr("Send to Add Inventory"));
                 sendAction->setEnabled(m_sendButton && m_sendButton->isEnabled());
@@ -908,8 +908,8 @@ void PartReferenceDialog::setCardImage(const QString& partNumber, const QString&
                                    Qt::KeepAspectRatio,
                                    Qt::SmoothTransformation));
 
-    const QList<QToolButton*> buttons = m_cardsByPartNumber.value(key);
-    for (QToolButton* button : buttons) {
+    const QList<QPointer<QToolButton>> buttons = m_cardsByPartNumber.cards(key);
+    for (const QPointer<QToolButton>& button : buttons) {
         if (button)
             button->setIcon(icon);
     }
@@ -989,9 +989,9 @@ void PartReferenceDialog::setPartCardsSelected(const QString& partNumber, bool s
     if (key.isEmpty())
         return;
 
-    const QList<QToolButton*> cards = m_cardsByPartNumber.value(key);
-    for (QToolButton* card : cards)
-        setCardSelected(card, selected);
+    const QList<QPointer<QToolButton>> cards = m_cardsByPartNumber.cards(key);
+    for (const QPointer<QToolButton>& card : cards)
+        setCardSelected(card.data(), selected);
 }
 
 void PartReferenceDialog::copySelectedPart()
@@ -1033,13 +1033,13 @@ void PartReferenceDialog::addPartToReference()
         auto* dialog=new AddPartReferenceDialog(m_customizationService,0,anchor,m_remoteMutations,m_remoteSession,this);
         m_addDialog=dialog;
         dialog->setAttribute(Qt::WA_DeleteOnClose);
-        connect(dialog,&QDialog::accepted,this,&PartReferenceDialog::refreshCustomizations);
+        connect(dialog,&QDialog::accepted,this,&PartReferenceDialog::scheduleCustomizationsRefresh);
         connect(dialog,&QObject::destroyed,this,[this]{m_addDialog=nullptr;});
         dialog->open(); return;
     }
     AddPartReferenceDialog dialog(m_customizationService, 0, anchor, nullptr, nullptr, this);
     if (dialog.exec() == QDialog::Accepted && dialog.customizationAdded()) {
-        refreshCustomizations();
+        scheduleCustomizationsRefresh();
         // The dialog may add a different Part than the current anchor. Do not
         // claim a narrow Part scope unless it is known reliably.
         emit hostCustomizationMutationCommitted(QString());
@@ -1069,7 +1069,7 @@ void PartReferenceDialog::removeSelectedCustomization()
             request.expected.anchorPartNumber=selected->anchorPartNumber;}
         m_remoteMutationPending=true;
         m_removeReferenceButton->setEnabled(false);
-        m_remoteMutations->remove(request,this,[this](const auto&){m_remoteMutationPending=false;m_pendingRemoveRequest={};m_selectedPartNumber.clear();m_selectedPartName.clear();m_selectedUserEntryId=0;m_selectedLabel->setText(tr("Selected: None"));m_copyButton->setEnabled(false);m_sendButton->setEnabled(false);refreshCustomizations();},
+        m_remoteMutations->remove(request,this,[this](const auto&){m_remoteMutationPending=false;m_pendingRemoveRequest={};m_selectedPartNumber.clear();m_selectedPartName.clear();m_selectedUserEntryId=0;m_selectedLabel->setText(tr("Selected: None"));m_copyButton->setEnabled(false);m_sendButton->setEnabled(false);scheduleCustomizationsRefresh();},
             [this,request](const RemoteMutationDto::Error&error){m_remoteMutationPending=false;if(error.outcome==RemoteMutationDto::Outcome::Unknown)m_pendingRemoveRequest=request;else m_pendingRemoveRequest={};selectPart(m_selectedPartNumber,m_selectedPartName);QMessageBox::warning(this,tr("Part Reference"),error.outcome==RemoteMutationDto::Outcome::Unknown?tr("The outcome is unknown. Retry safely to check the same removal."):error.message);});
         return;
     }
@@ -1079,8 +1079,24 @@ void PartReferenceDialog::removeSelectedCustomization()
     m_selectedPartNumber.clear(); m_selectedPartName.clear(); m_selectedUserEntryId = 0;
     m_selectedLabel->setText(tr("Selected: None")); m_copyButton->setEnabled(false);
     m_sendButton->setEnabled(false); m_removeReferenceButton->setEnabled(false);
-    refreshCustomizations();
+    scheduleCustomizationsRefresh();
     emit hostCustomizationMutationCommitted(removedPartNumber);
+}
+
+void PartReferenceDialog::scheduleCustomizationsRefresh()
+{
+    if (m_customizationsRefreshScheduled)
+        return;
+
+    m_customizationsRefreshScheduled = true;
+    const QPointer<PartReferenceDialog> dialog(this);
+    QTimer::singleShot(0, this, [dialog]() {
+        if (!dialog)
+            return;
+
+        dialog->m_customizationsRefreshScheduled = false;
+        dialog->refreshCustomizations();
+    });
 }
 
 void PartReferenceDialog::restoreUiState()

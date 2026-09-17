@@ -12,6 +12,7 @@
 #include "../../models/WhatCanIBuildPartSelection.h"
 #include "../../services/parts/PartReferenceManifest.h"
 #include "../../services/application/dto/RemotePartReferenceMutationDtos.h"
+#include "PartReferenceCardRegistry.h"
 
 #include <QDialog>
 #include <QHash>
@@ -127,6 +128,7 @@ private:
     void findSetsUsingSelectedPart();
     void addPartToReference();
     void removeSelectedCustomization();
+    void scheduleCustomizationsRefresh();
     const PartReferenceEntry* findEffectiveEntry(const QString& partNumber) const;
 
     static QList<DimensionEntry> makeDimensionEntries(
@@ -158,7 +160,7 @@ private:
     bool m_addInventoryAvailable = false;
     bool m_restoringUiState = false;
 
-    QHash<QString, QList<QToolButton*>> m_cardsByPartNumber;
+    PartReferenceCardRegistry m_cardsByPartNumber;
 
     PartReferenceManifest m_manifest;
     QList<PartReferenceEntry> m_effectiveEntries;
@@ -175,6 +177,7 @@ private:
     RemotePartReferenceMutationDto::Request m_pendingRemoveRequest;
     QPointer<AddPartReferenceDialog> m_addDialog;
     quint64 m_customizationRequestToken = 0;
+    bool m_customizationsRefreshScheduled = false;
 
     static constexpr int ImageBatchSize = 20;
     static constexpr int GalleryColumns = 6;

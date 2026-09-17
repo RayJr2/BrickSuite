@@ -1314,6 +1314,13 @@ if(BUILD_TESTING)
     )
     target_link_libraries(PartReferenceCustomizationTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME PartReferenceCustomization COMMAND PartReferenceCustomizationTest)
+    qt_add_executable(PartReferenceCardLifetimeTest EXCLUDE_FROM_ALL
+        tests/PartReferenceCardLifetimeTest.cpp
+        src/ui/parts/PartReferenceCardRegistry.h)
+    target_link_libraries(PartReferenceCardLifetimeTest PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+    add_test(NAME PartReferenceCardLifetime COMMAND PartReferenceCardLifetimeTest)
+    set_tests_properties(PartReferenceCardLifetime PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     qt_add_executable(PartReferenceRemoteMutationTest EXCLUDE_FROM_ALL
         tests/PartReferenceRemoteMutationTest.cpp resources/resources.qrc
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp
