@@ -953,3 +953,11 @@ int DisassembleSetDialog::linkedCollectionState() const
 {
     return m_linkedCollectionItemId > 0 ? m_collectionStateCombo->currentData().toInt() : 0;
 }
+
+void DisassembleSetDialog::setLinkedCollectionState(CollectionItemState state, bool locked)
+{
+    const int index = m_collectionStateCombo->findData(static_cast<int>(state));
+    if (index >= 0)
+        m_collectionStateCombo->setCurrentIndex(index);
+    m_collectionStateCombo->setEnabled(!locked);
+}

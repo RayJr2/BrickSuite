@@ -697,9 +697,24 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             HostMutationPublicationService::Workflow::Collection, scope);
     });
     connect(m_myCollectionWidget, &MyCollectionWidget::localCollectionDisassembled, this,
-            [this](int workspaceId, int itemId) {
+            [this](int workspaceId, int itemId, int buildId) {
         if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;
         m_myInventoryWidget->refresh();
+        m_myInventoryWidget->refreshOpenHistoryAfterStorageChange();
+        if (buildId > 0) {
+            m_buildsWidget->refresh();
+            m_buildsWidget->refreshOpenLocalPulling(buildId);
+            HostMutationPublicationService::Scope scope;
+            scope.workspaceId = workspaceId;
+            scope.buildId = buildId;
+            scope.collectionItemId = itemId;
+            scope.inventoryChanged = true;
+            scope.collectionChanged = true;
+            m_hostMutationPublications->publish(
+                HostMutationPublicationService::Workflow::BuildDisassembly, scope);
+            statusBar()->showMessage("Build-linked Collection item disassembled to Inventory.", 5000);
+            return;
+        }
         HostMutationPublicationService::Scope inventoryScope;
         inventoryScope.workspaceId = workspaceId;
         m_hostMutationPublications->publish(

@@ -13,6 +13,7 @@
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/collection/CollectionItemService.h"
 #include "../../services/collection/CollectionDisassemblyService.h"
+#include "../../services/builds/BuildLifecycleService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
@@ -431,12 +432,20 @@ void MyCollectionWidget::loadPage(bool criteriaChanged, const QString& loadingMe
         m_table->setItem(row, 9, new QTableWidgetItem(source));
         auto* actions = new QComboBox(m_table);
         actions->addItem("Actions..."); actions->addItem("Details / Edit", "details");
-        if (result.item.isActive && result.item.sourceBuildId <= 0
-            && result.item.state == CollectionItemState::Assembled
-            && result.item.completeness == CollectionItemCompleteness::Complete
+        const bool catalogDisassembly = result.item.sourceBuildId <= 0
             && (result.item.type == CollectionItemType::Set
                 || result.item.type == CollectionItemType::Minifig)
-            && CollectionDisassemblyService().preview(result.item.id).success)
+            && CollectionDisassemblyService().preview(result.item.id).success;
+        const bool buildDisassembly = result.item.sourceBuildId > 0
+            && (result.item.type == CollectionItemType::Set
+                || result.item.type == CollectionItemType::Minifig
+                || result.item.type == CollectionItemType::Moc)
+            && BuildLifecycleService().linkedCollectionDisassemblyReturnPlan(
+                   result.item.id).success;
+        if (result.item.isActive
+            && result.item.state == CollectionItemState::Assembled
+            && result.item.completeness == CollectionItemCompleteness::Complete
+            && (catalogDisassembly || buildDisassembly))
             actions->addItem("Disassemble to Inventory...", "disassemble");
         actions->addItem(result.item.isActive ? "Archive" : "Reactivate",
                          result.item.isActive ? "archive" : "reactivate");
@@ -474,6 +483,20 @@ void MyCollectionWidget::handleAction(int itemId, bool active, const QString& ac
         return;
     }
     if (action == "disassemble") {
+        const auto linkedPlan = BuildLifecycleService()
+            .linkedCollectionDisassemblyReturnPlan(itemId);
+        if (linkedPlan.success) {
+            DisassembleSetDialog dialog(linkedPlan.build.id(),
+                m_sessionStorageSelectionService, this);
+            dialog.setLinkedCollectionState(CollectionItemState::Unassembled, true);
+            if (dialog.exec() != QDialog::Accepted)
+                return;
+            refresh();
+            emit localCollectionDisassembled(linkedPlan.build.workspaceId(), itemId,
+                                              linkedPlan.build.id());
+            return;
+        }
+
         CollectionDisassemblyService service;
         const auto plan=service.preview(itemId);
         if(!plan.success){QMessageBox::warning(this,"Disassemble Collection Item",plan.message);return;}
@@ -497,7 +520,7 @@ void MyCollectionWidget::handleAction(int itemId, bool active, const QString& ac
         QMessageBox::information(this,"Disassemble Collection Item",result.message);
         refresh();
         emit localCollectionDisassembled(
-            m_workspaceContext.currentWorkspaceId(), itemId);
+            m_workspaceContext.currentWorkspaceId(), itemId, 0);
         return;
     }
     const bool reactivate = action == "reactivate";

@@ -140,11 +140,39 @@ int main(int argc, char* argv[])
     const int partId = scalar(db, "SELECT id FROM part WHERE part_number='p1'");
     const int colorId = scalar(db, "SELECT id FROM color WHERE rebrickable_id=1");
     const int manufacturerId = scalar(db, "SELECT id FROM manufacturer WHERE code='LEGO'");
+    if (!require(q.exec("INSERT INTO set_catalog(set_number,name,year,theme_id,num_parts,image_url,created_utc,modified_utc) VALUES('1-1','Lifecycle Set',2026,1,2,'','"+now+"','"+now+"')"),
+                 "Lifecycle Set catalog seed failed.")) return 1;
+    const int lifecycleSetId = q.lastInsertId().toInt();
     Build spareBuild; spareBuild.setWorkspaceId(workspaceId); spareBuild.setBuildType("Set"); spareBuild.setName("Spare lifecycle"); spareBuild.setSetNumber("1-1"); spareBuild.setInventoryMode("CompleteSet"); spareBuild.setManufacturerId(manufacturerId); spareBuild.setStatus("Complete");
+    spareBuild.setSetCatalogId(lifecycleSetId);
     if (!require(builds.create(spareBuild), "Spare Build seed failed.")) return 1;
     BuildRequirement spare; spare.setBuildId(spareBuild.id()); spare.setPartId(partId); spare.setColorId(colorId); spare.setQuantityRequired(2); spare.setIsSpare(true);
     if (!require(BuildRequirementRepository().create(spare), "Spare requirement seed failed.")) return 1;
     BuildLifecycleService lifecycle(db);
+    if (!require(q.exec(QString("INSERT INTO collection_item(workspace_id,item_type,set_catalog_id,state,condition,completeness,source_build_id,allow_parts_source,is_active,created_utc,modified_utc) VALUES(%1,'Set',%2,'Assembled','New','Complete',%3,0,1,'%4','%4')")
+                            .arg(workspaceId).arg(lifecycleSetId).arg(spareBuild.id()).arg(now)),
+                 "Linked Set Collection seed failed.")) return 1;
+    const int linkedSetItemId = q.lastInsertId().toInt();
+    const auto linkedSetPlan = lifecycle.linkedCollectionDisassemblyReturnPlan(linkedSetItemId);
+    if (!require(linkedSetPlan.success && linkedSetPlan.build.id()==spareBuild.id()
+                 && linkedSetPlan.rows.size()==1 && linkedSetPlan.rows.first().spare
+                 && linkedSetPlan.rows.first().quantity==2,
+                 "Build-linked Complete Set did not expose its authoritative tracked-spare return plan: "+linkedSetPlan.message)) return 1;
+
+    const int minifigRequirementId = requirements.first().id();
+    if (!require(q.exec(QString("UPDATE build SET status='Complete',manufacturer_id=%1 WHERE id=%2").arg(manufacturerId).arg(result.buildId))
+                 && q.exec(QString("UPDATE build_requirement SET quantity_pulled=2 WHERE id=%1").arg(minifigRequirementId))
+                 && q.exec(QString("INSERT INTO build_part_provenance(build_id,part_id,color_id,manufacturer_id,quantity_pulled,created_utc,modified_utc) VALUES(%1,%2,%3,%4,2,'%5','%5')")
+                               .arg(result.buildId).arg(partId).arg(colorId).arg(manufacturerId).arg(now))
+                 && q.exec(QString("INSERT INTO collection_item(workspace_id,item_type,minifig_catalog_id,state,condition,completeness,source_build_id,allow_parts_source,is_active,created_utc,modified_utc) VALUES(%1,'Minifig',%2,'Assembled','Used','Complete',%3,0,1,'%4','%4')")
+                               .arg(workspaceId).arg(minifigId).arg(result.buildId).arg(now)),
+                 "Linked Minifig lifecycle seed failed.")) return 1;
+    const int linkedMinifigItemId = q.lastInsertId().toInt();
+    const auto linkedMinifigPlan = lifecycle.linkedCollectionDisassemblyReturnPlan(linkedMinifigItemId);
+    if (!require(linkedMinifigPlan.success && linkedMinifigPlan.build.id()==result.buildId
+                 && linkedMinifigPlan.rows.size()==1
+                 && linkedMinifigPlan.rows.first().quantity==2,
+                 "Build-linked Minifig did not expose its authoritative return plan: "+linkedMinifigPlan.message)) return 1;
     const int inventoryBefore = scalar(db, "SELECT COUNT(*) FROM inventory_record");
     const int movementsBefore = scalar(db, "SELECT COUNT(*) FROM inventory_movement");
     if (!require(db.transaction(), "Begin spare rollback failed.")) return 1;
@@ -158,6 +186,17 @@ int main(int argc, char* argv[])
     if (!require(BuildRequirementRepository().create(pulled), "Pulled requirement seed failed.")) return 1;
     if (!require(q.exec(QString("INSERT INTO build_part_provenance(build_id,part_id,color_id,manufacturer_id,quantity_pulled,created_utc,modified_utc) VALUES(%1,%2,%3,%4,1,'%5','%5')").arg(stockBuild.id()).arg(partId).arg(colorId).arg(manufacturerId).arg(now)), "Provenance seed failed.")) return 1;
     if (!require(q.exec(QString("INSERT INTO collection_item(workspace_id,item_type,state,condition,completeness,source_build_id,nickname,notes,allow_parts_source,is_active,created_utc,modified_utc) VALUES(%1,'MOC','Assembled','Used','Complete',%2,'','','0',1,'%3','%3')").arg(workspaceId).arg(stockBuild.id()).arg(now)), "Linked Collection seed failed.")) return 1;
+    const int linkedMocItemId = q.lastInsertId().toInt();
+    const auto linkedMocPlan = lifecycle.linkedCollectionDisassemblyReturnPlan(linkedMocItemId);
+    if (!require(linkedMocPlan.success && linkedMocPlan.build.id()==stockBuild.id()
+                 && linkedMocPlan.rows.size()==1
+                 && linkedMocPlan.rows.first().requirementId==pulled.id()
+                 && linkedMocPlan.rows.first().manufacturerId==manufacturerId,
+                 "Build-linked MOC did not expose its authoritative provenance return plan: "+linkedMocPlan.message)) return 1;
+    if (!require(q.exec(QString("UPDATE collection_item SET completeness='Incomplete' WHERE id=%1").arg(linkedMocItemId))
+                 && !lifecycle.linkedCollectionDisassemblyReturnPlan(linkedMocItemId).success
+                 && q.exec(QString("UPDATE collection_item SET completeness='Complete' WHERE id=%1").arg(linkedMocItemId)),
+                 "Ineligible Build-linked Collection state was accepted.")) return 1;
     BuildLifecycleService::DisassemblyReturn returned{pulled.id(),partId,colorId,manufacturerId,storageId,1,false};
     if (!require(db.transaction(), "Begin disassembly rollback failed.")) return 1;
     const auto disassembled = lifecycle.disassembleInCurrentTransaction(stockBuild.id(), {returned}, CollectionItemState::Unassembled);
@@ -252,7 +291,12 @@ int main(int argc, char* argv[])
                  "Substitution lifecycle pull failed.")) return 1;
     if (!require(BuildMutationService(db).complete(substitutionBuild.id()).success,
                  "Substitution lifecycle completion failed.")) return 1;
-    const auto returnPlan = lifecycle.disassemblyReturnPlan(substitutionBuild.id());
+    if (!require(q.exec(QString("INSERT INTO collection_item(workspace_id,item_type,state,condition,completeness,source_build_id,allow_parts_source,is_active,created_utc,modified_utc) VALUES(%1,'MOC','Assembled','Used','Complete',%2,0,1,'%3','%3')")
+                            .arg(workspaceId).arg(substitutionBuild.id()).arg(now)),
+                 "Substituted Build-linked Collection seed failed.")) return 1;
+    const int substitutionCollectionItemId = q.lastInsertId().toInt();
+    const auto returnPlan = lifecycle.linkedCollectionDisassemblyReturnPlan(
+        substitutionCollectionItemId);
     if (!require(returnPlan.success && returnPlan.rows.size()==1
                  && returnPlan.rows.first().requirementId==substituted.id()
                  && returnPlan.rows.first().partId==partId
@@ -268,6 +312,7 @@ int main(int argc, char* argv[])
     if (!require(scalar(db, QString("SELECT COUNT(*) FROM build WHERE id=%1 AND status='Disassembled'").arg(substitutionBuild.id()))==1
                  && scalar(db, QString("SELECT quantity_pulled FROM build_requirement WHERE id=%1").arg(substituted.id()))==0
                  && scalar(db, QString("SELECT COUNT(*) FROM build_part_provenance WHERE build_id=%1").arg(substitutionBuild.id()))==0
+                 && scalar(db, QString("SELECT COUNT(*) FROM collection_item WHERE id=%1 AND state='Unassembled'").arg(substitutionCollectionItemId))==1
                  && scalar(db, QString("SELECT quantity FROM inventory_record WHERE id=%1").arg(substituteInventoryId))==4,
                  "Substitution lifecycle did not return the physical inventory exactly.")) return 1;
     qInfo() << "M23.7.4 Minifig Build creation validation passed.";

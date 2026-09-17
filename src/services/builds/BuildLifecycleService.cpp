@@ -158,6 +158,61 @@ BuildLifecycleService::ReturnPlanResult BuildLifecycleService::disassemblyReturn
     result.success=true;result.build=*build;return result;
 }
 
+BuildLifecycleService::ReturnPlanResult
+BuildLifecycleService::linkedCollectionDisassemblyReturnPlan(int collectionItemId) const
+{
+    ReturnPlanResult result;
+    std::optional<CollectionItem> collection;
+    CollectionRepository repository(database());
+    if (!repository.tryGetById(collectionItemId, collection)) {
+        result.error=Error::DatabaseFailure;
+        result.message=QStringLiteral("Unable to load the Collection item.");
+        return result;
+    }
+    if (!collection) {
+        result.error=Error::NotFound;
+        result.message=QStringLiteral("The Collection item was not found.");
+        return result;
+    }
+    if (!collection->isActive || collection->state!=CollectionItemState::Assembled
+        || collection->completeness!=CollectionItemCompleteness::Complete
+        || collection->sourceBuildId<=0
+        || (collection->type!=CollectionItemType::Set
+            && collection->type!=CollectionItemType::Minifig
+            && collection->type!=CollectionItemType::Moc)) {
+        result.error=Error::InvalidState;
+        result.message=QStringLiteral("Only an active, Complete, Assembled Build-linked Collection item can be disassembled.");
+        return result;
+    }
+    std::optional<CollectionItem> linked;
+    if (!repository.tryGetBySourceBuild(collection->sourceBuildId, linked)) {
+        result.error=Error::DatabaseFailure;
+        result.message=QStringLiteral("Unable to validate the Build linkage.");
+        return result;
+    }
+    if (!linked || linked->id!=collection->id) {
+        result.error=Error::InvalidState;
+        result.message=QStringLiteral("The Collection item is not the authoritative item linked to this Build.");
+        return result;
+    }
+    result=disassemblyReturnPlan(collection->sourceBuildId);
+    if (!result.success) return result;
+    if (result.build.workspaceId()!=collection->workspaceId
+        || result.build.buildType()!=collectionItemTypeToString(collection->type)
+        || (collection->type==CollectionItemType::Set
+            && result.build.setCatalogId()!=collection->setCatalogId)
+        || (collection->type==CollectionItemType::Minifig
+            && result.build.minifigCatalogId()!=collection->minifigCatalogId)) {
+        result.success=false;
+        result.rows.clear();
+        result.error=Error::InvalidState;
+        result.message=QStringLiteral("The linked Build identity does not match the Collection item.");
+        return result;
+    }
+    result.linkedCollectionItem=*collection;
+    return result;
+}
+
 BuildLifecycleService::Result BuildLifecycleService::disassemble(
     int buildId, const QList<DisassemblyReturn>& returns,
     CollectionItemState linkedCollectionState) const

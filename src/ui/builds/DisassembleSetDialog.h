@@ -22,6 +22,7 @@
 
 #include <QDialog>
 #include <QList>
+#include "../../models/CollectionItem.h"
 #include "../../services/application/dto/RemoteReadDtos.h"
 
 class QComboBox;
@@ -81,6 +82,7 @@ public:
                          QWidget* parent = nullptr);
     QList<ReturnSelection> returnSelections() const;
     int linkedCollectionState() const;
+    void setLinkedCollectionState(CollectionItemState state, bool locked = false);
 
 private:
     struct RowData

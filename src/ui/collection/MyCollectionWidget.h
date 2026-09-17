@@ -38,7 +38,7 @@ signals:
     void remoteCollectionRefreshFinished(bool succeeded);
     void remoteLocationsRefreshFinished(bool succeeded);
     void hostCollectionMutationCommitted(int workspaceId, int collectionItemId);
-    void localCollectionDisassembled(int workspaceId, int collectionItemId);
+    void localCollectionDisassembled(int workspaceId, int collectionItemId, int buildId);
 
 private:
     void loadLocations();

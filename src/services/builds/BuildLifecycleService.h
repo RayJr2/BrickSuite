@@ -37,6 +37,7 @@ public:
         Error error = Error::None;
         QString message;
         Build build;
+        CollectionItem linkedCollectionItem;
         QList<DisassemblyReturn> rows;
     };
     BuildLifecycleService();
@@ -56,6 +57,7 @@ public:
     Result storeCompleteSetSpareInCurrentTransaction(int buildId, int requirementId,
         int storageLocationId, int quantity) const;
     ReturnPlanResult disassemblyReturnPlan(int buildId) const;
+    ReturnPlanResult linkedCollectionDisassemblyReturnPlan(int collectionItemId) const;
 private:
     QSqlDatabase database() const;
     Result inTransaction(const std::function<Result()>& operation) const;
