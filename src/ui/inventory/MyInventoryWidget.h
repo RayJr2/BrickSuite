@@ -30,6 +30,7 @@
 #include "../../services/application/dto/RemoteReadDtos.h"
 #include "../../services/application/AsyncReadResult.h"
 #include "../../models/WhatCanIBuildPartSelection.h"
+#include "MyInventoryAddSessionRefresh.h"
 
 class WorkspaceContext;
 class SessionStorageSelectionService;
@@ -143,6 +144,7 @@ private:
     int m_lastResultCount = 0;
     int m_totalResultCount = 0;
     bool m_refreshInProgress = false;
+    MyInventoryAddSessionRefresh m_addSessionRefresh;
 
     QLineEdit* m_searchEdit = nullptr;
     QComboBox* m_categoryCombo = nullptr;

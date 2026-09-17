@@ -98,6 +98,9 @@ MyInventoryWidget::MyInventoryWidget(
     , m_remoteReads(remoteReads)
     , m_remoteMutations(remoteMutations)
     , m_enrichmentService(enrichmentService)
+    , m_addSessionRefresh(this,
+          [this] { searchInventory(); },
+          [this] { emit inventoryChanged(); })
 {
     auto* mainLayout =
         new QVBoxLayout(this);
@@ -1585,20 +1588,16 @@ void MyInventoryWidget::addPart()
     if (filteredStorageLocationId > 0)
         dialog->setPreferredStorageLocationId(filteredStorageLocationId);
 
-    // Rapid-entry mode may add many parts while this non-modal dialog stays
-    // open. Rebuilding My Inventory (and the background part-color image
-    // cache queue via inventoryChanged) after every single Add is expensive
-    // and blocks the GUI thread. Mark the view dirty here and perform one
-    // refresh when the dialog closes.
-    dialog->setProperty("brickSuiteInventoryAddedWhileOpen", false);
-
     connect(
         dialog,
         &AddInventoryDialog::inventoryAdded,
         this,
-        [this, dialog]()
+        [this]()
         {
-            dialog->setProperty("brickSuiteInventoryAddedWhileOpen", true);
+            // Keep the visible query current during rapid entry. The
+            // controller coalesces presentation refreshes while retaining the
+            // expensive inventoryChanged notification for session completion.
+            m_addSessionRefresh.inventoryAdded();
             emit hostInventoryMutationCommitted(
                 m_workspaceContext.currentWorkspaceId(), 0);
         });
@@ -1607,20 +1606,14 @@ void MyInventoryWidget::addPart()
     emit addInventoryDialogAvailabilityChanged(true);
 
     connect(dialog, &QDialog::finished, this, [this, dialog](int) {
-        const bool inventoryAddedWhileOpen =
-            dialog->property("brickSuiteInventoryAddedWhileOpen").toBool();
-
         if (m_activeAddInventoryDialog == dialog) {
             m_activeAddInventoryDialog = nullptr;
             emit addInventoryDialogAvailabilityChanged(false);
         }
 
-        // Refresh the inventory table and rebuild dependent background queues
-        // once per rapid-entry session instead of once per added part.
-        if (inventoryAddedWhileOpen) {
-            searchInventory();
-            emit inventoryChanged();
-        }
+        // Flush a still-pending presentation update, then publish the one
+        // session-level notification used by dependent background services.
+        m_addSessionRefresh.sessionFinished();
 
         dialog->deleteLater();
     });

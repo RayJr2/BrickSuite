@@ -1270,6 +1270,11 @@ if(BUILD_TESTING)
     )
     target_link_libraries(AddInventoryColorSelectionTest PRIVATE Qt6::Core)
     add_test(NAME AddInventoryColorSelection COMMAND AddInventoryColorSelectionTest)
+    qt_add_executable(MyInventoryAddSessionRefreshTest EXCLUDE_FROM_ALL
+        tests/MyInventoryAddSessionRefreshTest.cpp
+        src/ui/inventory/MyInventoryAddSessionRefresh.h)
+    target_link_libraries(MyInventoryAddSessionRefreshTest PRIVATE Qt6::Core)
+    add_test(NAME MyInventoryAddSessionRefresh COMMAND MyInventoryAddSessionRefreshTest)
     qt_add_executable(EditInventorySaveStateTest EXCLUDE_FROM_ALL
         tests/EditInventorySaveStateTest.cpp
         src/ui/inventory/EditInventorySaveState.h
