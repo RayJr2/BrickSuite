@@ -139,6 +139,7 @@ private:
     QLineEdit* m_searchEdit = nullptr;
     QListWidget* m_catalogList = nullptr;
     QComboBox* m_viewCombo = nullptr;
+    QLabel* m_galleryViewLabel = nullptr;
     QLabel* m_catalogTitleLabel = nullptr;
     QLabel* m_catalogCountLabel = nullptr;
     QSplitter* m_splitter = nullptr;

@@ -256,12 +256,14 @@ void PartReferenceDialog::initializeUi()
 
     auto* viewLabel = new QLabel(tr("View:"), contentPanel);
     m_viewCombo = new QComboBox(contentPanel);
+    m_galleryViewLabel = new QLabel(tr("Gallery"), contentPanel);
 
     headingRow->addWidget(m_catalogTitleLabel, 1);
     headingRow->addWidget(m_catalogCountLabel);
     headingRow->addSpacing(12);
     headingRow->addWidget(viewLabel);
     headingRow->addWidget(m_viewCombo);
+    headingRow->addWidget(m_galleryViewLabel);
     contentLayout->addLayout(headingRow);
 
     m_contentStack = new QStackedWidget(contentPanel);
@@ -486,12 +488,15 @@ void PartReferenceDialog::updateViewSelector()
     m_viewCombo->clear();
     m_viewCombo->addItem(tr("Gallery"), QStringLiteral("Gallery"));
 
-    if (catalogSupportsDimensionGrid(catalog))
+    const bool supportsDimensionGrid = catalogSupportsDimensionGrid(catalog);
+    if (supportsDimensionGrid)
         m_viewCombo->addItem(tr("Dimension Grid"), QStringLiteral("DimensionGrid"));
 
     const int savedIndex = m_viewCombo->findData(savedMode);
     m_viewCombo->setCurrentIndex(savedIndex >= 0 ? savedIndex : 0);
-    m_viewCombo->setVisible(m_viewCombo->count() > 1);
+    m_viewCombo->setVisible(supportsDimensionGrid);
+    if (m_galleryViewLabel)
+        m_galleryViewLabel->setVisible(!supportsDimensionGrid);
 }
 
 bool PartReferenceDialog::catalogSupportsDimensionGrid(const QString& catalog) const

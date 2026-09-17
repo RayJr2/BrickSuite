@@ -11,6 +11,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QStandardPaths>
+#include <QSet>
 #include <QUuid>
 #include <cstdio>
 
@@ -56,7 +57,52 @@ int main(int argc, char** argv)
     if(!check(scalar(db,"SELECT version FROM schema_version").toInt()==35,"fresh schema is 35"))return 1;
     PartReferenceManifest manifest; QString manifestError;
     if(!check(manifest.load(&manifestError),"built-in manifest loads: "+manifestError)
-       || !check(manifest.entryCount()==PartReferenceManifest::ExpectedEntryCount,"built-in count unchanged"))return 1;
+       || !check(manifest.entryCount()==PartReferenceManifest::ExpectedEntryCount,"built-in entry count")
+       || !check(manifest.catalogs().size()==PartReferenceManifest::ExpectedCatalogCount,"built-in catalog count"))return 1;
+
+    const QStringList catalogs = manifest.catalogs();
+    const int axlesCatalogIndex = catalogs.indexOf("Technic Axles, Pins & Connectors");
+    const int bricksCatalogIndex = catalogs.indexOf("Technic Bricks");
+    const int beamsCatalogIndex = catalogs.indexOf("Technic Beams & Liftarms");
+    if(!check(bricksCatalogIndex >= 0 && catalogs.count("Technic Bricks") == 1,"Technic Bricks catalog exists exactly once")
+       || !check(axlesCatalogIndex < bricksCatalogIndex && bricksCatalogIndex < beamsCatalogIndex,"Technic Bricks catalog ordering"))return 1;
+
+    const QList<PartReferenceEntry> technicBricks = manifest.entriesForCatalog("Technic Bricks");
+    if(!check(technicBricks.size()==30,"Technic Bricks contains exactly 30 entries"))return 1;
+    auto sectionParts = [&technicBricks](const QString& section) {
+        QStringList result;
+        for(const PartReferenceEntry& entry : technicBricks)
+            if(entry.section == section) result.append(entry.partNumber);
+        return result;
+    };
+    if(!check(sectionParts("Standard Pin-Hole Bricks") == QString("6541,3700,3700b,32000,5565,3701,3894,3702,2730,3895,32018,3703").split(','),"Standard Pin-Hole Bricks order")
+       || !check(sectionParts("Axle-Hole Bricks") == QString("73230,32064a,32064c,32064b").split(','),"Axle-Hole Bricks order")
+       || !check(sectionParts("Frames & Angled Bricks") == QString("3709a,3709c,32324,32531,40344c01,32532,52668,32555,7469").split(','),"Frames & Angled Bricks order")
+       || !check(sectionParts("Special Shapes") == QString("73109,112174,32333,2743,2744").split(','),"Special Shapes order"))return 1;
+
+    QSet<QString> expectedSections;
+    for(const QString& section : QString("Standard Pin-Hole Bricks|Axle-Hole Bricks|Frames & Angled Bricks|Special Shapes").split('|'))
+        expectedSections.insert(section);
+    QSet<QString> actualSections;
+    QSet<QString> partNumbers;
+    QSet<QString> positions;
+    for(const PartReferenceEntry& entry : manifest.entries()) {
+        const QString normalizedPartNumber = entry.partNumber.toCaseFolded();
+        const QString position = entry.catalog + QChar(0x1f) + entry.section + QChar(0x1f) + QString::number(entry.displayOrder);
+        if(!check(!partNumbers.contains(normalizedPartNumber),"global Part Reference part numbers are unique")
+           || !check(!positions.contains(position),"Part Reference catalog/section positions are unique"))return 1;
+        partNumbers.insert(normalizedPartNumber);
+        positions.insert(position);
+    }
+    for(const PartReferenceEntry& entry : technicBricks) {
+        actualSections.insert(entry.section);
+        const bool crossCategory = entry.partNumber == "112174";
+        if(!check(entry.sourceCategoryId == (crossCategory ? 5 : 8),"Technic Bricks source category ID")
+           || !check(entry.sourceCategory == (crossCategory ? "Bricks Special" : "Technic Bricks"),"Technic Bricks source category")
+           || !check(entry.material == "Plastic","Technic Bricks material")
+           || !check(entry.representativeFor.isEmpty(),"Technic Bricks representative_for remains empty"))return 1;
+    }
+    if(!check(actualSections == expectedSections,"Technic Bricks has exactly four approved sections"))return 1;
     const PartReferenceEntry* correctedEntry = manifest.findByPartNumber("4032a");
     if(!check(correctedEntry != nullptr,"production Part Reference contains 4032a")
        || !check(correctedEntry->partName == "Plate Round 2 x 2 with Axle Hole Type 1 (+ Opening)","4032a uses canonical catalog name")

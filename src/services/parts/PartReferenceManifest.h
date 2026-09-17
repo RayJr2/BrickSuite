@@ -18,7 +18,8 @@
 class PartReferenceManifest
 {
 public:
-    static constexpr int ExpectedEntryCount = 2955;
+    static constexpr int ExpectedEntryCount = 2985;
+    static constexpr int ExpectedCatalogCount = 38;
 
     bool load(QString* errorMessage = nullptr);
 

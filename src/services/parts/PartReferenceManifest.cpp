@@ -221,8 +221,9 @@ bool PartReferenceManifest::load(QString* errorMessage)
         return false;
     }
 
-    if (m_catalogs.size() != 37) {
-        const QString message = QStringLiteral("Part Reference manifest catalog count mismatch: expected 37 catalogs, loaded %1.")
+    if (m_catalogs.size() != ExpectedCatalogCount) {
+        const QString message = QStringLiteral("Part Reference manifest catalog count mismatch: expected %1 catalogs, loaded %2.")
+                                    .arg(ExpectedCatalogCount)
                                     .arg(m_catalogs.size());
         qWarning().noquote() << message;
         if (errorMessage)
