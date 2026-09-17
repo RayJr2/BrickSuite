@@ -497,6 +497,8 @@ qt_add_executable(BrickSuite
     src/models/procurement/BrickLinkWantedListOptions.h
     src/services/procurement/ProcurementDraftService.h
     src/services/procurement/ProcurementDraftService.cpp
+    src/services/procurement/ProcurementPartEnrichmentSession.h
+    src/services/procurement/ProcurementPartEnrichmentSession.cpp
     src/services/procurement/BrickLinkWantedListXmlWriter.h
     src/services/procurement/BrickLinkWantedListXmlWriter.cpp
     src/ui/procurement/ProcurementPreviewDialog.h
@@ -649,6 +651,33 @@ if(BUILD_TESTING)
     )
     target_link_libraries(BrickLinkCandidateResolutionTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME BrickLinkCandidateResolution COMMAND BrickLinkCandidateResolutionTest)
+
+    qt_add_executable(BrickLinkProcurementTest EXCLUDE_FROM_ALL
+        tests/BrickLinkProcurementTest.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+        src/models/Part.h src/models/Part.cpp
+        src/models/ExternalPartIdentifier.h
+        src/models/ExternalPartMapping.h
+        src/models/ExternalMappingStatus.h
+        src/models/procurement/ProcurementDraft.h
+        src/models/procurement/BrickLinkWantedListOptions.h
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/ExternalPartIdentifierRepository.h src/repositories/ExternalPartIdentifierRepository.cpp
+        src/repositories/ExternalPartMappingRepository.h src/repositories/ExternalPartMappingRepository.cpp
+        src/services/mappings/BrickLinkPartResolver.h src/services/mappings/BrickLinkPartResolver.cpp
+        src/services/procurement/BrickLinkWantedListXmlWriter.h src/services/procurement/BrickLinkWantedListXmlWriter.cpp
+    )
+    target_link_libraries(BrickLinkProcurementTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME BrickLinkProcurement COMMAND BrickLinkProcurementTest)
+
+    qt_add_executable(ProcurementPartEnrichmentSessionTest EXCLUDE_FROM_ALL
+        tests/ProcurementPartEnrichmentSessionTest.cpp
+        src/services/procurement/ProcurementPartEnrichmentSession.h
+        src/services/procurement/ProcurementPartEnrichmentSession.cpp
+    )
+    target_link_libraries(ProcurementPartEnrichmentSessionTest PRIVATE Qt6::Core)
+    add_test(NAME ProcurementPartEnrichmentSession COMMAND ProcurementPartEnrichmentSessionTest)
 
     qt_add_executable(PartUsageDiscoveryTest EXCLUDE_FROM_ALL
         tests/PartUsageDiscoveryTest.cpp

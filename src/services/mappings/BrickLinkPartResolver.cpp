@@ -7,6 +7,7 @@
 
 #include "../../api/ApiProvider.h"
 #include "../../models/ExternalMappingStatus.h"
+#include "../../repositories/ExternalPartIdentifierRepository.h"
 #include "../../repositories/ExternalPartMappingRepository.h"
 
 BrickLinkPartResolver::Result BrickLinkPartResolver::resolve(
@@ -32,19 +33,7 @@ BrickLinkPartResolver::Result BrickLinkPartResolver::resolve(
             partId,
             apiProviderName(ApiProvider::BrickLink));
 
-    // Sparse-exception model:
-    // no provider mapping row means the normal LEGO/Rebrickable part number
-    // is used directly as BrickLink ITEMID.
-    if (!mapping) {
-        result.itemId = result.sourcePartNumber;
-        result.status = ResolutionStatus::Direct;
-        result.canExport = true;
-        result.message =
-            QStringLiteral("Using the BrickSuite/Rebrickable part number directly.");
-        return result;
-    }
-
-    if (mapping->status == ExternalMappingStatus::Mapped
+    if (mapping && mapping->status == ExternalMappingStatus::Mapped
         && !mapping->externalId.trimmed().isEmpty()) {
         result.itemId = mapping->externalId.trimmed();
 
@@ -65,6 +54,42 @@ BrickLinkPartResolver::Result BrickLinkPartResolver::resolve(
         }
 
         result.canExport = true;
+        return result;
+    }
+
+    if (!mapping) {
+        const QList<ExternalPartIdentifier> identifiers =
+            ExternalPartIdentifierRepository().findByPartAndProvider(
+                partId,
+                apiProviderName(ApiProvider::BrickLink));
+
+        if (identifiers.size() == 1
+            && !identifiers.first().externalId.trimmed().isEmpty()) {
+            result.itemId = identifiers.first().externalId.trimmed();
+            result.status = ResolutionStatus::ExternalId;
+            result.canExport = true;
+            result.message =
+                QStringLiteral("Using the authoritative BrickLink external ID supplied by %1.")
+                    .arg(identifiers.first().source);
+            return result;
+        }
+
+        const auto lookupStatus =
+            ExternalPartIdentifierRepository().lookupStatus(
+                partId,
+                QStringLiteral("Rebrickable"));
+        const bool lookupComplete =
+            lookupStatus == ExternalPartIdentifierRepository::LookupStatus::Loaded
+            || lookupStatus == ExternalPartIdentifierRepository::LookupStatus::Unavailable;
+        result.status = identifiers.size() > 1
+                            ? ResolutionStatus::Ambiguous
+                            : lookupComplete
+                                  ? ResolutionStatus::Unavailable
+                                  : ResolutionStatus::NotResolved;
+        result.canExport = false;
+        result.message = identifiers.size() > 1
+                             ? QStringLiteral("Multiple BrickLink ITEMIDs require review.")
+                             : QStringLiteral("No authoritative BrickLink ITEMID is available.");
         return result;
     }
 
@@ -92,14 +117,18 @@ BrickLinkPartResolver::Result BrickLinkPartResolver::resolve(
 QString BrickLinkPartResolver::statusText(ResolutionStatus status)
 {
     switch (status) {
-    case ResolutionStatus::Direct:
-        return QStringLiteral("Direct");
     case ResolutionStatus::ExternalId:
         return QStringLiteral("External ID");
     case ResolutionStatus::UserOverride:
         return QStringLiteral("User Override");
     case ResolutionStatus::MappedOverride:
         return QStringLiteral("Mapped Override");
+    case ResolutionStatus::NotResolved:
+        return QStringLiteral("Not Resolved");
+    case ResolutionStatus::Unavailable:
+        return QStringLiteral("Unavailable — Needs Review");
+    case ResolutionStatus::Ambiguous:
+        return QStringLiteral("Multiple IDs — Needs Review");
     case ResolutionStatus::NeedsReview:
         return QStringLiteral("Needs Review");
     }

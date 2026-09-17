@@ -12,10 +12,12 @@ class BrickLinkPartResolver
 public:
     enum class ResolutionStatus
     {
-        Direct,
         ExternalId,
         UserOverride,
         MappedOverride,
+        NotResolved,
+        Unavailable,
+        Ambiguous,
         NeedsReview
     };
 

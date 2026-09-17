@@ -12,6 +12,8 @@
 #include "../../repositories/ExternalColorMappingRepository.h"
 #include "../../repositories/ExternalPartMappingRepository.h"
 #include "../../models/ExternalPartMapping.h"
+#include "../../services/mappings/BrickLinkPartResolver.h"
+#include "../../services/parts/PartExternalIdEnrichmentService.h"
 #include "../../services/procurement/BrickLinkWantedListXmlWriter.h"
 #include "BrickLinkWantedListResultDialog.h"
 
@@ -28,6 +30,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -51,9 +54,11 @@ constexpr int ExportStatusColumn = 9;
 
 ProcurementPreviewDialog::ProcurementPreviewDialog(
     const ProcurementDraft& draft,
+    PartExternalIdEnrichmentService* enrichmentService,
     QWidget* parent)
     : QDialog(parent)
     , m_draft(draft)
+    , m_enrichmentService(enrichmentService)
 {
     setWindowTitle(QStringLiteral("Missing Parts Procurement Preview"));
     resize(1220, 720);
@@ -61,6 +66,7 @@ ProcurementPreviewDialog::ProcurementPreviewDialog(
     buildUi();
     populateRows();
     updateSummary();
+    initializeAutomaticEnrichment();
 }
 
 const ProcurementDraft& ProcurementPreviewDialog::draft() const
@@ -108,6 +114,23 @@ void ProcurementPreviewDialog::buildUi()
 
     m_summaryLabel = new QLabel(this);
     mainLayout->addWidget(m_summaryLabel);
+
+    auto* enrichmentLayout = new QHBoxLayout;
+    m_enrichmentStatusLabel = new QLabel(this);
+    m_enrichmentStatusLabel->setVisible(false);
+    enrichmentLayout->addWidget(m_enrichmentStatusLabel, 1);
+
+    m_retryEnrichmentButton =
+        new QPushButton(QStringLiteral("Retry Unresolved IDs"), this);
+    m_retryEnrichmentButton->setVisible(false);
+    connect(m_retryEnrichmentButton,
+            &QPushButton::clicked,
+            this,
+            [this]() {
+                submitEnrichment(m_enrichmentSession.retryablePartIds());
+            });
+    enrichmentLayout->addWidget(m_retryEnrichmentButton);
+    mainLayout->addLayout(enrichmentLayout);
 
     auto* optionsGroup = new QGroupBox(
         QStringLiteral("BrickLink Wanted List Optional Fields"),
@@ -366,12 +389,21 @@ void ProcurementPreviewDialog::populateRows()
         connect(itemIdEdit,
                 &QLineEdit::textChanged,
                 this,
-                [this, row, rememberCheck](const QString& text) {
+                [this, row, rememberCheck, itemIdEdit](const QString& text) {
                     ProcurementItem& changed = m_draft.items[row];
 
                     const QString trimmed = text.trimmed();
 
-                    if (trimmed == changed.resolvedItemId.trimmed()) {
+                    if (trimmed.isEmpty() && changed.resolvedItemReady
+                        && !changed.resolvedItemId.trimmed().isEmpty()) {
+                        changed.itemOverride.clear();
+                        changed.itemOverrideActive = false;
+                        changed.rememberItemOverride = false;
+                        rememberCheck->setChecked(false);
+                        rememberCheck->setEnabled(false);
+                        const QSignalBlocker blocker(itemIdEdit);
+                        itemIdEdit->setText(changed.resolvedItemId);
+                    } else if (trimmed == changed.resolvedItemId.trimmed()) {
                         changed.itemOverride.clear();
                         changed.itemOverrideActive = false;
                         changed.rememberItemOverride = false;
@@ -460,9 +492,157 @@ void ProcurementPreviewDialog::updatePartRow(int row)
         status = item.itemOverride.trimmed().isEmpty()
                      ? QStringLiteral("Needs Review")
                      : QStringLiteral("Session Override");
+    } else if (m_enrichmentSession.isPending(item.partId)) {
+        status = QStringLiteral("Resolving…");
+    } else if (m_enrichmentSession.isRetryable(item.partId)) {
+        status = QStringLiteral("Lookup Failed — Retry");
     }
 
     m_table->item(row, PartStatusColumn)->setText(status);
+}
+
+void ProcurementPreviewDialog::initializeAutomaticEnrichment()
+{
+    BrickLinkPartResolver resolver;
+
+    for (int row = 0; row < m_draft.items.size(); ++row) {
+        ProcurementItem& item = m_draft.items[row];
+        const BrickLinkPartResolver::Result result =
+            resolver.resolve(item.partId, item.partNumber);
+
+        item.resolvedItemId = result.itemId;
+        item.resolvedItemStatus = BrickLinkPartResolver::statusText(result.status);
+        item.resolvedItemReady = result.canExport;
+
+        if (result.status == BrickLinkPartResolver::ResolutionStatus::NotResolved)
+            m_enrichmentSession.addEligibleRow(row, item.partId);
+
+        updatePartRow(row);
+        updateRowStatus(row);
+    }
+
+    if (!m_enrichmentService || m_enrichmentSession.totalPartCount() == 0) {
+        updateSummary();
+        updateEnrichmentStatus();
+        return;
+    }
+
+    connect(m_enrichmentService,
+            &PartExternalIdEnrichmentService::externalIdsLookupFinished,
+            this,
+            [this](int partId,
+                   PartExternalIdEnrichmentService::LookupOutcome outcome) {
+                handleEnrichmentFinished(partId, static_cast<int>(outcome));
+            });
+
+    submitEnrichment(m_enrichmentSession.eligiblePartIds());
+}
+
+void ProcurementPreviewDialog::submitEnrichment(const QList<int>& partIds)
+{
+    if (!m_enrichmentService || partIds.isEmpty())
+        return;
+
+    m_enrichmentSession.markPending(partIds);
+    for (int partId : partIds) {
+        for (int row : m_enrichmentSession.rowsForPart(partId)) {
+            updatePartRow(row);
+            updateRowStatus(row);
+        }
+    }
+    updateEnrichmentStatus();
+    m_enrichmentService->ensureExternalIds(partIds);
+}
+
+void ProcurementPreviewDialog::handleEnrichmentFinished(int partId, int outcome)
+{
+    if (!m_enrichmentSession.contains(partId)
+        || !m_enrichmentSession.isPending(partId)) {
+        return;
+    }
+
+    const auto typedOutcome =
+        static_cast<PartExternalIdEnrichmentService::LookupOutcome>(outcome);
+    bool retryable =
+        typedOutcome == PartExternalIdEnrichmentService::LookupOutcome::RetryableFailure
+        || typedOutcome == PartExternalIdEnrichmentService::LookupOutcome::PersistenceFailure;
+
+    if (retryable) {
+        const QList<int> rows = m_enrichmentSession.rowsForPart(partId);
+        if (!rows.isEmpty()) {
+            const ProcurementItem& item = m_draft.items.at(rows.first());
+            retryable = !BrickLinkPartResolver().resolve(
+                             item.partId, item.partNumber).canExport;
+        }
+    }
+
+    m_enrichmentSession.markComplete(partId, retryable);
+    refreshAutomaticResolution(partId);
+    updateEnrichmentStatus();
+}
+
+void ProcurementPreviewDialog::refreshAutomaticResolution(int partId)
+{
+    BrickLinkPartResolver resolver;
+
+    for (int row : m_enrichmentSession.rowsForPart(partId)) {
+        if (row < 0 || row >= m_draft.items.size())
+            continue;
+
+        ProcurementItem& item = m_draft.items[row];
+        const BrickLinkPartResolver::Result result =
+            resolver.resolve(item.partId, item.partNumber);
+        item.resolvedItemId = result.itemId;
+        item.resolvedItemStatus = BrickLinkPartResolver::statusText(result.status);
+        item.resolvedItemReady = result.canExport;
+
+        if (!item.itemOverrideActive) {
+            if (auto* edit = qobject_cast<QLineEdit*>(
+                    m_table->cellWidget(row, ItemIdColumn))) {
+                const QSignalBlocker blocker(edit);
+                edit->setText(item.resolvedItemId);
+            }
+        }
+
+        updatePartRow(row);
+        updateRowStatus(row);
+    }
+
+    updateSummary();
+}
+
+void ProcurementPreviewDialog::updateEnrichmentStatus()
+{
+    if (!m_enrichmentStatusLabel || !m_retryEnrichmentButton)
+        return;
+
+    const int total = m_enrichmentSession.totalPartCount();
+    if (total == 0 || !m_enrichmentService) {
+        m_enrichmentStatusLabel->setVisible(false);
+        m_retryEnrichmentButton->setVisible(false);
+        return;
+    }
+
+    const int completed = m_enrichmentSession.completedPartCount();
+    const int failures = m_enrichmentSession.retryablePartIds().size();
+    if (m_enrichmentSession.pendingPartCount() > 0) {
+        m_enrichmentStatusLabel->setText(
+            QStringLiteral("Resolving BrickLink IDs: %1 of %2 complete…")
+                .arg(completed)
+                .arg(total));
+    } else if (failures > 0) {
+        m_enrichmentStatusLabel->setText(
+            QStringLiteral("BrickLink ID lookup completed with %1 retryable failure(s).")
+                .arg(failures));
+    } else {
+        m_enrichmentStatusLabel->setText(
+            QStringLiteral("BrickLink ID lookup complete: %1 of %2.")
+                .arg(completed)
+                .arg(total));
+    }
+    m_enrichmentStatusLabel->setVisible(true);
+    m_retryEnrichmentButton->setVisible(failures > 0);
+    m_retryEnrichmentButton->setEnabled(m_enrichmentSession.pendingPartCount() == 0);
 }
 
 void ProcurementPreviewDialog::updateColorRow(int row)

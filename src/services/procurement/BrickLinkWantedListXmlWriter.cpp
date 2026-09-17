@@ -6,9 +6,21 @@
 #include "BrickLinkWantedListXmlWriter.h"
 
 #include <QRegularExpression>
-#include <QSet>
+#include <QHash>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
+
+#include <limits>
+
+namespace
+{
+struct ExportItem
+{
+    QString itemId;
+    QString colorId;
+    int quantity = 0;
+};
+}
 
 BrickLinkWantedListXmlWriter::Result
 BrickLinkWantedListXmlWriter::write(
@@ -22,7 +34,8 @@ BrickLinkWantedListXmlWriter::write(
         return result;
     }
 
-    QSet<QString> uniqueKeys;
+    QList<ExportItem> exportItems;
+    QHash<QString, int> exportItemByKey;
 
     for (const ProcurementItem& item : draft.items) {
         if (!item.ready()) {
@@ -54,16 +67,35 @@ BrickLinkWantedListXmlWriter::write(
             return result;
         }
 
-        const QString uniqueKey =
-            QStringLiteral("%1|%2").arg(itemId, colorId);
+        const QString uniqueKey = QStringLiteral("P|%1|%2")
+                                      .arg(itemId.toCaseFolded())
+                                      .arg(numericColorId);
+        const auto existing = exportItemByKey.constFind(uniqueKey);
+        if (existing != exportItemByKey.constEnd()) {
+            ExportItem& exportItem = exportItems[*existing];
+            if (item.quantityNeeded > std::numeric_limits<int>::max() - exportItem.quantity) {
+                result.message =
+                    QStringLiteral("A combined procurement quantity is too large.");
+                return result;
+            }
+            exportItem.quantity += item.quantityNeeded;
+        } else {
+            exportItemByKey.insert(uniqueKey, exportItems.size());
+            exportItems.append({itemId, QString::number(numericColorId), item.quantityNeeded});
+        }
+    }
 
-        if (uniqueKeys.contains(uniqueKey)) {
+    if (exportItems.isEmpty()) {
+        result.message = QStringLiteral("The procurement draft has no exportable items.");
+        return result;
+    }
+
+    for (const ExportItem& item : exportItems) {
+        if (item.quantity <= 0) {
             result.message =
-                QStringLiteral("Duplicate BrickLink ITEMID/COLOR rows remain in the procurement draft.");
+                QStringLiteral("A procurement row has an invalid combined quantity.");
             return result;
         }
-
-        uniqueKeys.insert(uniqueKey);
     }
 
     QString xml;
@@ -77,20 +109,20 @@ BrickLinkWantedListXmlWriter::write(
 
     const QString remarks = remarksForDraft(draft, options);
 
-    for (const ProcurementItem& item : draft.items) {
+    for (const ExportItem& item : exportItems) {
         writer.writeStartElement(QStringLiteral("ITEM"));
 
         writer.writeTextElement(QStringLiteral("ITEMTYPE"),
                                 QStringLiteral("P"));
 
         writer.writeTextElement(QStringLiteral("ITEMID"),
-                                item.effectiveItemId().trimmed());
+                                item.itemId);
 
         writer.writeTextElement(QStringLiteral("COLOR"),
-                                item.effectiveColorId().trimmed());
+                                item.colorId);
 
         writer.writeTextElement(QStringLiteral("MINQTY"),
-                                QString::number(item.quantityNeeded));
+                                QString::number(item.quantity));
 
         if (!options.condition.trimmed().isEmpty()) {
             writer.writeTextElement(QStringLiteral("CONDITION"),
@@ -114,7 +146,7 @@ BrickLinkWantedListXmlWriter::write(
         writer.writeEndElement();
 
         ++result.itemRows;
-        result.totalPieces += item.quantityNeeded;
+        result.totalPieces += item.quantity;
     }
 
     writer.writeEndElement();

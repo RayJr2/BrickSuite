@@ -4049,7 +4049,7 @@ void BuildsWidget::procureMissingParts()
         return;
     }
 
-    ProcurementPreviewDialog dialog(result.draft, this);
+    ProcurementPreviewDialog dialog(result.draft, m_enrichmentService, this);
     dialog.exec();
 }
 

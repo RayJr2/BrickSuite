@@ -174,13 +174,71 @@ ExternalPartIdentifierRepository::findByProviderAndExternalId(
     return results;
 }
 
+QList<ExternalPartIdentifier>
+ExternalPartIdentifierRepository::findByPartAndProvider(
+    int partId,
+    const QString& provider,
+    bool activeOnly) const
+{
+    QList<ExternalPartIdentifier> results;
+
+    const QString providerValue = provider.trimmed();
+    if (partId <= 0 || providerValue.isEmpty())
+        return results;
+
+    QSqlQuery query(DatabaseManager::instance().database());
+    QString sql = R"(
+        SELECT id, part_id, provider, external_id, source, is_active
+        FROM external_part_identifier
+        WHERE part_id = :part_id
+          AND provider = :provider COLLATE NOCASE
+    )";
+
+    if (activeOnly)
+        sql += QStringLiteral(" AND is_active = 1");
+
+    sql += QStringLiteral(" ORDER BY external_id COLLATE NOCASE");
+    query.prepare(sql);
+    query.bindValue(":part_id", partId);
+    query.bindValue(":provider", providerValue);
+
+    if (!query.exec()) {
+        qCritical() << "Unable to retrieve provider identifiers for Part:"
+                    << query.lastError().text();
+        return results;
+    }
+
+    while (query.next()) {
+        ExternalPartIdentifier item;
+        item.id = query.value("id").toInt();
+        item.partId = query.value("part_id").toInt();
+        item.provider = query.value("provider").toString();
+        item.externalId = query.value("external_id").toString();
+        item.source = query.value("source").toString();
+        item.isActive = query.value("is_active").toInt() != 0;
+        results.append(item);
+    }
+
+    return results;
+}
+
 
 bool ExternalPartIdentifierRepository::isLookupComplete(
     int partId,
     const QString& source) const
 {
+    const LookupStatus status = lookupStatus(partId, source);
+    return status == LookupStatus::Loaded
+        || status == LookupStatus::Unavailable;
+}
+
+ExternalPartIdentifierRepository::LookupStatus
+ExternalPartIdentifierRepository::lookupStatus(
+    int partId,
+    const QString& source) const
+{
     if (partId <= 0 || source.trimmed().isEmpty())
-        return false;
+        return LookupStatus::NotRequested;
 
     QSqlQuery query(DatabaseManager::instance().database());
     query.prepare(R"(
@@ -196,15 +254,18 @@ bool ExternalPartIdentifierRepository::isLookupComplete(
     if (!query.exec()) {
         qWarning() << "Unable to read external part identifier lookup status:"
                    << query.lastError().text();
-        return false;
+        return LookupStatus::NotRequested;
     }
 
     if (!query.next())
-        return false;
+        return LookupStatus::NotRequested;
 
     const QString status = query.value("status").toString().trimmed();
-    return status.compare(QStringLiteral("Loaded"), Qt::CaseInsensitive) == 0
-        || status.compare(QStringLiteral("Unavailable"), Qt::CaseInsensitive) == 0;
+    if (status.compare(QStringLiteral("Loaded"), Qt::CaseInsensitive) == 0)
+        return LookupStatus::Loaded;
+    if (status.compare(QStringLiteral("Unavailable"), Qt::CaseInsensitive) == 0)
+        return LookupStatus::Unavailable;
+    return LookupStatus::Unknown;
 }
 
 bool ExternalPartIdentifierRepository::setLookupStatus(
