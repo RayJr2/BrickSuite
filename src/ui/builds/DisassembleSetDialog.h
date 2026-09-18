@@ -76,6 +76,7 @@ public:
                          const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
                          const QList<RemoteReadDto::StorageSummary>& storage,
                          SessionStorageSelectionService& sessionStorageSelectionService,
+                         const QString& remoteAuthority,
                          QWidget* parent = nullptr);
     DisassembleSetDialog(int workspaceId, const QString& itemName,
                          const QString& reference,
@@ -84,6 +85,7 @@ public:
                          const QList<RemoteReadDto::StorageSummary>& storage,
                          int excludedSparePieces,
                          SessionStorageSelectionService& sessionStorageSelectionService,
+                         const QString& remoteAuthority,
                          QWidget* parent = nullptr);
     DisassembleSetDialog(int workspaceId, const QString& itemName,
                          const QString& reference,
@@ -148,6 +150,8 @@ private:
     HelpContext m_helpContext = HelpContext::BuildDisassembly;
     int m_excludedCatalogSparePieces = 0;
     QList<ReturnSelection> m_returnSelections;
+    QString m_remoteAuthority;
+    QList<RemoteReadDto::StorageSummary> m_remoteStorage;
 
     QLabel* m_buildLabel = nullptr;
     QLabel* m_collectionStateLabel = nullptr;

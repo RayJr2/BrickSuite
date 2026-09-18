@@ -33,6 +33,7 @@ class WorkspaceContext;
 class QTreeWidget;
 class QPushButton;
 class QLabel;
+class QCheckBox;
 class QMessageBox;
 class RemoteReadApplicationServices;
 class RemoteStorageMutationApplicationService;
@@ -65,6 +66,7 @@ private slots:
 private:
     void loadStorageTree();
     void loadRemoteStorageTree();
+    void populateRemoteStorageTree();
     void setMutationControlsEnabled(bool enabled);
     void updateRemoteActionState();
     void remoteAddLocation();
@@ -100,4 +102,5 @@ private:
     QPushButton* m_deactivateButton = nullptr;
     QPushButton* m_reactivateButton = nullptr;
     QLabel* m_statusLabel = nullptr;
+    QCheckBox* m_showInactiveCheck = nullptr;
 };

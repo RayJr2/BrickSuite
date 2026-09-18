@@ -180,6 +180,7 @@ private:
     QPushButton* m_addPartButton = nullptr;
 
     QHash<int, QString> m_storagePathById;
+    QList<RemoteReadDto::StorageSummary> m_remoteStorageLocations;
 
     PartImageService* m_partImageService = nullptr;
     RebrickableApiClient* m_rebrickableApiClient = nullptr;

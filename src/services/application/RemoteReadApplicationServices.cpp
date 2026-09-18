@@ -38,6 +38,9 @@ bool RemoteReadApplicationServices::isAvailableFor(const QString& operation) con
 { return m_client.status().state == BrickSuiteConnectionState::ConnectedAuthenticated
       && m_client.supportsOperation(operation); }
 
+QString RemoteReadApplicationServices::hostAuthority() const
+{ return m_session ? m_session->hostIdentity() : QString(); }
+
 ReadRequestToken RemoteReadApplicationServices::searchBuildability(
     const RemoteBuildabilityDto::SearchRequest& value, QObject* context,
     AsyncReadCompletion<RemoteBuildabilityDto::SearchResponse> completion)

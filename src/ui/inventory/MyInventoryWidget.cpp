@@ -54,6 +54,7 @@
 #include "../../services/parts/PartExternalIdEnrichmentService.h"
 #include "../../services/parts/ElementIdentityService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
+#include "../../services/storage/RemoteStorageDestination.h"
 #include "../../services/inventory/InventoryExportService.h"
 #include "../../database/DatabaseManager.h"
 #include "../../services/application/ApplicationServices.h"
@@ -599,6 +600,7 @@ void MyInventoryWidget::loadStorageLocations()
     m_storageCombo->addItem("All Locations", 0);
 
     m_storagePathById.clear();
+    m_remoteStorageLocations.clear();
 
     if (!m_workspaceContext.hasCurrentWorkspace())
         return;
@@ -676,17 +678,18 @@ void MyInventoryWidget::loadRemoteStorageLocations()
             m_storageCombo->clear();
             m_storageCombo->addItem(QStringLiteral("All Locations"), 0);
             m_storagePathById.clear();
+            m_remoteStorageLocations.clear();
             if (!result.succeeded()) {
                 m_storageCombo->setToolTip(result.message);
                 m_storageCombo->setEnabled(false);
                 emit remoteLocationsRefreshFinished(false);
                 return;
             }
-            QSet<qint64> parents;
-            for (const auto& location : *result.value)
-                if (location.active && location.parentStorageId > 0) parents.insert(location.parentStorageId);
+            m_remoteStorageLocations = *result.value;
+            const QSet<int> validDestinations =
+                RemoteStorageDestination::validInventoryDestinationIds(*result.value);
             for (const auto& location : *result.value) {
-                if (!location.active || parents.contains(location.storageId)) continue;
+                if (!validDestinations.contains(int(location.storageId))) continue;
                 m_storagePathById.insert(int(location.storageId), location.displayPath);
                 m_storageCombo->addItem(location.displayPath, location.storageId);
             }
@@ -1640,8 +1643,17 @@ void MyInventoryWidget::addPart()
                     return;
                 }
                 const int filteredStorage=m_storageCombo->currentData().toInt();
+                const QString authority=m_remoteReads->hostAuthority();
+                const auto validator=[locations=m_remoteStorageLocations](int workspace,int id,int excluded){
+                    return RemoteStorageDestination::isValidInventoryDestination(
+                        locations,workspace,id,excluded);
+                };
+                const int remembered=m_sessionStorageSelectionService.rememberedDestination(
+                    authority,workspaceId,validator);
+                const int preferred=filteredStorage>0?filteredStorage:remembered;
                 auto* dialog = new AddInventoryDialog(m_workspaceContext,m_sessionStorageSelectionService,
-                    *m_remoteMutations,m_storagePathById,*result.value,filteredStorage,this);
+                    *m_remoteMutations,m_storagePathById,*result.value,preferred,
+                    authority,m_remoteStorageLocations,this);
                 m_activeRemoteMutationDialog = dialog;
                 connect(dialog, &QDialog::finished, this, [this, dialog](int dialogResult) {
                     if (m_activeRemoteMutationDialog == dialog) m_activeRemoteMutationDialog = nullptr;
@@ -1792,7 +1804,10 @@ void MyInventoryWidget::createRemoteMutationDialog(
     if (m_activeRemoteMutationDialog) return;
     auto* dialog = new RemoteInventoryMutationDialog(operation,
         m_workspaceContext.currentWorkspaceId(), *m_remoteMutations,
-        m_storagePathById, manufacturerNames, detail, this);
+        m_storagePathById, manufacturerNames, detail,
+        &m_sessionStorageSelectionService,
+        m_remoteReads ? m_remoteReads->hostAuthority() : QString(),
+        m_remoteStorageLocations, this);
     m_activeRemoteMutationDialog = dialog;
     connect(dialog, &QDialog::finished, this, [this, dialog](int result) {
         if (m_activeRemoteMutationDialog == dialog) m_activeRemoteMutationDialog = nullptr;

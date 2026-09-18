@@ -56,6 +56,26 @@ int main(int argc, char** argv)
                   "valid destination remembered within session");
     ok &= require(service.rememberedDestination(2) == 20,
                   "workspace destinations are isolated");
+    const auto remoteValidator = [&locations](int workspaceId, int locationId, int excludedId) {
+        const auto it = locations.constFind(locationId);
+        return locationId != excludedId && it != locations.cend()
+            && it->workspaceId == workspaceId && it->active && it->leaf;
+    };
+    service.rememberDestination(QStringLiteral("host-a"), 1, 10, remoteValidator);
+    ok &= require(service.rememberedDestination(QStringLiteral("host-a"), 1,
+                                                remoteValidator) == 10,
+                  "same Host and Workspace restores destination");
+    ok &= require(service.rememberedDestination(QStringLiteral("host-a"), 2,
+                                                remoteValidator) == 0,
+                  "different Remote Workspace does not reuse destination");
+    ok &= require(service.rememberedDestination(QStringLiteral("host-b"), 1,
+                                                remoteValidator) == 0,
+                  "different Host does not reuse coincident numeric IDs");
+    locations[10].active = false;
+    ok &= require(service.rememberedDestination(QStringLiteral("host-a"), 1,
+                                                remoteValidator) == 0,
+                  "invalid Host destination is discarded");
+    locations[10].active = true;
     ok &= require(service.rememberedDestination(1, 10) == 0,
                   "workflow exclusion rejects remembered source");
     ok &= require(service.rememberedDestination(1) == 10,

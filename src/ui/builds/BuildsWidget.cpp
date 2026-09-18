@@ -70,6 +70,7 @@
 #include "../../services/parts/PartExternalIdEnrichmentService.h"
 #include "../../services/procurement/ProcurementDraftService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
+#include "../../services/storage/RemoteStorageDestination.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
 #include "../../services/application/RemotePullingApplicationService.h"
@@ -1761,14 +1762,15 @@ void BuildsWidget::submitRemoteBuildMutation(const QString& action,
                         if(workspaceId!=m_workspaceContext.currentWorkspaceId())return;
                         if(!storage.succeeded()){QMessageBox::warning(this,action==QStringLiteral("disassemble")?QStringLiteral("Disassemble Build"):QStringLiteral("Cancel Build"),storage.message);return;}
                         const QString reference=authoritative.buildType==QStringLiteral("Minifig")?authoritative.minifigNumber:authoritative.setNumber;
-                        auto*dialog=new DisassembleSetDialog(workspaceId,authoritative.name,reference,authoritative.inventoryMode,rows,*storage.value,m_sessionStorageSelectionService,this);
+                        auto*dialog=new DisassembleSetDialog(workspaceId,authoritative.name,reference,authoritative.inventoryMode,rows,*storage.value,m_sessionStorageSelectionService,m_remoteReads->hostAuthority(),this);
                         dialog->setObjectName(QStringLiteral("remoteBuildWorkflow_disassemblePlan"));
                         dialog->setAttribute(Qt::WA_DeleteOnClose);
                         connect(&m_workspaceContext,&WorkspaceContext::currentWorkspaceChanged,dialog,&QDialog::reject);
-                        connect(dialog,&QDialog::accepted,this,[this,dialog,authoritative,desiredActive,action]{
+                        connect(dialog,&QDialog::accepted,this,[this,dialog,authoritative,desiredActive,action,storage=*storage.value]{
                             QList<RemoteBuildMutationDto::ReturnRow> returns;
                             for(const auto&selection:dialog->returnSelections())returns.append({selection.requirementId,selection.manufacturerName,selection.storageLocationId,selection.quantity,selection.spare});
-                            openRemoteBuildMutationDialog(action,authoritative,desiredActive,returns);
+                            openRemoteBuildMutationDialog(action,authoritative,desiredActive,returns,
+                                m_remoteReads->hostAuthority(),storage);
                         });
                         dialog->open();
                     });
@@ -1779,7 +1781,9 @@ void BuildsWidget::submitRemoteBuildMutation(const QString& action,
 void BuildsWidget::openRemoteBuildMutationDialog(const QString& action,
                                                   const RemoteReadDto::BuildSummary& build,
                                                   bool desiredActive,
-                                                  const QList<RemoteBuildMutationDto::ReturnRow>& returns)
+                                                  const QList<RemoteBuildMutationDto::ReturnRow>& returns,
+                                                  const QString& storageAuthority,
+                                                  const QList<RemoteReadDto::StorageSummary>& storage)
 {
     QString operation;
     QString prompt;
@@ -1812,7 +1816,8 @@ void BuildsWidget::openRemoteBuildMutationDialog(const QString& action,
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     auto mutationId = std::make_shared<QString>();
     connect(buttons, &QDialogButtonBox::accepted, dialog,
-        [this, dialog, buttons, status, mutationId, operation, build, desiredActive, returns] {
+        [this, dialog, buttons, status, mutationId, operation, build, desiredActive,
+         returns, storageAuthority, storage] {
             RemoteBuildMutationDto::Request request;
             request.workspaceId = build.workspaceId; request.buildId = build.buildId;
             if (mutationId->isEmpty()) *mutationId = RemoteMutationDto::newMutationId();
@@ -1821,7 +1826,9 @@ void BuildsWidget::openRemoteBuildMutationDialog(const QString& action,
             request.returns = returns;
             status->setText(QStringLiteral("Saving to BrickSuite Host..."));
             m_remoteBuildMutations->submit(operation, request, dialog,
-                [this, dialog](const RemoteBuildMutationDto::Result&) {
+                [this, dialog, returns, storageAuthority, storage, workspaceId=request.workspaceId](const RemoteBuildMutationDto::Result&) {
+                    int common=0;for(const auto&row:returns){if(row.quantity<=0)continue;if(common==0)common=int(row.storageId);else if(common!=row.storageId){common=0;break;}}
+                    if(common>0&&!storageAuthority.isEmpty()){const auto validator=[storage](int workspace,int id,int excluded){return RemoteStorageDestination::isValidInventoryDestination(storage,workspace,id,excluded);};m_sessionStorageSelectionService.rememberDestination(storageAuthority,workspaceId,common,validator);}
                     dialog->accept(); refreshRemoteBuildsPreservingSelection();
                 }, [this, dialog, buttons, status, mutationId](const RemoteMutationDto::Error& error) {
                     buttons->setEnabled(true);

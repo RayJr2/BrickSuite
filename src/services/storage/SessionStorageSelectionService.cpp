@@ -12,10 +12,27 @@ SessionStorageSelectionService::SessionStorageSelectionService(const Validator& 
 int SessionStorageSelectionService::rememberedDestination(int workspaceId,
                                                           int excludedLocationId)
 {
-    const int locationId = m_destinationByWorkspace.value(workspaceId, 0);
+    return rememberedDestination(localAuthority(), workspaceId, m_validator,
+                                 excludedLocationId);
+}
+
+int SessionStorageSelectionService::rememberedDestination(
+    const QString& authority, int workspaceId, const Validator& validator,
+    int excludedLocationId)
+{
+    const QString key = authority.trimmed();
+    const int locationId = m_destinationByAuthorityAndWorkspace.value(key).value(workspaceId, 0);
     if (workspaceId <= 0 || locationId <= 0
-        || !m_validator(workspaceId, locationId, 0)) {
-        if (workspaceId > 0) m_destinationByWorkspace.remove(workspaceId);
+        || key.isEmpty() || !validator
+        || !validator(workspaceId, locationId, 0)) {
+        if (workspaceId > 0 && !key.isEmpty()) {
+            auto authorityIt = m_destinationByAuthorityAndWorkspace.find(key);
+            if (authorityIt != m_destinationByAuthorityAndWorkspace.end()) {
+                authorityIt->remove(workspaceId);
+                if (authorityIt->isEmpty())
+                    m_destinationByAuthorityAndWorkspace.erase(authorityIt);
+            }
+        }
         return 0;
     }
     if (locationId == excludedLocationId)
@@ -25,12 +42,32 @@ int SessionStorageSelectionService::rememberedDestination(int workspaceId,
 
 void SessionStorageSelectionService::rememberDestination(int workspaceId, int locationId)
 {
-    if (workspaceId > 0 && locationId > 0 && m_validator(workspaceId, locationId, 0))
-        m_destinationByWorkspace.insert(workspaceId, locationId);
+    rememberDestination(localAuthority(), workspaceId, locationId, m_validator);
+}
+
+void SessionStorageSelectionService::rememberDestination(
+    const QString& authority, int workspaceId, int locationId,
+    const Validator& validator)
+{
+    const QString key = authority.trimmed();
+    if (!key.isEmpty() && workspaceId > 0 && locationId > 0 && validator
+        && validator(workspaceId, locationId, 0)) {
+        m_destinationByAuthorityAndWorkspace[key].insert(workspaceId, locationId);
+    }
 }
 
 void SessionStorageSelectionService::clearWorkspace(int workspaceId)
-{ m_destinationByWorkspace.remove(workspaceId); }
+{
+    for (auto it = m_destinationByAuthorityAndWorkspace.begin();
+         it != m_destinationByAuthorityAndWorkspace.end();) {
+        it->remove(workspaceId);
+        if (it->isEmpty()) it = m_destinationByAuthorityAndWorkspace.erase(it);
+        else ++it;
+    }
+}
 
 void SessionStorageSelectionService::clearAll()
-{ m_destinationByWorkspace.clear(); }
+{ m_destinationByAuthorityAndWorkspace.clear(); }
+
+QString SessionStorageSelectionService::localAuthority()
+{ return QStringLiteral("local-database"); }

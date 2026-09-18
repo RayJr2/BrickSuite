@@ -39,6 +39,7 @@
 #include "../../repositories/PartRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
+#include "../../services/storage/RemoteStorageDestination.h"
 #include "../../services/collection/CollectionItemService.h"
 #include "../../services/builds/BuildLifecycleService.h"
 #include "../help/HelpManager.h"
@@ -221,10 +222,12 @@ DisassembleSetDialog::DisassembleSetDialog(
     const QString& inventoryMode,
     const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
     const QList<RemoteReadDto::StorageSummary>& storage,
-    SessionStorageSelectionService& sessionStorageSelectionService, QWidget* parent)
+    SessionStorageSelectionService& sessionStorageSelectionService,
+    const QString& remoteAuthority, QWidget* parent)
     : DisassembleSetDialog(0, sessionStorageSelectionService, parent, true)
 {
     m_workspaceId=workspaceId;m_buildName=buildName;m_setNumber=reference;
+    m_remoteAuthority=remoteAuthority;m_remoteStorage=storage;
     m_inventoryMode=inventoryMode;m_disassemblyLabel=inventoryMode==QStringLiteral("CompleteSet")?QStringLiteral("Complete Set"):QStringLiteral("Build");
     setWindowTitle(inventoryMode==QStringLiteral("CompleteSet")?QStringLiteral("Disassemble Complete Set"):QStringLiteral("Return Pulled Pieces"));
     m_disassembleButton->setText(QStringLiteral("Continue"));
@@ -237,9 +240,10 @@ DisassembleSetDialog::DisassembleSetDialog(
     const QString& inventoryMode,
     const QList<RemoteReadDto::BuildCancellationReturnRow>& rows,
     const QList<RemoteReadDto::StorageSummary>& storage, int excludedSparePieces,
-    SessionStorageSelectionService& sessionStorageSelectionService, QWidget* parent)
+    SessionStorageSelectionService& sessionStorageSelectionService,
+    const QString& remoteAuthority, QWidget* parent)
     : DisassembleSetDialog(workspaceId, itemName, reference, inventoryMode, rows,
-                           storage, sessionStorageSelectionService, parent)
+                           storage, sessionStorageSelectionService, remoteAuthority, parent)
 {
     setHelpContext(HelpContext::CollectionDisassembly);
     m_disassemblyLabel = QStringLiteral("Collection item");
@@ -333,7 +337,9 @@ void DisassembleSetDialog::loadRemoteRows(
         m_locations.append({int(location.storageId),location.displayPath});
     std::sort(m_locations.begin(),m_locations.end(),[](const auto&a,const auto&b){return a.path.compare(b.path,Qt::CaseInsensitive)<0;});
     populateLocationCombo(m_defaultDestinationCombo);
-    const int remembered=m_sessionStorageSelectionService.rememberedDestination(m_workspaceId);
+    const auto validator=[locations=storage](int workspace,int id,int excluded){return RemoteStorageDestination::isValidInventoryDestination(locations,workspace,id,excluded);};
+    const int remembered=m_sessionStorageSelectionService.rememberedDestination(
+        m_remoteAuthority,m_workspaceId,validator);
     const int defaultIndex=m_defaultDestinationCombo->findData(remembered);
     if(defaultIndex>=0)m_defaultDestinationCombo->setCurrentIndex(defaultIndex);
     QList<AllocationRow> allocationRows;
@@ -994,7 +1000,7 @@ void DisassembleSetDialog::disassembleSet()
         }
     }
 
-    if (commonDestinationId > 0) {
+    if (commonDestinationId > 0 && !m_collectOnly) {
         m_sessionStorageSelectionService.rememberDestination(
             m_workspaceId, commonDestinationId);
     }

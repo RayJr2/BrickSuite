@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include "../../services/application/dto/RemoteReadDtos.h"
 #include <QPointer>
 #include <functional>
 #include "../../models/CollectionSearchCriteria.h"
@@ -56,7 +57,9 @@ private:
     void openRemoteDisassembly(int itemId);
     void submitRemoteDisassembly(
         const RemoteReadDto::CollectionDisassemblyPlan& plan,
-        const QList<RemoteCollectionMutationDto::DisassemblyReturn>& returns);
+        const QList<RemoteCollectionMutationDto::DisassemblyReturn>& returns,
+        const QString& storageAuthority,
+        const QList<RemoteReadDto::StorageSummary>& storage);
     void handleAction(int itemId, bool active, const QString& action);
     QString effectiveCriteriaKey() const;
     CollectionSearchCriteria currentCriteria(int pageSize=100,int offset=0) const;

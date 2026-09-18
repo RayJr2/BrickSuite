@@ -29,6 +29,7 @@
 #include "../../api/rebrickable/RebrickableService.h"
 #include "../../services/parts/BrickLinkCandidateDiscoveryService.h"
 #include "../../services/parts/PartExternalIdEnrichmentService.h"
+#include "../../services/application/dto/RemoteReadDtos.h"
 
 class WorkspaceContext;
 class SessionStorageSelectionService;
@@ -62,7 +63,8 @@ public:
                        RemoteInventoryMutationApplicationService& remoteMutations,
                        const QHash<int, QString>& hostStoragePaths,
                        const QStringList& hostManufacturerNames,
-                       int preferredStorageLocationId,
+                       int preferredStorageLocationId, const QString& remoteAuthority,
+                       const QList<RemoteReadDto::StorageSummary>& remoteStorage,
                        QWidget* parent = nullptr);
 
     bool inventoryWasAdded() const;
@@ -161,5 +163,7 @@ private:
     QHash<int, QString> m_hostStoragePaths;
     QStringList m_hostManufacturerNames;
     int m_preferredStorageLocationId = 0;
+    QString m_remoteAuthority;
+    QList<RemoteReadDto::StorageSummary> m_remoteStorage;
     QString m_remoteMutationId;
 };

@@ -217,6 +217,7 @@ qt_add_executable(BrickSuite
     src/services/database/AutomaticBackupService.cpp
     src/services/storage/SessionStorageSelectionService.h
     src/services/storage/SessionStorageSelectionService.cpp
+    src/services/storage/RemoteStorageDestination.h
     src/services/application/ApplicationServices.h
     src/services/application/ApplicationServices.cpp
     src/services/application/ApplicationServicesCore.cpp
@@ -260,6 +261,7 @@ qt_add_executable(BrickSuite
     src/services/collection/CollectionDisassemblyService.h
     src/services/collection/CollectionDisassemblyService.cpp
     src/ui/storage/StorageWidget.cpp
+    src/ui/storage/StorageTreeVisibility.h
     src/ui/storage/StorageLocationDialog.h
     src/ui/storage/StorageLocationDialog.cpp
     src/ui/storage/RemoteStorageActionEligibility.h
@@ -2000,6 +2002,9 @@ if(BUILD_TESTING)
         src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
         src/ui/helpers/ColorComboHelper.h src/ui/helpers/ColorComboHelper.cpp
         src/ui/inventory/RemoteInventoryMutationDialog.h src/ui/inventory/RemoteInventoryMutationDialog.cpp
+        src/services/storage/SessionStorageSelectionService.h src/services/storage/SessionStorageSelectionService.cpp
+        src/repositories/StorageLocationRepository.h src/repositories/StorageLocationRepository.cpp
+        src/models/StorageLocation.h src/models/StorageLocation.cpp
         src/services/application/dto/RemoteMutationDtos.h src/services/application/dto/RemoteMutationDtos.cpp
         src/services/application/dto/RemoteInventoryMutationDtos.h src/services/application/dto/RemoteInventoryMutationDtos.cpp
         src/services/application/RemoteMutationApplicationServices.h src/services/application/RemoteMutationApplicationServices.cpp

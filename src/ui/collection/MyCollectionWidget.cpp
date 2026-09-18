@@ -17,6 +17,7 @@
 #include "../../services/collection/CollectionExportService.h"
 #include "../../services/builds/BuildLifecycleService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
+#include "../../services/storage/RemoteStorageDestination.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
 #include "../../services/application/RemoteCollectionMutationApplicationService.h"
@@ -693,18 +694,20 @@ void MyCollectionWidget::openRemoteDisassembly(int itemId)
                             row.colorNameFallback,row.manufacturerDisplay,row.quantity,row.spare});
                     auto* dialog = new DisassembleSetDialog(plan.workspaceId, plan.name,
                         plan.reference, plan.inventoryMode, rows, *storage.value,
-                        plan.excludedSparePieces, m_sessionStorageSelectionService, this);
+                        plan.excludedSparePieces, m_sessionStorageSelectionService,
+                        m_remoteReads->hostAuthority(), this);
                     dialog->setObjectName(QStringLiteral("remoteCollectionWorkflow_disassemblyPlan"));
                     dialog->setAttribute(Qt::WA_DeleteOnClose);
                     m_remoteMutationDialog = dialog;
                     connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged,
                             dialog, &QDialog::reject);
-                    connect(dialog, &QDialog::accepted, this, [this, dialog, plan] {
+                    connect(dialog, &QDialog::accepted, this, [this, dialog, plan, storage=*storage.value] {
                         QList<RemoteCollectionMutationDto::DisassemblyReturn> returns;
                         for (const auto& row : dialog->returnSelections())
                             returns.append({row.requirementId,row.storageLocationId,row.quantity});
                         m_remoteMutationDialog = nullptr;
-                        submitRemoteDisassembly(plan, returns);
+                        submitRemoteDisassembly(plan, returns,
+                            m_remoteReads->hostAuthority(),storage);
                     });
                     dialog->open();
                 });
@@ -713,7 +716,9 @@ void MyCollectionWidget::openRemoteDisassembly(int itemId)
 
 void MyCollectionWidget::submitRemoteDisassembly(
     const RemoteReadDto::CollectionDisassemblyPlan& plan,
-    const QList<RemoteCollectionMutationDto::DisassemblyReturn>& returns)
+    const QList<RemoteCollectionMutationDto::DisassemblyReturn>& returns,
+    const QString& storageAuthority,
+    const QList<RemoteReadDto::StorageSummary>& storage)
 {
     if (!m_remoteMutations || m_remoteMutationDialog) return;
     auto* dialog = new QDialog(this);
@@ -740,10 +745,12 @@ void MyCollectionWidget::submitRemoteDisassembly(
         plan.sourceBuildId,plan.active,plan.allowPartsSource};
     connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
     connect(buttons,&QDialogButtonBox::accepted,dialog,
-        [this,dialog,buttons,status,request] {
+        [this,dialog,buttons,status,request,storageAuthority,storage] {
             buttons->setEnabled(false);status->setText(QStringLiteral("Saving to BrickSuite Host..."));
             m_remoteMutations->submit(QStringLiteral("collection.disassemble"),*request,dialog,
-                [this,dialog](const RemoteCollectionMutationDto::Result& result) {
+                [this,dialog,request,storageAuthority,storage](const RemoteCollectionMutationDto::Result& result) {
+                    int common=0;for(const auto&row:request->returns){if(row.quantity<=0)continue;if(common==0)common=int(row.storageId);else if(common!=row.storageId){common=0;break;}}
+                    if(common>0&&!storageAuthority.isEmpty()){const auto validator=[storage](int workspace,int id,int excluded){return RemoteStorageDestination::isValidInventoryDestination(storage,workspace,id,excluded);};m_sessionStorageSelectionService.rememberDestination(storageAuthority,int(request->workspaceId),common,validator);}
                     dialog->accept();refreshRemoteCurrentPage();
                     if(result.item.value(QStringLiteral("collectionItemId")).toInt()>0)
                         selectCollectionItem(result.item.value(QStringLiteral("collectionItemId")).toInt());

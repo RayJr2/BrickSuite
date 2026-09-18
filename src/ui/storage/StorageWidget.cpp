@@ -21,6 +21,7 @@
 #include "StorageWidget.h"
 #include "StorageLocationDialog.h"
 #include "RemoteStorageActionEligibility.h"
+#include "StorageTreeVisibility.h"
 
 #include "../../app/WorkspaceContext.h"
 #include "../../database/DatabaseManager.h"
@@ -78,9 +79,16 @@ StorageWidget::StorageWidget(
     auto* layout = new QVBoxLayout(this);
 
     auto* titleLabel = new QLabel("Storage", this);
+    auto* headerLayout = new QHBoxLayout();
     m_statusLabel = new QLabel(this);
 
     m_tree = new QTreeWidget(this);
+
+    m_showInactiveCheck = new QCheckBox("Show Inactive", this);
+
+    headerLayout->addWidget(titleLabel);
+    headerLayout->addStretch(1);
+    headerLayout->addWidget(m_showInactiveCheck);
 
     m_tree->setColumnCount(3);
     // Set auto fit content
@@ -103,7 +111,7 @@ StorageWidget::StorageWidget(
     buttonLayout->addWidget(m_deactivateButton);
     buttonLayout->addWidget(m_reactivateButton);
 
-    layout->addWidget(titleLabel);
+    layout->addLayout(headerLayout);
     layout->addWidget(m_statusLabel);
     layout->addWidget(m_tree);
     layout->addLayout(buttonLayout);
@@ -121,6 +129,10 @@ StorageWidget::StorageWidget(
     connect(m_deactivateButton, &QPushButton::clicked, this, &StorageWidget::deactivateLocation);
 
     connect(m_reactivateButton, &QPushButton::clicked, this, &StorageWidget::reactivateLocation);
+    connect(m_showInactiveCheck, &QCheckBox::toggled, this, [this] {
+        if (m_remoteReads) populateRemoteStorageTree();
+        else loadStorageTree();
+    });
 
     workspaceChanged(
         m_workspaceContext.currentWorkspaceId());
@@ -203,11 +215,17 @@ void StorageWidget::loadStorageTree()
     }
 
     QHash<int, QTreeWidgetItem*> items;
+    QList<StorageTreeVisibility::Row> visibilityRows;
+    for (const StorageLocation& location : locations)
+        visibilityRows.append({location.id(), location.parentLocationId(), location.isActive()});
+    const QSet<qint64> visibleIds = StorageTreeVisibility::visibleIds(
+        visibilityRows, m_showInactiveCheck->isChecked());
 
     // First pass:
     // Create every tree item.
     for (const StorageLocation& location : locations)
     {
+        if (!visibleIds.contains(location.id())) continue;
         auto* item =
             new QTreeWidgetItem();
 
@@ -250,6 +268,7 @@ void StorageWidget::loadStorageTree()
     // Attach children to parents.
     for (const StorageLocation& location : locations)
     {
+        if (!visibleIds.contains(location.id())) continue;
         QTreeWidgetItem* item =
             items.value(location.id());
 
@@ -291,17 +310,35 @@ void StorageWidget::loadRemoteStorageTree()
             if(!result.succeeded()){m_remoteStale=true;m_statusLabel->setText(result.message.isEmpty()?QStringLiteral("Unable to load Storage from BrickSuite Host."):result.message);updateRemoteActionState();emit remoteRefreshFinished(false);return;}
             m_remoteStorage=*result.value;m_remoteStale=false;
             const qint64 roundTripMs=m_storageRequestTimer.isValid()?m_storageRequestTimer.elapsed():0;
-            QElapsedTimer constructionTimer;constructionTimer.start();QHash<qint64,QTreeWidgetItem*> items;
-            for(const auto& location:*result.value){auto* item=new QTreeWidgetItem;
-                item->setText(0,location.active?location.name:QStringLiteral("%1 (Inactive)").arg(location.name));
-                item->setText(1,location.typeName);QStringList uses;if(location.allowsInventory)uses<<QStringLiteral("Inventory");if(location.allowsCollection)uses<<QStringLiteral("Collection");item->setText(2,uses.isEmpty()?QStringLiteral("Hierarchy only"):uses.join(QStringLiteral(" + ")));
-                item->setData(0,Qt::UserRole,QVariant::fromValue<qint64>(location.storageId));item->setData(0,Qt::UserRole+1,QVariant::fromValue<qint64>(location.parentStorageId));item->setData(0,Qt::UserRole+2,location.active);items.insert(location.storageId,item);}
-            for(const auto& location:*result.value){auto* item=items.value(location.storageId);auto* parent=items.value(location.parentStorageId);if(parent)parent->addChild(item);else m_tree->addTopLevelItem(item);}
-            m_tree->expandAll();m_statusLabel->setText(result.value->isEmpty()?QStringLiteral("This Host Workspace has no Storage locations."):QStringLiteral("%1 Storage locations from BrickSuite Host.").arg(result.value->size()));
+            QElapsedTimer constructionTimer;constructionTimer.start();populateRemoteStorageTree();
+            m_statusLabel->setText(result.value->isEmpty()?QStringLiteral("This Host Workspace has no Storage locations."):QStringLiteral("%1 Storage locations from BrickSuite Host.").arg(result.value->size()));
             qDebug().noquote()<<"Remote Storage rows="<<result.value->size()<<"roundtripMs="<<roundTripMs<<"hierarchyMs="<<constructionTimer.elapsed();
             updateRemoteActionState();
             emit remoteRefreshFinished(true);
         });
+}
+
+void StorageWidget::populateRemoteStorageTree()
+{
+    m_tree->clear();
+    QList<StorageTreeVisibility::Row> rows;
+    for (const auto& location : m_remoteStorage)
+        rows.append({location.storageId, location.parentStorageId, location.active});
+    const QSet<qint64> visibleIds = StorageTreeVisibility::visibleIds(
+        rows, m_showInactiveCheck->isChecked());
+    QHash<qint64,QTreeWidgetItem*> items;
+    for(const auto& location:m_remoteStorage){
+        if(!visibleIds.contains(location.storageId))continue;
+        auto* item=new QTreeWidgetItem;
+        item->setText(0,location.active?location.name:QStringLiteral("%1 (Inactive)").arg(location.name));
+        item->setText(1,location.typeName);QStringList uses;if(location.allowsInventory)uses<<QStringLiteral("Inventory");if(location.allowsCollection)uses<<QStringLiteral("Collection");item->setText(2,uses.isEmpty()?QStringLiteral("Hierarchy only"):uses.join(QStringLiteral(" + ")));
+        item->setData(0,Qt::UserRole,QVariant::fromValue<qint64>(location.storageId));item->setData(0,Qt::UserRole+1,QVariant::fromValue<qint64>(location.parentStorageId));item->setData(0,Qt::UserRole+2,location.active);items.insert(location.storageId,item);
+    }
+    for(const auto& location:m_remoteStorage){
+        if(!visibleIds.contains(location.storageId))continue;
+        auto* item=items.value(location.storageId);auto* parent=items.value(location.parentStorageId);if(parent)parent->addChild(item);else m_tree->addTopLevelItem(item);
+    }
+    m_tree->expandAll();updateRemoteActionState();
 }
 
 void StorageWidget::setMutationControlsEnabled(bool enabled)

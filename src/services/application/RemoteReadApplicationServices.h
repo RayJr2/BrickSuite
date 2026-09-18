@@ -82,6 +82,7 @@ public:
         AsyncReadCompletion<RemoteBuildabilityDto::DetailsResponse> completion);
 
     bool isAvailableFor(const QString& operation) const;
+    QString hostAuthority() const;
 
 private:
     template <typename T, typename Decoder>

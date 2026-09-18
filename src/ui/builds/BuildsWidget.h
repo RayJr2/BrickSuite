@@ -128,7 +128,9 @@ private:
     void openRemoteBuildMutationDialog(const QString& operation,
                                        const RemoteReadDto::BuildSummary& build,
                                        bool desiredActive,
-                                       const QList<RemoteBuildMutationDto::ReturnRow>& returns = {});
+                                       const QList<RemoteBuildMutationDto::ReturnRow>& returns = {},
+                                       const QString& storageAuthority = {},
+                                       const QList<RemoteReadDto::StorageSummary>& storage = {});
     void loadManufacturers();
     void loadRemoteManufacturerChoices();
     void updateUiState();

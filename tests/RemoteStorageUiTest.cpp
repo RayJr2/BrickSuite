@@ -1,5 +1,7 @@
 #include "../src/ui/storage/StorageLocationDialog.h"
 #include "../src/ui/storage/RemoteStorageActionEligibility.h"
+#include "../src/ui/storage/StorageTreeVisibility.h"
+#include "../src/services/storage/RemoteStorageDestination.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -15,6 +17,23 @@ namespace { bool require(bool value,const char*message){if(!value)std::fprintf(s
 int main(int argc,char**argv)
 {
     QApplication app(argc,argv);bool ok=true;
+    const QList<StorageTreeVisibility::Row> hierarchy{
+        {1,0,true},{2,1,false},{3,2,true},{4,1,true}};
+    const auto hidden=StorageTreeVisibility::visibleIds(hierarchy,false);
+    ok&=require(hidden.contains(1)&&hidden.contains(4)&&!hidden.contains(2)
+                &&!hidden.contains(3),"inactive rows hidden without orphaning descendants");
+    const auto shown=StorageTreeVisibility::visibleIds(hierarchy,true);
+    ok&=require(shown.size()==4,"Show Inactive reveals the complete hierarchy");
+    const QList<RemoteReadDto::StorageSummary> hostStorage{
+        {10,0,QStringLiteral("Leaf"),QStringLiteral("Leaf"),QStringLiteral("Bin"),0,true,true,false},
+        {11,0,QStringLiteral("Parent"),QStringLiteral("Parent"),QStringLiteral("Shelf"),0,true,true,false},
+        {12,11,QStringLiteral("Child"),QStringLiteral("Parent / Child"),QStringLiteral("Bin"),0,true,true,false},
+        {13,0,QStringLiteral("Inactive"),QStringLiteral("Inactive"),QStringLiteral("Bin"),0,false,true,false},
+        {14,0,QStringLiteral("Collection"),QStringLiteral("Collection"),QStringLiteral("Shelf"),0,true,false,true}};
+    const auto destinations=RemoteStorageDestination::validInventoryDestinationIds(hostStorage);
+    ok&=require(destinations.contains(10)&&destinations.contains(12)
+                &&!destinations.contains(11)&&!destinations.contains(13)
+                &&!destinations.contains(14),"Host projection defines active Inventory leaf destinations");
     RemoteStorageActionEligibilityInput input;input.connected=true;input.workspaceCurrent=true;input.stale=false;input.selected=true;input.selectedActive=true;input.canGet=true;input.canListTypes=true;
     input.canAdd=true;auto eligibility=remoteStorageActionEligibility(input);ok&=require(eligibility.add&&!eligibility.edit&&!eligibility.deactivate,"storage.add enables Add only");
     input.canAdd=false;input.canEdit=true;eligibility=remoteStorageActionEligibility(input);ok&=require(!eligibility.add&&eligibility.edit&&!eligibility.deactivate,"storage.edit enables Edit only");

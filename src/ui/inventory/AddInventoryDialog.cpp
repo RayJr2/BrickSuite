@@ -40,6 +40,7 @@
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
+#include "../../services/storage/RemoteStorageDestination.h"
 #include "../../services/application/RemoteInventoryMutationApplicationService.h"
 
 #include "../../services/RebrickableApiClient.h"
@@ -125,12 +126,15 @@ AddInventoryDialog::AddInventoryDialog(
     RemoteInventoryMutationApplicationService& remoteMutations,
     const QHash<int, QString>& hostStoragePaths,
     const QStringList& hostManufacturerNames, int preferredStorageLocationId,
+    const QString& remoteAuthority,
+    const QList<RemoteReadDto::StorageSummary>& remoteStorage,
     QWidget* parent)
     : QDialog(parent), m_workspaceContext(workspaceContext),
       m_sessionStorageSelectionService(sessionStorageSelectionService),
       m_remoteMutations(&remoteMutations), m_hostStoragePaths(hostStoragePaths),
       m_hostManufacturerNames(hostManufacturerNames),
-      m_preferredStorageLocationId(preferredStorageLocationId)
+      m_preferredStorageLocationId(preferredStorageLocationId),
+      m_remoteAuthority(remoteAuthority), m_remoteStorage(remoteStorage)
 {
     m_quickEntryMode=true; initializeUi(); loadStorageLocations(); clearPartSelection();
     updateAddButtonState(); m_partSearchEdit->setFocus();
@@ -675,7 +679,9 @@ void AddInventoryDialog::addInventory()
         setRemoteSubmissionPending(true);m_statusLabel->setText("Saving to BrickSuite Host...");m_statusLabel->setVisible(true);
         const QList<QWidget*> fields{m_partSearchEdit,m_colorCombo,m_storageCombo,m_manufacturerCombo,m_conditionCombo,m_ownershipCombo,m_quantitySpin,m_showAllColorsCheck,m_rememberPartCheck,m_tryBrickLinkIdCheck};for(QWidget* field:fields)if(field)field->setEnabled(false);
         m_remoteMutations->add(request,this,[this,storageLocationId,fields](const RemoteInventoryMutationDto::Result&){
-            m_inventoryWasAdded=true;m_sessionStorageSelectionService.rememberDestination(m_workspaceContext.currentWorkspaceId(),storageLocationId);emit inventoryAdded();
+            m_inventoryWasAdded=true;
+            const auto validator=[locations=m_remoteStorage](int workspace,int id,int excluded){return RemoteStorageDestination::isValidInventoryDestination(locations,workspace,id,excluded);};
+            m_sessionStorageSelectionService.rememberDestination(m_remoteAuthority,m_workspaceContext.currentWorkspaceId(),storageLocationId,validator);emit inventoryAdded();
             if(m_keepOpenCheck&&m_keepOpenCheck->isChecked()){m_remoteMutationId.clear();for(QWidget* field:fields)if(field)field->setEnabled(true);setRemoteSubmissionPending(false);m_statusLabel->setText("Inventory added to BrickSuite Host.");if(!m_rememberPartCheck->isChecked())clearPartSelection();}else accept();
         },[this,fields](const RemoteMutationDto::Error& error){setRemoteSubmissionPending(false);
             if(error.outcome==RemoteMutationDto::Outcome::Unknown){m_statusLabel->setText("Outcome unknown. Retry safely to check the same Add.");return;}
