@@ -19,6 +19,7 @@ public:
     static QList<InventoryExportRow> createRemoteRows(
         const QList<RemoteReadDto::InventoryExportRow>& source);
     static QList<InventoryExportFieldDescriptor> fieldDescriptors();
+    static QSet<QString> remoteEnrichmentFieldIds();
     static InventoryExportConfiguration defaultConfiguration();
     static InventoryExportConfiguration normalizeConfiguration(
         const QStringList& order, const QStringList& enabled);

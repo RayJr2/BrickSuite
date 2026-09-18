@@ -142,6 +142,11 @@ struct CollectionSummary {
     bool allowPartsSource = false;
 };
 struct CollectionDetail : CollectionSummary { QString notes; QDateTime createdUtc; QDateTime modifiedUtc; };
+struct CollectionExportRow {
+    qint64 collectionItemId=0;QString type,reference,name,nickname,state,condition,completeness;
+    QString location,source;bool allowPartsSource=false;QString notes,sourceBuildReference;
+    QString sourceBuildName,createdUtc,modifiedUtc;
+};
 
 struct CollectionDisassemblyPlanRow {
     qint64 rowIndex = 0; qint64 requirementId = 0;

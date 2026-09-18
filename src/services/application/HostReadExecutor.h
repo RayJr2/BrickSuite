@@ -107,6 +107,9 @@ public:
     void searchCollection(const CollectionSearchCriteria& criteria, QObject* context,
                           std::function<void(const CollectionApplicationService::Page&)> completion,
                           ErrorCallback failure = {});
+    void exportCollectionPortable(const CollectionSearchCriteria& criteria,QObject* context,
+        std::function<void(const RemoteReadDto::Page<RemoteReadDto::CollectionExportRow>&)> completion,
+        ErrorCallback failure = {});
     void getCollection(int itemId, QObject* context,
                        std::function<void(const std::optional<CollectionSearchResult>&)> completion,
                        ErrorCallback failure = {});

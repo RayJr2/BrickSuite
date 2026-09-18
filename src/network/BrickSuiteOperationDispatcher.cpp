@@ -38,6 +38,7 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
                       QStringLiteral("parts.pickABrick.resolve"));
         addCapability(QStringLiteral("builds.pulling"), QStringLiteral("builds.pulling.read"));
         addCapability(QStringLiteral("collection.search"), QStringLiteral("collection.read"));
+        addCapability(QStringLiteral("collection.export"), QStringLiteral("collection.export"));
         addCapability(QStringLiteral("partReference.customizations"),
                       QStringLiteral("partReference.customizations.read"));
         addCapability(QStringLiteral("partReference.customizations.add"),

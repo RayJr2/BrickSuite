@@ -1530,7 +1530,8 @@ void MyInventoryWidget::requestRemoteInventoryExport(const QSet<QString>& fields
     request->workspaceId=m_workspaceContext.currentWorkspaceId();request->text=m_searchEdit->text().trimmed();
     request->rebrickableCategoryId=m_categoryCombo->currentData().toInt();request->rebrickableColorId=m_colorCombo->currentData().toInt();
     request->storageId=m_storageCombo->currentData().toInt();request->paging={1,500};
-    request->exportFields=QStringList(fields.begin(),fields.end());request->exportFields.sort(Qt::CaseSensitive);
+    const QSet<QString> enrichmentFields = fields & InventoryExportService::remoteEnrichmentFieldIds();
+    request->exportFields=QStringList(enrichmentFields.begin(),enrichmentFields.end());request->exportFields.sort(Qt::CaseSensitive);
     auto next=QSharedPointer<std::function<void()>>::create();
     *next=[this,rows,request,next,context,completion]{m_remoteReads->exportInventory(*request,context,
         [rows,request,next,completion](auto result){

@@ -6,11 +6,13 @@
 #include "../src/services/application/HostReadProtocolService.h"
 #include "../src/services/application/RemoteReadApplicationServices.h"
 #include "../src/services/application/dto/RemoteReadJson.h"
+#include "../src/services/inventory/InventoryExportService.h"
 #include "../src/network/BrickSuiteOperationDispatcher.h"
 #include "../src/network/BrickSuiteWebSocketServer.h"
 #include "../src/network/BrickSuiteWebSocketClient.h"
 #include "../src/network/BrickSuiteHostIdentity.h"
 #include "../src/network/RemoteSessionState.h"
+#include "../src/services/CredentialStore.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -413,6 +415,15 @@ int main(int argc, char** argv)
         ok &= check(collection.rows.size() == 1 && collection.total == 1
                         && collection.rows.first().item.nickname == QStringLiteral("Host Collection"),
                     "Collection projection");
+        RemoteReadDto::Page<RemoteReadDto::CollectionExportRow> collectionExport;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.exportCollectionPortable(collectionCriteria, &app,
+                [&](const auto& result) { collectionExport=result;loop.quit(); });
+        }), "Collection export completion");
+        ok &= check(collectionExport.totalRows==1&&collectionExport.rows.size()==1
+                        && collectionExport.rows.first().nickname==QStringLiteral("Host Collection")
+                        && collectionExport.rows.first().source==QStringLiteral("Build: Host Build (MOC-HOST)"),
+                    "Host-authoritative Collection export projection");
 
         ok &= check(waitUntil([&] { return executor.isIdle(); })
                         && executor.activeReadCount() == 0
@@ -521,7 +532,7 @@ int main(int argc, char** argv)
             QStringLiteral("builds.get"), QStringLiteral("builds.requirements"),
             QStringLiteral("builds.missingParts"), QStringLiteral("builds.pulling"),
             QStringLiteral("parts.pickABrick.resolve"),
-            QStringLiteral("collection.search"), QStringLiteral("collection.get"),
+            QStringLiteral("collection.search"), QStringLiteral("collection.export"), QStringLiteral("collection.get"),
             QStringLiteral("partReference.customizations")};
         for (const QString& operation : expected)
             ok &= check(dispatcher.operations().contains(operation),
@@ -538,6 +549,18 @@ int main(int argc, char** argv)
             [&](const auto& response) { invalidId = response; });
         ok &= check(invalidId.error.code == QStringLiteral("INVALID_REQUEST"),
                     "invalid operational ID rejected before worker submission");
+        BrickSuiteProtocol::Message collectionExportResponse;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            dispatcher.dispatchAsync(BrickSuiteProtocol::request(QStringLiteral("collection.export"),
+                {{"workspaceId",1},{"text",""},{"type","MOC"},{"state","Assembled"},
+                 {"condition","Used"},{"completeness","Complete"},{"storageId",0},
+                 {"activeState",1},{"page",1},{"pageSize",100}}),true,
+                [&](const auto&response){collectionExportResponse=response;loop.quit();});
+        }),"Protocol 1.5 Collection export completion");
+        ok &= check(collectionExportResponse.success
+                        && collectionExportResponse.payload.value("totalRows").toInt()==1
+                        && collectionExportResponse.payload.value("rows").toArray().first().toObject().value("notes").toString()==QStringLiteral("Host notes"),
+                    "Protocol 1.5 Collection export preserves complete Host metadata");
     }
 
     {
@@ -617,6 +640,103 @@ int main(int argc, char** argv)
                         && remoteManufacturers.contains(QStringLiteral("Alternate Bricks"))
                         && !remoteManufacturers.contains(QStringLiteral("Inactive Bricks")),
                     "remote manufacturer choices preserve Host active names");
+        const auto pairingAttempt = server.pairingService()->start(&error);
+        BrickSuiteWebSocketClient pairingClient;
+        QString pairedDeviceId;
+        QString pairedCredential;
+        QObject::connect(&pairingClient, &BrickSuiteWebSocketClient::pairingCompleted,
+            [&](const QString& deviceId, const QString& credential) {
+                pairedDeviceId = deviceId;
+                pairedCredential = credential;
+            });
+        const QUrl endpoint(QStringLiteral("wss://127.0.0.1:%1").arg(server.serverPort()));
+        pairingClient.beginPairing(endpoint, identity.fingerprint, pairingAttempt.code,
+                                   QStringLiteral("Inventory contract test"));
+        pairingClient.connectToHost();
+        ok &= check(waitUntil([&] { return !pairedDeviceId.isEmpty(); })
+                        && !pairedCredential.isEmpty(),
+                    "Protocol 1.5 Inventory test device pairs");
+        pairingClient.disconnectFromHost();
+
+        BrickSuiteWebSocketClient currentClient;
+        currentClient.configurePairedDevice(endpoint, identity.fingerprint,
+                                            pairedDeviceId, pairedCredential, false);
+        ok &= check(connectClient(currentClient),
+                    "Protocol 1.5 Inventory test device authenticates");
+        RemoteSessionState currentSession;
+        currentSession.authenticated(identity.fingerprint);
+        currentSession.setWorkspaceId(1);
+        RemoteReadApplicationServices currentRemote(currentClient, &currentSession);
+
+        RemoteReadDto::InventorySearchRequest remoteInventoryRequest;
+        remoteInventoryRequest.workspaceId = 1;
+        remoteInventoryRequest.paging = {1, 250};
+        RemoteReadDto::Page<RemoteReadDto::InventoryRow> remoteInventory;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            currentRemote.searchInventory(remoteInventoryRequest, &app, [&](const auto& result) {
+                if (result.succeeded()) remoteInventory = *result.value;
+                loop.quit();
+            });
+        }), "real-client Inventory search completion");
+        ok &= check(remoteInventory.totalRows == 1 && remoteInventory.rows.size() == 1
+                        && remoteInventory.rows.first().partNumber == QStringLiteral("3001")
+                        && remoteInventory.rows.first().rebrickableCategoryId == 11
+                        && remoteInventory.rows.first().rebrickableColorId == 4,
+                    "real-client Inventory search uses the seven-field browsing contract");
+
+        const auto defaultInventoryExport = InventoryExportService::defaultConfiguration();
+        const QSet<QString> defaultRemoteFields = defaultInventoryExport.enabledFields
+            & InventoryExportService::remoteEnrichmentFieldIds();
+        remoteInventoryRequest.exportFields = QStringList(defaultRemoteFields.begin(),
+                                                          defaultRemoteFields.end());
+        remoteInventoryRequest.exportFields.sort(Qt::CaseSensitive);
+        RemoteReadDto::Page<RemoteReadDto::InventoryExportRow> remoteInventoryExport;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            currentRemote.exportInventory(remoteInventoryRequest, &app, [&](const auto& result) {
+                if (result.succeeded()) remoteInventoryExport = *result.value;
+                loop.quit();
+            });
+        }), "real-client Inventory export completion");
+        ok &= check(defaultRemoteFields.isEmpty()
+                        && remoteInventoryExport.totalRows == 1
+                        && remoteInventoryExport.rows.size() == 1
+                        && remoteInventoryExport.rows.first().partNumber == QStringLiteral("3001")
+                        && remoteInventoryExport.rows.first().legoElementIds.isEmpty(),
+                    "real-client default Inventory export sends only enrichment field IDs");
+
+        remoteInventoryRequest.exportFields = {QStringLiteral("legoElementId")};
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            currentRemote.exportInventory(remoteInventoryRequest, &app, [&](const auto& result) {
+                remoteInventoryExport = {};
+                if (result.succeeded()) remoteInventoryExport = *result.value;
+                loop.quit();
+            });
+        }), "real-client optional-field Inventory export completion");
+        ok &= check(remoteInventoryExport.totalRows == 1
+                        && remoteInventoryExport.rows.size() == 1
+                        && remoteInventoryExport.rows.first().legoElementIds
+                            == QStringList({QStringLiteral("host-element-1"),
+                                            QStringLiteral("host-element-2")}),
+                    "real-client Inventory export sends optional enrichment field IDs");
+
+        remoteInventoryRequest.storageId = 1;
+        remoteInventoryRequest.exportFields.clear();
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            currentRemote.exportInventory(remoteInventoryRequest, &app, [&](const auto& result) {
+                remoteInventoryExport = {};
+                if (result.succeeded()) remoteInventoryExport = *result.value;
+                loop.quit();
+            });
+        }), "real-client Storage-filtered Inventory export completion");
+        ok &= check(remoteInventoryExport.totalRows == 1
+                        && remoteInventoryExport.rows.size() == 1
+                        && remoteInventoryExport.rows.first().storagePath
+                            == QStringLiteral("Host Bin"),
+                    "real-client Inventory export preserves Host Storage filter identity");
+        currentClient.disconnectFromHost();
+        if (!pairedDeviceId.isEmpty())
+            CredentialStore::remove(
+                BrickSuitePairingService::credentialReference(pairedDeviceId), nullptr);
         RemoteReadDto::InventoryDetail remoteDetail;
         ok &= check(waitFor([&](QEventLoop& loop) {
             remote.getInventory(1, 1, &app, [&](const auto& result) {

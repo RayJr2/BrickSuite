@@ -56,6 +56,7 @@ int main(int argc, char** argv)
     ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(exportRow),&decodedExport,&decodeError)
         && decodedExport.inventoryRecordId==44&&decodedExport.legoElementIds.size()==2
         && decodedExport.storagePath=="Shelf / Bin","Inventory export DTO round trip failed");
+    RemoteReadDto::CollectionExportRow collectionExport;collectionExport.collectionItemId=12;collectionExport.type="Set";collectionExport.reference="10300-1";collectionExport.name="Legacy Set";collectionExport.nickname="Copy 1";collectionExport.state="Assembled";collectionExport.condition="Used";collectionExport.completeness="Complete";collectionExport.location="Bedroom / Shelf";collectionExport.source="Catalog / Existing Collection";collectionExport.allowPartsSource=true;collectionExport.notes="Notes";collectionExport.createdUtc="2026-09-18T12:00:00.000Z";collectionExport.modifiedUtc=collectionExport.createdUtc;RemoteReadDto::CollectionExportRow decodedCollectionExport;ok&=require(RemoteReadJson::fromJson(RemoteReadJson::toJson(collectionExport),&decodedCollectionExport,&decodeError)&&decodedCollectionExport.collectionItemId==12&&decodedCollectionExport.allowPartsSource&&decodedCollectionExport.notes=="Notes","Collection export DTO round trip failed");
     RemoteReadDto::InventoryDetail detail;
     static_cast<RemoteReadDto::InventoryRow&>(detail) = row;
     detail.allocatedQuantity = 2;

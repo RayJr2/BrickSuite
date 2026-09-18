@@ -8,6 +8,28 @@
 #include <QJsonArray>
 #include <QTimer>
 
+namespace {
+QJsonObject inventorySearchPayload(const RemoteReadDto::InventorySearchRequest& request)
+{
+    return {{"workspaceId", double(request.workspaceId)},
+            {"text", request.text},
+            {"storageId", double(request.storageId)},
+            {"rebrickableCategoryId", request.rebrickableCategoryId},
+            {"rebrickableColorId", request.rebrickableColorId},
+            {"page", request.paging.page},
+            {"pageSize", request.paging.pageSize}};
+}
+
+QJsonObject inventoryExportPayload(const RemoteReadDto::InventorySearchRequest& request)
+{
+    QJsonObject payload = inventorySearchPayload(request);
+    QJsonArray fields;
+    for (const QString& field : request.exportFields) fields.append(field);
+    payload.insert(QStringLiteral("fields"), fields);
+    return payload;
+}
+}
+
 RemoteReadApplicationServices::RemoteReadApplicationServices(
     BrickSuiteWebSocketClient& client, RemoteSessionState* session, QObject* parent)
     : QObject(parent), m_client(client), m_session(session) {}
@@ -168,10 +190,7 @@ ReadRequestToken RemoteReadApplicationServices::searchInventory(
     const RemoteReadDto::InventorySearchRequest& r, QObject* context,
     AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::InventoryRow>> completion)
 {
-    QJsonArray fields;for(const auto&field:r.exportFields)fields.append(field);QJsonObject payload{{"workspaceId",double(r.workspaceId)},{"text",r.text},{"storageId",double(r.storageId)},
-        {"rebrickableCategoryId",r.rebrickableCategoryId},{"rebrickableColorId",r.rebrickableColorId},
-        {"page",r.paging.page},{"pageSize",r.paging.pageSize},{"fields",fields}};
-    return request<RemoteReadDto::Page<RemoteReadDto::InventoryRow>>(QStringLiteral("inventory.search"),payload,context,std::move(completion),
+    return request<RemoteReadDto::Page<RemoteReadDto::InventoryRow>>(QStringLiteral("inventory.search"),inventorySearchPayload(r),context,std::move(completion),
         [](const QJsonObject& o, auto* out, QString* error){qint64 total=o.value("totalRows").toInteger(-1);int page=o.value("page").toInt();int size=o.value("pageSize").toInt();const auto rows=o.value("rows");if(total<0||page<1||size<1||size>RemoteReadDto::MaximumPageSize||!rows.isArray()||rows.toArray().size()>size)return false;out->page=page;out->pageSize=size;out->totalRows=int(qMin<qint64>(total,INT_MAX));for(const auto& v:rows.toArray()){RemoteReadDto::InventoryRow row;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&row,&e)){if(error)*error=e.message;return false;}out->rows.append(row);}return true;});
 }
 
@@ -179,10 +198,7 @@ ReadRequestToken RemoteReadApplicationServices::exportInventory(
     const RemoteReadDto::InventorySearchRequest&r,QObject*context,
     AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::InventoryExportRow>> completion)
 {
-    QJsonObject payload{{"workspaceId",double(r.workspaceId)},{"text",r.text},{"storageId",double(r.storageId)},
-        {"rebrickableCategoryId",r.rebrickableCategoryId},{"rebrickableColorId",r.rebrickableColorId},
-        {"page",r.paging.page},{"pageSize",r.paging.pageSize}};
-    return request<RemoteReadDto::Page<RemoteReadDto::InventoryExportRow>>(QStringLiteral("inventory.export"),payload,context,std::move(completion),
+    return request<RemoteReadDto::Page<RemoteReadDto::InventoryExportRow>>(QStringLiteral("inventory.export"),inventoryExportPayload(r),context,std::move(completion),
         [](const QJsonObject&o,auto*out,QString*error){const auto rows=o.value("rows");const int p=o.value("page").toInt(),s=o.value("pageSize").toInt(),total=o.value("totalRows").toInt(-1);if(!rows.isArray()||p<1||s<1||s>RemoteReadDto::MaximumPageSize||total<0||rows.toArray().size()>s)return false;out->page=p;out->pageSize=s;out->totalRows=total;for(const auto&v:rows.toArray()){RemoteReadDto::InventoryExportRow row;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&row,&e)){if(error)*error=e.message;return false;}out->rows.append(row);}return true;});
 }
 
@@ -231,6 +247,10 @@ ReadRequestToken RemoteReadApplicationServices::searchCollection(const RemoteRea
 {
     return request<RemoteReadDto::Page<RemoteReadDto::CollectionSummary>>(QStringLiteral("collection.search"),{{"workspaceId",double(r.workspaceId)},{"text",r.text},{"type",r.type},{"state",r.state},{"condition",r.condition},{"completeness",r.completeness},{"storageId",double(r.storageId)},{"activeState",r.activeState},{"page",r.paging.page},{"pageSize",r.paging.pageSize}},context,std::move(completion),
         [](const QJsonObject& o,auto* out,QString* error){qint64 total=o.value("totalRows").toInteger(-1);int page=o.value("page").toInt();int size=o.value("pageSize").toInt();const auto rows=o.value("rows");if(total<0||page<1||size<1||size>RemoteReadDto::MaximumPageSize||!rows.isArray()||rows.toArray().size()>size)return false;out->page=page;out->pageSize=size;out->totalRows=int(qMin<qint64>(total,INT_MAX));for(const auto& v:rows.toArray()){RemoteReadDto::CollectionSummary row;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&row,&e)){if(error)*error=e.message;return false;}out->rows.append(row);}return true;});
+}
+ReadRequestToken RemoteReadApplicationServices::exportCollection(const RemoteReadDto::CollectionSearchRequest&r,QObject*context,AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::CollectionExportRow>>completion)
+{
+ return request<RemoteReadDto::Page<RemoteReadDto::CollectionExportRow>>(QStringLiteral("collection.export"),{{"workspaceId",double(r.workspaceId)},{"text",r.text},{"type",r.type},{"state",r.state},{"condition",r.condition},{"completeness",r.completeness},{"storageId",double(r.storageId)},{"activeState",r.activeState},{"page",r.paging.page},{"pageSize",r.paging.pageSize}},context,std::move(completion),[](const QJsonObject&o,auto*out,QString*error){return decodePage(o,out,error,[](const auto&j,auto*x,auto*de){return RemoteReadJson::fromJson(j,x,de);});});
 }
 ReadRequestToken RemoteReadApplicationServices::getCollection(qint64 workspaceId,qint64 id,QObject*context,AsyncReadCompletion<RemoteReadDto::CollectionDetail> completion)
 {return request<RemoteReadDto::CollectionDetail>("collection.get",{{"workspaceId",double(workspaceId)},{"collectionItemId",double(id)}},context,std::move(completion),[](const QJsonObject&o,auto*out,QString*error){RemoteReadJson::DecodeError e;const auto v=o.value("item");if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),out,&e)){if(error)*error=e.message;return false;}return true;});}

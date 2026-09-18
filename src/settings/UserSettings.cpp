@@ -99,6 +99,10 @@ constexpr auto kGroupInventory = "Inventory";
 constexpr auto kInventoryExportGroup = "CsvExport";
 constexpr auto kInventoryExportFieldOrderKey = "FieldOrder";
 constexpr auto kInventoryExportEnabledFieldsKey = "EnabledFields";
+constexpr auto kGroupCollection = "Collection";
+constexpr auto kCollectionExportGroup = "CsvExport";
+constexpr auto kCollectionExportFieldOrderKey = "FieldOrder";
+constexpr auto kCollectionExportEnabledFieldsKey = "EnabledFields";
 constexpr auto kWhatCanIBuildGroup = "WhatCanIBuild";
 constexpr auto kMaximumQualifyingResultsKey = "MaximumQualifyingResults";
 constexpr auto kRowsPerPageKey = "RowsPerPage";
@@ -1104,6 +1108,13 @@ void UserSettings::setInventoryExportConfiguration(const QStringList& order,
     settings.setValue(kInventoryExportFieldOrderKey,order);
     settings.setValue(kInventoryExportEnabledFieldsKey,enabled);
 }
+
+QStringList UserSettings::collectionExportFieldOrder() const
+{QSettings settings;settings.beginGroup(kGroupCollection);settings.beginGroup(kCollectionExportGroup);return settings.value(kCollectionExportFieldOrderKey).toStringList();}
+QStringList UserSettings::collectionExportEnabledFields() const
+{QSettings settings;settings.beginGroup(kGroupCollection);settings.beginGroup(kCollectionExportGroup);return settings.value(kCollectionExportEnabledFieldsKey).toStringList();}
+void UserSettings::setCollectionExportConfiguration(const QStringList&order,const QStringList&enabled)
+{QSettings settings;settings.beginGroup(kGroupCollection);settings.beginGroup(kCollectionExportGroup);settings.setValue(kCollectionExportFieldOrderKey,order);settings.setValue(kCollectionExportEnabledFieldsKey,enabled);}
 
 int UserSettings::whatCanIBuildMaximumResults() const
 {

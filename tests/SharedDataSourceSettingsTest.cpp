@@ -45,6 +45,15 @@ int main(int argc, char** argv)
                 "Inventory export selection/order did not persist independently");
     ok &= check(settings.missingPartsExportFieldOrder()==exportOrder,
                 "Inventory export settings changed Missing Parts export settings");
+    const QStringList collectionOrder={QStringLiteral("state"),QStringLiteral("reference")};
+    const QStringList collectionEnabled={QStringLiteral("state")};
+    settings.setCollectionExportConfiguration(collectionOrder,collectionEnabled);
+    ok &= check(settings.collectionExportFieldOrder()==collectionOrder
+                    && settings.collectionExportEnabledFields()==collectionEnabled,
+                "Collection export selection/order did not persist independently");
+    ok &= check(settings.inventoryExportFieldOrder()==inventoryOrder
+                    && settings.missingPartsExportFieldOrder()==exportOrder,
+                "Collection export settings changed another export profile");
     ok &= check(settings.whatCanIBuildMaximumResults() == 250,
                 "Part Usage maximum result default");
     ok &= check(settings.whatCanIBuildRowsPerPage() == 100,

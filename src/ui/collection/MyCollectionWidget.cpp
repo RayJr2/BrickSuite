@@ -1,6 +1,7 @@
 #include "MyCollectionWidget.h"
 
 #include "CollectionItemDialog.h"
+#include "CollectionExportDialog.h"
 #include "RemoteCollectionMutationDialog.h"
 #include "../builds/DisassembleSetDialog.h"
 #include "../help/HelpManager.h"
@@ -13,6 +14,7 @@
 #include "../../repositories/StorageLocationRepository.h"
 #include "../../services/collection/CollectionItemService.h"
 #include "../../services/collection/CollectionDisassemblyService.h"
+#include "../../services/collection/CollectionExportService.h"
 #include "../../services/builds/BuildLifecycleService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../services/application/ApplicationServices.h"
@@ -33,6 +35,8 @@
 #include <QLineEdit>
 #include <QLocale>
 #include <QMessageBox>
+#include <QSharedPointer>
+#include <QTimer>
 #include <QPixmap>
 #include <QPushButton>
 #include <QSet>
@@ -143,7 +147,7 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext,
     m_nextButton = new QPushButton("Next", this);
     paging->addWidget(m_summaryLabel); paging->addStretch(); paging->addWidget(m_previousButton);
     paging->addWidget(m_pageLabel); paging->addWidget(m_nextButton);
-    root->addWidget(new QLabel("My Collection", this)); root->addLayout(filters);
+    auto* heading=new QHBoxLayout;heading->addWidget(new QLabel("My Collection",this));heading->addStretch();m_exportButton=new QPushButton(QStringLiteral("Export CSV..."),this);heading->addWidget(m_exportButton);root->addLayout(heading);root->addLayout(filters);
     root->addWidget(m_messageLabel); root->addWidget(m_table, 1); root->addLayout(paging);
 
     auto criteriaChange = [this]() { loadPage(true); };
@@ -166,6 +170,7 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext,
         loadPage(criteriaChanged, criteriaChanged ? QString()
             : QStringLiteral("Loading page %1...").arg(m_page + 1));
     });
+    connect(m_exportButton,&QPushButton::clicked,this,&MyCollectionWidget::exportCsv);
     connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged,
             this, [this](int) { if (m_remoteMutationDialog) m_remoteMutationDialog->reject(); refresh(); });
 
@@ -183,6 +188,38 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext,
     connect(m_minifigImages, &MinifigImageService::imageReady, this,
             [applyImage](const QString& key, const QString& path) { applyImage(key, path, "Minifig"); });
     refresh();
+}
+
+CollectionSearchCriteria MyCollectionWidget::currentCriteria(int pageSize,int offset) const
+{
+    CollectionSearchCriteria c;c.workspaceId=m_workspaceContext.currentWorkspaceId();c.searchText=m_searchEdit->text().trimmed();c.type=static_cast<CollectionItemType>(m_typeCombo->currentData().toInt());c.state=static_cast<CollectionItemState>(m_stateCombo->currentData().toInt());c.condition=static_cast<CollectionItemCondition>(m_conditionCombo->currentData().toInt());c.completeness=static_cast<CollectionItemCompleteness>(m_completenessCombo->currentData().toInt());c.storageLocationId=m_locationCombo->currentData().toInt();c.activeState=m_activeCombo->currentData().toInt();c.limit=pageSize;c.offset=offset;return c;
+}
+
+RemoteReadDto::CollectionSearchRequest MyCollectionWidget::currentRemoteCriteria(int page) const
+{
+    RemoteReadDto::CollectionSearchRequest r;r.workspaceId=m_workspaceContext.currentWorkspaceId();r.text=m_searchEdit->text().trimmed();const auto type=static_cast<CollectionItemType>(m_typeCombo->currentData().toInt());const auto state=static_cast<CollectionItemState>(m_stateCombo->currentData().toInt());const auto condition=static_cast<CollectionItemCondition>(m_conditionCombo->currentData().toInt());const auto completeness=static_cast<CollectionItemCompleteness>(m_completenessCombo->currentData().toInt());if(type!=CollectionItemType::Invalid)r.type=collectionItemTypeToString(type);if(state!=CollectionItemState::Invalid)r.state=collectionItemStateToString(state);if(condition!=CollectionItemCondition::Invalid)r.condition=collectionItemConditionToString(condition);if(completeness!=CollectionItemCompleteness::Invalid)r.completeness=collectionItemCompletenessToString(completeness);r.storageId=m_locationCombo->currentData().toLongLong();r.activeState=m_activeCombo->currentData().toInt();r.paging={page,100};return r;
+}
+
+QString MyCollectionWidget::currentFilterSummary() const
+{
+    QStringList values;if(!m_searchEdit->text().trimmed().isEmpty())values<<QStringLiteral("Search: %1").arg(m_searchEdit->text().trimmed());if(m_typeCombo->currentIndex()>0)values<<QStringLiteral("Type: %1").arg(m_typeCombo->currentText());if(m_stateCombo->currentIndex()>0)values<<QStringLiteral("State: %1").arg(m_stateCombo->currentText());if(m_conditionCombo->currentIndex()>0)values<<QStringLiteral("Condition: %1").arg(m_conditionCombo->currentText());if(m_completenessCombo->currentIndex()>0)values<<QStringLiteral("Completeness: %1").arg(m_completenessCombo->currentText());if(m_locationCombo->currentData().toInt()!=0)values<<QStringLiteral("Location: %1").arg(m_locationCombo->currentText());if(m_activeCombo->currentData().toInt()!=1)values<<m_activeCombo->currentText();return values.isEmpty()?QStringLiteral("All active Collection items"):values.join(QStringLiteral("; "));
+}
+
+void MyCollectionWidget::showCollectionExport(QList<CollectionExportRow>rows,const QString&summary)
+{
+    m_exportPreparationActive=false;m_exportButton->setEnabled(true);unsetCursor();if(rows.isEmpty()){m_messageLabel->setText(QStringLiteral("No Collection items match the current filters."));emit statusMessageRequested(QStringLiteral("No Collection items match the current filters."),5000);QMessageBox::information(this,QStringLiteral("Export Collection"),QStringLiteral("No Collection items match the current filters."));return;}emit statusMessageRequested(QStringLiteral("Collection export ready."),5000);CollectionExportDialog dialog(std::move(rows),summary,this);dialog.exec();
+}
+
+void MyCollectionWidget::requestRemoteCollectionExport(QObject*context,std::function<void(bool,QList<CollectionExportRow>,QString)>completion)
+{
+    auto request=QSharedPointer<RemoteReadDto::CollectionSearchRequest>::create(currentRemoteCriteria(1));auto rows=QSharedPointer<QList<RemoteReadDto::CollectionExportRow>>::create();auto next=QSharedPointer<std::function<void()>>::create();*next=[this,request,rows,next,context,completion]{m_remoteReads->exportCollection(*request,context,[request,rows,next,completion](auto result){if(!result.succeeded()||(!result.value->rows.size()&&rows->size()<result.value->totalRows)){*next={};completion(false,{},result.succeeded()?QStringLiteral("The Host returned an incomplete Collection export page."):result.message);return;}rows->append(result.value->rows);if(rows->size()<result.value->totalRows){++request->paging.page;(*next)();return;}*next={};completion(true,CollectionExportService::createRemoteRows(*rows),{});});};(*next)();
+}
+
+void MyCollectionWidget::exportCsv()
+{
+    if(m_exportPreparationActive||!m_workspaceContext.hasCurrentWorkspace())return;m_exportPreparationActive=true;m_exportButton->setEnabled(false);setCursor(Qt::WaitCursor);emit statusMessageRequested(QStringLiteral("Preparing Collection export..."));m_messageLabel->setText(QStringLiteral("Preparing Collection export..."));m_messageLabel->repaint();const QString summary=currentFilterSummary();
+    if(m_remoteReads){if(!m_remoteReads->isAvailableFor(QStringLiteral("collection.export"))){m_exportPreparationActive=false;m_exportButton->setEnabled(true);unsetCursor();emit statusMessageRequested(QStringLiteral("Collection export is unavailable on this Host."),5000);QMessageBox::information(this,QStringLiteral("Export Collection"),QStringLiteral("This BrickSuite Host does not support Collection CSV export."));return;}requestRemoteCollectionExport(this,[this,summary](bool success,QList<CollectionExportRow>rows,QString error){if(!success){m_exportPreparationActive=false;m_exportButton->setEnabled(true);unsetCursor();emit statusMessageRequested(QStringLiteral("Unable to prepare Collection export."),5000);QMessageBox::critical(this,QStringLiteral("Export Collection"),error);return;}showCollectionExport(std::move(rows),summary);});return;}
+    auto criteria=QSharedPointer<CollectionSearchCriteria>::create(currentCriteria(500,0));const int total=m_collectionService.count(*criteria);auto all=QSharedPointer<QList<CollectionSearchResult>>::create();auto next=QSharedPointer<std::function<void()>>::create();*next=[this,criteria,total,all,next,summary]{const auto page=m_collectionService.searchRows(*criteria);if(page.isEmpty()&&all->size()<total){*next={};m_exportPreparationActive=false;m_exportButton->setEnabled(true);unsetCursor();emit statusMessageRequested(QStringLiteral("Unable to prepare Collection export."),5000);QMessageBox::critical(this,QStringLiteral("Export Collection"),QStringLiteral("Unable to retrieve the complete Collection export result."));return;}all->append(page);if(all->size()<total){criteria->offset+=page.size();QTimer::singleShot(0,this,*next);return;}*next={};for(auto&x:*all){if(x.item.storageLocationId<=0)continue;const int index=m_locationCombo->findData(x.item.storageLocationId);if(index>=0)x.locationName=m_locationCombo->itemText(index);}showCollectionExport(CollectionExportService::createRows(*all),summary);};QTimer::singleShot(0,this,*next);
 }
 
 QString MyCollectionWidget::effectiveCriteriaKey() const
@@ -259,6 +296,7 @@ void MyCollectionWidget::setRemoteSessionConnected(bool connected)
     m_completenessCombo->setEnabled(connected);
     m_locationCombo->setEnabled(connected);
     m_activeCombo->setEnabled(connected);
+    m_exportButton->setEnabled(connected&&!m_exportPreparationActive);
     if (connected) updatePaging();
     else {
         m_previousButton->setEnabled(false);
@@ -389,17 +427,8 @@ void MyCollectionWidget::loadPage(bool criteriaChanged, const QString& loadingMe
     if (criteriaChanged || key != m_loadedCriteriaKey) m_page = 0;
     m_loadedCriteriaKey = key;
     m_minifigImages->clearQueuedRequests();
-    CollectionSearchCriteria criteria;
-    criteria.workspaceId = m_workspaceContext.currentWorkspaceId();
-    criteria.searchText = m_searchEdit->text().trimmed();
-    criteria.type = static_cast<CollectionItemType>(m_typeCombo->currentData().toInt());
-    criteria.state = static_cast<CollectionItemState>(m_stateCombo->currentData().toInt());
-    criteria.condition = static_cast<CollectionItemCondition>(m_conditionCombo->currentData().toInt());
-    criteria.completeness = static_cast<CollectionItemCompleteness>(m_completenessCombo->currentData().toInt());
-    criteria.storageLocationId = m_locationCombo->currentData().toInt();
-    criteria.activeState = m_activeCombo->currentData().toInt();
-    criteria.limit = UserSettings::instance().resultsPerPage();
-    criteria.offset = m_page * criteria.limit;
+    CollectionSearchCriteria criteria=currentCriteria(UserSettings::instance().resultsPerPage());
+    criteria.offset=m_page*criteria.limit;
     m_total = m_collectionService.count(criteria);
     const int pages = qMax(1, (m_total + criteria.limit - 1) / criteria.limit);
     if (m_page >= pages) { m_page = pages - 1; criteria.offset = m_page * criteria.limit; }
@@ -548,20 +577,8 @@ void MyCollectionWidget::requestRemotePage()
         emit remoteCollectionRefreshFinished(false);
         return;
     }
-    RemoteReadDto::CollectionSearchRequest request;
-    request.workspaceId = workspaceId;
-    request.text = m_searchEdit->text().trimmed();
-    const auto type = static_cast<CollectionItemType>(m_typeCombo->currentData().toInt());
-    const auto state = static_cast<CollectionItemState>(m_stateCombo->currentData().toInt());
-    const auto condition = static_cast<CollectionItemCondition>(m_conditionCombo->currentData().toInt());
-    const auto completeness = static_cast<CollectionItemCompleteness>(m_completenessCombo->currentData().toInt());
-    if (type != CollectionItemType::Invalid) request.type = collectionItemTypeToString(type);
-    if (state != CollectionItemState::Invalid) request.state = collectionItemStateToString(state);
-    if (condition != CollectionItemCondition::Invalid) request.condition = collectionItemConditionToString(condition);
-    if (completeness != CollectionItemCompleteness::Invalid) request.completeness = collectionItemCompletenessToString(completeness);
-    request.storageId = m_locationCombo->currentData().toLongLong();
-    request.activeState = m_activeCombo->currentData().toInt();
-    request.paging = {m_page + 1, UserSettings::instance().resultsPerPage()};
+    RemoteReadDto::CollectionSearchRequest request=currentRemoteCriteria(m_page+1);
+    request.paging.pageSize=UserSettings::instance().resultsPerPage();
     m_messageLabel->setText(QStringLiteral("Loading My Collection from BrickSuite Host..."));
     m_searchButton->setEnabled(false); m_previousButton->setEnabled(false); m_nextButton->setEnabled(false);
     m_collectionRequestToken = m_remoteReads->searchCollection(request, this,

@@ -1,0 +1,27 @@
+#include "CollectionExportDialog.h"
+#include "../../services/collection/CollectionCsvWriter.h"
+#include "../../services/collection/CollectionExportService.h"
+#include "../../settings/UserSettings.h"
+#include "../help/HelpManager.h"
+#include "../help/HelpTopic.h"
+#include <QDialogButtonBox>
+#include <QFileDialog>
+#include <QHeaderView>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QListWidget>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QSignalBlocker>
+#include <QTableWidget>
+#include <QVBoxLayout>
+
+CollectionExportDialog::CollectionExportDialog(QList<CollectionExportRow>rows,QString summary,QWidget*parent):QDialog(parent),m_rows(std::move(rows)),m_filterSummary(std::move(summary))
+{
+ setWindowTitle(QStringLiteral("Export Collection CSV"));resize(1050,650);HelpManager::setContextTopic(this,HelpTopic::MyCollection,QStringLiteral("export-csv"));auto*root=new QVBoxLayout(this);auto*description=new QLabel(QStringLiteral("Current filters: %1\n%2 matching Collection item(s).").arg(m_filterSummary).arg(m_rows.size()),this);description->setWordWrap(true);root->addWidget(description);auto*content=new QHBoxLayout;auto*left=new QVBoxLayout;left->addWidget(new QLabel(QStringLiteral("Export fields:"),this));m_fields=new QListWidget(this);left->addWidget(m_fields);auto*controls=new QHBoxLayout;auto*up=new QPushButton(QStringLiteral("Move Up"),this);auto*down=new QPushButton(QStringLiteral("Move Down"),this);controls->addWidget(up);controls->addWidget(down);left->addLayout(controls);auto*reset=new QPushButton(QStringLiteral("Reset to Defaults"),this);left->addWidget(reset);content->addLayout(left);m_preview=new QTableWidget(this);m_preview->setEditTriggers(QAbstractItemView::NoEditTriggers);content->addWidget(m_preview,1);root->addLayout(content,1);m_status=new QLabel(this);root->addWidget(m_status);auto*box=new QDialogButtonBox(QDialogButtonBox::Cancel|QDialogButtonBox::Help,this);m_export=new QPushButton(QStringLiteral("Export..."),this);box->addButton(m_export,QDialogButtonBox::AcceptRole);root->addWidget(box);connect(up,&QPushButton::clicked,this,[this]{moveField(-1);});connect(down,&QPushButton::clicked,this,[this]{moveField(1);});connect(reset,&QPushButton::clicked,this,[this]{apply(CollectionExportService::defaultConfiguration());updatePreview();});connect(m_export,&QPushButton::clicked,this,&CollectionExportDialog::exportCsv);connect(box,&QDialogButtonBox::rejected,this,&QDialog::reject);connect(box,&QDialogButtonBox::helpRequested,this,[this]{HelpManager::showTopic(HelpTopic::MyCollection,QStringLiteral("export-csv"),this);});connect(m_fields,&QListWidget::itemChanged,this,[this]{updatePreview();});const auto&settings=UserSettings::instance();apply(CollectionExportService::normalizeConfiguration(settings.collectionExportFieldOrder(),settings.collectionExportEnabledFields()));updatePreview();
+}
+void CollectionExportDialog::apply(const CollectionExportConfiguration&c){const QSignalBlocker blocker(m_fields);m_fields->clear();QHash<QString,CollectionExportFieldDescriptor>known;for(const auto&f:CollectionExportService::fieldDescriptors())known.insert(f.id,f);for(const auto&id:c.fieldOrder){if(!known.contains(id))continue;auto*item=new QListWidgetItem(known.value(id).label,m_fields);item->setData(Qt::UserRole,id);item->setFlags(item->flags()|Qt::ItemIsUserCheckable);item->setCheckState(c.enabledFields.contains(id)?Qt::Checked:Qt::Unchecked);}}
+CollectionExportConfiguration CollectionExportDialog::configuration()const{CollectionExportConfiguration c;for(int i=0;i<m_fields->count();++i){auto*x=m_fields->item(i);const auto id=x->data(Qt::UserRole).toString();c.fieldOrder<<id;if(x->checkState()==Qt::Checked)c.enabledFields.insert(id);}return c;}
+void CollectionExportDialog::moveField(int offset){const int row=m_fields->currentRow(),target=row+offset;if(row<0||target<0||target>=m_fields->count())return;auto*item=m_fields->takeItem(row);m_fields->insertItem(target,item);m_fields->setCurrentRow(target);updatePreview();}
+void CollectionExportDialog::updatePreview(){const auto c=configuration();UserSettings::instance().setCollectionExportConfiguration(c.fieldOrder,QStringList(c.enabledFields.begin(),c.enabledFields.end()));const auto p=CollectionExportService::project(m_rows,c,250);m_preview->clear();m_preview->setColumnCount(p.headers.size());m_preview->setHorizontalHeaderLabels(p.headers);m_preview->setRowCount(p.rows.size());for(int r=0;r<p.rows.size();++r)for(int col=0;col<p.rows.at(r).size();++col)m_preview->setItem(r,col,new QTableWidgetItem(p.rows.at(r).at(col)));m_preview->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);m_preview->horizontalHeader()->setStretchLastSection(true);m_status->setText(m_rows.size()>p.rows.size()?QStringLiteral("Previewing first %1 of %2 matching records.").arg(p.rows.size()).arg(m_rows.size()):QStringLiteral("Previewing all %1 matching records.").arg(m_rows.size()));m_export->setEnabled(!p.fields.isEmpty()&&!m_rows.isEmpty());}
+void CollectionExportDialog::exportCsv(){const auto p=CollectionExportService::project(m_rows,configuration());const auto name=QFileDialog::getSaveFileName(this,QStringLiteral("Export Collection CSV"),QStringLiteral("BrickSuite_Collection.csv"),QStringLiteral("CSV Files (*.csv)"));if(name.isEmpty())return;const auto result=CollectionCsvWriter::write(name,p);if(!result.success)QMessageBox::critical(this,QStringLiteral("Export Collection"),result.message);else{QMessageBox::information(this,QStringLiteral("Export Collection"),result.message);accept();}}

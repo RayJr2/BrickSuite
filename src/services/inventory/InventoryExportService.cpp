@@ -52,6 +52,12 @@ QList<InventoryExportFieldDescriptor> InventoryExportService::fieldDescriptors()
     };
 }
 
+QSet<QString> InventoryExportService::remoteEnrichmentFieldIds()
+{
+    return {QStringLiteral("legoElementId"), QStringLiteral("rebrickablePartId"),
+            QStringLiteral("brickLinkPartId"), QStringLiteral("brickLinkColorId")};
+}
+
 InventoryExportConfiguration InventoryExportService::defaultConfiguration()
 {
     InventoryExportConfiguration result;

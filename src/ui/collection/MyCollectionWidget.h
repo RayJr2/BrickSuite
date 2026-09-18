@@ -2,6 +2,9 @@
 
 #include <QWidget>
 #include <QPointer>
+#include <functional>
+#include "../../models/CollectionSearchCriteria.h"
+#include "../../models/export/CollectionExportTypes.h"
 
 class WorkspaceContext;
 class MinifigImageService;
@@ -16,7 +19,7 @@ class SessionStorageSelectionService;
 class RemoteReadApplicationServices;
 class RemoteCollectionMutationApplicationService;
 class QDialog;
-namespace RemoteReadDto { struct CollectionSummary; struct CollectionDetail; struct CollectionDisassemblyPlan; }
+namespace RemoteReadDto { struct CollectionSearchRequest; struct CollectionSummary; struct CollectionDetail; struct CollectionDisassemblyPlan; }
 namespace RemoteCollectionMutationDto { struct DisassemblyReturn; }
 
 class MyCollectionWidget : public QWidget
@@ -40,6 +43,7 @@ signals:
     void remoteLocationsRefreshFinished(bool succeeded);
     void hostCollectionMutationCommitted(int workspaceId, int collectionItemId);
     void localCollectionDisassembled(int workspaceId, int collectionItemId, int buildId);
+    void statusMessageRequested(const QString& message, int timeoutMs = 0);
 
 private:
     void loadLocations();
@@ -55,6 +59,13 @@ private:
         const QList<RemoteCollectionMutationDto::DisassemblyReturn>& returns);
     void handleAction(int itemId, bool active, const QString& action);
     QString effectiveCriteriaKey() const;
+    CollectionSearchCriteria currentCriteria(int pageSize=100,int offset=0) const;
+    RemoteReadDto::CollectionSearchRequest currentRemoteCriteria(int page) const;
+    QString currentFilterSummary() const;
+    void exportCsv();
+    void requestRemoteCollectionExport(QObject* context,
+        std::function<void(bool,QList<CollectionExportRow>,QString)> completion);
+    void showCollectionExport(QList<CollectionExportRow> rows,const QString& summary);
 
     WorkspaceContext& m_workspaceContext;
     SessionStorageSelectionService& m_sessionStorageSelectionService;
@@ -78,10 +89,12 @@ private:
     QPushButton* m_searchButton = nullptr;
     QPushButton* m_previousButton = nullptr;
     QPushButton* m_nextButton = nullptr;
+    QPushButton* m_exportButton = nullptr;
     int m_page = 0;
     int m_total = 0;
     QString m_loadedCriteriaKey;
     bool m_refreshInProgress = false;
+    bool m_exportPreparationActive = false;
     quint64 m_collectionRequestToken = 0;
     quint64 m_storageRequestToken = 0;
     quint64 m_detailRequestToken = 0;

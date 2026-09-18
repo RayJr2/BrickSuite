@@ -277,6 +277,26 @@ int main(int argc, char* argv[])
     ok &= require(CollectionRepository().count(criteria)==1
                   && CollectionRepository().search(criteria).size()==1,
                   "condition/completeness count and paging predicates align");
+    criteria={};criteria.workspaceId=1;criteria.type=CollectionItemType::Set;
+    ok &= require(CollectionRepository().count(criteria)==3,"Collection export Type predicate");
+    criteria.type=CollectionItemType::Invalid;criteria.state=CollectionItemState::PartiallyAssembled;
+    ok &= require(CollectionRepository().count(criteria)==1,"Collection export State predicate");
+    criteria.state=CollectionItemState::Invalid;criteria.storageLocationId=bothLocation;
+    ok &= require(CollectionRepository().count(criteria)==3,"Collection export exact Location predicate");
+    criteria.storageLocationId=parent;
+    ok &= require(CollectionRepository().count(criteria)==5,"Collection export Location hierarchy predicate");
+    criteria.storageLocationId=0;criteria.searchText="Changed";
+    ok &= require(CollectionRepository().count(criteria)==1,"Collection export nickname search predicate");
+    criteria.searchText.clear();criteria.limit=2;criteria.offset=2;
+    ok &= require(CollectionRepository().count(criteria)==6
+                  && CollectionRepository().search(criteria).size()==2,
+                  "Collection export paging predicate preserves complete count");
+    ok &= require(service.setActive(setOne.collectionItemId,false).success,"archive filter setup");
+    criteria.activeState=0;criteria.limit=100;criteria.offset=0;
+    ok &= require(CollectionRepository().count(criteria)==1,"Collection export archived predicate");
+    criteria.activeState=1;
+    ok &= require(CollectionRepository().count(criteria)==5,"Collection export active predicate");
+    ok &= require(service.setActive(setOne.collectionItemId,true).success,"archive filter cleanup");
 
     const auto linkPreview = service.previewLegacySetBuildLink(legacySetBuild);
     ok &= require(linkPreview.result.success && linkPreview.setCatalogId==setId,

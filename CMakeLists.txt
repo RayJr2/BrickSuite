@@ -266,6 +266,8 @@ qt_add_executable(BrickSuite
     src/ui/storage/StorageWidget.h
     src/ui/collection/MyCollectionWidget.h
     src/ui/collection/MyCollectionWidget.cpp
+    src/ui/collection/CollectionExportDialog.h
+    src/ui/collection/CollectionExportDialog.cpp
     src/ui/collection/CollectionItemDialog.h
     src/ui/collection/CollectionItemDialog.cpp
     src/ui/collection/CatalogCollectionDialog.h
@@ -508,6 +510,9 @@ qt_add_executable(BrickSuite
     src/models/export/InventoryExportTypes.h
     src/services/inventory/InventoryExportService.cpp src/services/inventory/InventoryExportService.h
     src/services/inventory/InventoryCsvWriter.cpp src/services/inventory/InventoryCsvWriter.h
+    src/models/export/CollectionExportTypes.h
+    src/services/collection/CollectionExportService.cpp src/services/collection/CollectionExportService.h
+    src/services/collection/CollectionCsvWriter.cpp src/services/collection/CollectionCsvWriter.h
     src/services/builds/MissingPartsCsvWriter.cpp src/services/builds/MissingPartsCsvWriter.h
     src/services/builds/PickABrickExportService.cpp src/services/builds/PickABrickExportService.h
     src/services/builds/PickABrickCsvWriter.cpp src/services/builds/PickABrickCsvWriter.h
@@ -1632,6 +1637,17 @@ if(BUILD_TESTING)
     target_link_libraries(InventoryExportTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME InventoryExport COMMAND InventoryExportTest)
 
+    qt_add_executable(CollectionExportTest EXCLUDE_FROM_ALL
+        tests/CollectionExportTest.cpp
+        src/models/export/CollectionExportTypes.h
+        src/models/CollectionItem.h src/models/CollectionItem.cpp
+        src/models/CollectionSearchResult.h
+        src/services/collection/CollectionExportService.h src/services/collection/CollectionExportService.cpp
+        src/services/collection/CollectionCsvWriter.h src/services/collection/CollectionCsvWriter.cpp
+    )
+    target_link_libraries(CollectionExportTest PRIVATE Qt6::Core)
+    add_test(NAME CollectionExport COMMAND CollectionExportTest)
+
     qt_add_executable(SecureHostFoundationTest EXCLUDE_FROM_ALL
         tests/SecureHostFoundationTest.cpp
         src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
@@ -1753,6 +1769,8 @@ if(BUILD_TESTING)
         src/services/application/HostReadExecutor.h src/services/application/HostReadExecutor.cpp
         src/models/export/InventoryExportTypes.h
         src/services/inventory/InventoryExportService.h src/services/inventory/InventoryExportService.cpp
+        src/models/export/CollectionExportTypes.h
+        src/services/collection/CollectionExportService.h src/services/collection/CollectionExportService.cpp
         src/services/application/CollectionDisassemblyPlanService.h
         src/services/application/CollectionDisassemblyPlanService.cpp
         src/services/application/HostWriteExecutor.h src/services/application/HostWriteExecutor.cpp

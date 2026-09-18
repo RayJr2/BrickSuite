@@ -701,6 +701,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
         if (!m_remoteReads) m_hostMutationPublications->publish(
             HostMutationPublicationService::Workflow::Collection, scope);
     });
+    connect(m_myCollectionWidget, &MyCollectionWidget::statusMessageRequested,
+            this, [this](const QString& message, int timeoutMs) {
+                statusBar()->showMessage(message, timeoutMs);
+                statusBar()->repaint();
+            });
     connect(m_myCollectionWidget, &MyCollectionWidget::localCollectionDisassembled, this,
             [this](int workspaceId, int itemId, int buildId) {
         if (workspaceId != m_workspaceContext.currentWorkspaceId()) return;

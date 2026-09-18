@@ -126,6 +126,10 @@ public:
     QStringList inventoryExportEnabledFields() const;
     void setInventoryExportConfiguration(const QStringList& fieldOrder,
                                          const QStringList& enabledFields);
+    QStringList collectionExportFieldOrder() const;
+    QStringList collectionExportEnabledFields() const;
+    void setCollectionExportConfiguration(const QStringList& fieldOrder,
+                                          const QStringList& enabledFields);
 
     int whatCanIBuildMaximumResults() const;
     void setWhatCanIBuildMaximumResults(int value);
