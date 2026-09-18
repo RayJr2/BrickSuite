@@ -28,6 +28,15 @@ int main(int argc, char** argv)
 
     UserSettings& settings = UserSettings::instance();
     bool ok = true;
+    ok &= check(settings.missingPartsExportFieldOrder().isEmpty()
+                    && settings.missingPartsExportEnabledFields().isEmpty(),
+                "Missing Parts export settings are not empty on first use");
+    const QStringList exportOrder = {QStringLiteral("color"), QStringLiteral("build")};
+    const QStringList exportEnabled = {QStringLiteral("color")};
+    settings.setMissingPartsExportConfiguration(exportOrder, exportEnabled);
+    ok &= check(settings.missingPartsExportFieldOrder() == exportOrder
+                    && settings.missingPartsExportEnabledFields() == exportEnabled,
+                "Missing Parts export selection/order did not persist");
     ok &= check(settings.whatCanIBuildMaximumResults() == 250,
                 "Part Usage maximum result default");
     ok &= check(settings.whatCanIBuildRowsPerPage() == 100,

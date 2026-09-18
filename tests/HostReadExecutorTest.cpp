@@ -109,6 +109,9 @@ bool seedDatabase(const QString& path, const QString& workspaceName)
         execute(QStringLiteral("INSERT INTO color(name,rgb,is_transparent,rebrickable_id,created_utc,modified_utc) VALUES('Host Red','C91A09',0,4,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO part_element_identifier(provider,element_id,part_id,color_id,design_id,is_active,created_utc,modified_utc) SELECT 'Rebrickable','host-element-1',p.id,c.id,'',1,'%1','%1' FROM part p,color c WHERE p.part_number='3001' AND c.rebrickable_id=4").arg(now));
         execute(QStringLiteral("INSERT INTO part_element_identifier(provider,element_id,part_id,color_id,design_id,is_active,created_utc,modified_utc) SELECT 'Rebrickable','host-element-2',p.id,c.id,'',1,'%1','%1' FROM part p,color c WHERE p.part_number='3001' AND c.rebrickable_id=4").arg(now));
+        execute(QStringLiteral("INSERT INTO external_part_identifier(part_id,provider,external_id,source,is_active,created_utc,modified_utc) SELECT id,'BrickLink','BL-3001-B','test',1,'%1','%1' FROM part WHERE part_number='3001'").arg(now));
+        execute(QStringLiteral("INSERT INTO external_part_identifier(part_id,provider,external_id,source,is_active,created_utc,modified_utc) SELECT id,'BrickLink','BL-3001-A','test',1,'%1','%1' FROM part WHERE part_number='3001'").arg(now));
+        execute(QStringLiteral("INSERT INTO external_color_mapping(color_id,provider,external_id,mapping_status,source,created_utc,modified_utc) SELECT id,'BrickLink','5','Mapped','test','%1','%1' FROM color WHERE rebrickable_id=4").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) VALUES(1,NULL,1,'Host Bin','',0,1,1,1,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) VALUES(1,NULL,1,'Collection Display','',1,1,0,1,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) SELECT 1,id,2,'Inactive Child','',5,0,0,1,'%1','%1' FROM storage_location WHERE name='Host Bin'").arg(now));
@@ -118,7 +121,7 @@ bool seedDatabase(const QString& path, const QString& workspaceName)
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) SELECT id,NULL,1,'Other Storage','',0,1,1,0,'%1','%1' FROM workspace WHERE name='Other Workspace'").arg(now));
         execute(QStringLiteral("INSERT INTO inventory_record(workspace_id,part_id,color_id,storage_location_id,manufacturer_id,condition,ownership_type,quantity,created_utc,modified_utc) SELECT 1,p.id,c.id,s.id,1,'Used','Owned',7,'%1','%1' FROM part p,color c,storage_location s WHERE p.part_number='3001' AND c.rebrickable_id=4 AND s.name='Host Bin'").arg(now));
         execute(QStringLiteral("INSERT INTO inventory_movement(workspace_id,inventory_record_id,part_id,color_id,movement_type,quantity_change,to_storage_location_id,condition,ownership_type,reference_type,reference_id,notes,created_utc) SELECT 1,i.id,i.part_id,i.color_id,'Add',7,i.storage_location_id,'Used','Owned','Test','seed','Host history','%1' FROM inventory_record i").arg(now));
-        execute(QStringLiteral("INSERT INTO build(workspace_id,build_type,name,set_number,inventory_mode,status,is_active,created_utc,modified_utc) VALUES(1,'MOC','Host Build','MOC-HOST','Stock','Planned',1,'%1','%1')").arg(now));
+        execute(QStringLiteral("INSERT INTO build(workspace_id,build_type,name,set_number,inventory_mode,status,is_active,created_utc,modified_utc,manufacturer_id) VALUES(1,'MOC','Host Build','MOC-HOST','Stock','Planned',1,'%1','%1',1)").arg(now));
         query.prepare(QStringLiteral("INSERT INTO build(workspace_id,build_type,name,set_number,inventory_mode,status,is_active,created_utc,modified_utc) VALUES(1,'MOC',:name,:number,'Stock','Planned',1,:now,:now)"));
         for (int i=1;i<=500 && ok;++i) {
             query.bindValue(QStringLiteral(":name"),QStringLiteral("Paged Build %1").arg(i,3,10,QChar('0')));
@@ -323,8 +326,18 @@ int main(int argc, char** argv)
                         && missing.rows.first().owned == 7
                         && missing.rows.first().thisBuildAllocated == 3
                         && missing.rows.first().available == 4
-                        && missing.rows.first().missing == 3,
-                    "Missing Parts preserves Host authoritative quantities");
+                        && missing.rows.first().missing == 3
+                        && missing.rows.first().categoryName == QStringLiteral("Host Bricks")
+                        && missing.rows.first().manufacturerDisplay == QStringLiteral("LEGO")
+                        && missing.rows.first().legoElementIds
+                            == QStringList({QStringLiteral("host-element-1"),
+                                            QStringLiteral("host-element-2")})
+                        && missing.rows.first().rebrickablePartId == QStringLiteral("3001")
+                        && missing.rows.first().brickLinkPartIds
+                            == QStringList({QStringLiteral("BL-3001-A"),
+                                            QStringLiteral("BL-3001-B")})
+                        && missing.rows.first().brickLinkColorId == QStringLiteral("5"),
+                    "Missing Parts preserves Host authoritative quantities and export metadata");
         RemoteReadDto::Page<RemoteReadDto::MissingPart> wrongMissing;
         ok &= check(waitFor([&](QEventLoop& loop) {
             executor.missingPartsPortable(999, buildId, {1, 250}, &app,

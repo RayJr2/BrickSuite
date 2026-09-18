@@ -421,6 +421,7 @@ qt_add_executable(BrickSuite
     src/repositories/BuildRepository.h
     src/repositories/BuildRepository.cpp
     src/ui/builds/BuildsWidget.cpp src/ui/builds/BuildsWidget.h
+    src/ui/builds/MissingPartsExportDialog.cpp src/ui/builds/MissingPartsExportDialog.h
     src/ui/builds/WhatCanIBuildWidget.cpp src/ui/builds/WhatCanIBuildWidget.h
     src/models/PartUsageDiscovery.h
     src/repositories/PartUsageDiscoveryRepository.cpp src/repositories/PartUsageDiscoveryRepository.h
@@ -499,6 +500,9 @@ qt_add_executable(BrickSuite
     src/ui/builds/DisassembleSetDialog.h
     src/ui/builds/DisassembleSetDialog.cpp
     src/services/builds/MissingPartsService.cpp src/services/builds/MissingPartsService.h
+    src/models/export/MissingPartsExportTypes.h
+    src/services/builds/MissingPartsExportService.cpp src/services/builds/MissingPartsExportService.h
+    src/services/builds/MissingPartsCsvWriter.cpp src/services/builds/MissingPartsCsvWriter.h
     src/models/procurement/ProcurementDraft.h
     src/models/procurement/BrickLinkWantedListOptions.h
     src/services/procurement/ProcurementDraftService.h
@@ -1554,6 +1558,34 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME SharedDataSourceSettings COMMAND SharedDataSourceSettingsTest)
 
+    qt_add_executable(MissingPartsExportTest EXCLUDE_FROM_ALL
+        tests/MissingPartsExportTest.cpp
+        src/models/export/MissingPartsExportTypes.h
+        src/models/Build.h src/models/Build.cpp
+        src/models/Part.h src/models/Part.cpp
+        src/models/Color.h src/models/Color.cpp
+        src/models/PartCategory.h src/models/PartCategory.cpp
+        src/models/ExternalPartIdentifier.h
+        src/models/ExternalPartMapping.h
+        src/models/ExternalColorMapping.h
+        src/repositories/RepositoryConnection.h
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/ColorRepository.h src/repositories/ColorRepository.cpp
+        src/repositories/PartCategoryRepository.h src/repositories/PartCategoryRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/PartElementIdentifierRepository.h src/repositories/PartElementIdentifierRepository.cpp
+        src/repositories/ExternalPartIdentifierRepository.h src/repositories/ExternalPartIdentifierRepository.cpp
+        src/repositories/ExternalPartMappingRepository.h src/repositories/ExternalPartMappingRepository.cpp
+        src/repositories/ExternalColorMappingRepository.h src/repositories/ExternalColorMappingRepository.cpp
+        src/services/parts/ElementIdentityService.h src/services/parts/ElementIdentityService.cpp
+        src/services/builds/MissingPartsExportService.h src/services/builds/MissingPartsExportService.cpp
+        src/services/builds/MissingPartsCsvWriter.h src/services/builds/MissingPartsCsvWriter.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+    )
+    target_link_libraries(MissingPartsExportTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME MissingPartsExport COMMAND MissingPartsExportTest)
+
     qt_add_executable(SecureHostFoundationTest EXCLUDE_FROM_ALL
         tests/SecureHostFoundationTest.cpp
         src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
@@ -1653,6 +1685,11 @@ if(BUILD_TESTING)
         src/repositories/EffectiveSetCompositionRepository.h src/repositories/EffectiveSetCompositionRepository.cpp
         src/repositories/MinifigCatalogPartRepository.h src/repositories/MinifigCatalogPartRepository.cpp
         src/services/builds/MissingPartsService.h src/services/builds/MissingPartsService.cpp
+        src/models/export/MissingPartsExportTypes.h
+        src/services/builds/MissingPartsExportService.h src/services/builds/MissingPartsExportService.cpp
+        src/repositories/ExternalPartIdentifierRepository.h src/repositories/ExternalPartIdentifierRepository.cpp
+        src/repositories/ExternalPartMappingRepository.h src/repositories/ExternalPartMappingRepository.cpp
+        src/repositories/ExternalColorMappingRepository.h src/repositories/ExternalColorMappingRepository.cpp
     src/services/builds/BuildPullingService.h src/services/builds/BuildPullingService.cpp
     src/services/builds/BuildRequirementAvailabilityService.h
     src/services/builds/BuildRequirementAvailabilityService.cpp

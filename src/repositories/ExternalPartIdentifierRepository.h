@@ -1,12 +1,16 @@
 #pragma once
 #include "../models/ExternalPartIdentifier.h"
+#include "RepositoryConnection.h"
 #include <QList>
 #include <QHash>
 #include <QString>
 
-class ExternalPartIdentifierRepository
+class ExternalPartIdentifierRepository : protected RepositoryConnection
 {
 public:
+    ExternalPartIdentifierRepository() = default;
+    explicit ExternalPartIdentifierRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
     enum class LookupStatus
     {
         NotRequested,

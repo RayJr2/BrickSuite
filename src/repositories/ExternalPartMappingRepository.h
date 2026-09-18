@@ -6,14 +6,18 @@
 #pragma once
 
 #include "../models/ExternalPartMapping.h"
+#include "RepositoryConnection.h"
 
 #include <optional>
 #include <QList>
 #include <QString>
 
-class ExternalPartMappingRepository
+class ExternalPartMappingRepository : protected RepositoryConnection
 {
 public:
+    ExternalPartMappingRepository() = default;
+    explicit ExternalPartMappingRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
     std::optional<ExternalPartMapping> getByPartAndProvider(
         int partId,
         const QString& provider) const;

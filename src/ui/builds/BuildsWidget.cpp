@@ -35,6 +35,7 @@
 #include "EditBuildRequirementDialog.h"
 #include "ImportPullListDialog.h"
 #include "InteractiveBuildPullingDialog.h"
+#include "MissingPartsExportDialog.h"
 #include "WhatCanIBuildWidget.h"
 #include "SetImportPreviewDialog.h"
 
@@ -62,6 +63,7 @@
 
 #include "../../import/RebrickableMocCsvImporter.h"
 #include "../../services/builds/MissingPartsService.h"
+#include "../../services/builds/MissingPartsExportService.h"
 #include "../../services/builds/BuildRequirementAvailabilityService.h"
 #include "../../services/images/PartImageService.h"
 #include "../../services/parts/PartExternalIdEnrichmentService.h"
@@ -4099,39 +4101,11 @@ void BuildsWidget::exportMissingParts()
                             QString safeReference = build.setNumber.trimmed();
                             if (safeReference.isEmpty()) safeReference = build.name.trimmed();
                             safeReference.replace(QRegularExpression(R"([^A-Za-z0-9_-]+)"), "_");
-                            const QString fileName = QFileDialog::getSaveFileName(
-                                this, "Export Missing Parts CSV",
+                            MissingPartsExportDialog dialog(
+                                MissingPartsExportService::createRemoteRows(build, *rows),
                                 QStringLiteral("BrickSuite_Missing_%1.csv").arg(safeReference),
-                                "CSV Files (*.csv)");
-                            if (fileName.isEmpty()) return;
-                            QFile file(fileName);
-                            if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-                                QMessageBox::critical(this, "Export Missing Parts",
-                                                       QString("Unable to create:\n\n%1").arg(fileName));
-                                return;
-                            }
-                            QTextStream stream(&file);
-                            stream << QChar(0xFEFF);
-                            const auto csv = [](QString value) {
-                                value.replace('"', "\"\"");
-                                return QString("\"%1\"").arg(value);
-                            };
-                            stream << "Build,Set Number,Part Number,Part Name,Color,Required,"
-                                      "Pulled,Remaining,Available,Missing\n";
-                            int totalMissing = 0;
-                            for (const auto& row : std::as_const(*rows)) {
-                                stream << csv(build.name) << ',' << csv(build.setNumber) << ','
-                                       << csv(row.partNumber) << ',' << csv(row.partNameFallback) << ','
-                                       << csv(row.colorNameFallback) << ',' << row.required << ','
-                                       << row.pulled << ',' << row.remaining << ',' << row.available << ','
-                                       << row.missing << '\n';
-                                totalMissing += row.missing;
-                            }
-                            file.close();
-                            QMessageBox::information(this, "Export Missing Parts",
-                                QString("Missing Parts List exported successfully.\n\n"
-                                        "Part/Color Rows: %1\nPieces Missing: %2\nFile:\n%3")
-                                    .arg(rows->size()).arg(totalMissing).arg(fileName));
+                                this);
+                            dialog.exec();
                         });
                 };
                 (*requestPage)(1);
@@ -4187,73 +4161,11 @@ void BuildsWidget::exportMissingParts()
             QString("BrickSuite_Missing_%1.csv").arg(safeName);
     }
 
-    const QString fileName =
-        QFileDialog::getSaveFileName(this,
-                                     "Export Missing Parts CSV",
-                                     defaultName,
-                                     "CSV Files (*.csv)");
-
-    if (fileName.isEmpty())
-        return;
-
-    QFile file(fileName);
-
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::critical(this,
-                              "Export Missing Parts",
-                              QString("Unable to create:\n\n%1").arg(fileName));
-        return;
-    }
-
-    QTextStream stream(&file);
-
-    stream << QChar(0xFEFF);
-
-    auto csvValue = [](QString value) {
-        value.replace("\"", "\"\"");
-        return QString("\"%1\"").arg(value);
-    };
-
-    stream << "Build,"
-           << "Set Number,"
-           << "Part Number,"
-           << "Part Name,"
-           << "Color,"
-           << "Required,"
-           << "Pulled,"
-           << "Remaining,"
-           << "Available,"
-           << "Missing"
-           << "\n";
-
-    int totalPiecesMissing = 0;
-
-    for (const MissingPartsService::MissingPart& item : missingParts) {
-        stream << csvValue(build->name()) << ","
-               << csvValue(build->setNumber()) << ","
-               << csvValue(item.partNumber) << ","
-               << csvValue(item.partName) << ","
-               << csvValue(item.colorName) << ","
-               << item.required << ","
-               << item.pulled << ","
-               << item.remaining << ","
-               << item.available << ","
-               << item.missing << "\n";
-
-        totalPiecesMissing += item.missing;
-    }
-
-    file.close();
-
-    QMessageBox::information(this,
-                             "Export Missing Parts",
-                             QString("Missing Parts List exported successfully.\n\n"
-                                     "Part/Color Rows: %1\n"
-                                     "Pieces Missing: %2\n"
-                                     "File:\n%3")
-                                 .arg(missingParts.size())
-                                 .arg(totalPiecesMissing)
-                                 .arg(fileName));
+    MissingPartsExportDialog dialog(
+        MissingPartsExportService(DatabaseManager::instance().database())
+            .createRows(*build, missingParts),
+        defaultName, this);
+    dialog.exec();
 }
 
 

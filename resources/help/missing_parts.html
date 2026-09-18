@@ -73,12 +73,27 @@ allocation details.</p>
 <h2>Exporting Missing Parts</h2>
 
 <p>When the remaining shortages are ready to be taken outside BrickSuite, choose the Build's
-<b>Export Missing Parts CSV</b> action and select where to save the file.</p>
+<b>Export Missing Parts CSV</b> action. The Export Preview loads the authoritative shortage rows
+once and lets you enable fields and change their placement with <b>Move Up</b> and
+<b>Move Down</b>. The preview columns, row order, and values are exactly what the General CSV
+export writes.</p>
+
+<p>BrickSuite remembers the General CSV field selection and order for later exports. Choose
+<b>Reset to Defaults</b> to restore the familiar Build, Set Number, Part Number, Part Name,
+Color, Required, Pulled, Remaining, Available, and Missing layout. Cancelling the preview writes
+no file.</p>
+
+<p>Optional fields include Category, Manufacturer, LEGO Element ID, Rebrickable Part and Color
+IDs, and BrickLink Part and Color IDs. These values come from BrickSuite's currently stored
+catalog and mapping data; opening the preview does not contact a provider. When a Part/Color has
+multiple authoritative LEGO Element IDs or a Part has multiple BrickLink IDs, the General CSV
+keeps every value in one field separated by semicolons.</p>
 
 <img class="dialog" src="images/missing_parts_export.png"
      alt="Save Missing Parts CSV dialog">
 
-<p>BrickSuite proposes a descriptive filename based on the Build. In this example the export is
+<p>Choose <b>Export...</b> after reviewing the preview. BrickSuite then proposes a descriptive
+filename based on the Build. In this example the export is
 saved as <b>BrickSuite_Missing_ALT-31014.csv</b>.</p>
 
 <p>Saving the CSV does not change inventory, allocations, or Build requirements. It creates a

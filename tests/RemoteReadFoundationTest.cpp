@@ -248,7 +248,20 @@ int main(int argc, char** argv)
     RemoteReadDto::InventoryHistoryRow history;history.movementId=1;history.movementType="Move";history.quantityChange=2;history.notes="Synthetic history";history.createdUtc=QDateTime::currentDateTimeUtc();
     QJsonArray historyRows;for(int i=0;i<250;++i){history.movementId=i+1;historyRows.append(RemoteReadJson::toJson(history));}
     const qsizetype historyBytes=QJsonDocument(QJsonObject{{"rows",historyRows}}).toJson(QJsonDocument::Compact).size();
-    RemoteReadDto::MissingPart missing;missing.partNumber="3001";missing.partNameFallback="Brick 2 x 4";missing.rebrickableColorId=4;missing.colorNameFallback="Red";missing.required=10;missing.missing=3;
+    RemoteReadDto::MissingPart missing;missing.partNumber="3001";missing.partNameFallback="Brick 2 x 4";missing.rebrickableColorId=4;missing.colorNameFallback="Red";missing.required=10;missing.missing=3;missing.categoryName="Bricks";missing.manufacturerDisplay="LEGO";missing.legoElementIds={"111","222"};missing.rebrickablePartId="3001";missing.brickLinkPartIds={"BL-3001-A","BL-3001-B"};missing.brickLinkColorId="5";
+    RemoteReadDto::MissingPart decodedMissing;
+    ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(missing),&decodedMissing,&decodeError)
+        &&decodedMissing.categoryName==missing.categoryName
+        &&decodedMissing.legoElementIds==missing.legoElementIds
+        &&decodedMissing.brickLinkPartIds==missing.brickLinkPartIds,
+        "Missing Parts export metadata round trip failed");
+    QJsonObject legacyMissingJson=RemoteReadJson::toJson(missing);
+    for(const auto&key:QStringList{"categoryName","manufacturerDisplay","legoElementIds","rebrickablePartId","brickLinkPartIds","brickLinkColorId"})legacyMissingJson.remove(key);
+    RemoteReadDto::MissingPart legacyMissing;
+    ok &= require(RemoteReadJson::fromJson(legacyMissingJson,&legacyMissing,&decodeError)
+        &&legacyMissing.partNumber==missing.partNumber&&legacyMissing.missing==missing.missing
+        &&legacyMissing.categoryName.isEmpty()&&legacyMissing.legoElementIds.isEmpty(),
+        "older Missing Parts payload rejected additive export metadata");
     QJsonArray missingRows;for(int i=0;i<250;++i)missingRows.append(RemoteReadJson::toJson(missing));
     const qsizetype missingBytes=QJsonDocument({{"rows",missingRows},{"page",1},{"pageSize",250},{"totalRows",250}}).toJson(QJsonDocument::Compact).size();
     RemoteReadDto::CollectionSummary collection;collection.collectionItemId=1;collection.workspaceId=1;collection.type="Set";collection.setNumber="10300-1";collection.referenceFallback="10300-1";collection.titleFallback="Synthetic Collection Item";collection.state="Assembled";collection.condition="Used";collection.completeness="Complete";collection.active=true;

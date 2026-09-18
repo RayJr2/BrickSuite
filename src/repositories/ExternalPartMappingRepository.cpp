@@ -5,7 +5,6 @@
  */
 #include "ExternalPartMappingRepository.h"
 
-#include "../database/DatabaseManager.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -35,7 +34,7 @@ ExternalPartMappingRepository::getByPartAndProvider(
     int partId,
     const QString& provider) const
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     query.prepare(R"(
         SELECT
@@ -79,7 +78,7 @@ ExternalPartMappingRepository::findByProviderAndExternalId(
     if (providerValue.isEmpty() || externalIdValue.isEmpty())
         return results;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     query.prepare(R"(
         SELECT
@@ -115,7 +114,7 @@ ExternalPartMappingRepository::findByProviderAndExternalId(
 bool ExternalPartMappingRepository::upsert(
     const ExternalPartMapping& mapping) const
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     query.prepare(R"(
         INSERT INTO external_part_mapping
@@ -173,7 +172,7 @@ bool ExternalPartMappingRepository::upsert(
 bool ExternalPartMappingRepository::remove(int partId,
                                            const QString& provider) const
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     query.prepare(R"(
         DELETE FROM external_part_mapping
@@ -192,4 +191,3 @@ bool ExternalPartMappingRepository::remove(int partId,
 
     return true;
 }
-

@@ -5,7 +5,6 @@
  */
 #include "ExternalColorMappingRepository.h"
 
-#include "../database/DatabaseManager.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -35,7 +34,7 @@ ExternalColorMappingRepository::getByColorAndProvider(
     int colorId,
     const QString& provider) const
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     query.prepare(R"(
         SELECT
@@ -71,7 +70,7 @@ ExternalColorMappingRepository::getByProvider(const QString& provider) const
 {
     QList<ExternalColorMapping> mappings;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     query.prepare(R"(
         SELECT
@@ -115,7 +114,7 @@ ExternalColorMappingRepository::findByProviderAndExternalId(
     if (providerValue.isEmpty() || externalIdValue.isEmpty())
         return mappings;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     query.prepare(R"(
         SELECT
@@ -152,7 +151,7 @@ int ExternalColorMappingRepository::countByProviderAndStatus(
     const QString& provider,
     ExternalMappingStatus status) const
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     query.prepare(R"(
         SELECT COUNT(*)
@@ -176,7 +175,7 @@ int ExternalColorMappingRepository::countByProviderAndStatus(
 bool ExternalColorMappingRepository::upsert(
     const ExternalColorMapping& mapping) const
 {
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     query.prepare(R"(
         INSERT INTO external_color_mapping

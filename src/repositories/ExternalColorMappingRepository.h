@@ -6,14 +6,18 @@
 #pragma once
 
 #include "../models/ExternalColorMapping.h"
+#include "RepositoryConnection.h"
 
 #include <optional>
 #include <QList>
 #include <QString>
 
-class ExternalColorMappingRepository
+class ExternalColorMappingRepository : protected RepositoryConnection
 {
 public:
+    ExternalColorMappingRepository() = default;
+    explicit ExternalColorMappingRepository(const QSqlDatabase& database)
+        : RepositoryConnection(database) {}
     std::optional<ExternalColorMapping> getByColorAndProvider(
         int colorId,
         const QString& provider) const;

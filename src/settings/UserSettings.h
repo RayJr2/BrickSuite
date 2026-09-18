@@ -23,6 +23,7 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QString>
+#include <QStringList>
 
 #include "../services/application/SharedDataSource.h"
 
@@ -115,6 +116,11 @@ public:
 
     bool showArchivedBuilds() const;
     void setShowArchivedBuilds(bool showArchived);
+
+    QStringList missingPartsExportFieldOrder() const;
+    QStringList missingPartsExportEnabledFields() const;
+    void setMissingPartsExportConfiguration(const QStringList& fieldOrder,
+                                            const QStringList& enabledFields);
 
     int whatCanIBuildMaximumResults() const;
     void setWhatCanIBuildMaximumResults(int value);

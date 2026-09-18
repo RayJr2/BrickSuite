@@ -94,6 +94,10 @@ struct MissingPart {
     QString colorNameFallback; int required = 0; int pulled = 0;
     int remaining = 0; int owned = 0; int thisBuildAllocated = 0;
     int otherBuildsAllocated = 0; int available = 0; int missing = 0;
+    // Optional Protocol 1.5 export metadata. Older peers omit these fields.
+    QString categoryName; QString manufacturerDisplay;
+    QStringList legoElementIds; QString rebrickablePartId;
+    QStringList brickLinkPartIds; QString brickLinkColorId;
 };
 struct PullingRow {
     qint64 requirementId = 0; qint64 allocationId = 0; qint64 inventoryRecordId = 0;

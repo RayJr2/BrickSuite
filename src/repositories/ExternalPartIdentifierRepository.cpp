@@ -1,5 +1,4 @@
 #include "ExternalPartIdentifierRepository.h"
-#include "../database/DatabaseManager.h"
 
 #include <QDateTime>
 #include <QSqlError>
@@ -14,7 +13,7 @@ bool ExternalPartIdentifierRepository::replaceProviderIds(
     if (partId <= 0 || source.trimmed().isEmpty())
         return false;
 
-    QSqlDatabase db = DatabaseManager::instance().database();
+    QSqlDatabase db = repositoryDatabase();
     const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
 
     if (!db.transaction())
@@ -85,7 +84,7 @@ ExternalPartIdentifierRepository::findByExternalId(
 {
     QList<ExternalPartIdentifier> results;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     QString sql = R"(
         SELECT id, part_id, provider, external_id, source, is_active
@@ -136,7 +135,7 @@ ExternalPartIdentifierRepository::findByProviderAndExternalId(
     if (providerValue.isEmpty() || externalIdValue.isEmpty())
         return results;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
 
     QString sql = R"(
         SELECT id, part_id, provider, external_id, source, is_active
@@ -186,7 +185,7 @@ ExternalPartIdentifierRepository::findByPartAndProvider(
     if (partId <= 0 || providerValue.isEmpty())
         return results;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     QString sql = R"(
         SELECT id, part_id, provider, external_id, source, is_active
         FROM external_part_identifier
@@ -240,7 +239,7 @@ ExternalPartIdentifierRepository::lookupStatus(
     if (partId <= 0 || source.trimmed().isEmpty())
         return LookupStatus::NotRequested;
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         SELECT status
         FROM external_part_identifier_lookup
@@ -285,7 +284,7 @@ bool ExternalPartIdentifierRepository::setLookupStatus(
         return false;
     }
 
-    QSqlQuery query(DatabaseManager::instance().database());
+    QSqlQuery query(repositoryDatabase());
     query.prepare(R"(
         INSERT INTO external_part_identifier_lookup
         (
