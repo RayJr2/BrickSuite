@@ -19,12 +19,14 @@
  */
 
 #include "PartDetailsDialog.h"
+#include "LDrawModelInfoDialog.h"
 
 #include "../../models/Part.h"
 #include "../../models/PartCategory.h"
 
 #include "../../repositories/PartCategoryRepository.h"
 #include "../../repositories/PartRepository.h"
+#include "../../services/geometry/LDrawIdentityService.h"
 
 #include "../../services/images/PartImageService.h"
 #include "../../services/parts/ElementIdentityService.h"
@@ -40,6 +42,7 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QInputDialog>
 #include <QPixmap>
 #include <QPushButton>
 #include <QTableWidget>
@@ -183,6 +186,14 @@ PartDetailsDialog::PartDetailsDialog(
 
     generalLayout->addWidget(
         m_openRebrickableButton);
+
+    m_3dModelButton = new QPushButton(tr("3D Model..."), generalTab);
+    if (UserSettings::instance().sharedDataSource() == SharedDataSource::BrickSuiteHost) {
+        m_3dModelButton->setEnabled(false);
+        m_3dModelButton->setToolTip(tr(
+            "Authoritative LDraw identity and geometry are not transported by protocol 1.5."));
+    }
+    generalLayout->addWidget(m_3dModelButton);
 
     generalLayout->addStretch();
 
@@ -359,6 +370,24 @@ PartDetailsDialog::PartDetailsDialog(
             QDesktopServices::openUrl(
                 QUrl(m_rebrickableUrl));
         });
+
+    connect(m_3dModelButton, &QPushButton::clicked, this, [this] {
+        const QStringList ids = LDrawIdentityService().candidatesForPart(m_partId);
+        if (ids.isEmpty()) {
+            QMessageBox::information(this, tr("3D Model"),
+                tr("No authoritative LDraw identity is stored for this Part."));
+            return;
+        }
+        QString selected = ids.first();
+        if (ids.size() > 1) {
+            bool accepted = false;
+            selected = QInputDialog::getItem(this, tr("Select LDraw Model"),
+                tr("This Part has multiple authoritative LDraw identities:"), ids, 0, false, &accepted);
+            if (!accepted || selected.isEmpty()) return;
+        }
+        LDrawModelInfoDialog dialog(selected, this);
+        dialog.exec();
+    });
 
     connect(
         m_partImageService,

@@ -174,6 +174,9 @@ public:
 
     void setRebrickableMinimumRequestIntervalMs(int intervalMs);
 
+    QString ldrawLibraryPath() const;
+    void setLDrawLibraryPath(const QString& path);
+
     bool automaticBackupEnabled() const;
     void setAutomaticBackupEnabled(bool enabled);
     QString automaticBackupRoot() const;

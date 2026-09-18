@@ -1,0 +1,14 @@
+<!doctype html><html><head><meta charset="utf-8"><title>LDraw 3D Models</title><style>body{font-family:sans-serif;line-height:1.5;margin:22px}h2{margin-top:1.4em}code{background:#eee;padding:1px 4px}</style></head><body>
+<h1>LDraw 3D Models</h1>
+<p>BrickSuite can read native geometry from an LDraw library installed on this computer. It does not download an LDraw library or send geometry to an online service.</p>
+<h2>Configure the library</h2>
+<p>Open <b>Edit → Settings → 3D Models</b>, choose the LDraw library root, and select <b>Validate</b>. A usable root contains <code>parts</code> and <code>p</code> folders and recognizable <code>.dat</code> files. Custom libraries are supported when they follow the same structure.</p>
+<p>If a saved removable or network path is unavailable, BrickSuite preserves the setting and reports that the library is unavailable.</p>
+<h2>Open a model</h2>
+<p>Open Part Details and select <b>3D Model...</b>. BrickSuite uses only exact stored LDraw external identities. It does not guess from the Rebrickable Part number. If more than one identity is stored, choose the intended model explicitly.</p>
+<p>The information dialog reports the source, dimensions, triangle and edge counts, BFC information, and malformed or missing dependencies. Geometry loading runs in the background. <b>Reload</b> rereads the installed files.</p>
+<h2>Engineering OBJ export</h2>
+<p><b>Export OBJ...</b> writes deterministic geometry in millimetres. The conversion is 1 LDraw unit = 0.4 mm. OBJ export is an engineering interchange feature; printability validation and repair are not performed.</p>
+<h2>Safety and limitations</h2>
+<p>BrickSuite rejects absolute, traversal, escaping symbolic-link, cyclic, ambiguous-case, malformed, and excessive references. M37.1 provides geometry inspection and OBJ export only; it does not provide an interactive 3D viewer, STL export, slicing, or remote Host geometry transport.</p>
+</body></html>

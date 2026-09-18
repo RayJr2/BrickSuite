@@ -17,6 +17,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Sql
     Network
     WebSockets
+    Concurrent
 )
 
 if(MINGW)
@@ -413,6 +414,12 @@ qt_add_executable(BrickSuite
     src/services/parts/BrickLinkCandidateDiscoveryService.h
     src/services/parts/BrickLinkCandidateDiscoveryService.cpp
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
+    src/ui/parts/LDrawModelInfoDialog.cpp src/ui/parts/LDrawModelInfoDialog.h
+    src/services/geometry/PartMesh.h
+    src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
+    src/services/geometry/LDrawIdentityService.cpp src/services/geometry/LDrawIdentityService.h
+    src/services/geometry/LDrawIdentitySelection.h
+    src/services/geometry/LDrawObjWriter.cpp src/services/geometry/LDrawObjWriter.h
     src/ui/parts/PartReferenceDialog.h
     src/ui/parts/PartReferenceDialog.cpp
     src/ui/parts/AddPartReferenceDialog.h
@@ -602,6 +609,7 @@ target_link_libraries(BrickSuite PRIVATE
     Qt6::Sql
     Qt6::Network
     Qt6::WebSockets
+    Qt6::Concurrent
     ZLIB::ZLIB
     OpenSSL::Crypto
 )
@@ -609,6 +617,23 @@ target_link_libraries(BrickSuite PRIVATE
 include(CTest)
 
 if(BUILD_TESTING)
+    foreach(LDRAW_TEST_TARGET IN ITEMS LDrawLibraryTest LDrawParserTest LDrawGeometryTest LDrawObjExportTest)
+        qt_add_executable(${LDRAW_TEST_TARGET} EXCLUDE_FROM_ALL
+            tests/LDrawGeometryFoundationTest.cpp
+            src/services/geometry/PartMesh.h
+            src/services/geometry/LDrawLibraryService.h src/services/geometry/LDrawLibraryService.cpp
+            src/services/geometry/LDrawObjWriter.h src/services/geometry/LDrawObjWriter.cpp)
+        target_link_libraries(${LDRAW_TEST_TARGET} PRIVATE Qt6::Core Qt6::Gui)
+        add_test(NAME ${LDRAW_TEST_TARGET} COMMAND ${LDRAW_TEST_TARGET})
+    endforeach()
+
+    qt_add_executable(LDrawIdentityResolutionTest EXCLUDE_FROM_ALL
+        tests/LDrawIdentityTest.cpp
+        src/models/ExternalPartIdentifier.h
+        src/services/geometry/LDrawIdentitySelection.h)
+    target_link_libraries(LDrawIdentityResolutionTest PRIVATE Qt6::Core)
+    add_test(NAME LDrawIdentityResolutionTest COMMAND LDrawIdentityResolutionTest)
+
     qt_add_executable(BuildActionEligibilityTest EXCLUDE_FROM_ALL
         tests/BuildActionEligibilityTest.cpp
         src/ui/builds/BuildActionEligibility.h

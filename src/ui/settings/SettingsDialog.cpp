@@ -41,6 +41,7 @@
 #include "../../database/DatabaseSchema.h"
 #include "../../services/database/AutomaticBackupPolicy.h"
 #include "../../services/database/AutomaticBackupService.h"
+#include "../../services/geometry/LDrawLibraryService.h"
 
 #include <QAction>
 #include <QApplication>
@@ -95,7 +96,9 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
     helpAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
 
     connect(helpAction, &QAction::triggered, this, [this]() {
-        HelpManager::showTopic(HelpTopic::Settings, this);
+        const bool modelsTab = m_tabWidget
+            && m_tabWidget->tabText(m_tabWidget->currentIndex()) == QStringLiteral("3D Models");
+        HelpManager::showTopic(modelsTab ? HelpTopic::LDrawModels : HelpTopic::Settings, this);
     });
 
     addAction(helpAction);
@@ -116,6 +119,7 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
     buildDatabaseBackupTab();
     buildServerTab();
     buildApisTab();
+    build3DModelsTab();
 
     m_rebrickableApiClient = new RebrickableApiClient(this);
     m_bricksetService = new BricksetService(this);
@@ -432,6 +436,10 @@ void SettingsDialog::loadSettings()
     const QString pairedDeviceName = settings.brickSuitePairedDeviceName();
     if (!pairedDeviceName.isEmpty()) m_pairingDeviceNameEdit->setText(pairedDeviceName);
     updateNetworkPresentation();
+    m_ldrawLibraryEdit->setText(settings.ldrawLibraryPath());
+    const auto ldrawValidation = LDrawLibraryService::validateLibrary(
+        m_ldrawLibraryEdit->text());
+    m_ldrawLibraryStatusLabel->setText(ldrawValidation.status);
 }
 
 void SettingsDialog::saveSettings()
@@ -550,6 +558,7 @@ void SettingsDialog::saveSettings()
 
     const int rebrickableRequestIntervalMs = m_rebrickableRequestIntervalSpin->value();
     settings.setRebrickableMinimumRequestIntervalMs(rebrickableRequestIntervalMs);
+    settings.setLDrawLibraryPath(m_ldrawLibraryEdit->text());
     m_networkManager.refreshRebrickableCoordination();
     settings.setAutomaticBackupEnabled(m_automaticBackupEnabledCheck->isChecked());
     settings.setAutomaticBackupRoot(backupRoot);
@@ -1354,6 +1363,49 @@ void SettingsDialog::testBrickSuiteHostConnection()
                                               m_hostFingerprintEdit->text().trimmed(),
                                               m_hostTokenEdit->text(), false);
     m_networkManager.client()->connectToHost();
+}
+
+void SettingsDialog::build3DModelsTab()
+{
+    auto* tab = new QWidget(m_tabWidget);
+    auto* layout = new QVBoxLayout(tab);
+    auto* group = new QGroupBox(tr("LDraw Library"), tab);
+    auto* groupLayout = new QVBoxLayout(group);
+    auto* explanation = new QLabel(
+        tr("Select an installed LDraw library. BrickSuite reads geometry locally and does not download library files."),
+        group);
+    explanation->setWordWrap(true);
+    groupLayout->addWidget(explanation);
+
+    auto* pathLayout = new QHBoxLayout;
+    m_ldrawLibraryEdit = new QLineEdit(group);
+    m_ldrawLibraryEdit->setPlaceholderText(tr("LDraw library folder"));
+    auto* browse = new QPushButton(tr("Browse..."), group);
+    auto* validate = new QPushButton(tr("Validate"), group);
+    pathLayout->addWidget(m_ldrawLibraryEdit, 1);
+    pathLayout->addWidget(browse);
+    pathLayout->addWidget(validate);
+    groupLayout->addLayout(pathLayout);
+    m_ldrawLibraryStatusLabel = new QLabel(group);
+    m_ldrawLibraryStatusLabel->setWordWrap(true);
+    groupLayout->addWidget(m_ldrawLibraryStatusLabel);
+    layout->addWidget(group);
+    layout->addStretch();
+    m_tabWidget->addTab(tab, tr("3D Models"));
+
+    auto updateStatus = [this]() {
+        m_ldrawLibraryStatusLabel->setText(
+            LDrawLibraryService::validateLibrary(m_ldrawLibraryEdit->text()).status);
+    };
+    connect(browse, &QPushButton::clicked, this, [this, updateStatus]() {
+        const QString selected = QFileDialog::getExistingDirectory(
+            this, tr("Select LDraw Library"), m_ldrawLibraryEdit->text());
+        if (!selected.isEmpty()) {
+            m_ldrawLibraryEdit->setText(QDir::toNativeSeparators(selected));
+            updateStatus();
+        }
+    });
+    connect(validate, &QPushButton::clicked, this, updateStatus);
 }
 
 void SettingsDialog::buildAppearanceTab()

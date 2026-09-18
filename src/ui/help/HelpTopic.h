@@ -28,6 +28,7 @@ enum class HelpTopic
     Storage,
     PartsCatalog,
     PartReference,
+    LDrawModels,
     SetsCatalog,
     MinifigsCatalog,
     Inventory,

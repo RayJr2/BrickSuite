@@ -82,6 +82,7 @@ private:
     QTableWidget* m_externalIdsTable = nullptr;
 
     QPushButton* m_openRebrickableButton = nullptr;
+    QPushButton* m_3dModelButton = nullptr;
     QPushButton* m_closeButton = nullptr;
 
     QString m_rebrickableUrl;

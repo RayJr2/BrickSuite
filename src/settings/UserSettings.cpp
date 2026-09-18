@@ -35,6 +35,8 @@ constexpr auto kGroupAppearance = "Appearance";
 
 constexpr auto kGroupRebrickable = "Rebrickable";
 constexpr auto kGroupBrickset = "Brickset";
+constexpr auto kGroupLDraw = "LDraw";
+constexpr auto kLDrawLibraryPathKey = "LibraryPath";
 
 constexpr auto kThemeKey = "Theme";
 
@@ -739,6 +741,23 @@ void UserSettings::setRebrickableMinimumRequestIntervalMs(int intervalMs)
 
     settings.setValue(kRebrickableMinimumRequestIntervalMsKey, intervalMs);
 
+    settings.endGroup();
+}
+
+QString UserSettings::ldrawLibraryPath() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupLDraw);
+    const QString value = settings.value(kLDrawLibraryPathKey).toString();
+    settings.endGroup();
+    return value;
+}
+
+void UserSettings::setLDrawLibraryPath(const QString& path)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupLDraw);
+    settings.setValue(kLDrawLibraryPathKey, path.trimmed());
     settings.endGroup();
 }
 

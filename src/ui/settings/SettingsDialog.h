@@ -90,6 +90,7 @@ private:
     void buildDatabaseBackupTab();
     void buildServerTab();
     void buildBuildsTab();
+    void build3DModelsTab();
     QWidget* buildRebrickableApiPage(QWidget* parent);
     QWidget* buildBricksetApiPage(QWidget* parent);
 
@@ -125,6 +126,10 @@ private:
     QSpinBox* m_whatCanIBuildMinimumBuildabilitySpin = nullptr;
     QCheckBox* m_whatCanIBuildFullyBuildableFirstCheck = nullptr;
     QSpinBox* m_whatCanIBuildMinimumSetPartsSpin = nullptr;
+
+    // 3D Models / installed LDraw library
+    QLineEdit* m_ldrawLibraryEdit = nullptr;
+    QLabel* m_ldrawLibraryStatusLabel = nullptr;
 
     // Appearance
     QComboBox* m_themeCombo = nullptr;
