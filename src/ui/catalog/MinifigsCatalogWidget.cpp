@@ -20,6 +20,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include "../common/SessionFileDialogDirectoryService.h"
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -329,11 +330,12 @@ void MinifigsCatalogWidget::importMinifigs()
     const QString fileName = QFileDialog::getOpenFileName(
         this,
         "Import Rebrickable Minifigs Catalog",
-        QString(),
+        SessionFileDialogDirectoryService::instance().initialDirectory(FileDialogDirectoryCategory::OpenImport),
         "Rebrickable Catalog Files (*.csv *.CSV *.zip *.ZIP);;"
         "CSV Files (*.csv *.CSV);;ZIP Files (*.zip *.ZIP)");
     if (fileName.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(FileDialogDirectoryCategory::OpenImport, fileName);
 
     const auto response = QMessageBox::question(
         this,
@@ -401,9 +403,13 @@ void MinifigsCatalogWidget::importThemes()
         return;
 
     const QString directory = QFileDialog::getExistingDirectory(
-        this, "Select Rebrickable Minifig Theme Data Directory");
+        this, "Select Rebrickable Minifig Theme Data Directory",
+        SessionFileDialogDirectoryService::instance().initialDirectory(
+            FileDialogDirectoryCategory::OpenImport));
     if (directory.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedDirectory(
+        FileDialogDirectoryCategory::OpenImport, directory);
     RebrickableMinifigThemeImporter importer;
     const auto result = importer.importDirectory(directory);
     if (!result.success) {

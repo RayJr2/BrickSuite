@@ -40,6 +40,7 @@
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QFileDialog>
+#include "../common/SessionFileDialogDirectoryService.h"
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
@@ -683,12 +684,13 @@ void PartsCatalogWidget::importPartsCsv()
 {
     const QString fileName = QFileDialog::getOpenFileName(this,
                                                           "Import Rebrickable Parts Catalog",
-                                                          QString(),
+                                                          SessionFileDialogDirectoryService::instance().initialDirectory(FileDialogDirectoryCategory::OpenImport),
                                                           "Rebrickable Catalog Files (*.csv *.CSV *.zip *.ZIP);;"
                                                           "CSV Files (*.csv *.CSV);;ZIP Files (*.zip *.ZIP)");
 
     if (fileName.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(FileDialogDirectoryCategory::OpenImport, fileName);
 
     const QMessageBox::StandardButton response
         = QMessageBox::question(this,
@@ -748,11 +750,12 @@ void PartsCatalogWidget::importPartRelationshipsCsv()
         QFileDialog::getOpenFileName(
             this,
             "Import Rebrickable part_relationships.csv",
-            QString(),
+            SessionFileDialogDirectoryService::instance().initialDirectory(FileDialogDirectoryCategory::OpenImport),
             "Rebrickable CSV or ZIP (*.csv *.zip *.CSV *.ZIP)");
 
     if (fileName.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(FileDialogDirectoryCategory::OpenImport, fileName);
 
     const QMessageBox::StandardButton response =
         QMessageBox::question(

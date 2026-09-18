@@ -106,6 +106,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QFileDialog>
+#include "common/SessionFileDialogDirectoryService.h"
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QInputDialog>
@@ -825,7 +826,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             initialDirectory = QDir::homePath();
         }
 
-        const QString defaultPath = QDir(initialDirectory).filePath(defaultFileName);
+        const QString defaultPath = SessionFileDialogDirectoryService::instance().initialFilePath(
+            FileDialogDirectoryCategory::SaveExport,
+            QDir(initialDirectory).filePath(defaultFileName));
 
         const QString backupPath = QFileDialog::getSaveFileName(this,
                                                                 "Backup BrickSuite Database",
@@ -834,6 +837,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
         if (backupPath.isEmpty())
             return;
+        SessionFileDialogDirectoryService::instance().rememberSelectedFile(
+            FileDialogDirectoryCategory::SaveExport, backupPath);
 
         QString finalBackupPath = backupPath;
 
@@ -879,11 +884,14 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             return;
         const QString backupPath = QFileDialog::getOpenFileName(this,
                                                                 "Restore BrickSuite Database",
-                                                                QString(),
+                                                                SessionFileDialogDirectoryService::instance().initialDirectory(
+                                                                    FileDialogDirectoryCategory::OpenImport),
                                                                 "SQLite Database (*.db)");
 
         if (backupPath.isEmpty())
             return;
+        SessionFileDialogDirectoryService::instance().rememberSelectedFile(
+            FileDialogDirectoryCategory::OpenImport, backupPath);
 
         //
         // Verify the selected backup before asking
@@ -984,9 +992,13 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             return;
         }
         const QString fileName = QFileDialog::getOpenFileName(
-            this, QStringLiteral("Open Inventory Color Audit Report"), QString(),
+            this, QStringLiteral("Open Inventory Color Audit Report"),
+            SessionFileDialogDirectoryService::instance().initialDirectory(
+                FileDialogDirectoryCategory::OpenImport),
             QStringLiteral("CSV files (*.csv);;All files (*)"));
         if (fileName.isEmpty()) return;
+        SessionFileDialogDirectoryService::instance().rememberSelectedFile(
+            FileDialogDirectoryCategory::OpenImport, fileName);
         auto* dialog = new InventoryColorAuditReviewDialog(fileName, m_workspaceContext, this);
         if (!dialog->isReady()) { delete dialog; return; }
         m_inventoryColorAuditReviewDialog = dialog;

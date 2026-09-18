@@ -11,6 +11,7 @@
 #include <QDebug>
 #include <QCloseEvent>
 #include <QFileDialog>
+#include "../common/SessionFileDialogDirectoryService.h"
 #include <QFileInfo>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -111,9 +112,15 @@ void GlobalRebrickableImportDialog::closeEvent(QCloseEvent* event)
 void GlobalRebrickableImportDialog::selectFolder()
 {
     const QString selected = QFileDialog::getExistingDirectory(
-        this, QStringLiteral("Select Rebrickable Data Folder"), m_directoryEdit->text());
+        this, QStringLiteral("Select Rebrickable Data Folder"),
+        m_directoryEdit->text().isEmpty()
+            ? SessionFileDialogDirectoryService::instance().initialDirectory(
+                  FileDialogDirectoryCategory::OpenImport)
+            : m_directoryEdit->text());
     if (selected.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedDirectory(
+        FileDialogDirectoryCategory::OpenImport, selected);
     qInfo() << "Rebrickable data folder selected:" << selected;
     m_directoryEdit->setText(selected);
     m_rescanButton->setEnabled(true);

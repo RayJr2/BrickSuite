@@ -19,6 +19,7 @@
 #include <QAbstractItemView>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include "../common/SessionFileDialogDirectoryService.h"
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -422,11 +423,12 @@ void MinifigDetailsDialog::importPartsList()
     const QString fileName = QFileDialog::getOpenFileName(
         this,
         QString("Import Parts List for %1 (%2)").arg(m_minifigName, m_minifigNumber),
-        QString(),
+        SessionFileDialogDirectoryService::instance().initialDirectory(FileDialogDirectoryCategory::OpenImport),
         "Rebrickable Parts Lists (*.csv *.CSV *.zip *.ZIP);;"
         "CSV Files (*.csv *.CSV);;ZIP Files (*.zip *.ZIP)");
     if (fileName.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(FileDialogDirectoryCategory::OpenImport, fileName);
 
     RebrickableMinifigPartsImporter importer;
     const RebrickableMinifigPartsImporter::Result result = importer.importFile(

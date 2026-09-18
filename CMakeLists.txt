@@ -168,6 +168,8 @@ qt_add_executable(BrickSuite
 
     src/ui/MainWindow.h
     src/ui/MainWindow.cpp
+    src/ui/common/SessionFileDialogDirectoryService.h
+    src/ui/common/SessionFileDialogDirectoryService.cpp
     src/ui/inventory/RemoteInventoryMutationDialog.h
     src/ui/inventory/RemoteInventoryMutationDialog.cpp
     src/import/RebrickableReferenceImporter.cpp
@@ -1022,6 +1024,14 @@ if(BUILD_TESTING)
     )
     target_link_libraries(SessionStorageSelectionServiceTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME SessionStorageSelectionService COMMAND SessionStorageSelectionServiceTest)
+
+    qt_add_executable(SessionFileDialogDirectoryServiceTest EXCLUDE_FROM_ALL
+        tests/SessionFileDialogDirectoryServiceTest.cpp
+        src/ui/common/SessionFileDialogDirectoryService.h
+        src/ui/common/SessionFileDialogDirectoryService.cpp
+    )
+    target_link_libraries(SessionFileDialogDirectoryServiceTest PRIVATE Qt6::Core)
+    add_test(NAME SessionFileDialogDirectoryService COMMAND SessionFileDialogDirectoryServiceTest)
 
     qt_add_executable(StorageMutationServiceTest EXCLUDE_FROM_ALL
         tests/StorageMutationServiceTest.cpp

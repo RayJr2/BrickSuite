@@ -11,6 +11,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFileDialog>
+#include "../common/SessionFileDialogDirectoryService.h"
 #include <QHash>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -394,9 +395,13 @@ void MissingPartsExportDialog::exportCsv()
             targetName.chop(4);
         targetName += QStringLiteral("_PickABrick.csv");
         const QString fileName = QFileDialog::getSaveFileName(
-            this, QStringLiteral("Export LEGO Pick a Brick CSV"), targetName,
+            this, QStringLiteral("Export LEGO Pick a Brick CSV"),
+            SessionFileDialogDirectoryService::instance().initialFilePath(
+                FileDialogDirectoryCategory::SaveExport, targetName),
             QStringLiteral("CSV Files (*.csv)"));
         if (fileName.isEmpty()) return;
+        SessionFileDialogDirectoryService::instance().rememberSelectedFile(
+            FileDialogDirectoryCategory::SaveExport, fileName);
         const auto result = PickABrickCsvWriter::write(fileName, projection);
         if (!result.success) {
             QMessageBox::critical(this, QStringLiteral("Export Missing Parts"), result.message);
@@ -410,9 +415,13 @@ void MissingPartsExportDialog::exportCsv()
     }
     const auto projection = MissingPartsExportService::project(m_rows, configuration());
     const QString fileName = QFileDialog::getSaveFileName(
-        this, QStringLiteral("Export Missing Parts CSV"), m_defaultFileName,
+        this, QStringLiteral("Export Missing Parts CSV"),
+        SessionFileDialogDirectoryService::instance().initialFilePath(
+            FileDialogDirectoryCategory::SaveExport, m_defaultFileName),
         QStringLiteral("CSV Files (*.csv)"));
     if (fileName.isEmpty()) return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(
+        FileDialogDirectoryCategory::SaveExport, fileName);
     const auto result = MissingPartsCsvWriter::write(fileName, projection);
     if (!result.success) {
         QMessageBox::critical(this, QStringLiteral("Export Missing Parts"), result.message);

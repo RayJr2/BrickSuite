@@ -34,6 +34,7 @@
 
 #include <QComboBox>
 #include <QFileDialog>
+#include "../common/SessionFileDialogDirectoryService.h"
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -408,12 +409,13 @@ void SetsCatalogWidget::importSetsCsv()
 {
     const QString fileName = QFileDialog::getOpenFileName(this,
                                                           "Import Rebrickable Sets Catalog",
-                                                          QString(),
+                                                          SessionFileDialogDirectoryService::instance().initialDirectory(FileDialogDirectoryCategory::OpenImport),
                                                           "Rebrickable Catalog Files (*.csv *.CSV *.zip *.ZIP);;"
                                                           "CSV Files (*.csv *.CSV);;ZIP Files (*.zip *.ZIP)");
 
     if (fileName.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(FileDialogDirectoryCategory::OpenImport, fileName);
 
     const QMessageBox::StandardButton response
         = QMessageBox::question(this,

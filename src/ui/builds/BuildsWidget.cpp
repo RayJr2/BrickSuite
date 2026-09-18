@@ -90,6 +90,7 @@
 #include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
+#include "../common/SessionFileDialogDirectoryService.h"
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -3814,11 +3815,14 @@ void BuildsWidget::exportPullList()
     const QString fileName =
         QFileDialog::getSaveFileName(this,
                                      "Export Pull List CSV",
-                                     defaultName,
+                                     SessionFileDialogDirectoryService::instance().initialFilePath(
+                                         FileDialogDirectoryCategory::SaveExport, defaultName),
                                      "CSV Files (*.csv)");
 
     if (fileName.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(
+        FileDialogDirectoryCategory::SaveExport, fileName);
 
     QFile file(fileName);
 
@@ -3954,11 +3958,14 @@ void BuildsWidget::importPullList()
     const QString fileName =
         QFileDialog::getOpenFileName(this,
                                      "Import Pull List CSV",
-                                     QString(),
+                                     SessionFileDialogDirectoryService::instance().initialDirectory(
+                                         FileDialogDirectoryCategory::OpenImport),
                                      "CSV Files (*.csv)");
 
     if (fileName.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(
+        FileDialogDirectoryCategory::OpenImport, fileName);
 
     ImportPullListDialog dialog(m_selectedBuildId, fileName, this);
 
@@ -4285,11 +4292,14 @@ void BuildsWidget::importMocPartsCsv()
     const QString fileName =
         QFileDialog::getOpenFileName(this,
                                      "Import Rebrickable MOC Parts CSV",
-                                     QString(),
+                                     SessionFileDialogDirectoryService::instance().initialDirectory(
+                                         FileDialogDirectoryCategory::OpenImport),
                                      "CSV Files (*.csv)");
 
     if (fileName.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(
+        FileDialogDirectoryCategory::OpenImport, fileName);
 
     BuildRequirementRepository requirementRepository;
 

@@ -8,6 +8,7 @@
 #include <QtConcurrentRun>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include "../common/SessionFileDialogDirectoryService.h"
 #include <QFormLayout>
 #include <QLabel>
 #include <QMessageBox>
@@ -88,9 +89,13 @@ void LDrawModelInfoDialog::applyResult(const LDrawGeometry::Result& result)
 
 void LDrawModelInfoDialog::exportObj()
 {
+    auto& directories=SessionFileDialogDirectoryService::instance();
     const QString path=QFileDialog::getSaveFileName(this,tr("Export Engineering OBJ"),
-        m_ldrawId+QStringLiteral(".obj"),tr("Wavefront OBJ (*.obj)"));
+        directories.initialFilePath(FileDialogDirectoryCategory::SaveExport,
+                                    m_ldrawId+QStringLiteral(".obj")),
+        tr("Wavefront OBJ (*.obj)"));
     if(path.isEmpty()) return;
+    directories.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
     LDrawGeometry::Error error;
     if(!LDrawObjWriter::write(m_mesh,path,&error)) QMessageBox::critical(this,tr("Export OBJ"),error.message);
     else QMessageBox::information(this,tr("Export OBJ"),tr("The engineering OBJ was exported successfully."));

@@ -35,6 +35,7 @@
 #include <QDebug>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include "../common/SessionFileDialogDirectoryService.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -199,11 +200,12 @@ void ImportInventoryDialog::browseForFile()
 {
     const QString filePath = QFileDialog::getOpenFileName(this,
                                                           "Select Inventory CSV",
-                                                          QString(),
+                                                          SessionFileDialogDirectoryService::instance().initialDirectory(FileDialogDirectoryCategory::OpenImport),
                                                           "CSV Files (*.csv);;All Files (*.*)");
 
     if (filePath.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(FileDialogDirectoryCategory::OpenImport, filePath);
 
     m_fileEdit->setText(filePath);
 

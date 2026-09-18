@@ -12,6 +12,7 @@
 #include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
+#include "../common/SessionFileDialogDirectoryService.h"
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPlainTextEdit>
@@ -131,11 +132,14 @@ void BrickLinkWantedListResultDialog::saveXml()
         QFileDialog::getSaveFileName(
             this,
             QStringLiteral("Save BrickLink Wanted List XML"),
-            defaultFileName(),
+            SessionFileDialogDirectoryService::instance().initialFilePath(
+                FileDialogDirectoryCategory::SaveExport, defaultFileName()),
             QStringLiteral("XML Files (*.xml)"));
 
     if (fileName.isEmpty())
         return;
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(
+        FileDialogDirectoryCategory::SaveExport, fileName);
 
     QString finalFileName = fileName;
 
