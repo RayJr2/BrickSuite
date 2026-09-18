@@ -27,6 +27,7 @@
 #include "../../repositories/PartRepository.h"
 
 #include "../../services/images/PartImageService.h"
+#include "../../services/parts/ElementIdentityService.h"
 #include "../../services/parts/PartExternalIdEnrichmentService.h"
 #include "../../settings/UserSettings.h"
 
@@ -101,6 +102,13 @@ PartDetailsDialog::PartDetailsDialog(
     m_materialLabel =
         new QLabel(detailsGroup);
 
+    m_elementCaptionLabel = new QLabel("LEGO Element:", detailsGroup);
+    m_elementIdsLabel = new QLabel(detailsGroup);
+    m_elementIdsLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_elementIdsLabel->setWordWrap(true);
+    m_elementCaptionLabel->hide();
+    m_elementIdsLabel->hide();
+
     m_yearsLabel =
         new QLabel(
             "Loading...",
@@ -129,6 +137,8 @@ PartDetailsDialog::PartDetailsDialog(
     detailsLayout->addRow(
         "Material:",
         m_materialLabel);
+
+    detailsLayout->addRow(m_elementCaptionLabel, m_elementIdsLabel);
 
     detailsLayout->addRow(
         "Years:",
@@ -450,6 +460,23 @@ PartDetailsDialog::PartDetailsDialog(
     loadCachedImage();
 
     requestRebrickableDetails();
+}
+
+PartDetailsDialog::PartDetailsDialog(int partId, int colorId, int manufacturerId,
+                                     QWidget* parent)
+    : PartDetailsDialog(partId, parent)
+{
+    showInventoryElementIdentity(colorId, manufacturerId);
+}
+
+void PartDetailsDialog::showInventoryElementIdentity(int colorId, int manufacturerId)
+{
+    const ElementIdentityResult identity = ElementIdentityService().forInventory(
+        m_partId, colorId, manufacturerId);
+    m_elementCaptionLabel->setText(identity.label());
+    m_elementIdsLabel->setText(identity.displayText());
+    m_elementCaptionLabel->show();
+    m_elementIdsLabel->show();
 }
 
 bool PartDetailsDialog::loadLocalPart()

@@ -41,9 +41,12 @@ public:
     explicit PartDetailsDialog(
         int partId,
         QWidget* parent = nullptr);
+    PartDetailsDialog(int partId, int colorId, int manufacturerId,
+                      QWidget* parent = nullptr);
 
 private:
     bool loadLocalPart();
+    void showInventoryElementIdentity(int colorId, int manufacturerId);
     void loadCachedImage();
     void requestRebrickableDetails();
 
@@ -65,6 +68,8 @@ private:
     QLabel* m_nameLabel = nullptr;
     QLabel* m_categoryLabel = nullptr;
     QLabel* m_materialLabel = nullptr;
+    QLabel* m_elementCaptionLabel = nullptr;
+    QLabel* m_elementIdsLabel = nullptr;
     QLabel* m_yearsLabel = nullptr;
     QLabel* m_rebrickableStatusLabel = nullptr;
 

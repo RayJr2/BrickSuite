@@ -51,6 +51,7 @@
 #include "../../services/images/PartImageService.h"
 #include "../../services/images/BackgroundPartColorImageCacheService.h"
 #include "../../services/parts/PartExternalIdEnrichmentService.h"
+#include "../../services/parts/ElementIdentityService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
@@ -1020,6 +1021,7 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
         const int inventoryRecordId = result.inventoryRecordId;
         const int partId = result.partId;
         const int colorId = result.colorId;
+        const int manufacturerId = result.manufacturerId;
         auto* actionCombo = new QComboBox(m_resultsTable);
 
         actionCombo->addItem("Actions...");
@@ -1056,7 +1058,7 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
         connect(actionCombo,
                 &QComboBox::currentIndexChanged,
                 this,
-                [this, actionCombo, inventoryRecordId, partId, colorId, partNumber,
+                [this, actionCombo, inventoryRecordId, partId, colorId, manufacturerId, partNumber,
                  rebrickableColorId](int index) {
                     if (index <= 0)
                         return;
@@ -1076,9 +1078,12 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                                     return;
                                 }
                                 const auto& item = *result.value;
+                                const ElementIdentityResult elements{
+                                    item.legoElementIdsApplicable, item.legoElementIds};
                                 QMessageBox::information(this, QStringLiteral("Inventory Details"),
-                                    QStringLiteral("Part: %1\nColor: %2\nQuantity: %3\nStorage: %4\nManufacturer: %5\nCondition: %6\nOwnership: %7")
+                                    QStringLiteral("Part: %1\nColor: %2\n%3 %4\nQuantity: %5\nStorage: %6\nManufacturer: %7\nCondition: %8\nOwnership: %9")
                                         .arg(item.partNumber, item.colorNameFallback)
+                                        .arg(elements.label(), elements.displayText())
                                         .arg(item.quantity).arg(item.storagePath, item.manufacturerDisplay,
                                                                  item.condition, item.ownershipType));
                             });
@@ -1091,9 +1096,13 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                             openRemoteMutationDialog(operation, *result.value);
                         });
                     } else if (action == "details") {
-                        PartDetailsDialog dialog(partId, this);
-
-                        dialog.exec();
+                        if (m_remoteReads) {
+                            PartDetailsDialog dialog(partId, this);
+                            dialog.exec();
+                        } else {
+                            PartDetailsDialog dialog(partId, colorId, manufacturerId, this);
+                            dialog.exec();
+                        }
                     } else if (action == "edit") {
                         EditInventoryDialog dialog(inventoryRecordId, m_workspaceContext, this);
 

@@ -107,6 +107,8 @@ bool seedDatabase(const QString& path, const QString& workspaceName)
         execute(QStringLiteral("INSERT INTO part_category(name,rebrickable_id,created_utc,modified_utc) VALUES('Host Bricks',11,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO part(part_number,name,part_category_id,rebrickable_part_id,is_active,created_utc,modified_utc,material) SELECT '3001','Host Brick',id,'3001',1,'%1','%1','Plastic' FROM part_category WHERE rebrickable_id=11").arg(now));
         execute(QStringLiteral("INSERT INTO color(name,rgb,is_transparent,rebrickable_id,created_utc,modified_utc) VALUES('Host Red','C91A09',0,4,'%1','%1')").arg(now));
+        execute(QStringLiteral("INSERT INTO part_element_identifier(provider,element_id,part_id,color_id,design_id,is_active,created_utc,modified_utc) SELECT 'Rebrickable','host-element-1',p.id,c.id,'',1,'%1','%1' FROM part p,color c WHERE p.part_number='3001' AND c.rebrickable_id=4").arg(now));
+        execute(QStringLiteral("INSERT INTO part_element_identifier(provider,element_id,part_id,color_id,design_id,is_active,created_utc,modified_utc) SELECT 'Rebrickable','host-element-2',p.id,c.id,'',1,'%1','%1' FROM part p,color c WHERE p.part_number='3001' AND c.rebrickable_id=4").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) VALUES(1,NULL,1,'Host Bin','',0,1,1,1,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) VALUES(1,NULL,1,'Collection Display','',1,1,0,1,'%1','%1')").arg(now));
         execute(QStringLiteral("INSERT INTO storage_location(workspace_id,parent_location_id,location_type_id,name,description,sort_order,is_active,allows_inventory,allows_collection,created_utc,modified_utc) SELECT 1,id,2,'Inactive Child','',5,0,0,1,'%1','%1' FROM storage_location WHERE name='Host Bin'").arg(now));
@@ -247,7 +249,9 @@ int main(int argc, char** argv)
                 [&](const auto& result) { detail = result; loop.quit(); });
         }), "Inventory detail completion");
         ok &= check(detail && detail->partNumber == QStringLiteral("3001")
-                        && detail->rebrickableColorId == 4,
+                        && detail->rebrickableColorId == 4
+                        && detail->legoElementIdsApplicable
+                        && detail->legoElementIds == QStringList({QStringLiteral("host-element-1"), QStringLiteral("host-element-2")}),
                     "Inventory detail uses canonical identities");
         std::optional<RemoteReadDto::InventoryDetail> crossWorkspaceDetail;
         ok &= check(waitFor([&](QEventLoop& loop) {
@@ -565,7 +569,9 @@ int main(int argc, char** argv)
             });
         }), "remote typed Inventory detail completion");
         ok &= check(remoteDetail.partNumber == QStringLiteral("3001")
-                        && remoteDetail.rebrickableColorId == 4,
+                        && remoteDetail.rebrickableColorId == 4
+                        && remoteDetail.legoElementIdsApplicable
+                        && remoteDetail.legoElementIds == QStringList({QStringLiteral("host-element-1"), QStringLiteral("host-element-2")}),
                     "remote typed decode preserves canonical identity");
         RemoteReadDto::CollectionSearchRequest collectionRequest;
         collectionRequest.workspaceId = 1; collectionRequest.type = QStringLiteral("MOC");

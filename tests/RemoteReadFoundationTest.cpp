@@ -47,6 +47,31 @@ int main(int argc, char** argv)
                   && decoded.partNumber == QStringLiteral("3001")
                   && decoded.rebrickableCategoryId == 11
                   && decoded.rebrickableColorId == 4, "portable inventory round trip failed");
+    RemoteReadDto::InventoryDetail detail;
+    static_cast<RemoteReadDto::InventoryRow&>(detail) = row;
+    detail.allocatedQuantity = 2;
+    detail.legoElementIdsApplicable = true;
+    detail.legoElementIds = {QStringLiteral("300101"), QStringLiteral("300102")};
+    detail.createdUtc = QDateTime::currentDateTimeUtc();
+    detail.modifiedUtc = detail.createdUtc;
+    const QJsonObject detailJson = RemoteReadJson::toJson(detail);
+    RemoteReadDto::InventoryDetail decodedDetail;
+    ok &= require(RemoteReadJson::fromJson(detailJson, &decodedDetail, &decodeError)
+                  && decodedDetail.legoElementIdsApplicable
+                  && decodedDetail.legoElementIds == detail.legoElementIds,
+                  "Inventory Element IDs did not survive DTO round trip");
+    QJsonObject legacyDetailJson = detailJson;
+    legacyDetailJson.remove(QStringLiteral("legoElementIdsApplicable"));
+    legacyDetailJson.remove(QStringLiteral("legoElementIds"));
+    RemoteReadDto::InventoryDetail legacyDetail;
+    ok &= require(RemoteReadJson::fromJson(legacyDetailJson, &legacyDetail, &decodeError)
+                  && !legacyDetail.legoElementIdsApplicable
+                  && legacyDetail.legoElementIds.isEmpty(),
+                  "Older Inventory detail payload did not decode safely");
+    QJsonObject invalidElementDetail = detailJson;
+    invalidElementDetail.insert(QStringLiteral("legoElementIds"), QJsonArray{42});
+    ok &= require(!RemoteReadJson::fromJson(invalidElementDetail, &decodedDetail, &decodeError),
+                  "Invalid Inventory Element ID type was accepted");
     RemoteReadDto::LostInventoryRow lost;lost.partNumber="3001";lost.partNameFallback="Brick 2 x 4";
     lost.rebrickableColorId=4;lost.colorNameFallback="Red";lost.outstandingQuantity=3;
     lost.lastStorageId=8;lost.lastStoragePath="Shelf / Bin";lost.condition="Used";

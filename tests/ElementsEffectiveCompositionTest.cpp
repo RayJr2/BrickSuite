@@ -2,6 +2,7 @@
 #include "../src/import/RebrickableElementImporter.h"
 #include "../src/repositories/EffectiveSetCompositionRepository.h"
 #include "../src/repositories/PartElementIdentifierRepository.h"
+#include "../src/services/parts/ElementIdentityService.h"
 #include "../src/services/minifigs/RebrickableMinifigThemeDerivationService.h"
 
 #include <QCoreApplication>
@@ -37,6 +38,18 @@ int main(int argc,char** argv)
     RebrickableElementImporter importer;auto imported=importer.importFile(elements,db);
     PartElementIdentifierRepository elementRepo(db);
     if(!require(imported.success&&imported.inserted==2&&elementRepo.findByElementId("Rebrickable","e1").partId==part&&elementRepo.findByElementId("Rebrickable","e1").designId.isEmpty()&&elementRepo.findByPartColor(part,color,"Rebrickable").size()==2,"Blank Element design import/repository failed."))return 1;
+    const int legoManufacturer=scalar(db,"SELECT id FROM manufacturer WHERE code='LEGO'");
+    if(!require(exec(db,"INSERT INTO manufacturer(code,name,website_url,supports_lego_element_ids,is_active,notes,created_utc,modified_utc,origin) VALUES('ALT','Alternate','',0,1,'','n','n','User')"),"Alternate manufacturer seed failed."))return 1;
+    const int alternateManufacturer=scalar(db,"SELECT id FROM manufacturer WHERE code='ALT'");
+    ElementIdentityService identityService(db);
+    const auto multiple=identityService.forInventory(part,color,legoManufacturer);
+    if(!require(multiple.applicable&&multiple.elementIds==QStringList({"e1","e2"})&&multiple.label()=="LEGO Elements:"&&multiple.displayText()=="e1, e2","Multiple Element identity presentation failed."))return 1;
+    const auto noColorMapping=identityService.forInventory(part,scalar(db,"SELECT id FROM color WHERE rebrickable_id=2"),legoManufacturer);
+    if(!require(noColorMapping.applicable&&noColorMapping.elementIds.isEmpty()&&noColorMapping.displayText()=="Not available","Color-specific unavailable Element result failed."))return 1;
+    const auto notApplicable=identityService.forInventory(part,color,alternateManufacturer);
+    if(!require(!notApplicable.applicable&&notApplicable.elementIds.isEmpty()&&notApplicable.displayText()=="Not applicable","Manufacturer Element applicability failed."))return 1;
+    const auto reverse=identityService.fromElementId("e1");
+    if(!require(reverse&&reverse->partId==part&&reverse->colorId==color&&!identityService.fromElementId("missing"),"Element reverse lookup failed."))return 1;
     write(elements,blankDesignSnapshot);imported=importer.importFile(elements,db);
     if(!require(imported.success&&imported.rowsRead==2&&imported.unchanged==2&&imported.inserted==0&&imported.updated==0&&imported.reactivated==0&&imported.deactivated==0,"Identical Element reimport was not unchanged."))return 1;
     write(elements,"element_id,part_num,color_id,design_id\ne1,p1,1,d2\ne2,p1,1,d1\n");imported=importer.importFile(elements,db);
@@ -63,6 +76,9 @@ int main(int argc,char** argv)
     if(!require(!imported.success&&imported.message.contains("Duplicate Element ID")&&elementRepo.findByElementId("Rebrickable","e1").designId.isEmpty()&&scalar(db,"SELECT COUNT(*) FROM part_element_identifier WHERE provider='Rebrickable' AND is_active=1")==1,"Duplicate Element snapshot did not roll back."))return 1;
     write(elements,blankDesignSnapshot);imported=importer.importFile(elements,db);
     if(!require(imported.success&&imported.reactivated==1&&elementRepo.findByElementId("Rebrickable","e2").active,"Element reactivation failed."))return 1;
+    if(!require(exec(db,"INSERT INTO part(part_number,name,rebrickable_part_id,is_active,created_utc,modified_utc,material) VALUES('p3pr0001','Printed','p3pr0001',1,'n','n','Plastic')")&&exec(db,QStringLiteral("INSERT INTO part_element_identifier(provider,element_id,part_id,color_id,design_id,is_active,created_utc,modified_utc) SELECT 'Rebrickable','printed-element',id,%1,'',1,'n','n' FROM part WHERE part_number='p3pr0001'").arg(color)),"Printed Element seed failed."))return 1;
+    const int printedPart=scalar(db,"SELECT id FROM part WHERE part_number='p3pr0001'");
+    if(!require(identityService.forPartColor(printedPart,color)==QStringList({"printed-element"})&&identityService.forPartColor(part,scalar(db,"SELECT id FROM color WHERE rebrickable_id=2")).isEmpty(),"Exact decorated Part/Color lookup fell back to another identity."))return 1;
     RebrickableImportCancellation cancelled;cancelled.requestCancellation();if(!require(!importer.importFile(elements,db,&cancelled).success,"Cancelled Elements import succeeded."))return 1;
 
     if(!require(exec(db,QStringLiteral("INSERT INTO set_catalog_part(set_catalog_id,part_id,color_id,quantity_required,is_spare,provider,source,created_utc,modified_utc) VALUES(%1,%2,%3,9,0,'Legacy','test','n','n')").arg(set).arg(part).arg(color)),"Fallback seed failed."))return 1;

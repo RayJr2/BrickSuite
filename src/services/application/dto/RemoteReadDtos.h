@@ -3,6 +3,7 @@
 #include <QDateTime>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 namespace RemoteReadDto {
 
@@ -49,7 +50,13 @@ struct InventoryRow {
     int quantity = 0; qint64 storageId = 0; QString storagePath;
     QString manufacturerDisplay; QString condition; QString ownershipType;
 };
-struct InventoryDetail : InventoryRow { int allocatedQuantity = 0; QDateTime createdUtc; QDateTime modifiedUtc; };
+struct InventoryDetail : InventoryRow {
+    int allocatedQuantity = 0;
+    bool legoElementIdsApplicable = false;
+    QStringList legoElementIds;
+    QDateTime createdUtc;
+    QDateTime modifiedUtc;
+};
 struct InventoryHistoryRow {
     qint64 movementId = 0; QString movementType; int quantityChange = 0;
     qint64 fromStorageId = 0; QString fromStoragePath;

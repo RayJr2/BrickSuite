@@ -194,6 +194,8 @@ qt_add_executable(BrickSuite
     src/repositories/SetInventoryRevisionRepository.cpp
     src/repositories/PartElementIdentifierRepository.h
     src/repositories/PartElementIdentifierRepository.cpp
+    src/services/parts/ElementIdentityService.h
+    src/services/parts/ElementIdentityService.cpp
     src/repositories/EffectiveSetCompositionRepository.h
     src/repositories/EffectiveSetCompositionRepository.cpp
     src/ui/import/GlobalRebrickableImportDialog.h
@@ -1509,6 +1511,9 @@ if(BUILD_TESTING)
         src/import/global/RebrickableImportCancellation.h
         src/import/RebrickableElementImporter.h src/import/RebrickableElementImporter.cpp
         src/repositories/PartElementIdentifierRepository.h src/repositories/PartElementIdentifierRepository.cpp
+        src/models/Manufacturer.h
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/services/parts/ElementIdentityService.h src/services/parts/ElementIdentityService.cpp
         src/repositories/EffectiveSetCompositionRepository.h src/repositories/EffectiveSetCompositionRepository.cpp
         src/services/minifigs/RebrickableMinifigThemeDerivationService.h
         src/services/minifigs/RebrickableMinifigThemeDerivationService.cpp
@@ -1644,6 +1649,7 @@ if(BUILD_TESTING)
         src/repositories/MinifigCatalogRepository.h src/repositories/MinifigCatalogRepository.cpp
         src/repositories/UserPartReferenceRepository.h src/repositories/UserPartReferenceRepository.cpp
         src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/PartElementIdentifierRepository.h src/repositories/PartElementIdentifierRepository.cpp
         src/repositories/EffectiveSetCompositionRepository.h src/repositories/EffectiveSetCompositionRepository.cpp
         src/repositories/MinifigCatalogPartRepository.h src/repositories/MinifigCatalogPartRepository.cpp
         src/services/builds/MissingPartsService.h src/services/builds/MissingPartsService.cpp
@@ -1655,6 +1661,7 @@ if(BUILD_TESTING)
         src/services/collection/CollectionDisassemblyService.h src/services/collection/CollectionDisassemblyService.cpp
         src/services/parts/PartReferenceManifest.h src/services/parts/PartReferenceManifest.cpp
         src/services/parts/PartReferenceCustomizationService.h src/services/parts/PartReferenceCustomizationService.cpp
+        src/services/parts/ElementIdentityService.h src/services/parts/ElementIdentityService.cpp
         src/services/application/ApplicationServices.h
         src/services/application/ApplicationServices.cpp
         src/services/application/ApplicationServicesCore.cpp
