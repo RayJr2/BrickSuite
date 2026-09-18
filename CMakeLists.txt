@@ -326,6 +326,8 @@ qt_add_executable(BrickSuite
     src/models/InventorySearchResult.h
     src/ui/inventory/MyInventoryWidget.cpp
     src/ui/inventory/MyInventoryWidget.h
+    src/ui/inventory/InventoryExportDialog.cpp
+    src/ui/inventory/InventoryExportDialog.h
     src/ui/inventory/AddInventoryDialog.h
     src/ui/inventory/AddInventoryDialog.cpp
     src/ui/inventory/AddInventoryColorSelection.h
@@ -503,6 +505,9 @@ qt_add_executable(BrickSuite
     src/services/builds/MissingPartsService.cpp src/services/builds/MissingPartsService.h
     src/models/export/MissingPartsExportTypes.h
     src/services/builds/MissingPartsExportService.cpp src/services/builds/MissingPartsExportService.h
+    src/models/export/InventoryExportTypes.h
+    src/services/inventory/InventoryExportService.cpp src/services/inventory/InventoryExportService.h
+    src/services/inventory/InventoryCsvWriter.cpp src/services/inventory/InventoryCsvWriter.h
     src/services/builds/MissingPartsCsvWriter.cpp src/services/builds/MissingPartsCsvWriter.h
     src/services/builds/PickABrickExportService.cpp src/services/builds/PickABrickExportService.h
     src/services/builds/PickABrickCsvWriter.cpp src/services/builds/PickABrickCsvWriter.h
@@ -1604,6 +1609,29 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME MissingPartsExport COMMAND MissingPartsExportTest)
 
+    qt_add_executable(InventoryExportTest EXCLUDE_FROM_ALL
+        tests/InventoryExportTest.cpp
+        src/models/export/InventoryExportTypes.h
+        src/models/InventorySearchResult.h
+        src/models/Part.h src/models/Part.cpp
+        src/models/Manufacturer.h
+        src/models/ExternalPartIdentifier.h src/models/ExternalPartMapping.h src/models/ExternalColorMapping.h
+        src/repositories/RepositoryConnection.h
+        src/repositories/PartRepository.h src/repositories/PartRepository.cpp
+        src/repositories/ManufacturerRepository.h src/repositories/ManufacturerRepository.cpp
+        src/repositories/PartElementIdentifierRepository.h src/repositories/PartElementIdentifierRepository.cpp
+        src/repositories/ExternalPartIdentifierRepository.h src/repositories/ExternalPartIdentifierRepository.cpp
+        src/repositories/ExternalPartMappingRepository.h src/repositories/ExternalPartMappingRepository.cpp
+        src/repositories/ExternalColorMappingRepository.h src/repositories/ExternalColorMappingRepository.cpp
+        src/services/parts/ElementIdentityService.h src/services/parts/ElementIdentityService.cpp
+        src/services/inventory/InventoryExportService.h src/services/inventory/InventoryExportService.cpp
+        src/services/inventory/InventoryCsvWriter.h src/services/inventory/InventoryCsvWriter.cpp
+        src/database/DatabaseManager.h src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
+    )
+    target_link_libraries(InventoryExportTest PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME InventoryExport COMMAND InventoryExportTest)
+
     qt_add_executable(SecureHostFoundationTest EXCLUDE_FROM_ALL
         tests/SecureHostFoundationTest.cpp
         src/network/BrickSuiteProtocol.h src/network/BrickSuiteProtocol.cpp
@@ -1723,6 +1751,8 @@ if(BUILD_TESTING)
         src/services/application/ApplicationServices.cpp
         src/services/application/ApplicationServicesCore.cpp
         src/services/application/HostReadExecutor.h src/services/application/HostReadExecutor.cpp
+        src/models/export/InventoryExportTypes.h
+        src/services/inventory/InventoryExportService.h src/services/inventory/InventoryExportService.cpp
         src/services/application/CollectionDisassemblyPlanService.h
         src/services/application/CollectionDisassemblyPlanService.cpp
         src/services/application/HostWriteExecutor.h src/services/application/HostWriteExecutor.cpp

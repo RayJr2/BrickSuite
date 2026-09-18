@@ -250,6 +250,21 @@ int main(int argc, char** argv)
         }), "portable Category/Color filter completion");
         ok &= check(filteredInventory.total == 1 && filteredInventory.rows.size() == 1,
                     "provider Category/Color identities map to Host internal IDs");
+        portableCriteria.exportFields={QStringLiteral("legoElementId"),QStringLiteral("rebrickablePartId"),
+                                       QStringLiteral("brickLinkPartId"),QStringLiteral("brickLinkColorId")};
+        RemoteReadDto::Page<RemoteReadDto::InventoryExportRow> inventoryExport;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.exportInventoryPortable(portableCriteria, &app,
+                [&](const auto& result) { inventoryExport = result; loop.quit(); });
+        }), "Host-authoritative Inventory export completion");
+        ok &= check(inventoryExport.totalRows == 1 && inventoryExport.rows.size() == 1
+                        && inventoryExport.rows.first().partNumber == QStringLiteral("3001")
+                        && inventoryExport.rows.first().rebrickableColorId == 4
+                        && inventoryExport.rows.first().legoElementIds == QStringList({QStringLiteral("host-element-1"),QStringLiteral("host-element-2")})
+                        && inventoryExport.rows.first().rebrickablePartId == QStringLiteral("3001")
+                        && inventoryExport.rows.first().brickLinkPartIds == QStringList({QStringLiteral("BL-3001-A"),QStringLiteral("BL-3001-B")})
+                        && inventoryExport.rows.first().brickLinkColorId == QStringLiteral("5"),
+                    "Host-authoritative field-aware Inventory export projection");
 
         std::optional<RemoteReadDto::InventoryDetail> detail;
         const int inventoryId = inventory.rows.isEmpty() ? 0 : inventory.rows.first().inventoryRecordId;
@@ -501,7 +516,7 @@ int main(int argc, char** argv)
         const QStringList expected{
             QStringLiteral("workspace.list"), QStringLiteral("storage.list"),
             QStringLiteral("storage.get"), QStringLiteral("storage.types.list"),
-            QStringLiteral("inventory.search"), QStringLiteral("inventory.get"),
+            QStringLiteral("inventory.search"), QStringLiteral("inventory.export"), QStringLiteral("inventory.get"),
             QStringLiteral("inventory.history"), QStringLiteral("inventory.lost.list"), QStringLiteral("manufacturers.list"), QStringLiteral("builds.list"),
             QStringLiteral("builds.get"), QStringLiteral("builds.requirements"),
             QStringLiteral("builds.missingParts"), QStringLiteral("builds.pulling"),

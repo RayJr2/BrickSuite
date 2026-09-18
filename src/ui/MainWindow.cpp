@@ -452,6 +452,11 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             this, &MainWindow::openWhatCanIBuildForPart);
     connect(m_myInventoryWidget, &MyInventoryWidget::findSetsUsingPartRequested,
             this, &MainWindow::openWhatCanIBuildForPart);
+    connect(m_myInventoryWidget, &MyInventoryWidget::statusMessageRequested,
+            this, [this](const QString& message, int timeoutMs) {
+                statusBar()->showMessage(message, timeoutMs);
+                statusBar()->repaint();
+            });
     connect(m_setsCatalogWidget, &SetsCatalogWidget::catalogDataChanged,
             m_buildsWidget, &BuildsWidget::invalidatePartUsageDiscovery);
     connect(&m_networkManager, &BrickSuiteNetworkManager::remotePullingMutationCommitted,

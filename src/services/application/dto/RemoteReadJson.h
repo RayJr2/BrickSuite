@@ -17,6 +17,8 @@ QJsonObject toJson(const RemoteReadDto::StorageType&);
 bool fromJson(const QJsonObject&, RemoteReadDto::StorageType*, DecodeError* = nullptr);
 QJsonObject toJson(const RemoteReadDto::InventoryRow&);
 bool fromJson(const QJsonObject&, RemoteReadDto::InventoryRow*, DecodeError* = nullptr);
+QJsonObject toJson(const RemoteReadDto::InventoryExportRow&);
+bool fromJson(const QJsonObject&, RemoteReadDto::InventoryExportRow*, DecodeError* = nullptr);
 QJsonObject toJson(const RemoteReadDto::InventoryDetail&);
 bool fromJson(const QJsonObject&, RemoteReadDto::InventoryDetail*, DecodeError* = nullptr);
 QJsonObject toJson(const RemoteReadDto::InventoryHistoryRow&);

@@ -26,11 +26,14 @@
 #include <QSet>
 #include <QWidget>
 #include <QPointer>
+#include <functional>
 #include <optional>
 #include "../../services/application/dto/RemoteReadDtos.h"
 #include "../../services/application/AsyncReadResult.h"
 #include "../../models/WhatCanIBuildPartSelection.h"
 #include "MyInventoryAddSessionRefresh.h"
+#include "../../models/InventorySearchCriteria.h"
+#include "../../models/export/InventoryExportTypes.h"
 
 class WorkspaceContext;
 class SessionStorageSelectionService;
@@ -93,6 +96,7 @@ signals:
     void remoteLocationsRefreshFinished(bool succeeded);
     void remoteHistoryRefreshFinished(bool succeeded);
     void findSetsUsingPartRequested(const WhatCanIBuildPartSelection& selection);
+    void statusMessageRequested(const QString& message, int timeoutMs = 0);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -103,6 +107,7 @@ private slots:
     void previousPage();
     void nextPage();
     void importCsv();
+    void exportCsv();
 
 private:
     void loadCategories();
@@ -122,6 +127,12 @@ private:
                                     const QStringList& manufacturerNames);
 
     QString storagePathForId(int storageLocationId) const;
+    InventorySearchCriteria currentSearchCriteria() const;
+    QString currentFilterSummary() const;
+    QSet<QString> currentInventoryExportFields() const;
+    void requestRemoteInventoryExport(const QSet<QString>& fields, QObject* context,
+                                      std::function<void(bool,QList<InventoryExportRow>,QString)> completion);
+    void showInventoryExport(QList<InventoryExportRow> rows, const QSet<QString>& enrichedFields);
 
     static constexpr int ResultsPerPage = 250;
 
@@ -163,6 +174,8 @@ private:
     QLabel* m_pageLabel = nullptr;
 
     QPushButton* m_importButton = nullptr;
+    QPushButton* m_exportButton = nullptr;
+    bool m_exportPreparationActive = false;
 
     QPushButton* m_addPartButton = nullptr;
 

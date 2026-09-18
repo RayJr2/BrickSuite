@@ -26,6 +26,7 @@ BrickSuiteOperationDispatcher::BrickSuiteOperationDispatcher()
         addCapability(QStringLiteral("storage.edit"), QStringLiteral("storage.edit"));
         addCapability(QStringLiteral("storage.setActive"), QStringLiteral("storage.setActive"));
         addCapability(QStringLiteral("inventory.search"), QStringLiteral("inventory.read"));
+        addCapability(QStringLiteral("inventory.export"), QStringLiteral("inventory.export"));
         addCapability(QStringLiteral("inventory.get"), QStringLiteral("inventory.detail.read"));
         addCapability(QStringLiteral("inventory.history"), QStringLiteral("inventory.history.read"));
         addCapability(QStringLiteral("inventory.lost.list"), QStringLiteral("inventory.lost.read"));

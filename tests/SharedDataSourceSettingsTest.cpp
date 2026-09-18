@@ -37,6 +37,14 @@ int main(int argc, char** argv)
     ok &= check(settings.missingPartsExportFieldOrder() == exportOrder
                     && settings.missingPartsExportEnabledFields() == exportEnabled,
                 "Missing Parts export selection/order did not persist");
+    const QStringList inventoryOrder={QStringLiteral("storage"),QStringLiteral("partNumber")};
+    const QStringList inventoryEnabled={QStringLiteral("storage")};
+    settings.setInventoryExportConfiguration(inventoryOrder,inventoryEnabled);
+    ok &= check(settings.inventoryExportFieldOrder()==inventoryOrder
+                    && settings.inventoryExportEnabledFields()==inventoryEnabled,
+                "Inventory export selection/order did not persist independently");
+    ok &= check(settings.missingPartsExportFieldOrder()==exportOrder,
+                "Inventory export settings changed Missing Parts export settings");
     ok &= check(settings.whatCanIBuildMaximumResults() == 250,
                 "Part Usage maximum result default");
     ok &= check(settings.whatCanIBuildRowsPerPage() == 100,

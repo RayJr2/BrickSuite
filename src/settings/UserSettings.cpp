@@ -95,6 +95,10 @@ constexpr auto kShowArchivedBuildsKey = "ShowArchived";
 constexpr auto kMissingPartsExportGroup = "MissingPartsExport";
 constexpr auto kMissingPartsFieldOrderKey = "FieldOrder";
 constexpr auto kMissingPartsEnabledFieldsKey = "EnabledFields";
+constexpr auto kGroupInventory = "Inventory";
+constexpr auto kInventoryExportGroup = "CsvExport";
+constexpr auto kInventoryExportFieldOrderKey = "FieldOrder";
+constexpr auto kInventoryExportEnabledFieldsKey = "EnabledFields";
 constexpr auto kWhatCanIBuildGroup = "WhatCanIBuild";
 constexpr auto kMaximumQualifyingResultsKey = "MaximumQualifyingResults";
 constexpr auto kRowsPerPageKey = "RowsPerPage";
@@ -1079,6 +1083,26 @@ void UserSettings::setMissingPartsExportConfiguration(
     settings.beginGroup(kMissingPartsExportGroup);
     settings.setValue(kMissingPartsFieldOrderKey, fieldOrder);
     settings.setValue(kMissingPartsEnabledFieldsKey, enabledFields);
+}
+
+QStringList UserSettings::inventoryExportFieldOrder() const
+{
+    QSettings settings; settings.beginGroup(kGroupInventory); settings.beginGroup(kInventoryExportGroup);
+    return settings.value(kInventoryExportFieldOrderKey).toStringList();
+}
+
+QStringList UserSettings::inventoryExportEnabledFields() const
+{
+    QSettings settings; settings.beginGroup(kGroupInventory); settings.beginGroup(kInventoryExportGroup);
+    return settings.value(kInventoryExportEnabledFieldsKey).toStringList();
+}
+
+void UserSettings::setInventoryExportConfiguration(const QStringList& order,
+                                                    const QStringList& enabled)
+{
+    QSettings settings; settings.beginGroup(kGroupInventory); settings.beginGroup(kInventoryExportGroup);
+    settings.setValue(kInventoryExportFieldOrderKey,order);
+    settings.setValue(kInventoryExportEnabledFieldsKey,enabled);
 }
 
 int UserSettings::whatCanIBuildMaximumResults() const

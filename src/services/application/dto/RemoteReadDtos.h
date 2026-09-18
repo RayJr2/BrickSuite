@@ -42,6 +42,7 @@ struct StorageType {
 struct InventorySearchRequest {
     qint64 workspaceId = 0; QString text; qint64 storageId = 0;
     int rebrickableCategoryId = -1; int rebrickableColorId = -1; PageRequest paging;
+    QStringList exportFields;
 };
 struct InventoryRow {
     qint64 inventoryRecordId = 0; qint64 workspaceId = 0;
@@ -56,6 +57,13 @@ struct InventoryDetail : InventoryRow {
     QStringList legoElementIds;
     QDateTime createdUtc;
     QDateTime modifiedUtc;
+};
+struct InventoryExportRow {
+    qint64 inventoryRecordId=0; QString partNumber; QString partName; QString category;
+    QString color; int quantity=0; QString storagePath; QString manufacturer;
+    QString condition; QString ownership; QStringList legoElementIds;
+    QString rebrickablePartId; int rebrickableColorId=-1;
+    QStringList brickLinkPartIds; QString brickLinkColorId;
 };
 struct InventoryHistoryRow {
     qint64 movementId = 0; QString movementType; int quantityChange = 0;

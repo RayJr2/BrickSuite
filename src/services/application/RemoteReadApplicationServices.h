@@ -35,6 +35,8 @@ public:
         AsyncReadCompletion<QList<RemoteReadDto::StorageType>> completion);
     ReadRequestToken searchInventory(const RemoteReadDto::InventorySearchRequest& request,
         QObject* context, AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::InventoryRow>> completion);
+    ReadRequestToken exportInventory(const RemoteReadDto::InventorySearchRequest& request,
+        QObject* context, AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::InventoryExportRow>> completion);
     ReadRequestToken getInventory(qint64 workspaceId, qint64 inventoryRecordId, QObject* context,
         AsyncReadCompletion<RemoteReadDto::InventoryDetail> completion);
     ReadRequestToken inventoryHistory(qint64 workspaceId, const QString& partNumber,

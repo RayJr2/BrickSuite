@@ -125,6 +125,10 @@ public:
         QObject* context,
         std::function<void(const InventoryApplicationService::Page&)> completion,
         ErrorCallback failure = {});
+    void exportInventoryPortable(const RemoteReadDto::InventorySearchRequest& request,
+        QObject* context,
+        std::function<void(const RemoteReadDto::Page<RemoteReadDto::InventoryExportRow>&)> completion,
+        ErrorCallback failure = {});
     void inventoryHistoryPortable(int workspaceId, const QString& partNumber,
         int rebrickableColorId, QObject* context,
         std::function<void(const QList<RemoteReadDto::InventoryHistoryRow>&)> completion,

@@ -27,6 +27,7 @@
 #include "ImportInventoryDialog.h"
 #include "InventoryHistoryDialog.h"
 #include "LostInventoryDialog.h"
+#include "InventoryExportDialog.h"
 #include "MarkLostInventoryDialog.h"
 #include "MoveInventoryDialog.h"
 
@@ -53,6 +54,8 @@
 #include "../../services/parts/PartExternalIdEnrichmentService.h"
 #include "../../services/parts/ElementIdentityService.h"
 #include "../../services/storage/SessionStorageSelectionService.h"
+#include "../../services/inventory/InventoryExportService.h"
+#include "../../database/DatabaseManager.h"
 #include "../../services/application/ApplicationServices.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
 #include "../../services/application/RemoteInventoryMutationApplicationService.h"
@@ -78,6 +81,8 @@
 #include <QPalette>
 #include <QPixmap>
 #include <QPushButton>
+#include <QSharedPointer>
+#include <QTimer>
 #include <QShowEvent>
 #include <QSignalBlocker>
 #include <QTableWidget>
@@ -112,6 +117,7 @@ MyInventoryWidget::MyInventoryWidget(
     m_lostInventoryButton = new QPushButton("Lost Inventory...", this);
 
     m_importButton = new QPushButton("Import CSV", this);
+    m_exportButton = new QPushButton("Export CSV...", this);
 
     auto* titleLayout = new QHBoxLayout();
 
@@ -124,6 +130,7 @@ MyInventoryWidget::MyInventoryWidget(
     titleLayout->addWidget(m_lostInventoryButton);
 
     titleLayout->addWidget(m_importButton);
+    titleLayout->addWidget(m_exportButton);
 
     auto* filterLayout =
         new QHBoxLayout();
@@ -316,6 +323,7 @@ MyInventoryWidget::MyInventoryWidget(
             &MyInventoryWidget::showLostInventory);
 
     connect(m_importButton, &QPushButton::clicked, this, &MyInventoryWidget::importCsv);
+    connect(m_exportButton, &QPushButton::clicked, this, &MyInventoryWidget::exportCsv);
 
     connect(m_searchButton, &QPushButton::clicked, this, [this]() {
         m_currentPage = 0;
@@ -523,6 +531,8 @@ void MyInventoryWidget::workspaceChanged(int workspaceId)
         && m_remoteMutations->isAvailableFor(QStringLiteral("inventory.markFound"))
         && m_remoteReads && m_remoteReads->isAvailableFor(QStringLiteral("inventory.lost.list"))));
     m_importButton->setEnabled(localWritable);
+    m_exportButton->setEnabled(m_workspaceContext.hasCurrentWorkspace() && !m_exportPreparationActive
+        && (!m_remoteReads || m_remoteReads->isAvailableFor(QStringLiteral("inventory.export"))));
 }
 
 void MyInventoryWidget::loadCategories()
@@ -1484,6 +1494,73 @@ void MyInventoryWidget::importCsv()
         emit inventoryChanged();
         emit hostInventoryMutationCommitted(m_workspaceContext.currentWorkspaceId(), 0);
     }
+}
+
+InventorySearchCriteria MyInventoryWidget::currentSearchCriteria() const
+{
+    InventorySearchCriteria c;c.workspaceId=m_workspaceContext.currentWorkspaceId();
+    c.searchText=m_searchEdit->text().trimmed();c.categoryId=m_categoryCombo->currentData().toInt();
+    c.colorId=m_colorCombo->currentData().toInt();c.storageLocationId=m_storageCombo->currentData().toInt();
+    c.manufacturerId=m_manufacturerCombo->currentData().toInt();return c;
+}
+
+QString MyInventoryWidget::currentFilterSummary() const
+{
+    QStringList values;
+    if(!m_searchEdit->text().trimmed().isEmpty())values<<QStringLiteral("Text: %1").arg(m_searchEdit->text().trimmed());
+    if(m_categoryCombo->currentData().toInt()>0)values<<QStringLiteral("Category: %1").arg(m_categoryCombo->currentText());
+    if(m_colorCombo->currentData().toInt()>0)values<<QStringLiteral("Color: %1").arg(m_colorCombo->currentText());
+    values<<QStringLiteral("Storage: %1").arg(m_storageCombo->currentData().toInt()>0?m_storageCombo->currentText():QStringLiteral("All Locations"));
+    if(m_manufacturerCombo->currentData().toInt()>0)values<<QStringLiteral("Manufacturer: %1").arg(m_manufacturerCombo->currentText());
+    return values.join(QStringLiteral("; "));
+}
+
+QSet<QString> MyInventoryWidget::currentInventoryExportFields() const
+{
+    const auto& settings=UserSettings::instance();
+    return InventoryExportService::normalizeConfiguration(settings.inventoryExportFieldOrder(),
+        settings.inventoryExportEnabledFields()).enabledFields;
+}
+
+void MyInventoryWidget::requestRemoteInventoryExport(const QSet<QString>& fields,QObject* context,
+    std::function<void(bool,QList<InventoryExportRow>,QString)> completion)
+{
+    auto rows=QSharedPointer<QList<RemoteReadDto::InventoryExportRow>>::create();
+    auto request=QSharedPointer<RemoteReadDto::InventorySearchRequest>::create();
+    request->workspaceId=m_workspaceContext.currentWorkspaceId();request->text=m_searchEdit->text().trimmed();
+    request->rebrickableCategoryId=m_categoryCombo->currentData().toInt();request->rebrickableColorId=m_colorCombo->currentData().toInt();
+    request->storageId=m_storageCombo->currentData().toInt();request->paging={1,500};
+    request->exportFields=QStringList(fields.begin(),fields.end());request->exportFields.sort(Qt::CaseSensitive);
+    auto next=QSharedPointer<std::function<void()>>::create();
+    *next=[this,rows,request,next,context,completion]{m_remoteReads->exportInventory(*request,context,
+        [rows,request,next,completion](auto result){
+            if(!result.succeeded()||(!result.value->rows.size()&&rows->size()<result.value->totalRows)){
+                *next={};completion(false,{},result.succeeded()?QStringLiteral("The Host returned an incomplete Inventory export page."):result.message);return;}
+            rows->append(result.value->rows);if(rows->size()<result.value->totalRows){++request->paging.page;(*next)();return;}
+            *next={};completion(true,InventoryExportService::createRemoteRows(*rows),{});
+        });};(*next)();
+}
+
+void MyInventoryWidget::showInventoryExport(QList<InventoryExportRow> rows,const QSet<QString>& enrichedFields)
+{
+    m_exportPreparationActive=false;m_exportButton->setEnabled(true);unsetCursor();
+    if(rows.isEmpty()){m_resultLabel->setText(QStringLiteral("No Inventory records match the current filters."));emit statusMessageRequested(QStringLiteral("No Inventory records match the current filters."),5000);QMessageBox::information(this,"Export Inventory","No Inventory records match the current filters.");return;}
+    m_resultLabel->setText(QStringLiteral("Inventory export ready."));emit statusMessageRequested(QStringLiteral("Inventory export ready."),5000);
+    InventoryExportDialog::Enricher enricher;
+    if(!m_remoteReads){enricher=[](QList<InventoryExportRow> values,const QSet<QString>& fields,QObject* context,InventoryExportDialog::EnrichmentCompletion done){QTimer::singleShot(0,context,[values=std::move(values),fields,done=std::move(done)]()mutable{InventoryExportService(DatabaseManager::instance().database()).enrichRows(values,fields);done(true,std::move(values),{});});};}
+    else{enricher=[this](QList<InventoryExportRow>,const QSet<QString>& fields,QObject* context,InventoryExportDialog::EnrichmentCompletion done){requestRemoteInventoryExport(fields,context,std::move(done));};}
+    InventoryExportDialog dialog(std::move(rows),currentFilterSummary(),enrichedFields,std::move(enricher),this);dialog.exec();
+}
+
+void MyInventoryWidget::exportCsv()
+{
+    if(m_exportPreparationActive||!m_workspaceContext.hasCurrentWorkspace())return;
+    m_exportPreparationActive=true;m_exportButton->setEnabled(false);setCursor(Qt::WaitCursor);
+    m_resultLabel->setText(QStringLiteral("Preparing Inventory export..."));m_resultLabel->repaint();emit statusMessageRequested(QStringLiteral("Preparing Inventory export..."));
+    const QSet<QString> fields=currentInventoryExportFields();
+    if(!m_remoteReads){auto criteria=QSharedPointer<InventorySearchCriteria>::create(currentSearchCriteria());criteria->limit=500;criteria->offset=0;const int total=m_inventoryService.count(*criteria);auto all=QSharedPointer<QList<InventorySearchResult>>::create();auto next=QSharedPointer<std::function<void()>>::create();*next=[this,criteria,total,all,next,fields]{const auto page=m_inventoryService.searchRows(*criteria);if(page.isEmpty()&&all->size()<total){*next={};m_exportPreparationActive=false;m_exportButton->setEnabled(true);unsetCursor();emit statusMessageRequested(QStringLiteral("Unable to prepare Inventory export."),5000);QMessageBox::critical(this,"Export Inventory","Unable to retrieve the complete Inventory export result.");return;}all->append(page);if(all->size()<total){criteria->offset+=page.size();QTimer::singleShot(0,this,*next);return;}*next={};auto rows=InventoryExportService(DatabaseManager::instance().database()).createRows(*all,fields);for(auto&row:rows){const QString path=storagePathForId(int(row.storageLocationId));if(!path.isEmpty())row.storagePath=path;}showInventoryExport(std::move(rows),fields);};QTimer::singleShot(0,this,*next);return;}
+    if(!m_remoteReads->isAvailableFor(QStringLiteral("inventory.export"))){m_exportPreparationActive=false;m_exportButton->setEnabled(true);unsetCursor();emit statusMessageRequested(QStringLiteral("Inventory export is unavailable on this Host."),5000);QMessageBox::information(this,"Export Inventory","This BrickSuite Host does not support Inventory CSV export.");return;}
+    requestRemoteInventoryExport(fields,this,[this,fields](bool success,QList<InventoryExportRow> rows,QString error){if(!success){m_exportPreparationActive=false;m_exportButton->setEnabled(true);unsetCursor();emit statusMessageRequested(QStringLiteral("Unable to prepare Inventory export."),5000);QMessageBox::critical(this,"Export Inventory",error);return;}showInventoryExport(std::move(rows),fields);});
 }
 
 QString MyInventoryWidget::storagePathForId(int storageLocationId) const

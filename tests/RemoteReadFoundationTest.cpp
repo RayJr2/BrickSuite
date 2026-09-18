@@ -47,6 +47,15 @@ int main(int argc, char** argv)
                   && decoded.partNumber == QStringLiteral("3001")
                   && decoded.rebrickableCategoryId == 11
                   && decoded.rebrickableColorId == 4, "portable inventory round trip failed");
+    RemoteReadDto::InventoryExportRow exportRow;exportRow.inventoryRecordId=44;exportRow.partNumber="3001";
+    exportRow.partName="Brick 2 x 4";exportRow.category="Bricks";exportRow.color="Red";
+    exportRow.quantity=2;exportRow.storagePath="Shelf / Bin";exportRow.manufacturer="LEGO";
+    exportRow.condition="Used";exportRow.ownership="Owned";exportRow.legoElementIds={"300121","300122"};
+    exportRow.rebrickablePartId="3001";exportRow.rebrickableColorId=4;exportRow.brickLinkPartIds={"3001"};exportRow.brickLinkColorId="5";
+    RemoteReadDto::InventoryExportRow decodedExport;
+    ok &= require(RemoteReadJson::fromJson(RemoteReadJson::toJson(exportRow),&decodedExport,&decodeError)
+        && decodedExport.inventoryRecordId==44&&decodedExport.legoElementIds.size()==2
+        && decodedExport.storagePath=="Shelf / Bin","Inventory export DTO round trip failed");
     RemoteReadDto::InventoryDetail detail;
     static_cast<RemoteReadDto::InventoryRow&>(detail) = row;
     detail.allocatedQuantity = 2;

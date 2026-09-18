@@ -122,6 +122,11 @@ public:
     void setMissingPartsExportConfiguration(const QStringList& fieldOrder,
                                             const QStringList& enabledFields);
 
+    QStringList inventoryExportFieldOrder() const;
+    QStringList inventoryExportEnabledFields() const;
+    void setInventoryExportConfiguration(const QStringList& fieldOrder,
+                                         const QStringList& enabledFields);
+
     int whatCanIBuildMaximumResults() const;
     void setWhatCanIBuildMaximumResults(int value);
     int whatCanIBuildRowsPerPage() const;

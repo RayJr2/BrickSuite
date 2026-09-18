@@ -168,11 +168,22 @@ ReadRequestToken RemoteReadApplicationServices::searchInventory(
     const RemoteReadDto::InventorySearchRequest& r, QObject* context,
     AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::InventoryRow>> completion)
 {
+    QJsonArray fields;for(const auto&field:r.exportFields)fields.append(field);QJsonObject payload{{"workspaceId",double(r.workspaceId)},{"text",r.text},{"storageId",double(r.storageId)},
+        {"rebrickableCategoryId",r.rebrickableCategoryId},{"rebrickableColorId",r.rebrickableColorId},
+        {"page",r.paging.page},{"pageSize",r.paging.pageSize},{"fields",fields}};
+    return request<RemoteReadDto::Page<RemoteReadDto::InventoryRow>>(QStringLiteral("inventory.search"),payload,context,std::move(completion),
+        [](const QJsonObject& o, auto* out, QString* error){qint64 total=o.value("totalRows").toInteger(-1);int page=o.value("page").toInt();int size=o.value("pageSize").toInt();const auto rows=o.value("rows");if(total<0||page<1||size<1||size>RemoteReadDto::MaximumPageSize||!rows.isArray()||rows.toArray().size()>size)return false;out->page=page;out->pageSize=size;out->totalRows=int(qMin<qint64>(total,INT_MAX));for(const auto& v:rows.toArray()){RemoteReadDto::InventoryRow row;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&row,&e)){if(error)*error=e.message;return false;}out->rows.append(row);}return true;});
+}
+
+ReadRequestToken RemoteReadApplicationServices::exportInventory(
+    const RemoteReadDto::InventorySearchRequest&r,QObject*context,
+    AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::InventoryExportRow>> completion)
+{
     QJsonObject payload{{"workspaceId",double(r.workspaceId)},{"text",r.text},{"storageId",double(r.storageId)},
         {"rebrickableCategoryId",r.rebrickableCategoryId},{"rebrickableColorId",r.rebrickableColorId},
         {"page",r.paging.page},{"pageSize",r.paging.pageSize}};
-    return request<RemoteReadDto::Page<RemoteReadDto::InventoryRow>>(QStringLiteral("inventory.search"),payload,context,std::move(completion),
-        [](const QJsonObject& o, auto* out, QString* error){qint64 total=o.value("totalRows").toInteger(-1);int page=o.value("page").toInt();int size=o.value("pageSize").toInt();const auto rows=o.value("rows");if(total<0||page<1||size<1||size>RemoteReadDto::MaximumPageSize||!rows.isArray()||rows.toArray().size()>size)return false;out->page=page;out->pageSize=size;out->totalRows=int(qMin<qint64>(total,INT_MAX));for(const auto& v:rows.toArray()){RemoteReadDto::InventoryRow row;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&row,&e)){if(error)*error=e.message;return false;}out->rows.append(row);}return true;});
+    return request<RemoteReadDto::Page<RemoteReadDto::InventoryExportRow>>(QStringLiteral("inventory.export"),payload,context,std::move(completion),
+        [](const QJsonObject&o,auto*out,QString*error){const auto rows=o.value("rows");const int p=o.value("page").toInt(),s=o.value("pageSize").toInt(),total=o.value("totalRows").toInt(-1);if(!rows.isArray()||p<1||s<1||s>RemoteReadDto::MaximumPageSize||total<0||rows.toArray().size()>s)return false;out->page=p;out->pageSize=s;out->totalRows=total;for(const auto&v:rows.toArray()){RemoteReadDto::InventoryExportRow row;RemoteReadJson::DecodeError e;if(!v.isObject()||!RemoteReadJson::fromJson(v.toObject(),&row,&e)){if(error)*error=e.message;return false;}out->rows.append(row);}return true;});
 }
 
 ReadRequestToken RemoteReadApplicationServices::listBuilds(qint64 workspaceId, bool archived,
