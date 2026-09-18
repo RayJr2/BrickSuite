@@ -15,6 +15,7 @@
 #include "../parts/PartReferenceManifest.h"
 #include "../parts/ElementIdentityService.h"
 #include "../builds/MissingPartsExportService.h"
+#include "../builds/PickABrickPartResolutionService.h"
 #include "../builds/BuildRequirementAvailabilityService.h"
 #include "../builds/BuildLifecycleService.h"
 #include "CollectionDisassemblyPlanService.h"
@@ -886,7 +887,29 @@ void HostReadExecutor::buildRequirementsPortable(int workspaceId,int buildId,con
 
 void HostReadExecutor::missingPartsPortable(int workspaceId,int buildId,const RemoteReadDto::PageRequest&page,QObject*context,std::function<void(const RemoteReadDto::Page<RemoteReadDto::MissingPart>&)>completion,ErrorCallback failure)
 {
- QPointer<QObject>guard(context);enqueue(QStringLiteral("builds.missingParts"),[=,completion=std::move(completion)](ApplicationServices&s,const QSqlDatabase&db)mutable{RemoteReadDto::Page<RemoteReadDto::MissingPart>out;out.page=page.page;out.pageSize=page.pageSize;const auto build=s.builds().get(buildId);if(!build||build->workspaceId()!=workspaceId){out.resourceFound=false;if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out]()mutable{if(guard)completion(out);},Qt::QueuedConnection);return;}const auto all=s.builds().missingParts(workspaceId,buildId);const auto exportRows=MissingPartsExportService(db).createRows(*build,all);out.totalRows=all.size();const int begin=(page.page-1)*page.pageSize;for(int i=begin;i<qMin(begin+page.pageSize,all.size());++i){const auto&x=all[i];const auto&metadata=exportRows[i];RemoteReadDto::MissingPart d;d.partNumber=x.partNumber;d.partNameFallback=x.partName;d.colorNameFallback=x.colorName;d.required=x.required;d.pulled=x.pulled;d.remaining=x.remaining;d.owned=x.owned;d.thisBuildAllocated=x.thisBuildAllocated;d.otherBuildsAllocated=x.otherBuildsAllocated;d.available=x.available;d.missing=x.missing;d.rebrickableColorId=metadata.rebrickableColorId;d.categoryName=metadata.category;d.manufacturerDisplay=metadata.manufacturer;d.legoElementIds=metadata.legoElementIds;d.rebrickablePartId=metadata.rebrickablePartId;d.brickLinkPartIds=metadata.brickLinkPartIds;d.brickLinkColorId=metadata.brickLinkColorId;out.rows.append(d);}if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out=std::move(out)]()mutable{if(guard)completion(out);},Qt::QueuedConnection);},context,std::move(failure));
+ QPointer<QObject>guard(context);enqueue(QStringLiteral("builds.missingParts"),[=,completion=std::move(completion)](ApplicationServices&s,const QSqlDatabase&db)mutable{RemoteReadDto::Page<RemoteReadDto::MissingPart>out;out.page=page.page;out.pageSize=page.pageSize;const auto build=s.builds().get(buildId);if(!build||build->workspaceId()!=workspaceId){out.resourceFound=false;if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out]()mutable{if(guard)completion(out);},Qt::QueuedConnection);return;}const auto all=s.builds().missingParts(workspaceId,buildId);out.totalRows=all.size();const int begin=(page.page-1)*page.pageSize;const auto pageRows=all.mid(begin,page.pageSize);const auto exportRows=MissingPartsExportService(db).createRows(*build,pageRows);for(int i=0;i<pageRows.size();++i){const auto&x=pageRows[i];const auto&metadata=exportRows[i];RemoteReadDto::MissingPart d;d.partNumber=x.partNumber;d.partNameFallback=x.partName;d.colorNameFallback=x.colorName;d.required=x.required;d.pulled=x.pulled;d.remaining=x.remaining;d.owned=x.owned;d.thisBuildAllocated=x.thisBuildAllocated;d.otherBuildsAllocated=x.otherBuildsAllocated;d.available=x.available;d.missing=x.missing;d.rebrickableColorId=metadata.rebrickableColorId;d.categoryName=metadata.category;d.manufacturerDisplay=metadata.manufacturer;d.legoElementIds=metadata.legoElementIds;d.pickABrickElementCandidates=metadata.pickABrickElementCandidates;d.rebrickablePartId=metadata.rebrickablePartId;d.brickLinkPartIds=metadata.brickLinkPartIds;d.brickLinkColorId=metadata.brickLinkColorId;out.rows.append(d);}if(guard)QMetaObject::invokeMethod(guard,[guard,completion,out=std::move(out)]()mutable{if(guard)completion(out);},Qt::QueuedConnection);},context,std::move(failure));
+}
+
+void HostReadExecutor::resolvePickABrickPartPortable(const QString& partNumber,
+    int rebrickableColorId, QObject* context,
+    std::function<void(const RemoteReadDto::PickABrickPartResolution&)> completion,
+    ErrorCallback failure)
+{
+    QPointer<QObject> guard(context);
+    enqueue(QStringLiteral("parts.pickABrick.resolve"),
+        [=, completion = std::move(completion)](ApplicationServices&, const QSqlDatabase& db) mutable {
+            const auto resolved = PickABrickPartResolutionService(db).resolveExact(
+                partNumber, rebrickableColorId);
+            RemoteReadDto::PickABrickPartResolution out;
+            out.partFound = resolved.partFound;
+            out.partNumber = resolved.partNumber;
+            out.partName = resolved.partName;
+            out.elementCandidates = resolved.elementCandidates;
+            if (guard) QMetaObject::invokeMethod(guard,
+                [guard, completion, out = std::move(out)]() mutable {
+                    if (guard) completion(out);
+                }, Qt::QueuedConnection);
+        }, context, std::move(failure));
 }
 
 void HostReadExecutor::pullingPortable(int workspaceId,int buildId,const RemoteReadDto::PageRequest&page,QObject*context,std::function<void(const RemoteReadDto::Page<RemoteReadDto::PullingRow>&)>completion,ErrorCallback failure)

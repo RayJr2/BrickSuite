@@ -64,6 +64,7 @@
 #include "../../import/RebrickableMocCsvImporter.h"
 #include "../../services/builds/MissingPartsService.h"
 #include "../../services/builds/MissingPartsExportService.h"
+#include "../../services/builds/PickABrickPartResolutionService.h"
 #include "../../services/builds/BuildRequirementAvailabilityService.h"
 #include "../../services/images/PartImageService.h"
 #include "../../services/parts/PartExternalIdEnrichmentService.h"
@@ -95,12 +96,14 @@
 #include <QHeaderView>
 #include <QHash>
 #include <QLabel>
+#include <QMainWindow>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPalette>
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QStatusBar>
 #include <QSettings>
 #include <QSet>
 #include <QSqlDatabase>
@@ -3443,7 +3446,8 @@ void BuildsWidget::updateRequirementUiState()
         m_interactivePullButton->setEnabled(supportsStockFulfillment && m_remoteReads
             && m_remoteReads->isAvailableFor(QStringLiteral("builds.pulling")));
         m_interactivePullButton->setText("View Pulling...");
-        m_exportMissingPartsButton->setEnabled(supportsStockFulfillment && m_remoteReads
+        m_exportMissingPartsButton->setEnabled(!m_missingPartsExportPreparation.active()
+            && supportsStockFulfillment && m_remoteReads
             && m_remoteReads->isAvailableFor(QStringLiteral("builds.missingParts")));
         m_exportMissingPartsButton->setText("Export Missing Parts CSV");
         m_procureMissingPartsButton->setEnabled(false);
@@ -3544,7 +3548,8 @@ void BuildsWidget::updateRequirementUiState()
     m_importPullListButton->setEnabled(canExportPullList);
     m_interactivePullButton->setEnabled(canViewPulling);
     m_importMocPartsButton->setEnabled(canImportMoc);
-    m_exportMissingPartsButton->setEnabled(canExportMissingParts);
+    m_exportMissingPartsButton->setEnabled(canExportMissingParts
+                                           && !m_missingPartsExportPreparation.active());
     m_procureMissingPartsButton->setEnabled(canProcureMissingParts);
     m_loadSetFromRebrickableButton->setEnabled(canLoadSet);
 
@@ -4062,14 +4067,16 @@ void BuildsWidget::exportMissingParts()
         return;
     }
 
+    if (!beginMissingPartsExport())
+        return;
+
     if (m_remoteMode) {
         const int buildId = m_selectedBuildId;
         const int workspaceId = m_workspaceContext.currentWorkspaceId();
-        m_exportMissingPartsButton->setEnabled(false);
         m_remoteReads->getBuild(workspaceId, buildId, this,
             [this, workspaceId, buildId](AsyncReadResult<RemoteReadDto::BuildDetail> buildResult) {
                 if (!buildResult.succeeded()) {
-                    updateRequirementUiState();
+                    finishMissingPartsExport(QStringLiteral("Unable to prepare Missing Parts export."));
                     QMessageBox::critical(this, "Export Missing Parts", buildResult.message);
                     return;
                 }
@@ -4082,7 +4089,7 @@ void BuildsWidget::exportMissingParts()
                         [this, workspaceId, buildId, build, rows, requestPage](
                             AsyncReadResult<RemoteReadDto::Page<RemoteReadDto::MissingPart>> result) {
                             if (!result.succeeded()) {
-                                updateRequirementUiState();
+                                finishMissingPartsExport(QStringLiteral("Unable to prepare Missing Parts export."));
                                 QMessageBox::critical(this, "Export Missing Parts", result.message);
                                 return;
                             }
@@ -4091,8 +4098,8 @@ void BuildsWidget::exportMissingParts()
                                 (*requestPage)(result.value->page + 1);
                                 return;
                             }
-                            updateRequirementUiState();
                             if (rows->isEmpty()) {
+                                finishMissingPartsExport(QStringLiteral("Missing Parts export was not needed."));
                                 QMessageBox::information(this, "Export Missing Parts",
                                                          "This Build currently has no missing non-spare parts.");
                                 return;
@@ -4104,8 +4111,30 @@ void BuildsWidget::exportMissingParts()
                             MissingPartsExportDialog dialog(
                                 MissingPartsExportService::createRemoteRows(build, *rows),
                                 QStringLiteral("BrickSuite_Missing_%1.csv").arg(safeReference),
-                                this);
+                                this,
+                                m_remoteReads->isAvailableFor(QStringLiteral("parts.pickABrick.resolve"))
+                                    ? MissingPartsExportDialog::PartOverrideResolver(
+                                        [this](const QString& partNumber, int colorId,
+                                               QObject* context, auto completion) {
+                                            m_remoteReads->resolvePickABrickPart(
+                                                partNumber, colorId, context,
+                                                [completion = std::move(completion)](const auto& outcome) mutable {
+                                                    PickABrickPartResolution result;
+                                                    if (outcome.succeeded()) {
+                                                        result.partFound = outcome.value->partFound;
+                                                        result.partNumber = outcome.value->partNumber;
+                                                        result.partName = outcome.value->partName;
+                                                        result.elementCandidates = outcome.value->elementCandidates;
+                                                    } else {
+                                                        result.serviceAvailable = false;
+                                                    }
+                                                    completion(result);
+                                                });
+                                        })
+                                    : MissingPartsExportDialog::PartOverrideResolver{});
+                            markMissingPartsExportReady();
                             dialog.exec();
+                            finishMissingPartsExport({});
                         });
                 };
                 (*requestPage)(1);
@@ -4119,6 +4148,7 @@ void BuildsWidget::exportMissingParts()
         buildRepository.getById(m_selectedBuildId);
 
     if (!build) {
+        finishMissingPartsExport(QStringLiteral("Unable to prepare Missing Parts export."));
         QMessageBox::critical(this,
                               "Export Missing Parts",
                               "Unable to load the selected Build.");
@@ -4126,6 +4156,7 @@ void BuildsWidget::exportMissingParts()
     }
 
     if (build->inventoryMode() != "Stock") {
+        finishMissingPartsExport(QStringLiteral("Missing Parts export is unavailable for this Build."));
         QMessageBox::information(this,
                                  "Export Missing Parts",
                                  "Missing Parts Lists are available only "
@@ -4139,6 +4170,7 @@ void BuildsWidget::exportMissingParts()
             m_selectedBuildId);
 
     if (missingParts.isEmpty()) {
+        finishMissingPartsExport(QStringLiteral("Missing Parts export was not needed."));
         QMessageBox::information(this,
                                  "Export Missing Parts",
                                  "This Build currently has no missing "
@@ -4161,11 +4193,50 @@ void BuildsWidget::exportMissingParts()
             QString("BrickSuite_Missing_%1.csv").arg(safeName);
     }
 
-    MissingPartsExportDialog dialog(
-        MissingPartsExportService(DatabaseManager::instance().database())
-            .createRows(*build, missingParts),
-        defaultName, this);
+    const auto exportRows = MissingPartsExportService(DatabaseManager::instance().database())
+                                .createRows(*build, missingParts);
+    MissingPartsExportDialog dialog(exportRows, defaultName, this,
+        [](const QString& partNumber, int colorId, QObject*, auto completion) {
+            completion(PickABrickPartResolutionService(
+                DatabaseManager::instance().database()).resolveExact(partNumber, colorId));
+        });
+    markMissingPartsExportReady();
     dialog.exec();
+    finishMissingPartsExport({});
+}
+
+bool BuildsWidget::beginMissingPartsExport()
+{
+    if (!m_missingPartsExportPreparation.begin())
+        return false;
+
+    m_exportMissingPartsButton->setEnabled(false);
+    setCursor(Qt::WaitCursor);
+    emit statusMessageRequested(QStringLiteral("Preparing Missing Parts export..."), 0);
+    if (auto* window = qobject_cast<QMainWindow*>(this->window()))
+        window->statusBar()->repaint();
+    return true;
+}
+
+void BuildsWidget::markMissingPartsExportReady()
+{
+    if (!m_missingPartsExportPreparation.active())
+        return;
+
+    unsetCursor();
+    emit statusMessageRequested(QStringLiteral("Missing Parts export ready."), 5000);
+}
+
+void BuildsWidget::finishMissingPartsExport(const QString& statusMessage)
+{
+    if (!m_missingPartsExportPreparation.active())
+        return;
+
+    m_missingPartsExportPreparation.finish();
+    unsetCursor();
+    updateRequirementUiState();
+    if (!statusMessage.isEmpty())
+        emit statusMessageRequested(statusMessage, 5000);
 }
 
 

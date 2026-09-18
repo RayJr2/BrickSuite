@@ -158,6 +158,7 @@ QList<MissingPartsExportRow> MissingPartsExportService::createRows(
     QList<MissingPartsExportRow> result;
     PartRepository parts(m_database);
     PartCategoryRepository categories(m_database);
+    ColorRepository colors(m_database);
     ManufacturerRepository manufacturers(m_database);
     ElementIdentityService elements(m_database);
     ExternalPartMappingRepository partMappings(m_database);
@@ -165,6 +166,13 @@ QList<MissingPartsExportRow> MissingPartsExportService::createRows(
     ExternalColorMappingRepository colorMappings(m_database);
     const QString brickLink = apiProviderName(ApiProvider::BrickLink);
     const auto manufacturer = manufacturers.getById(build.manufacturerId());
+    const auto legoManufacturer = manufacturers.getById(manufacturers.legoManufacturerId());
+    QHash<int, QString> rebrickablePartIds;
+    QHash<int, QString> categoryNames;
+    QHash<quint64, QStringList> elementIds;
+    QHash<int, QStringList> brickLinkPartIds;
+    QHash<int, QString> brickLinkColorIds;
+    QHash<int, int> rebrickableColorIds;
 
     for (const auto& source : missingParts) {
         MissingPartsExportRow row;
@@ -182,29 +190,60 @@ QList<MissingPartsExportRow> MissingPartsExportService::createRows(
         row.remaining = source.remaining;
         row.available = source.available;
 
-        if (const auto part = parts.getById(source.partId)) {
-            row.rebrickablePartId = part->rebrickablePartId();
-            if (const auto category = categories.getById(part->partCategoryId()))
-                row.category = category->name();
+        if (!rebrickablePartIds.contains(source.partId)) {
+            QString rebrickablePartId;
+            QString categoryName;
+            if (const auto part = parts.getById(source.partId)) {
+                rebrickablePartId = part->rebrickablePartId();
+                if (const auto category = categories.getById(part->partCategoryId()))
+                    categoryName = category->name();
+            }
+            rebrickablePartIds.insert(source.partId, rebrickablePartId);
+            categoryNames.insert(source.partId, categoryName);
         }
+        row.rebrickablePartId = rebrickablePartIds.value(source.partId);
+        row.category = categoryNames.value(source.partId);
+
+        const quint64 partColorKey = (quint64(quint32(source.partId)) << 32)
+                                     | quint32(source.colorId);
+        if (!elementIds.contains(partColorKey))
+            elementIds.insert(partColorKey,
+                              elements.forPartColor(source.partId, source.colorId));
         if (manufacturer && manufacturer->supportsLegoElementIds())
-            row.legoElementIds = elements.forPartColor(source.partId, source.colorId);
+            row.legoElementIds = elementIds.value(partColorKey);
+        if (legoManufacturer && legoManufacturer->supportsLegoElementIds())
+            row.pickABrickElementCandidates = elementIds.value(partColorKey);
 
-        const auto mappedPart = partMappings.getByPartAndProvider(source.partId, brickLink);
-        if (mappedPart && mappedPart->status == ExternalMappingStatus::Mapped
-            && !mappedPart->externalId.trimmed().isEmpty()) {
-            row.brickLinkPartIds = {mappedPart->externalId.trimmed()};
-        } else {
-            for (const auto& id : partIdentifiers.findByPartAndProvider(source.partId, brickLink))
-                row.brickLinkPartIds.append(id.externalId);
-            row.brickLinkPartIds = distinctSorted(row.brickLinkPartIds);
+        if (!brickLinkPartIds.contains(source.partId)) {
+            QStringList identifiers;
+            const auto mappedPart = partMappings.getByPartAndProvider(source.partId, brickLink);
+            if (mappedPart && mappedPart->status == ExternalMappingStatus::Mapped
+                && !mappedPart->externalId.trimmed().isEmpty()) {
+                identifiers = {mappedPart->externalId.trimmed()};
+            } else {
+                for (const auto& id : partIdentifiers.findByPartAndProvider(source.partId, brickLink))
+                    identifiers.append(id.externalId);
+                identifiers = distinctSorted(identifiers);
+            }
+            brickLinkPartIds.insert(source.partId, identifiers);
         }
-        const auto mappedColor = colorMappings.getByColorAndProvider(source.colorId, brickLink);
-        if (mappedColor && mappedColor->status == ExternalMappingStatus::Mapped)
-            row.brickLinkColorId = mappedColor->externalId.trimmed();
+        row.brickLinkPartIds = brickLinkPartIds.value(source.partId);
 
-        if (const auto color = ColorRepository(m_database).getById(source.colorId))
-            row.rebrickableColorId = color->rebrickableId();
+        if (!brickLinkColorIds.contains(source.colorId)) {
+            QString externalId;
+            const auto mappedColor = colorMappings.getByColorAndProvider(source.colorId, brickLink);
+            if (mappedColor && mappedColor->status == ExternalMappingStatus::Mapped)
+                externalId = mappedColor->externalId.trimmed();
+            brickLinkColorIds.insert(source.colorId, externalId);
+        }
+        row.brickLinkColorId = brickLinkColorIds.value(source.colorId);
+
+        if (!rebrickableColorIds.contains(source.colorId)) {
+            const auto color = colors.getById(source.colorId);
+            rebrickableColorIds.insert(source.colorId,
+                                       color ? color->rebrickableId() : -1);
+        }
+        row.rebrickableColorId = rebrickableColorIds.value(source.colorId, -1);
         result.append(row);
     }
     return result;
@@ -227,6 +266,7 @@ QList<MissingPartsExportRow> MissingPartsExportService::createRemoteRows(
         row.manufacturer = source.manufacturerDisplay.isEmpty()
                                ? build.manufacturerDisplay : source.manufacturerDisplay;
         row.legoElementIds = source.legoElementIds;
+        row.pickABrickElementCandidates = source.pickABrickElementCandidates;
         row.rebrickablePartId = source.rebrickablePartId;
         row.rebrickableColorId = source.rebrickableColorId;
         row.brickLinkPartIds = source.brickLinkPartIds;

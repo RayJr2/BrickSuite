@@ -140,6 +140,10 @@ public:
         const RemoteReadDto::PageRequest& page, QObject* context,
         std::function<void(const RemoteReadDto::Page<RemoteReadDto::MissingPart>&)> completion,
         ErrorCallback failure = {});
+    void resolvePickABrickPartPortable(const QString& partNumber,
+        int rebrickableColorId, QObject* context,
+        std::function<void(const RemoteReadDto::PickABrickPartResolution&)> completion,
+        ErrorCallback failure = {});
     void pullingPortable(int workspaceId, int buildId, const RemoteReadDto::PageRequest& page,
         QObject* context,
         std::function<void(const RemoteReadDto::Page<RemoteReadDto::PullingRow>&)> completion,

@@ -56,6 +56,9 @@ public:
     ReadRequestToken missingParts(qint64 workspaceId, qint64 buildId,
         const RemoteReadDto::PageRequest& page, QObject* context,
         AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::MissingPart>> completion);
+    ReadRequestToken resolvePickABrickPart(const QString& partNumber,
+        int rebrickableColorId, QObject* context,
+        AsyncReadCompletion<RemoteReadDto::PickABrickPartResolution> completion);
     ReadRequestToken pulling(qint64 workspaceId, qint64 buildId, const RemoteReadDto::PageRequest& page,
         QObject* context, AsyncReadCompletion<RemoteReadDto::Page<RemoteReadDto::PullingRow>> completion);
     ReadRequestToken searchCollection(const RemoteReadDto::CollectionSearchRequest& request,

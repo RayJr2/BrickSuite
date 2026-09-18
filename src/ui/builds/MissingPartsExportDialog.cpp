@@ -2,41 +2,65 @@
 
 #include "../../services/builds/MissingPartsCsvWriter.h"
 #include "../../services/builds/MissingPartsExportService.h"
+#include "../../services/builds/PickABrickCsvWriter.h"
+#include "../../services/builds/PickABrickExportService.h"
 #include "../../settings/UserSettings.h"
 
 #include <QAbstractItemView>
 #include <QDialogButtonBox>
+#include <QCheckBox>
+#include <QComboBox>
 #include <QFileDialog>
 #include <QHash>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QListWidget>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QTimer>
 #include <QVBoxLayout>
+#include <QWidget>
 
 #include <utility>
 
 MissingPartsExportDialog::MissingPartsExportDialog(
-    QList<MissingPartsExportRow> rows, QString defaultFileName, QWidget* parent)
-    : QDialog(parent), m_rows(std::move(rows)), m_defaultFileName(std::move(defaultFileName))
+    QList<MissingPartsExportRow> rows, QString defaultFileName, QWidget* parent,
+    PartOverrideResolver partOverrideResolver)
+    : QDialog(parent), m_rows(std::move(rows)),
+      m_pickABrickRows(PickABrickExportService::createSourceRows(m_rows)),
+      m_defaultFileName(std::move(defaultFileName)),
+      m_partOverrideResolver(std::move(partOverrideResolver))
 {
     setWindowTitle(QStringLiteral("Missing Parts Export"));
     resize(1050, 650);
 
     auto* root = new QVBoxLayout(this);
-    auto* description = new QLabel(
+    auto* presetRow = new QHBoxLayout;
+    presetRow->addWidget(new QLabel(QStringLiteral("Preset:"), this));
+    m_preset = new QComboBox(this);
+    m_preset->setObjectName(QStringLiteral("missingPartsExportPreset"));
+    m_preset->addItem(QStringLiteral("General CSV"));
+    m_preset->addItem(QStringLiteral("LEGO Pick a Brick"));
+    presetRow->addWidget(m_preset);
+    presetRow->addStretch(1);
+    root->addLayout(presetRow);
+
+    m_description = new QLabel(
         QStringLiteral("General CSV — choose fields and their order. The preview is exactly what will be exported."),
         this);
-    description->setWordWrap(true);
-    root->addWidget(description);
+    m_description->setWordWrap(true);
+    root->addWidget(m_description);
 
     auto* content = new QHBoxLayout;
-    auto* fieldLayout = new QVBoxLayout;
+    m_generalControls = new QWidget(this);
+    m_generalControls->setObjectName(QStringLiteral("missingPartsGeneralControls"));
+    auto* fieldLayout = new QVBoxLayout(m_generalControls);
+    fieldLayout->setContentsMargins(0, 0, 0, 0);
     fieldLayout->addWidget(new QLabel(QStringLiteral("Export fields:"), this));
     m_fields = new QListWidget(this);
     m_fields->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -49,9 +73,10 @@ MissingPartsExportDialog::MissingPartsExportDialog(
     fieldLayout->addLayout(ordering);
     auto* reset = new QPushButton(QStringLiteral("Reset to Defaults"), this);
     fieldLayout->addWidget(reset);
-    content->addLayout(fieldLayout, 0);
+    content->addWidget(m_generalControls, 0);
 
     m_preview = new QTableWidget(this);
+    m_preview->setObjectName(QStringLiteral("missingPartsExportPreview"));
     m_preview->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_preview->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_preview->setSortingEnabled(false);
@@ -83,6 +108,7 @@ MissingPartsExportDialog::MissingPartsExportDialog(
     });
     connect(m_export, &QPushButton::clicked, this, &MissingPartsExportDialog::exportCsv);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    connect(m_preset, &QComboBox::currentIndexChanged, this, [this] { updatePreview(); });
 
     loadConfiguration();
     updatePreview();
@@ -152,6 +178,25 @@ void MissingPartsExportDialog::moveCurrentField(int offset)
 
 void MissingPartsExportDialog::updatePreview()
 {
+    m_generalControls->setVisible(!pickABrickSelected());
+    if (pickABrickSelected()) {
+        m_description->setText(QStringLiteral(
+            "LEGO Pick a Brick — review exact Element candidates, exclude unresolved rows if intended, and export elementId,quantity."));
+        updatePickABrickPreview();
+    } else {
+        m_description->setText(QStringLiteral(
+            "General CSV — choose fields and their order. The preview is exactly what will be exported."));
+        updateGeneralPreview();
+    }
+}
+
+bool MissingPartsExportDialog::pickABrickSelected() const
+{
+    return m_preset && m_preset->currentIndex() == 1;
+}
+
+void MissingPartsExportDialog::updateGeneralPreview()
+{
     const auto projection = MissingPartsExportService::project(m_rows, configuration());
     m_preview->clear();
     m_preview->setColumnCount(projection.headers.size());
@@ -169,8 +214,200 @@ void MissingPartsExportDialog::updatePreview()
     m_export->setEnabled(!projection.fields.isEmpty() && !m_rows.isEmpty());
 }
 
+void MissingPartsExportDialog::updatePickABrickPreview()
+{
+    m_preview->clear();
+    m_preview->setColumnCount(7);
+    m_preview->setHorizontalHeaderLabels({QStringLiteral("Include"),
+        QStringLiteral("Part Number"), QStringLiteral("Part Name"),
+        QStringLiteral("Color"), QStringLiteral("Missing Qty"),
+        QStringLiteral("Element ID"), QStringLiteral("Status")});
+    m_preview->setRowCount(m_pickABrickRows.size());
+
+    for (int rowIndex = 0; rowIndex < m_pickABrickRows.size(); ++rowIndex) {
+        auto& row = m_pickABrickRows[rowIndex];
+        auto* include = new QCheckBox(m_preview);
+        include->setChecked(row.included);
+        include->setToolTip(QStringLiteral(
+            "Excluded rows are deliberately omitted from the Pick a Brick file."));
+        m_preview->setCellWidget(rowIndex, 0, include);
+        auto* partNumber = new QLineEdit(m_preview);
+        partNumber->setObjectName(QStringLiteral("pickABrickPartOverride_%1").arg(rowIndex));
+        partNumber->setText(row.hasPartOverride() ? row.overridePartNumber
+                                                  : row.source.partNumber);
+        partNumber->setToolTip(QStringLiteral("Original Part: %1 — %2\nEnter an exact BrickSuite Part number, or clear this field to reset.")
+                                   .arg(row.source.partNumber, row.source.partName));
+        m_preview->setCellWidget(rowIndex, 1, partNumber);
+        m_preview->setItem(rowIndex, 2, new QTableWidgetItem(
+            row.hasPartOverride() && !row.overridePartName.isEmpty()
+                ? row.overridePartName : row.source.partName));
+        m_preview->setItem(rowIndex, 3, new QTableWidgetItem(row.source.colorName));
+        m_preview->setItem(rowIndex, 4,
+                           new QTableWidgetItem(QString::number(row.source.missing)));
+
+        auto* candidates = new QComboBox(m_preview);
+        candidates->addItems(row.elementCandidates);
+        const int selected = candidates->findText(row.selectedElementId);
+        if (selected >= 0) candidates->setCurrentIndex(selected);
+        candidates->setEnabled(!row.elementCandidates.isEmpty() && row.included);
+        m_preview->setCellWidget(rowIndex, 5, candidates);
+
+        auto* statusItem = new QTableWidgetItem(pickABrickRowStatus(row));
+        m_preview->setItem(rowIndex, 6, statusItem);
+
+        connect(partNumber, &QLineEdit::editingFinished, this,
+                [this, rowIndex, partNumber] {
+            if (!partNumber->isModified()) return;
+            const QString requested = partNumber->text();
+            partNumber->setModified(false);
+            QTimer::singleShot(0, this, [this, rowIndex, requested] {
+                resolvePartOverride(rowIndex, requested);
+            });
+        });
+
+        connect(include, &QCheckBox::toggled, this,
+                [this, rowIndex, candidates, statusItem](bool checked) {
+            m_pickABrickRows[rowIndex].included = checked;
+            candidates->setEnabled(checked
+                && !m_pickABrickRows[rowIndex].elementCandidates.isEmpty());
+            statusItem->setText(pickABrickRowStatus(m_pickABrickRows[rowIndex]));
+            updatePickABrickSummary();
+        });
+        connect(candidates, &QComboBox::currentTextChanged, this,
+                [this, rowIndex, statusItem](const QString& elementId) {
+                    m_pickABrickRows[rowIndex].selectedElementId = elementId;
+                    statusItem->setText(pickABrickRowStatus(m_pickABrickRows[rowIndex]));
+                    updatePickABrickSummary();
+                });
+    }
+    m_preview->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    m_preview->horizontalHeader()->setStretchLastSection(true);
+    updatePickABrickSummary();
+}
+
+void MissingPartsExportDialog::updatePickABrickSummary()
+{
+    const auto projection = PickABrickExportService::project(m_pickABrickRows);
+    m_status->setText(QStringLiteral(
+        "%1 source row(s) included; %2 unresolved; %3 excluded (%4 piece(s)); %5 final Element row(s); %6 included piece(s).")
+        .arg(projection.includedSourceRows)
+        .arg(projection.unresolvedIncludedRows)
+        .arg(projection.excludedSourceRows)
+        .arg(projection.excludedPieces)
+        .arg(projection.rows.size())
+        .arg(projection.includedPieces));
+    m_export->setEnabled(projection.ready());
+}
+
+QString MissingPartsExportDialog::pickABrickRowStatus(
+    const PickABrickExportSourceRow& row) const
+{
+    if (!row.included) return QStringLiteral("Excluded");
+    using State = PickABrickExportSourceRow::OverrideState;
+    if (row.overrideState == State::Resolving) return QStringLiteral("Resolving Part override...");
+    if (row.overrideState == State::PartNotFound) return QStringLiteral("Unresolved — Part not found");
+    if (row.overrideState == State::NoElement) return QStringLiteral("Unresolved — no exact Element ID");
+    if (row.overrideState == State::Unavailable) return QStringLiteral("Unresolved — Host override unavailable");
+    if (row.overrideState == State::Failed) return QStringLiteral("Unresolved — Part override failed");
+    if (row.elementCandidates.isEmpty()) return QStringLiteral("Unresolved — no exact Element ID");
+    if (!PickABrickExportService::isValidElementId(row.selectedElementId))
+        return QStringLiteral("Unresolved — no valid decimal Element ID");
+    if (row.hasPartOverride()) {
+        return row.elementCandidates.size() == 1
+            ? QStringLiteral("Ready — Part override")
+            : QStringLiteral("Multiple IDs — Part override selected");
+    }
+    return row.elementCandidates.size() == 1
+        ? QStringLiteral("Ready")
+        : QStringLiteral("Multiple IDs — suggested selection");
+}
+
+void MissingPartsExportDialog::resolvePartOverride(int rowIndex,
+                                                    const QString& partNumber)
+{
+    if (rowIndex < 0 || rowIndex >= m_pickABrickRows.size()) return;
+    auto& row = m_pickABrickRows[rowIndex];
+    const QString requested = partNumber.trimmed();
+    if (requested.isEmpty() || requested == row.source.partNumber) {
+        ++row.resolutionGeneration;
+        row.overridePartNumber.clear();
+        row.overridePartName.clear();
+        row.overrideState = PickABrickExportSourceRow::OverrideState::None;
+        row.elementCandidates = PickABrickExportService::numericCandidateOrder(
+            row.source.pickABrickElementCandidates);
+        row.selectedElementId = PickABrickExportService::suggestedElementId(
+            row.elementCandidates);
+        updatePickABrickPreview();
+        return;
+    }
+
+    row.overridePartNumber = requested;
+    row.overridePartName.clear();
+    row.elementCandidates.clear();
+    row.selectedElementId.clear();
+    const quint64 generation = ++row.resolutionGeneration;
+    if (!m_partOverrideResolver) {
+        row.overrideState = PickABrickExportSourceRow::OverrideState::Unavailable;
+        updatePickABrickPreview();
+        return;
+    }
+
+    row.overrideState = PickABrickExportSourceRow::OverrideState::Resolving;
+    updatePickABrickPreview();
+    m_partOverrideResolver(requested, row.source.rebrickableColorId, this,
+        [this, rowIndex, generation](const PickABrickPartResolution& resolution) {
+            if (rowIndex < 0 || rowIndex >= m_pickABrickRows.size()) return;
+            auto& current = m_pickABrickRows[rowIndex];
+            if (current.resolutionGeneration != generation) return;
+            if (!resolution.serviceAvailable) {
+                current.overrideState = PickABrickExportSourceRow::OverrideState::Failed;
+            } else if (!resolution.partFound) {
+                current.overrideState = PickABrickExportSourceRow::OverrideState::PartNotFound;
+            } else {
+                current.overridePartNumber = resolution.partNumber;
+                current.overridePartName = resolution.partName;
+                current.elementCandidates = PickABrickExportService::numericCandidateOrder(
+                    resolution.elementCandidates);
+                current.selectedElementId = PickABrickExportService::suggestedElementId(
+                    current.elementCandidates);
+                current.overrideState = current.elementCandidates.isEmpty()
+                    ? PickABrickExportSourceRow::OverrideState::NoElement
+                    : PickABrickExportSourceRow::OverrideState::Ready;
+            }
+            updatePickABrickPreview();
+        });
+}
+
 void MissingPartsExportDialog::exportCsv()
 {
+    if (pickABrickSelected()) {
+        const auto projection = PickABrickExportService::project(m_pickABrickRows);
+        if (!projection.ready()) {
+            QMessageBox::warning(this, QStringLiteral("Export Missing Parts"),
+                projection.error.isEmpty()
+                    ? QStringLiteral("Resolve or exclude every included row before exporting.")
+                    : projection.error);
+            return;
+        }
+        QString targetName = m_defaultFileName;
+        if (targetName.endsWith(QStringLiteral(".csv"), Qt::CaseInsensitive))
+            targetName.chop(4);
+        targetName += QStringLiteral("_PickABrick.csv");
+        const QString fileName = QFileDialog::getSaveFileName(
+            this, QStringLiteral("Export LEGO Pick a Brick CSV"), targetName,
+            QStringLiteral("CSV Files (*.csv)"));
+        if (fileName.isEmpty()) return;
+        const auto result = PickABrickCsvWriter::write(fileName, projection);
+        if (!result.success) {
+            QMessageBox::critical(this, QStringLiteral("Export Missing Parts"), result.message);
+            return;
+        }
+        QMessageBox::information(this, QStringLiteral("Export Missing Parts"),
+            QStringLiteral("LEGO Pick a Brick CSV exported successfully.\n\nElement Rows: %1\nPieces: %2\nFile:\n%3")
+                .arg(projection.rows.size()).arg(projection.includedPieces).arg(fileName));
+        accept();
+        return;
+    }
     const auto projection = MissingPartsExportService::project(m_rows, configuration());
     const QString fileName = QFileDialog::getSaveFileName(
         this, QStringLiteral("Export Missing Parts CSV"), m_defaultFileName,

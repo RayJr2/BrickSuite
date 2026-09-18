@@ -421,6 +421,7 @@ qt_add_executable(BrickSuite
     src/repositories/BuildRepository.h
     src/repositories/BuildRepository.cpp
     src/ui/builds/BuildsWidget.cpp src/ui/builds/BuildsWidget.h
+    src/ui/builds/MissingPartsExportPreparationState.h
     src/ui/builds/MissingPartsExportDialog.cpp src/ui/builds/MissingPartsExportDialog.h
     src/ui/builds/WhatCanIBuildWidget.cpp src/ui/builds/WhatCanIBuildWidget.h
     src/models/PartUsageDiscovery.h
@@ -503,6 +504,9 @@ qt_add_executable(BrickSuite
     src/models/export/MissingPartsExportTypes.h
     src/services/builds/MissingPartsExportService.cpp src/services/builds/MissingPartsExportService.h
     src/services/builds/MissingPartsCsvWriter.cpp src/services/builds/MissingPartsCsvWriter.h
+    src/services/builds/PickABrickExportService.cpp src/services/builds/PickABrickExportService.h
+    src/services/builds/PickABrickCsvWriter.cpp src/services/builds/PickABrickCsvWriter.h
+    src/services/builds/PickABrickPartResolutionService.cpp src/services/builds/PickABrickPartResolutionService.h
     src/models/procurement/ProcurementDraft.h
     src/models/procurement/BrickLinkWantedListOptions.h
     src/services/procurement/ProcurementDraftService.h
@@ -1580,10 +1584,24 @@ if(BUILD_TESTING)
         src/services/parts/ElementIdentityService.h src/services/parts/ElementIdentityService.cpp
         src/services/builds/MissingPartsExportService.h src/services/builds/MissingPartsExportService.cpp
         src/services/builds/MissingPartsCsvWriter.h src/services/builds/MissingPartsCsvWriter.cpp
+        src/services/builds/PickABrickExportService.h src/services/builds/PickABrickExportService.cpp
+        src/services/builds/PickABrickCsvWriter.h src/services/builds/PickABrickCsvWriter.cpp
+        src/services/builds/PickABrickPartResolutionService.h src/services/builds/PickABrickPartResolutionService.cpp
+        src/ui/builds/MissingPartsExportDialog.h src/ui/builds/MissingPartsExportDialog.cpp
+        src/ui/builds/MissingPartsExportPreparationState.h
+        src/settings/UserSettings.h src/settings/UserSettings.cpp
+        src/services/CredentialStore.h src/services/CredentialStore.cpp
+        src/services/database/AutomaticBackupPolicy.h
+        src/services/database/AutomaticBackupPolicy.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp
         src/database/DatabaseSchema.h src/database/DatabaseSchema.cpp
     )
-    target_link_libraries(MissingPartsExportTest PRIVATE Qt6::Core Qt6::Sql)
+    target_link_libraries(MissingPartsExportTest PRIVATE Qt6::Core Qt6::Sql Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(MissingPartsExportTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(MissingPartsExportTest PRIVATE "-framework Security")
+    endif()
     add_test(NAME MissingPartsExport COMMAND MissingPartsExportTest)
 
     qt_add_executable(SecureHostFoundationTest EXCLUDE_FROM_ALL
@@ -1687,6 +1705,8 @@ if(BUILD_TESTING)
         src/services/builds/MissingPartsService.h src/services/builds/MissingPartsService.cpp
         src/models/export/MissingPartsExportTypes.h
         src/services/builds/MissingPartsExportService.h src/services/builds/MissingPartsExportService.cpp
+        src/services/builds/PickABrickPartResolutionService.h src/services/builds/PickABrickPartResolutionService.cpp
+        src/services/builds/PickABrickExportService.h src/services/builds/PickABrickExportService.cpp
         src/repositories/ExternalPartIdentifierRepository.h src/repositories/ExternalPartIdentifierRepository.cpp
         src/repositories/ExternalPartMappingRepository.h src/repositories/ExternalPartMappingRepository.cpp
         src/repositories/ExternalColorMappingRepository.h src/repositories/ExternalColorMappingRepository.cpp

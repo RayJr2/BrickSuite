@@ -78,7 +78,13 @@ bool requestClient(BrickSuiteWebSocketClient& client, const QString& operation,
                 if (resultId != id) return; *response = result; success = true; loop.quit();
             });
         QObject::connect(&client, &BrickSuiteWebSocketClient::requestFailed, &loop,
-            [&](const QString& resultId, const auto&) { if (resultId == id) loop.quit(); });
+            [&](const QString& resultId, const auto& error) {
+                if (resultId != id) return;
+                std::fprintf(stderr, "Request %s failed: %s — %s\n",
+                             qPrintable(operation), qPrintable(error.code),
+                             qPrintable(error.message));
+                loop.quit();
+            });
     }) && success;
 }
 
@@ -332,6 +338,8 @@ int main(int argc, char** argv)
                         && missing.rows.first().legoElementIds
                             == QStringList({QStringLiteral("host-element-1"),
                                             QStringLiteral("host-element-2")})
+                        && missing.rows.first().pickABrickElementCandidates
+                            == missing.rows.first().legoElementIds
                         && missing.rows.first().rebrickablePartId == QStringLiteral("3001")
                         && missing.rows.first().brickLinkPartIds
                             == QStringList({QStringLiteral("BL-3001-A"),
@@ -345,6 +353,25 @@ int main(int argc, char** argv)
         }), "cross-Workspace Missing Parts completion");
         ok &= check(!wrongMissing.resourceFound && wrongMissing.rows.isEmpty(),
                     "Missing Parts cannot probe another Workspace");
+        RemoteReadDto::PickABrickPartResolution exactResolution;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.resolvePickABrickPartPortable(QStringLiteral("3001"), 4, &app,
+                [&](const auto& result) { exactResolution = result; loop.quit(); });
+        }), "Pick a Brick exact Part resolution completion");
+        ok &= check(exactResolution.partFound
+                        && exactResolution.partNumber == QStringLiteral("3001")
+                        && exactResolution.elementCandidates
+                            == QStringList({QStringLiteral("host-element-1"),
+                                            QStringLiteral("host-element-2")}),
+                    "Pick a Brick resolution did not use Host Part/Color Elements");
+        RemoteReadDto::PickABrickPartResolution guessedResolution;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            executor.resolvePickABrickPartPortable(QStringLiteral("3001b"), 4, &app,
+                [&](const auto& result) { guessedResolution = result; loop.quit(); });
+        }), "Pick a Brick unknown exact Part resolution completion");
+        ok &= check(!guessedResolution.partFound
+                        && guessedResolution.elementCandidates.isEmpty(),
+                    "Pick a Brick resolution guessed a base Part identity");
         RemoteReadDto::Page<RemoteReadDto::PullingRow> pulling;
         ok &= check(waitFor([&](QEventLoop& loop) {
             executor.pullingPortable(1, buildId, {1, 250}, &app,
@@ -478,6 +505,7 @@ int main(int argc, char** argv)
             QStringLiteral("inventory.history"), QStringLiteral("inventory.lost.list"), QStringLiteral("manufacturers.list"), QStringLiteral("builds.list"),
             QStringLiteral("builds.get"), QStringLiteral("builds.requirements"),
             QStringLiteral("builds.missingParts"), QStringLiteral("builds.pulling"),
+            QStringLiteral("parts.pickABrick.resolve"),
             QStringLiteral("collection.search"), QStringLiteral("collection.get"),
             QStringLiteral("partReference.customizations")};
         for (const QString& operation : expected)

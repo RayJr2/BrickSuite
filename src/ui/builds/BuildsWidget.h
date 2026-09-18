@@ -23,6 +23,7 @@
 #include "../../services/application/dto/RemoteReadDtos.h"
 #include "../../services/application/dto/RemoteBuildMutationDtos.h"
 #include "../common/SingleInstanceWindowRegistry.h"
+#include "MissingPartsExportPreparationState.h"
 #include <QWidget>
 #include <optional>
 
@@ -141,6 +142,9 @@ private:
     void interactivePulling();
     void importMocPartsCsv();
     void exportMissingParts();
+    bool beginMissingPartsExport();
+    void markMissingPartsExportReady();
+    void finishMissingPartsExport(const QString& statusMessage);
     void procureMissingParts();
     void storeSpare(int requirementId);
 
@@ -167,6 +171,7 @@ private:
     int m_remoteBuildPage = 1;
     int m_remoteBuildTotalRows = 0;
     bool m_restoreNewBuildExpanded = false;
+    MissingPartsExportPreparationState m_missingPartsExportPreparation;
 
     QComboBox* m_typeCombo = nullptr;
     QLineEdit* m_setNumberEdit = nullptr;

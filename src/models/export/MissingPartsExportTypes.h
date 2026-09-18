@@ -4,6 +4,7 @@
 #include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QtGlobal>
 
 enum class MissingPartsExportField
 {
@@ -51,6 +52,7 @@ struct MissingPartsExportRow
     int missing = 0;
     QString manufacturer;
     QStringList legoElementIds;
+    QStringList pickABrickElementCandidates;
     QString rebrickablePartId;
     int rebrickableColorId = -1;
     QStringList brickLinkPartIds;
@@ -72,4 +74,50 @@ struct MissingPartsExportProjection
     QList<MissingPartsExportFieldDescriptor> fields;
     QStringList headers;
     QList<QStringList> rows;
+};
+
+struct PickABrickExportSourceRow
+{
+    MissingPartsExportRow source;
+    bool included = true;
+    QStringList elementCandidates;
+    QString selectedElementId;
+    QString overridePartNumber;
+    QString overridePartName;
+    enum class OverrideState { None, Resolving, Ready, PartNotFound, NoElement, Unavailable, Failed };
+    OverrideState overrideState = OverrideState::None;
+    quint64 resolutionGeneration = 0;
+
+    bool hasPartOverride() const { return !overridePartNumber.isEmpty(); }
+};
+
+struct PickABrickPartResolution
+{
+    bool serviceAvailable = true;
+    bool partFound = false;
+    QString partNumber;
+    QString partName;
+    QStringList elementCandidates;
+};
+
+struct PickABrickExportRow
+{
+    QString elementId;
+    qint64 quantity = 0;
+};
+
+struct PickABrickExportProjection
+{
+    QList<PickABrickExportRow> rows;
+    int includedSourceRows = 0;
+    int unresolvedIncludedRows = 0;
+    int excludedSourceRows = 0;
+    qint64 includedPieces = 0;
+    qint64 excludedPieces = 0;
+    QString error;
+
+    bool ready() const
+    {
+        return error.isEmpty() && includedSourceRows > 0 && unresolvedIncludedRows == 0;
+    }
 };

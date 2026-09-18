@@ -96,8 +96,15 @@ struct MissingPart {
     int otherBuildsAllocated = 0; int available = 0; int missing = 0;
     // Optional Protocol 1.5 export metadata. Older peers omit these fields.
     QString categoryName; QString manufacturerDisplay;
-    QStringList legoElementIds; QString rebrickablePartId;
+    QStringList legoElementIds; QStringList pickABrickElementCandidates;
+    QString rebrickablePartId;
     QStringList brickLinkPartIds; QString brickLinkColorId;
+};
+struct PickABrickPartResolution {
+    bool partFound = false;
+    QString partNumber;
+    QString partName;
+    QStringList elementCandidates;
 };
 struct PullingRow {
     qint64 requirementId = 0; qint64 allocationId = 0; qint64 inventoryRecordId = 0;

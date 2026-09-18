@@ -29,6 +29,8 @@ QJsonObject toJson(const RemoteReadDto::BuildRequirement&);
 bool fromJson(const QJsonObject&, RemoteReadDto::BuildRequirement*, DecodeError* = nullptr);
 QJsonObject toJson(const RemoteReadDto::MissingPart&);
 bool fromJson(const QJsonObject&, RemoteReadDto::MissingPart*, DecodeError* = nullptr);
+QJsonObject toJson(const RemoteReadDto::PickABrickPartResolution&);
+bool fromJson(const QJsonObject&, RemoteReadDto::PickABrickPartResolution*, DecodeError* = nullptr);
 QJsonObject toJson(const RemoteReadDto::PullingRow&);
 bool fromJson(const QJsonObject&, RemoteReadDto::PullingRow*, DecodeError* = nullptr);
 QJsonObject toJson(const RemoteReadDto::BuildCancellationReturnRow&);

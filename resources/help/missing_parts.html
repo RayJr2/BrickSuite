@@ -89,6 +89,29 @@ catalog and mapping data; opening the preview does not contact a provider. When 
 multiple authoritative LEGO Element IDs or a Part has multiple BrickLink IDs, the General CSV
 keeps every value in one field separated by semicolons.</p>
 
+<h3>LEGO Pick a Brick preset</h3>
+
+<p>Select <b>LEGO Pick a Brick</b> to produce the fixed two-column
+<code>elementId,quantity</code> format. This preset uses each row's authoritative missing
+quantity and exact Part/Color Element candidates from BrickSuite's current catalog snapshot. It
+does not contact LEGO or Rebrickable and does not imply that an Element is currently available
+for purchase.</p>
+
+<p>A row with one Element ID is selected automatically. When several IDs exist, the preview
+shows every candidate in a combo box and suggests the highest numeric ID as a convenience. This
+is not an authoritative Rebrickable or LEGO primary-ID rule; review the choice and select a
+different candidate when appropriate. Choices last only for the current export preview and do
+not change BrickSuite's stored Element mappings.</p>
+
+<p>Rows with no exact Element ID remain visibly unresolved and block export while included.
+You may enter another exact BrickSuite Part number in that row. BrickSuite checks that Part with
+the original required Color and updates the Element candidates; it does not guess a base Part or
+change the Build. Clear the edited Part number to restore the original identity. This override
+lasts only for the current preview. Clear <b>Include</b> to deliberately exclude a row; the summary
+reports excluded rows and pieces. After all included rows have valid selections, BrickSuite aggregates equal selected
+Element IDs, sums their missing quantities, and writes the final file without a BOM using CRLF
+line endings.</p>
+
 <img class="dialog" src="images/missing_parts_export.png"
      alt="Save Missing Parts CSV dialog">
 
