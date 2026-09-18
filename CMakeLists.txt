@@ -18,6 +18,8 @@ find_package(Qt6 REQUIRED COMPONENTS
     Network
     WebSockets
     Concurrent
+    OpenGL
+    OpenGLWidgets
 )
 
 if(MINGW)
@@ -416,12 +418,18 @@ qt_add_executable(BrickSuite
     src/services/parts/BrickLinkCandidateDiscoveryService.h
     src/services/parts/BrickLinkCandidateDiscoveryService.cpp
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
-    src/ui/parts/LDrawModelInfoDialog.cpp src/ui/parts/LDrawModelInfoDialog.h
+    src/ui/parts/LDrawModelViewerManager.cpp src/ui/parts/LDrawModelViewerManager.h
+    src/ui/parts/LDrawModelViewerWindow.cpp src/ui/parts/LDrawModelViewerWindow.h
+    src/ui/parts/LDrawViewportWidget.cpp src/ui/parts/LDrawViewportWidget.h
     src/services/geometry/PartMesh.h
     src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
     src/services/geometry/LDrawIdentityService.cpp src/services/geometry/LDrawIdentityService.h
     src/services/geometry/LDrawIdentitySelection.h
     src/services/geometry/LDrawObjWriter.cpp src/services/geometry/LDrawObjWriter.h
+    src/services/geometry/ConditionalEdgeVisibility.cpp src/services/geometry/ConditionalEdgeVisibility.h
+    src/services/geometry/LDrawColorResolver.cpp src/services/geometry/LDrawColorResolver.h
+    src/services/geometry/PartViewerCamera.cpp src/services/geometry/PartViewerCamera.h
+    src/services/geometry/PartViewerState.h
     src/ui/parts/PartReferenceDialog.h
     src/ui/parts/PartReferenceDialog.cpp
     src/ui/parts/AddPartReferenceDialog.h
@@ -612,6 +620,8 @@ target_link_libraries(BrickSuite PRIVATE
     Qt6::Network
     Qt6::WebSockets
     Qt6::Concurrent
+    Qt6::OpenGL
+    Qt6::OpenGLWidgets
     ZLIB::ZLIB
     OpenSSL::Crypto
 )
@@ -635,6 +645,16 @@ if(BUILD_TESTING)
         src/services/geometry/LDrawIdentitySelection.h)
     target_link_libraries(LDrawIdentityResolutionTest PRIVATE Qt6::Core)
     add_test(NAME LDrawIdentityResolutionTest COMMAND LDrawIdentityResolutionTest)
+
+    qt_add_executable(PartViewerMathTest EXCLUDE_FROM_ALL
+        tests/PartViewerMathTest.cpp
+        src/services/geometry/PartMesh.h
+        src/services/geometry/ConditionalEdgeVisibility.cpp src/services/geometry/ConditionalEdgeVisibility.h
+        src/services/geometry/LDrawColorResolver.cpp src/services/geometry/LDrawColorResolver.h
+        src/services/geometry/PartViewerCamera.cpp src/services/geometry/PartViewerCamera.h
+        src/services/geometry/PartViewerState.h)
+    target_link_libraries(PartViewerMathTest PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME PartViewerMath COMMAND PartViewerMathTest)
 
     qt_add_executable(BuildActionEligibilityTest EXCLUDE_FROM_ALL
         tests/BuildActionEligibilityTest.cpp

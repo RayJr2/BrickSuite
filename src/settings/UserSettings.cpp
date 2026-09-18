@@ -75,6 +75,8 @@ constexpr auto kMainWindowStateKey = "State";
 
 constexpr auto kGroupLogViewer = "LogViewer";
 constexpr auto kLogViewerGeometryKey = "Geometry";
+constexpr auto kGroupLDrawModelViewer = "LDrawModelViewer";
+constexpr auto kLDrawModelViewerGeometryKey = "Geometry";
 
 constexpr auto kGroupHelpViewer = "HelpViewer";
 constexpr auto kHelpViewerGeometryKey = "Geometry";
@@ -859,6 +861,19 @@ void UserSettings::setLogViewerGeometry(const QByteArray& geometry)
     settings.setValue(kLogViewerGeometryKey, geometry);
 
     settings.endGroup();
+}
+
+QByteArray UserSettings::ldrawModelViewerGeometry() const
+{
+    QSettings settings;settings.beginGroup(kGroupLDrawModelViewer);
+    const QByteArray geometry=settings.value(kLDrawModelViewerGeometryKey).toByteArray();
+    settings.endGroup();return geometry;
+}
+
+void UserSettings::setLDrawModelViewerGeometry(const QByteArray& geometry)
+{
+    QSettings settings;settings.beginGroup(kGroupLDrawModelViewer);
+    settings.setValue(kLDrawModelViewerGeometryKey,geometry);settings.endGroup();
 }
 
 

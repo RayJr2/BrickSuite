@@ -6,9 +6,17 @@
 <p>If a saved removable or network path is unavailable, BrickSuite preserves the setting and reports that the library is unavailable.</p>
 <h2>Open a model</h2>
 <p>Open Part Details and select <b>3D Model...</b>. BrickSuite uses only exact stored LDraw external identities. It does not guess from the Rebrickable Part number. If more than one identity is stored, choose the intended model explicitly.</p>
-<p>The information dialog reports the source, dimensions, triangle and edge counts, BFC information, and malformed or missing dependencies. Geometry loading runs in the background. <b>Reload</b> rereads the installed files.</p>
+<p><b>3D Model...</b> opens one persistent, non-modal viewer. You may close Part Details and continue using the viewer. Opening another Part reuses the same viewer window and replaces its current model.</p>
+<h2>Inspect the model</h2>
+<ul><li><b>Left drag</b> orbits around the Part.</li><li><b>Middle drag</b> or <b>Shift + Left drag</b> pans.</li><li><b>Mouse wheel</b> zooms.</li></ul>
+<p>Use <b>Fit</b> to frame the complete Part. Isometric, Front, Back, Left, Right, Top, and Bottom provide standard views. Perspective is the default; Orthographic is useful for engineering inspection.</p>
+<p>Render modes are <b>Solid</b>, <b>Solid + Edges</b>, and <b>Wireframe</b>. Solid + Edges shows LDraw hard edges and camera-dependent conditional edges. Wireframe also exposes triangle boundaries, including triangulation diagonals.</p>
+<p>When a Part has multiple exact LDraw identities, select the candidate in the viewer. Candidate changes reset Scale and refit the new model. <b>Reload Model</b> rereads the selected source and dependencies while preserving the current camera, projection, render mode, and Scale.</p>
+<p>The compact information area reports source, dimensions, triangle and edge counts, BFC information, and malformed or missing dependencies.</p>
+<h2>Uniform Scale</h2>
+<p><b>Scale</b> changes every dimension uniformly without modifying the installed LDraw source or BrickSuite's authoritative mesh. For example, 200% doubles every dimension. Values such as 99.5% or 100.5% affect every feature and may be used for dimensional experiments, but uniform scaling is not specialized LEGO fit or tolerance correction and does not guarantee compatibility. <b>Reset</b> returns to exactly 100%.</p>
 <h2>Engineering OBJ export</h2>
-<p><b>Export OBJ...</b> writes deterministic geometry in millimetres. The conversion is 1 LDraw unit = 0.4 mm. OBJ export is an engineering interchange feature; printability validation and repair are not performed.</p>
+<p><b>Export OBJ...</b> writes deterministic geometry in millimetres at the Scale currently shown in the viewer. At 100%, the conversion is 1 LDraw unit = 0.4 mm. The export header records the selected Scale and resulting dimensions.</p>
 <h2>Safety and limitations</h2>
-<p>BrickSuite rejects absolute, traversal, escaping symbolic-link, cyclic, ambiguous-case, malformed, and excessive references. M37.1 provides geometry inspection and OBJ export only; it does not provide an interactive 3D viewer, STL export, slicing, or remote Host geometry transport.</p>
+<p>BrickSuite rejects absolute, traversal, escaping symbolic-link, cyclic, ambiguous-case, malformed, and excessive references. Mesh repair / printability validation has not been performed. Review exported geometry in your slicer before printing. The viewer does not provide STL export, slicing, CAD editing, whole-model viewing, or remote Host geometry transport.</p>
 </body></html>

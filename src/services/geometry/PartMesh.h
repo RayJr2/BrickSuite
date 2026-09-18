@@ -36,6 +36,7 @@ struct Triangle {
     QVector3D c;
     QVector3D normal;
     QString color;
+    bool backFaceCull = false;
 };
 
 struct Edge {

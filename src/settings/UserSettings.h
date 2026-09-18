@@ -83,6 +83,9 @@ public:
     QByteArray logViewerGeometry() const;
     void setLogViewerGeometry(const QByteArray& geometry);
 
+    QByteArray ldrawModelViewerGeometry() const;
+    void setLDrawModelViewerGeometry(const QByteArray& geometry);
+
     QByteArray helpViewerGeometry() const;
     void setHelpViewerGeometry(const QByteArray& geometry);
 

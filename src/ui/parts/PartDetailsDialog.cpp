@@ -19,7 +19,7 @@
  */
 
 #include "PartDetailsDialog.h"
-#include "LDrawModelInfoDialog.h"
+#include "LDrawModelViewerManager.h"
 
 #include "../../models/Part.h"
 #include "../../models/PartCategory.h"
@@ -42,7 +42,6 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QMessageBox>
-#include <QInputDialog>
 #include <QPixmap>
 #include <QPushButton>
 #include <QTableWidget>
@@ -378,15 +377,13 @@ PartDetailsDialog::PartDetailsDialog(
                 tr("No authoritative LDraw identity is stored for this Part."));
             return;
         }
-        QString selected = ids.first();
-        if (ids.size() > 1) {
-            bool accepted = false;
-            selected = QInputDialog::getItem(this, tr("Select LDraw Model"),
-                tr("This Part has multiple authoritative LDraw identities:"), ids, 0, false, &accepted);
-            if (!accepted || selected.isEmpty()) return;
-        }
-        LDrawModelInfoDialog dialog(selected, this);
-        dialog.exec();
+        LDrawModelViewerRequest request;
+        request.partId = m_partId;
+        request.partNumber = m_partNumber;
+        request.partName = m_nameLabel ? m_nameLabel->text() : QString();
+        request.candidates = ids;
+        close();
+        LDrawModelViewerManager::showPart(request);
     });
 
     connect(

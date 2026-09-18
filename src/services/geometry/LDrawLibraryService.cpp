@@ -173,7 +173,7 @@ struct Loader {
         QBuffer file(&source); file.open(QIODevice::ReadOnly|QIODevice::Text);
         active.insert(key);
         if(!countedSources.contains(key)){countedSources.insert(key);++result.mesh.sourceFiles;}
-        bool clockwise=false, certified=false, invertNext=false;
+        bool clockwise=false, certified=false, clip=true, invertNext=false;
         int lineNo=0;
         while (!file.atEnd() && result.ok()) {
             QByteArray raw=file.readLine(); ++lineNo;
@@ -186,6 +186,8 @@ struct Loader {
                 if (upper.contains(" BFC ") || upper.startsWith("0 BFC ")) {
                     if (upper.contains("NOCERTIFY")) certified=false;
                     if (upper.contains("CERTIFY" )&&!upper.contains("NOCERTIFY")) certified=true;
+                    if (upper.contains("NOCLIP")) clip=false;
+                    if (upper.contains(" CLIP")&&!upper.contains("NOCLIP")) clip=true;
                     if (upper.contains(" CCW")) clockwise=false;
                     if (upper.contains(" CW")&&!upper.contains("CCW")) clockwise=true;
                     if (upper.contains("INVERTNEXT")) invertNext=true;
@@ -214,7 +216,7 @@ struct Loader {
             if(clockwise ^ inverted) std::reverse(points.begin()+1,points.end());
             auto addTriangle=[&](const QVector3D&a,const QVector3D&b,const QVector3D&c){
                 QVector3D normal=QVector3D::crossProduct(b-a,c-a); if(normal.lengthSquared()<1e-12f) { ++result.mesh.degenerateFaces; return; }
-                normal.normalize(); result.mesh.triangles.push_back({a,b,c,normal,color}); bounds(a); bounds(b); bounds(c);
+                normal.normalize(); result.mesh.triangles.push_back({a,b,c,normal,color,certified&&clip}); bounds(a); bounds(b); bounds(c);
                 if(result.mesh.triangles.size()>MaxTriangles) fail(ErrorCode::ResourceLimitExceeded,"Triangle count exceeded the safety limit.",relative,lineNo);
             };
             addTriangle(points[0],points[1],points[2]); if(type==4 && result.ok()) addTriangle(points[0],points[2],points[3]);
