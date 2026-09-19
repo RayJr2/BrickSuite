@@ -72,6 +72,7 @@
 #include "parts/PartResolverTestDialog.h"
 #include "parts/PartReferenceDialog.h"
 #include "parts/AddPartReferenceDialog.h"
+#include "parts/LDrawModelViewerManager.h"
 #include "settings/SettingsDialog.h"
 #include "storage/StorageWidget.h"
 #include "reference/ReferenceDataDialog.h"
@@ -2348,6 +2349,8 @@ void MainWindow::ensureBrickLinkColorMappings()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    LDrawModelViewerManager::shutdown();
+
     UserSettings::instance().setMainWindowGeometry(saveGeometry());
 
     UserSettings::instance().setMainWindowState(saveState());
