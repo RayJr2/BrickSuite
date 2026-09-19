@@ -2,6 +2,7 @@
 
 #include "PrintMesh.h"
 #include "SemanticOperand.h"
+#include "LDrawCertifiedInterfaceStitcher.h"
 #include "../LDrawLoadResult.h"
 
 #include <QStringList>
@@ -34,6 +35,7 @@ public:
         qsizetype approximateProvenanceBytes = 0;
         qint64 sourceConversionAnalysisMs = 0;
         qint64 semanticGenerationMs = 0;
+        CertifiedInterfaceStitchDiagnostics stitchDiagnostics;
         bool ok() const { return status == Status::Ready; }
     };
 

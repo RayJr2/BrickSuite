@@ -76,7 +76,7 @@ int main(int argc,char**argv)
     QDir().mkpath(output);
     auto cache=std::make_shared<PrintPreparationCache>();
     LDrawPrintPreparationService service(cache);
-    for(const QString&id:{QStringLiteral("3001"),QStringLiteral("3622"),QStringLiteral("3700")}){
+    for(const QString&id:{QStringLiteral("3001"),QStringLiteral("3622"),QStringLiteral("3700"),QStringLiteral("11477"),QStringLiteral("32064a")}){
         auto loaded=LDrawLibraryService::loadPart(args[libraryAt+1],id);
         ok&=check(loaded.ok(),id+" load");
         if(!loaded.ok())continue;
@@ -88,6 +88,10 @@ int main(int argc,char**argv)
             <<" sourceTriangles="<<semantic.sourceAnalysis.triangles
             <<" sourceComponents="<<semantic.sourceAnalysis.connectedComponents
             <<" sourceBoundaries="<<semantic.sourceAnalysis.boundaryEdges
+            <<" stitchCandidates="<<semantic.stitchDiagnostics.candidateRelationships
+            <<" stitchSplits="<<semantic.stitchDiagnostics.acceptedSplits
+            <<" stitchTriangles="<<semantic.stitchDiagnostics.trianglesBefore<<"->"<<semantic.stitchDiagnostics.trianglesAfter
+            <<" stitchBoundaries="<<semantic.stitchDiagnostics.boundariesBefore<<"->"<<semantic.stitchDiagnostics.boundariesAfter
             <<" diagnostic="<<semantic.diagnostics.join(' ')<<Qt::endl;
         PrintPreparationRequest request;
         request.partReference=id;
@@ -95,8 +99,14 @@ int main(int argc,char**argv)
         request.libraryAuthority=args[libraryAt+1];
         request.loadResult=loaded;
         auto result=service.prepare(request);
+        if(id=="32064a"){ok&=check(!result.ready(),id+" remains safely unsupported after generic stitching");continue;}
         ok&=check(result.ready()&&!result.cacheHit,id+" production preparation");
         if(!result.ready())continue;
+        if(id=="11477"){
+            ok&=check(semantic.stitchDiagnostics.trianglesBefore==152&&semantic.stitchDiagnostics.trianglesAfter==156,"11477 certified stitching triangle metrics");
+            ok&=check(semantic.stitchDiagnostics.boundariesBefore==8&&semantic.stitchDiagnostics.boundariesAfter==0&&semantic.stitchDiagnostics.acceptedSplits==4,"11477 certified stitching closes topology-only seams");
+            ok&=check(result.semanticOperandCount==1&&result.operations.isEmpty(),"11477 is one closed semantic body without Boolean reconstruction");
+        }
         QString error;
         ok&=check(PreparedObjProofWriter::write(result.preparedMesh->mesh,QDir(output).filePath(id+"-ldraw-aware-proof.obj"),&error),error);
         QElapsedTimer hitTimer;
