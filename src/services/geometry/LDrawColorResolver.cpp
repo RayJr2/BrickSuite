@@ -41,17 +41,30 @@ QColor standard(const QString& value)
 }
 
 QVector4D LDrawColorResolver::faceColor(const QString& value)
+{ return faceColor(value,defaultModelColor()); }
+
+QVector4D LDrawColorResolver::faceColor(const QString& value,const QColor& inheritedColor)
 {
-    if(value.trimmed()==QStringLiteral("16")) return vector(QColor("#C0C5C8"));
+    if(value.trimmed()==QStringLiteral("16")) return vector(inheritedColor.isValid()?inheritedColor:defaultModelColor());
     const QColor direct=directColor(value); if(direct.isValid()) return vector(direct);
     const QColor known=standard(value); return vector(known.isValid()?known:QColor("#C0C5C8"));
 }
 
 QVector4D LDrawColorResolver::edgeColor(const QString& value)
+{ return edgeColor(value,defaultModelColor()); }
+
+QVector4D LDrawColorResolver::edgeColor(const QString& value,const QColor& inheritedColor)
 {
     const QColor direct=directColor(value); if(direct.isValid()) return vector(direct.darker(180));
-    Q_UNUSED(value); return vector(QColor("#111417"));
+    if(value.trimmed()==QStringLiteral("16")&&inheritedColor.isValid()){
+        const double luminance=0.2126*inheritedColor.redF()+0.7152*inheritedColor.greenF()+0.0722*inheritedColor.blueF();
+        return vector(luminance<0.30?QColor("#D5D9DC"):QColor("#111417"));
+    }
+    return vector(QColor("#111417"));
 }
 
 QVector4D LDrawColorResolver::wireframeColor()
 { return vector(QColor("#C8CDD0")); }
+
+QColor LDrawColorResolver::defaultModelColor()
+{ return QColor("#C0C5C8"); }

@@ -8,6 +8,7 @@
 #include <QOpenGLFunctions_3_3_Core>
 #include <QOpenGLVertexArrayObject>
 #include <QOpenGLWidget>
+#include <QColor>
 
 class QOpenGLShaderProgram;
 
@@ -24,6 +25,11 @@ public:
     void setProjection(PartViewerCamera::Projection projection);
     void setStandardView(PartViewerCamera::View view);
     void fitModel();
+    void resetView();
+    void setShowAxes(bool show);
+    bool showAxes()const{return m_showAxes;}
+    void setModelColor(const QColor& color);
+    QColor modelColor()const{return m_modelColor;}
     bool renderingAvailable()const{return m_ready;}
 signals:
     void renderingError(const QString& message);
@@ -37,11 +43,14 @@ protected:
 private:
     struct Vertex{float px,py,pz,nx,ny,nz,r,g,b,a;};
     void destroyResources();
+    void establishMainRenderState();
     void uploadMesh();
     void uploadBuffer(QOpenGLBuffer& buffer,const QVector<Vertex>& vertices);
     void bindAttributes(QOpenGLBuffer& buffer);
     void drawFaces();
     void drawLines();
+    void drawAxes();
+    void drawAxisLabels();
     QVector<Vertex> conditionalLineVertices()const;
     static Vertex vertex(const QVector3D& p,const QVector3D& n,const QVector4D& c);
 
@@ -54,11 +63,14 @@ private:
     QOpenGLBuffer m_wire{QOpenGLBuffer::VertexBuffer};
     QOpenGLBuffer m_hardEdges{QOpenGLBuffer::VertexBuffer};
     QOpenGLBuffer m_conditionalEdges{QOpenGLBuffer::VertexBuffer};
+    QOpenGLBuffer m_axes{QOpenGLBuffer::VertexBuffer};
     int m_culledFaceVertices=0;
     int m_twoSidedFaceVertices=0;
     int m_wireVertices=0;
     int m_hardEdgeVertices=0;
     bool m_ready=false;
     bool m_meshDirty=false;
-    QPoint m_lastMouse;
+    bool m_showAxes=partViewerShowAxesDefault();
+    QColor m_modelColor{QStringLiteral("#C0C5C8")};
+    QPointF m_lastMouse;
 };

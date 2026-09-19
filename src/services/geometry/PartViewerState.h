@@ -2,6 +2,7 @@
 
 #include <QStringList>
 #include <QtGlobal>
+#include <QVector3D>
 
 enum class PartViewerRenderMode { Solid, SolidEdges, Wireframe };
 
@@ -25,6 +26,15 @@ inline PartViewerRenderPasses partViewerRenderPasses(PartViewerRenderMode mode)
     }
     return {};
 }
+
+struct PartViewerAxisConvention
+{
+    static QVector3D x(){return {1,0,0};}   // LDraw +X
+    static QVector3D y(){return {0,0,1};}   // LDraw +Z
+    static QVector3D z(){return {0,-1,0};}  // LDraw -Y
+};
+
+inline bool partViewerShowAxesDefault(){return true;}
 
 class PartViewerState
 {

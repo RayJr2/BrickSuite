@@ -5,6 +5,7 @@
 
 #include <QDialog>
 #include <QStringList>
+#include <optional>
 
 class QComboBox;
 class QDoubleSpinBox;
@@ -18,6 +19,7 @@ struct LDrawModelViewerRequest
     QString partNumber;
     QString partName;
     QStringList candidates;
+    std::optional<int> initialRebrickableColorId;
 };
 
 class LDrawModelViewerWindow : public QDialog
@@ -44,6 +46,7 @@ private:
     QComboBox* m_projection=nullptr;
     QComboBox* m_renderMode=nullptr;
     QComboBox* m_standardView=nullptr;
+    QComboBox* m_modelColor=nullptr;
     QLabel* m_status=nullptr;
     QLabel* m_part=nullptr;
     QLabel* m_source=nullptr;
@@ -53,6 +56,7 @@ private:
     QDoubleSpinBox* m_scale=nullptr;
     QPushButton* m_reload=nullptr;
     QPushButton* m_fit=nullptr;
+    QPushButton* m_resetView=nullptr;
     QPushButton* m_export=nullptr;
     QString m_renderingError;
 };

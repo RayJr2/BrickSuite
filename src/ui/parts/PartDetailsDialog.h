@@ -21,6 +21,7 @@
 #pragma once
 
 #include <QDialog>
+#include <optional>
 
 #include "../../services/RebrickableApiClient.h"
 
@@ -59,6 +60,7 @@ private:
         const RebrickableApiClient::PartDetailsResult& result);
 
     int m_partId = 0;
+    std::optional<int> m_initialRebrickableColorId;
 
     QString m_partNumber;
 

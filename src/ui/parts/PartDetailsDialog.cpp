@@ -25,6 +25,7 @@
 #include "../../models/PartCategory.h"
 
 #include "../../repositories/PartCategoryRepository.h"
+#include "../../repositories/ColorRepository.h"
 #include "../../repositories/PartRepository.h"
 #include "../../services/geometry/LDrawIdentityService.h"
 
@@ -382,6 +383,7 @@ PartDetailsDialog::PartDetailsDialog(
         request.partNumber = m_partNumber;
         request.partName = m_nameLabel ? m_nameLabel->text() : QString();
         request.candidates = ids;
+        request.initialRebrickableColorId = m_initialRebrickableColorId;
         close();
         LDrawModelViewerManager::showPart(request);
     });
@@ -492,6 +494,8 @@ PartDetailsDialog::PartDetailsDialog(int partId, int colorId, int manufacturerId
                                      QWidget* parent)
     : PartDetailsDialog(partId, parent)
 {
+    const auto color=ColorRepository().getById(colorId);
+    if(color&&color->rebrickableId()>0)m_initialRebrickableColorId=color->rebrickableId();
     showInventoryElementIdentity(colorId, manufacturerId);
 }
 

@@ -3,12 +3,17 @@
 #include "LDrawViewportWidget.h"
 #include "../common/SessionFileDialogDirectoryService.h"
 #include "../help/HelpManager.h"
+#include "../helpers/ColorComboHelper.h"
+#include "../../repositories/ColorRepository.h"
 #include "../../services/geometry/LDrawLibraryService.h"
+#include "../../services/geometry/LDrawColorResolver.h"
 #include "../../services/geometry/LDrawObjWriter.h"
 #include "../../settings/UserSettings.h"
 
 #include <QtConcurrentRun>
 #include <QCloseEvent>
+#include <QCheckBox>
+#include <QColor>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -40,7 +45,12 @@ LDrawModelViewerWindow::LDrawModelViewerWindow(QWidget* parent):QDialog(parent)
     m_renderMode->setItemData(2,int(PartViewerRenderMode::Wireframe));
     m_renderMode->setCurrentIndex(m_renderMode->findData(int(PartViewerRenderMode::SolidEdges)));m_renderMode->setMinimumContentsLength(14);m_renderMode->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);toolbar->addWidget(m_renderMode);
     m_standardView=new QComboBox(this);m_standardView->addItems({tr("Isometric"),tr("Front"),tr("Back"),tr("Left"),tr("Right"),tr("Top"),tr("Bottom")});toolbar->addWidget(m_standardView);
-    m_fit=new QPushButton(tr("Fit"),this);toolbar->addWidget(m_fit);toolbar->addStretch();root->addLayout(toolbar);
+    m_fit=new QPushButton(tr("Fit"),this);toolbar->addWidget(m_fit);m_resetView=new QPushButton(tr("Reset View"),this);toolbar->addWidget(m_resetView);
+    auto*showAxes=new QCheckBox(tr("Show Axes"),this);showAxes->setChecked(true);toolbar->addWidget(showAxes);toolbar->addStretch();root->addLayout(toolbar);
+    auto*colorRow=new QHBoxLayout;colorRow->addWidget(new QLabel(tr("Model Color:"),this));m_modelColor=new QComboBox(this);m_modelColor->setMinimumContentsLength(20);m_modelColor->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    int defaultIndex=-1;for(const auto&color:ColorRepository().getAll()){const int index=ColorComboHelper::addColorItem(m_modelColor,color.name(),color.rebrickableId(),color.rgb(),true);m_modelColor->setItemData(index,color.rgb(),Qt::UserRole+1);if(color.name().compare(QStringLiteral("Light Bluish Gray"),Qt::CaseInsensitive)==0)defaultIndex=index;}
+    if(defaultIndex>=0)m_modelColor->setCurrentIndex(defaultIndex);else{const QColor fallback=LDrawColorResolver::defaultModelColor();m_modelColor->addItem(tr("Neutral Gray"),0);m_modelColor->setItemData(0,fallback.name(),Qt::UserRole+1);}
+    colorRow->addWidget(m_modelColor);colorRow->addStretch();root->addLayout(colorRow);
     m_viewport=new LDrawViewportWidget(this);root->addWidget(m_viewport,1);
     auto*info=new QFormLayout;m_part=new QLabel(this);m_source=new QLabel(this);m_source->setTextInteractionFlags(Qt::TextSelectableByMouse);m_dimensions=new QLabel(this);m_counts=new QLabel(this);m_bfc=new QLabel(this);m_status=new QLabel(this);m_status->setWordWrap(true);
     info->addRow(tr("Part:"),m_part);info->addRow(tr("Source:"),m_source);info->addRow(tr("Dimensions:"),m_dimensions);info->addRow(tr("Geometry:"),m_counts);info->addRow(tr("BFC:"),m_bfc);info->addRow(tr("Status:"),m_status);info->addRow(tr("Printability:"),new QLabel(tr("Mesh repair / printability validation: Not performed"),this));root->addLayout(info);
@@ -51,16 +61,23 @@ LDrawModelViewerWindow::LDrawModelViewerWindow(QWidget* parent):QDialog(parent)
     connect(m_renderMode,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int){m_viewport->setRenderMode(static_cast<PartViewerRenderMode>(m_renderMode->currentData().toInt()));});
     connect(m_standardView,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int index){m_viewport->setStandardView(static_cast<PartViewerCamera::View>(index));});
     connect(m_fit,&QPushButton::clicked,m_viewport,&LDrawViewportWidget::fitModel);
+    connect(m_resetView,&QPushButton::clicked,m_viewport,&LDrawViewportWidget::resetView);
+    connect(showAxes,&QCheckBox::toggled,m_viewport,&LDrawViewportWidget::setShowAxes);
+    connect(m_modelColor,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int index){const QColor color(QStringLiteral("#")+m_modelColor->itemData(index,Qt::UserRole+1).toString().remove(QLatin1Char('#')));if(color.isValid())m_viewport->setModelColor(color);});
     connect(m_scale,qOverload<double>(&QDoubleSpinBox::valueChanged),this,[this](double value){m_state.setScalePercent(value);m_viewport->setUniformScale(float(value/100.0));updateDimensions();});
     connect(reset,&QPushButton::clicked,this,[this]{m_scale->setValue(100.0);});connect(m_export,&QPushButton::clicked,this,&LDrawModelViewerWindow::exportObj);
     connect(buttons,&QDialogButtonBox::rejected,this,&QDialog::close);connect(buttons,&QDialogButtonBox::helpRequested,this,[this]{HelpManager::showTopic(HelpTopic::LDrawModels,this);});
-    connect(m_viewport,&LDrawViewportWidget::renderingError,this,[this](const QString&message){m_renderingError=message;m_status->setText(message);m_projection->setEnabled(false);m_renderMode->setEnabled(false);m_standardView->setEnabled(false);m_fit->setEnabled(false);});
+    connect(m_viewport,&LDrawViewportWidget::renderingError,this,[this](const QString&message){m_renderingError=message;m_status->setText(message);m_projection->setEnabled(false);m_renderMode->setEnabled(false);m_standardView->setEnabled(false);m_fit->setEnabled(false);m_resetView->setEnabled(false);});
     connect(this,&QDialog::finished,this,[this](int){saveWindowGeometry();});
 }
 
 void LDrawModelViewerWindow::showPart(const LDrawModelViewerRequest& request)
 {
     m_request=request;m_part->setText(QStringLiteral("%1 — %2").arg(request.partNumber,request.partName));
+    int colorIndex=-1;if(request.initialRebrickableColorId)colorIndex=m_modelColor->findData(*request.initialRebrickableColorId);
+    if(colorIndex<0){for(int i=0;i<m_modelColor->count();++i)if(m_modelColor->itemText(i).compare(QStringLiteral("Light Bluish Gray"),Qt::CaseInsensitive)==0){colorIndex=i;break;}}
+    if(colorIndex<0)colorIndex=0;m_modelColor->setCurrentIndex(colorIndex);
+    const QColor selected(QStringLiteral("#")+m_modelColor->itemData(colorIndex,Qt::UserRole+1).toString().remove(QLatin1Char('#')));if(selected.isValid())m_viewport->setModelColor(selected);
     {QSignalBlocker blocker(m_candidate);m_candidate->clear();m_candidate->addItems(request.candidates);m_candidate->setCurrentIndex(request.candidates.isEmpty()?-1:0);}
     m_candidate->setVisible(request.candidates.size()>1);startLoad(LoadBehavior::ResetView);
 }
