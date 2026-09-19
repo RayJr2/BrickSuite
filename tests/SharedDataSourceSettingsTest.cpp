@@ -1,4 +1,5 @@
 #include "../src/settings/UserSettings.h"
+#include "../src/settings/MeshRepairSettingsPolicy.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -28,6 +29,19 @@ int main(int argc, char** argv)
 
     UserSettings& settings = UserSettings::instance();
     bool ok = true;
+    ok &= check(settings.meshRepairEnabled(), "Mesh Repair is enabled by default");
+    ok &= check(MeshRepairSettingsPolicy::allowsAutomaticPreparation(
+                    settings.meshRepairEnabled()),
+                "default permits automatic preparation");
+    settings.setMeshRepairEnabled(false);
+    ok &= check(!settings.meshRepairEnabled(), "disabled Mesh Repair persists");
+    ok &= check(!MeshRepairSettingsPolicy::allowsAutomaticPreparation(false)
+                    && MeshRepairSettingsPolicy::allowsExplicitPreparation(false),
+                "disabled setting blocks automatic but permits explicit preparation");
+    settings.setMeshRepairEnabled(true);
+    ok &= check(settings.meshRepairEnabled()
+                    && MeshRepairSettingsPolicy::allowsExplicitPreparation(true),
+                "re-enabled setting persists and explicit preparation remains available");
     ok &= check(settings.missingPartsExportFieldOrder().isEmpty()
                     && settings.missingPartsExportEnabledFields().isEmpty(),
                 "Missing Parts export settings are not empty on first use");

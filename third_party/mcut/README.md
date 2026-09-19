@@ -26,6 +26,18 @@ shared library, its LGPL notice, and the information/source offer needed to let
 recipients replace or relink that library. Equivalent shared-library packaging
 is required on macOS and Linux.
 
+For macOS Intel packages, ship the compatible MCUT `.dylib` in the application
+bundle's Frameworks directory and ensure its install name and the BrickSuite
+load command use an `@rpath`/`@loader_path` location inside that bundle. Verify
+the final bundle with `otool -L` and include the MCUT license files and notices.
+
+For Linux packages, ship a compatible `libmcut.so` in the package's private
+library location (or declare an exact distribution dependency), retain a
+relocatable `$ORIGIN`-based runtime search path where bundling is used, and
+verify the packaged executable with `ldd`. Include the MCUT license files and
+notices. Neither platform package may rely on a developer build tree or an
+unrelated system search path to find MCUT.
+
 The pinned `mio` declaration is a configuration reproducibility safeguard only.
 With MCUT tutorials, tests, and documentation disabled, `mio` is not compiled,
 linked, or distributed by BrickSuite and is not a runtime dependency.

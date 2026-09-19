@@ -440,6 +440,7 @@ void SettingsDialog::loadSettings()
     const auto ldrawValidation = LDrawLibraryService::validateLibrary(
         m_ldrawLibraryEdit->text());
     m_ldrawLibraryStatusLabel->setText(ldrawValidation.status);
+    m_meshRepairEnabledCheck->setChecked(settings.meshRepairEnabled());
 }
 
 void SettingsDialog::saveSettings()
@@ -559,6 +560,7 @@ void SettingsDialog::saveSettings()
     const int rebrickableRequestIntervalMs = m_rebrickableRequestIntervalSpin->value();
     settings.setRebrickableMinimumRequestIntervalMs(rebrickableRequestIntervalMs);
     settings.setLDrawLibraryPath(m_ldrawLibraryEdit->text());
+    settings.setMeshRepairEnabled(m_meshRepairEnabledCheck->isChecked());
     m_networkManager.refreshRebrickableCoordination();
     settings.setAutomaticBackupEnabled(m_automaticBackupEnabledCheck->isChecked());
     settings.setAutomaticBackupRoot(backupRoot);
@@ -1390,6 +1392,21 @@ void SettingsDialog::build3DModelsTab()
     m_ldrawLibraryStatusLabel->setWordWrap(true);
     groupLayout->addWidget(m_ldrawLibraryStatusLabel);
     layout->addWidget(group);
+    auto* preparationGroup = new QGroupBox(tr("Print Preparation"), tab);
+    auto* preparationLayout = new QVBoxLayout(preparationGroup);
+    m_meshRepairEnabledCheck = new QCheckBox(tr("Enable Mesh Repair"), preparationGroup);
+    m_meshRepairEnabledCheck->setObjectName(QStringLiteral("enableMeshRepairCheck"));
+    m_meshRepairEnabledCheck->setToolTip(
+        tr("Allow future print workflows to prepare geometry automatically. "
+           "The 3D viewer's Prepare for Printing action remains available when this is off."));
+    preparationLayout->addWidget(m_meshRepairEnabledCheck);
+    auto* preparationExplanation = new QLabel(
+        tr("Controls automatic built-in mesh preparation for print workflows. "
+           "Opening the 3D viewer never starts preparation automatically."),
+        preparationGroup);
+    preparationExplanation->setWordWrap(true);
+    preparationLayout->addWidget(preparationExplanation);
+    layout->addWidget(preparationGroup);
     layout->addStretch();
     m_tabWidget->addTab(tab, tr("3D Models"));
 

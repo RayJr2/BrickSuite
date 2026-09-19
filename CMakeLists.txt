@@ -1710,6 +1710,7 @@ if(BUILD_TESTING)
     qt_add_executable(SharedDataSourceSettingsTest EXCLUDE_FROM_ALL
         tests/SharedDataSourceSettingsTest.cpp
         src/settings/UserSettings.h src/settings/UserSettings.cpp
+        src/settings/MeshRepairSettingsPolicy.h
         src/services/application/SharedDataSource.h
         src/services/CredentialStore.h src/services/CredentialStore.cpp
         src/services/database/AutomaticBackupPolicy.h

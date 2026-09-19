@@ -13,6 +13,7 @@
 #include "../../services/geometry/print/PrintMeshAnalysis.h"
 #include "../../services/geometry/print/PrintMeshConversion.h"
 #include "../../settings/UserSettings.h"
+#include "../../settings/MeshRepairSettingsPolicy.h"
 
 #include <QtConcurrentRun>
 #include <QCloseEvent>
@@ -152,7 +153,7 @@ void LDrawModelViewerWindow::applyPreparationResult(quint64 generation,const Pri
 
 void LDrawModelViewerWindow::updatePreparationControls()
 {
-    const bool ready=bool(m_preparedMesh);m_prepare->setEnabled(m_sourceReady&&!m_preparing&&!ready&&!m_prepareBlocked&&m_coordinator&&!m_coordinator->busy());
+    const bool ready=bool(m_preparedMesh);const bool manualPreparationAllowed=MeshRepairSettingsPolicy::allowsExplicitPreparation(UserSettings::instance().meshRepairEnabled());m_prepare->setEnabled(manualPreparationAllowed&&m_sourceReady&&!m_preparing&&!ready&&!m_prepareBlocked&&m_coordinator&&!m_coordinator->busy());
     if(auto*model=qobject_cast<QStandardItemModel*>(m_geometryView->model()))if(auto*item=model->item(m_geometryView->findData(1)))item->setEnabled(ready);
     m_showMeshIssues->setEnabled(m_sourceReady&&m_geometryView->currentData().toInt()==0);
 }

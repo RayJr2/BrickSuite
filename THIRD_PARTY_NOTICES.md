@@ -4,13 +4,13 @@ BrickSuite is developed by RF StateSide, LLC and is licensed under the
 GNU Lesser General Public License version 3.0 (LGPL-3.0-only).
 
 This document summarizes major third-party software, services, data, and
-trademarks used or referenced by BrickSuite v0.2.0. Distribution packages
+trademarks used or referenced by BrickSuite v0.4.0. Distribution packages
 should be reviewed when their contents change so that any additional
 third-party notices required by bundled components are included.
 
 ## Qt
 
-BrickSuite v0.2.0 is built with Qt 6.10.3 and uses the following Qt modules:
+BrickSuite v0.4.0 is built with Qt 6.10.3 and uses the following Qt modules:
 
 - Qt Core
 - Qt Gui

@@ -130,6 +130,7 @@ private:
     // 3D Models / installed LDraw library
     QLineEdit* m_ldrawLibraryEdit = nullptr;
     QLabel* m_ldrawLibraryStatusLabel = nullptr;
+    QCheckBox* m_meshRepairEnabledCheck = nullptr;
 
     // Appearance
     QComboBox* m_themeCombo = nullptr;

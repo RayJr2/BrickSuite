@@ -30,6 +30,13 @@ FetchContent_MakeAvailable(mcut)
 target_include_directories(mcut INTERFACE "${mcut_SOURCE_DIR}/include")
 target_compile_definitions(mcut INTERFACE MCUT_SHARED_LIB=1)
 
+set(_bricksuite_mcut_license_dir "${CMAKE_BINARY_DIR}/deployment/licenses/MCUT")
+file(MAKE_DIRECTORY "${_bricksuite_mcut_license_dir}")
+configure_file("${mcut_SOURCE_DIR}/LICENSE.txt"
+    "${_bricksuite_mcut_license_dir}/LICENSE.txt" COPYONLY)
+configure_file("${mcut_SOURCE_DIR}/COPYING.LESSER"
+    "${_bricksuite_mcut_license_dir}/COPYING.LESSER" COPYONLY)
+
 add_library(BrickSuiteMcut INTERFACE)
 target_link_libraries(BrickSuiteMcut INTERFACE mcut)
 target_compile_definitions(BrickSuiteMcut INTERFACE

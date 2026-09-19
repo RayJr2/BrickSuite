@@ -37,6 +37,7 @@ constexpr auto kGroupRebrickable = "Rebrickable";
 constexpr auto kGroupBrickset = "Brickset";
 constexpr auto kGroupLDraw = "LDraw";
 constexpr auto kLDrawLibraryPathKey = "LibraryPath";
+constexpr auto kMeshRepairEnabledKey = "EnableMeshRepair";
 
 constexpr auto kThemeKey = "Theme";
 
@@ -760,6 +761,23 @@ void UserSettings::setLDrawLibraryPath(const QString& path)
     QSettings settings;
     settings.beginGroup(kGroupLDraw);
     settings.setValue(kLDrawLibraryPathKey, path.trimmed());
+    settings.endGroup();
+}
+
+bool UserSettings::meshRepairEnabled() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupLDraw);
+    const bool enabled = settings.value(kMeshRepairEnabledKey, true).toBool();
+    settings.endGroup();
+    return enabled;
+}
+
+void UserSettings::setMeshRepairEnabled(bool enabled)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupLDraw);
+    settings.setValue(kMeshRepairEnabledKey, enabled);
     settings.endGroup();
 }
 

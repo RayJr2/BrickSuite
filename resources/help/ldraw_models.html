@@ -1,26 +1,22 @@
 <!doctype html><html><head><meta charset="utf-8"><title>LDraw 3D Models</title><style>body{font-family:sans-serif;line-height:1.5;margin:22px}h2{margin-top:1.4em}code{background:#eee;padding:1px 4px}</style></head><body>
 <h1>LDraw 3D Models</h1>
-<p>BrickSuite can read native geometry from an LDraw library installed on this computer. It does not download an LDraw library or send geometry to an online service.</p>
-<h2>Configure the library</h2>
-<p>Open <b>Edit → Settings → 3D Models</b>, choose the LDraw library root, and select <b>Validate</b>. A usable root contains <code>parts</code> and <code>p</code> folders and recognizable <code>.dat</code> files. Custom libraries are supported when they follow the same structure.</p>
-<p>If a saved removable or network path is unavailable, BrickSuite preserves the setting and reports that the library is unavailable.</p>
-<h2>Open a model</h2>
-<p>Open Part Details and select <b>3D Model...</b>. BrickSuite uses only exact stored LDraw external identities. It does not guess from the Rebrickable Part number. If more than one identity is stored, choose the intended model explicitly.</p>
-<p><b>3D Model...</b> opens one persistent, non-modal viewer. You may close Part Details and continue using the viewer. Opening another Part reuses the same viewer window and replaces its current model.</p>
-<h2>Inspect the model</h2>
-<ul><li><b>Left drag</b> orbits around the Part.</li><li><b>Middle drag</b> or <b>Shift + Left drag</b> pans.</li><li><b>Mouse wheel</b> zooms.</li></ul>
-<p>Drag with the left mouse button to rotate freely through any orientation. Shift+left-drag or middle-drag pans, and the mouse wheel zooms. Use <b>Fit</b> to frame the complete Part without changing its orientation. <b>Reset View</b> returns to Isometric and fits the current scaled Part. Isometric, Front, Back, Left, Right, Top, and Bottom provide deterministic standard views. Perspective is the default; Orthographic is useful for engineering inspection.</p>
-
-<p><b>Show Axes</b> toggles the labeled corner XYZ orientation triad. X is red, Y is green, and Z is blue, using the same Z-up coordinate convention as engineering OBJ export. The triad follows camera rotation but is independent of Part pan, zoom, and Scale.</p>
-
-<p><b>Model Color</b> changes only geometry that inherits LDraw current color 16. Explicit and direct colors authored into the LDraw model remain unchanged. This is viewer presentation only and does not modify the Part, Inventory, or installed LDraw source. When opened from local My Inventory, the viewer initially uses that Inventory record's Color where available; generic Part Details uses Light Bluish Gray when available.</p>
-<p>Render modes are <b>Solid</b>, <b>Solid + Edges</b>, and <b>Wireframe</b>. Solid + Edges shows LDraw hard edges and camera-dependent conditional edges. Wireframe also exposes triangle boundaries, including triangulation diagonals.</p>
-<p>When a Part has multiple exact LDraw identities, select the candidate in the viewer. Candidate changes reset Scale and refit the new model while preserving Model Color and Show Axes. <b>Reload Model</b> rereads the selected source and dependencies while preserving the current camera, projection, render mode, Scale, Model Color, and Show Axes.</p>
-<p>The compact information area reports source, dimensions, triangle and edge counts, BFC information, and malformed or missing dependencies.</p>
-<h2>Uniform Scale</h2>
-<p><b>Scale</b> changes every dimension uniformly without modifying the installed LDraw source or BrickSuite's authoritative mesh. For example, 200% doubles every dimension. Values such as 99.5% or 100.5% affect every feature and may be used for dimensional experiments, but uniform scaling is not specialized LEGO fit or tolerance correction and does not guarantee compatibility. The <b>Reset</b> beside Scale returns only Scale to exactly 100%; it does not reset the camera.</p>
-<h2>Engineering OBJ export</h2>
-<p><b>Export OBJ...</b> writes deterministic geometry in millimetres at the Scale currently shown in the viewer. At 100%, the conversion is 1 LDraw unit = 0.4 mm. The export header records the selected Scale and resulting dimensions.</p>
+<p>BrickSuite reads native geometry from an LDraw library installed on this computer. It does not download an LDraw library or send geometry to an online service.</p>
+<h2>Configure the library and mesh repair</h2>
+<p>Open <b>Edit → Settings → 3D Models</b>, choose the LDraw library root, and select <b>Validate</b>. A usable root contains <code>parts</code> and <code>p</code> folders and recognizable <code>.dat</code> files. If a saved removable or network path is unavailable, BrickSuite preserves the setting and reports that the library is unavailable.</p>
+<p><b>Enable Mesh Repair</b> is on by default. It allows future print workflows to run BrickSuite's built-in preparation automatically. Turning it off preserves the setting locally and does not remove the viewer's explicit <b>Prepare for Printing</b> action. Opening a viewer never starts preparation automatically.</p>
+<h2>Open and inspect a model</h2>
+<p>Open Part Details and select <b>3D Model...</b>. BrickSuite uses only exact stored LDraw external identities; it does not guess from the Rebrickable Part number. The persistent, non-modal viewer can remain open after Part Details closes, and opening another Part reuses it.</p>
+<ul><li><b>Left drag</b> orbits.</li><li><b>Middle drag</b> or <b>Shift + Left drag</b> pans.</li><li><b>Mouse wheel</b> zooms.</li><li><b>Fit</b> frames the complete Part; <b>Reset View</b> returns to Isometric and fits it.</li></ul>
+<p>Perspective is the default; Orthographic is useful for engineering inspection. Standard views are deterministic and use the same Z-up convention as OBJ export. <b>Show Axes</b> toggles the labeled XYZ triad.</p>
+<p><b>Model Color</b> changes only geometry that inherits LDraw current color 16. Explicit and direct colors remain unchanged. This is presentation only and does not modify the Part, Inventory, or LDraw source.</p>
+<h2>Source and Prepared geometry</h2>
+<p><b>Source</b> is the authored LDraw triangle geometry. Solid + Edges uses the model's hard and visible conditional edges; Wireframe also exposes triangle boundaries. <b>Show Mesh Issues</b> highlights Source boundaries and topology issues.</p>
+<p><b>Prepare for Printing</b> explicitly builds a closed, consistently oriented nominal mesh where BrickSuite can determine a safe result. Preparation runs asynchronously and never changes installed LDraw files. Select <b>Prepared</b> to inspect the result; its edges are derived from prepared topology rather than authored LDraw edge commands.</p>
+<p><b>Prepared Mesh: Ready for Printing</b> means BrickSuite's current topology checks succeeded. It is not a guarantee that every printer, slicer, material, tolerance, or intended use will succeed. Dimensions are nominal geometry dimensions before the displayed uniform Scale is applied.</p>
+<p>Unsupported or ambiguous construction is reported without replacing Source geometry. Preparation failures leave Source available for inspection.</p>
+<h2>Uniform Scale and OBJ export</h2>
+<p><b>Scale</b> changes every displayed dimension uniformly without modifying the installed source or authoritative mesh. At 100%, 1 LDraw unit = 0.4 mm. Scaling is not specialized LEGO fit or tolerance correction.</p>
+<p>The current <b>Export OBJ...</b> workflow exports <b>Source</b> engineering geometry in millimetres at the displayed Scale, even when Prepared is selected for inspection. The export header records Scale and resulting dimensions. Prepared print-format export is a later workflow.</p>
 <h2>Safety and limitations</h2>
-<p>BrickSuite rejects absolute, traversal, escaping symbolic-link, cyclic, ambiguous-case, malformed, and excessive references. Mesh repair / printability validation has not been performed. Review exported geometry in your slicer before printing. The viewer does not provide STL export, slicing, CAD editing, whole-model viewing, or remote Host geometry transport.</p>
+<p>BrickSuite rejects absolute, traversal, escaping symbolic-link, cyclic, ambiguous-case, malformed, and excessive references. Review geometry in your slicer before printing. The viewer does not currently provide STL or 3MF export, slicing, CAD editing, whole-model viewing, or remote Host geometry transport.</p>
 </body></html>

@@ -179,6 +179,8 @@ public:
 
     QString ldrawLibraryPath() const;
     void setLDrawLibraryPath(const QString& path);
+    bool meshRepairEnabled() const;
+    void setMeshRepairEnabled(bool enabled);
 
     bool automaticBackupEnabled() const;
     void setAutomaticBackupEnabled(bool enabled);
