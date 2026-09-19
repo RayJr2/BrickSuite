@@ -76,7 +76,29 @@ struct Loader {
     QSet<QString> countedSources;
     qint64 totalBytes=0;
     int fileCount=0;
-    Result result;
+    LDrawLoadResult result;
+
+    int sourceFile(const QString& relative) {
+        const QString key=relative.toCaseFolded();
+        auto it=result.sourceModel->fileIds.constFind(key);
+        if(it!=result.sourceModel->fileIds.cend()) return it.value();
+        const int id=result.sourceModel->files.size();
+        result.sourceModel->fileIds.insert(key,id);
+        result.sourceModel->files.push_back({id,relative,SourceClassification::Unknown});
+        const QFileInfo info(QDir(root).filePath(relative));
+        result.dependencyFingerprint.dependencies.push_back(
+            {relative, info.size(), info.lastModified().toUTC()});
+        return id;
+    }
+
+    int referenceNode(int parentId,int fileId,int sourceLine,const Transform& transform,bool inverted) {
+        ReferenceRecord node; node.id=result.sourceModel->references.size();node.parentId=parentId;
+        node.fileId=fileId;node.sourceLine=sourceLine;node.mirrored=determinant(transform)<0.0;node.inverted=inverted;
+        node.accumulatedTransform={transform.m[0][0],transform.m[0][1],transform.m[0][2],double(transform.t.x()),
+            transform.m[1][0],transform.m[1][1],transform.m[1][2],double(transform.t.y()),
+            transform.m[2][0],transform.m[2][1],transform.m[2][2],double(transform.t.z())};
+        result.sourceModel->references.push_back(node); return node.id;
+    }
 
     void fail(ErrorCode code, const QString& message, const QString& ref={}, int line=0) {
         if (result.error.code==ErrorCode::None) result.error={code,message,ref,line};
@@ -130,7 +152,8 @@ struct Loader {
 
     QString inheritedColor(const QString& value,const QString& parent) const { return value=="16"?parent:value; }
 
-    bool load(const QString& relative,const Transform& transform,const QString& parentColor,bool inverted,int depth) {
+    bool load(const QString& relative,const Transform& transform,const QString& parentColor,bool inverted,int depth,
+              int parentNode=-1,int referenceLine=0) {
         if (depth>MaxDepth) { fail(ErrorCode::ResourceLimitExceeded,"LDraw reference depth exceeded the safety limit.",relative); return false; }
         const QString key=relative.toCaseFolded();
         if (active.contains(key)) { fail(ErrorCode::CycleDetected,"A cyclic LDraw reference was detected.",relative); return false; }
@@ -171,6 +194,8 @@ struct Loader {
             }
         }
         QBuffer file(&source); file.open(QIODevice::ReadOnly|QIODevice::Text);
+        const int fileId=sourceFile(relative);
+        const int currentNode=referenceNode(parentNode,fileId,referenceLine,transform,inverted);
         active.insert(key);
         if(!countedSources.contains(key)){countedSources.insert(key);++result.mesh.sourceFiles;}
         bool clockwise=false, certified=false, clip=true, invertNext=false;
@@ -183,6 +208,13 @@ struct Loader {
             if (!typeOk || type<0 || type>5) { fail(ErrorCode::MalformedSource,"Malformed LDraw line type.",relative,lineNo); break; }
             if (type==0) {
                 const QString upper=line.toUpper();
+                if(upper.startsWith("0 !LDRAW_ORG ")) {
+                    const QString kind=v.value(2).toUpper();
+                    auto& classification=result.sourceModel->files[fileId].classification;
+                    if(kind=="PART") classification=SourceClassification::Part;
+                    else if(kind=="SUBPART") classification=SourceClassification::Subpart;
+                    else if(kind=="PRIMITIVE"||kind=="48_PRIMITIVE"||kind=="8_PRIMITIVE") classification=SourceClassification::Primitive;
+                }
                 if (upper.contains(" BFC ") || upper.startsWith("0 BFC ")) {
                     if (upper.contains("NOCERTIFY")) certified=false;
                     if (upper.contains("CERTIFY" )&&!upper.contains("NOCERTIFY")) certified=true;
@@ -205,7 +237,7 @@ struct Loader {
                 int z=3; for(int r=0;r<3;++r) for(int c=0;c<3;++c) local.m[r][c]=n[z++];
                 QString child=resolve(v.mid(14).join(' '),false); if(child.isEmpty()) break;
                 const bool childInverted=inverted ^ invertNext ^ (determinant(local)<0.0); invertNext=false;
-                if(!load(child,compose(transform,local),color,childInverted,depth+1)) break;
+                if(!load(child,compose(transform,local),color,childInverted,depth+1,currentNode,lineNo)) break;
                 continue;
             }
             QVector<QVector3D> points; int count=type==2?2:type==3?3:4;
@@ -217,6 +249,7 @@ struct Loader {
             auto addTriangle=[&](const QVector3D&a,const QVector3D&b,const QVector3D&c){
                 QVector3D normal=QVector3D::crossProduct(b-a,c-a); if(normal.lengthSquared()<1e-12f) { ++result.mesh.degenerateFaces; return; }
                 normal.normalize(); result.mesh.triangles.push_back({a,b,c,normal,color,certified&&clip}); bounds(a); bounds(b); bounds(c);
+                result.sourceModel->surfaces.push_back({int(result.mesh.triangles.size()-1),currentNode,fileId,lineNo,type,certified,clip,inverted});
                 if(result.mesh.triangles.size()>MaxTriangles) fail(ErrorCode::ResourceLimitExceeded,"Triangle count exceeded the safety limit.",relative,lineNo);
             };
             addTriangle(points[0],points[1],points[2]); if(type==4 && result.ok()) addTriangle(points[0],points[2],points[3]);
@@ -240,9 +273,10 @@ LDrawGeometry::LibraryValidation LDrawLibraryService::validateLibrary(const QStr
     value.status=value.valid?"Valid LDraw library.":"The selected LDraw library path could not be resolved."; return value;
 }
 
-LDrawGeometry::Result LDrawLibraryService::loadPart(const QString& root, const QString& ldrawId)
+LDrawGeometry::LDrawLoadResult LDrawLibraryService::loadPart(const QString& root, const QString& ldrawId)
 {
     const auto validation=validateLibrary(root); Loader loader; loader.result.mesh.ldrawId=ldrawId.trimmed();
+    loader.result.sourceModel=std::make_shared<LDrawSourceModel>();
     if(!validation.valid) { loader.fail(root.trimmed().isEmpty()?ErrorCode::LibraryNotConfigured:ErrorCode::InvalidLibrary,validation.status); return loader.result; }
     loader.root=validation.normalizedRoot;
     loader.canonicalRoot=validation.normalizedRoot;

@@ -5,6 +5,8 @@ project(BrickSuite
     LANGUAGES CXX
 )
 
+include(cmake/BrickSuiteMcut.cmake)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -421,11 +423,23 @@ qt_add_executable(BrickSuite
     src/ui/parts/LDrawModelViewerManager.cpp src/ui/parts/LDrawModelViewerManager.h
     src/ui/parts/LDrawModelViewerWindow.cpp src/ui/parts/LDrawModelViewerWindow.h
     src/ui/parts/LDrawViewportWidget.cpp src/ui/parts/LDrawViewportWidget.h
-    src/services/geometry/PartMesh.h
+    src/ui/parts/PrintPreparationCoordinator.cpp src/ui/parts/PrintPreparationCoordinator.h
+    src/ui/parts/PreparedMeshRenderAdapter.cpp src/ui/parts/PreparedMeshRenderAdapter.h
+    src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
     src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
     src/services/geometry/LDrawIdentityService.cpp src/services/geometry/LDrawIdentityService.h
     src/services/geometry/LDrawIdentitySelection.h
     src/services/geometry/LDrawObjWriter.cpp src/services/geometry/LDrawObjWriter.h
+    src/services/geometry/print/PrintMesh.h src/services/geometry/print/PreparedMesh.h
+    src/services/geometry/print/SemanticOperand.h src/services/geometry/print/LDrawPrintPreparationProfile.h
+    src/services/geometry/print/PrintMeshConversion.cpp src/services/geometry/print/PrintMeshConversion.h
+    src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
+    src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
+    src/services/geometry/print/MeshBooleanService.h src/services/geometry/print/PrintPreparation.h
+    src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
+    src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h
+    src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
+    src/services/geometry/print/PreparedObjProofWriter.cpp src/services/geometry/print/PreparedObjProofWriter.h
     src/services/geometry/ConditionalEdgeVisibility.cpp src/services/geometry/ConditionalEdgeVisibility.h
     src/services/geometry/LDrawColorResolver.cpp src/services/geometry/LDrawColorResolver.h
     src/services/geometry/PartViewerCamera.cpp src/services/geometry/PartViewerCamera.h
@@ -624,11 +638,91 @@ target_link_libraries(BrickSuite PRIVATE
     Qt6::OpenGLWidgets
     ZLIB::ZLIB
     OpenSSL::Crypto
+    BrickSuite::Mcut
 )
+bricksuite_stage_mcut_runtime(BrickSuite)
 
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(PrintMeshAnalysisTest EXCLUDE_FROM_ALL tests/PrintMeshAnalysisTest.cpp
+        src/services/geometry/print/PrintMesh.h
+        src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h)
+    target_link_libraries(PrintMeshAnalysisTest PRIVATE Qt6::Core)
+    add_test(NAME PrintMeshAnalysis COMMAND PrintMeshAnalysisTest)
+
+    qt_add_executable(McutMeshBooleanTest EXCLUDE_FROM_ALL tests/McutMeshBooleanTest.cpp
+        src/services/geometry/print/PrintMesh.h src/services/geometry/print/LDrawPrintPreparationProfile.h
+        src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
+        src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h)
+    target_link_libraries(McutMeshBooleanTest PRIVATE Qt6::Core BrickSuite::Mcut)
+    bricksuite_stage_mcut_runtime(McutMeshBooleanTest)
+    add_test(NAME McutMeshBoolean COMMAND McutMeshBooleanTest)
+
+    qt_add_executable(LDrawSemanticOperandTest EXCLUDE_FROM_ALL tests/LDrawSemanticOperandTest.cpp
+        src/ui/parts/PreparedMeshRenderAdapter.cpp src/ui/parts/PreparedMeshRenderAdapter.h
+        src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
+        src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
+        src/services/geometry/print/PrintMesh.h src/services/geometry/print/SemanticOperand.h
+        src/services/geometry/print/LDrawPrintPreparationProfile.h
+        src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
+        src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
+        src/services/geometry/print/MeshBooleanService.h src/services/geometry/print/PrintPreparation.h
+        src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
+        src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h
+        src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
+        src/services/geometry/print/PreparedObjProofWriter.cpp src/services/geometry/print/PreparedObjProofWriter.h)
+    target_link_libraries(LDrawSemanticOperandTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
+    bricksuite_stage_mcut_runtime(LDrawSemanticOperandTest)
+    add_test(NAME LDrawSemanticOperand COMMAND LDrawSemanticOperandTest)
+
+    qt_add_executable(LDrawPrintPreparationServiceTest EXCLUDE_FROM_ALL
+        tests/LDrawPrintPreparationServiceTest.cpp
+        src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
+        src/services/geometry/print/PrintMesh.h src/services/geometry/print/PreparedMesh.h
+        src/services/geometry/print/SemanticOperand.h src/services/geometry/print/LDrawPrintPreparationProfile.h
+        src/services/geometry/print/PrintPreparation.h src/services/geometry/print/MeshBooleanService.h
+        src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
+        src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
+        src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
+        src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
+        src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h)
+    target_link_libraries(LDrawPrintPreparationServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
+    bricksuite_stage_mcut_runtime(LDrawPrintPreparationServiceTest)
+    add_test(NAME LDrawPrintPreparationService COMMAND LDrawPrintPreparationServiceTest)
+
+    qt_add_executable(PreparedMeshTest EXCLUDE_FROM_ALL tests/PreparedMeshTest.cpp
+        src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
+        src/services/geometry/print/PrintMesh.h src/services/geometry/print/PreparedMesh.h
+        src/services/geometry/print/LDrawPrintPreparationProfile.h)
+    target_link_libraries(PreparedMeshTest PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME PreparedMesh COMMAND PreparedMeshTest)
+
+    qt_add_executable(PreparedMeshRenderAdapterTest EXCLUDE_FROM_ALL
+        tests/PreparedMeshRenderAdapterTest.cpp
+        src/ui/parts/PreparedMeshRenderAdapter.cpp src/ui/parts/PreparedMeshRenderAdapter.h
+        src/services/geometry/print/PrintMesh.h src/services/geometry/print/PreparedMesh.h
+        src/services/geometry/print/SemanticOperand.h src/services/geometry/LDrawLoadResult.h
+        src/services/geometry/LDrawSourceModel.h src/services/geometry/PartMesh.h)
+    target_link_libraries(PreparedMeshRenderAdapterTest PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME PreparedMeshRenderAdapter COMMAND PreparedMeshRenderAdapterTest)
+
+    qt_add_executable(PrintPreparationCoordinatorTest EXCLUDE_FROM_ALL
+        tests/PrintPreparationCoordinatorTest.cpp
+        src/ui/parts/PrintPreparationCoordinator.cpp src/ui/parts/PrintPreparationCoordinator.h
+        src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
+        src/services/geometry/print/PrintMesh.h src/services/geometry/print/PreparedMesh.h
+        src/services/geometry/print/SemanticOperand.h src/services/geometry/print/LDrawPrintPreparationProfile.h
+        src/services/geometry/print/PrintPreparation.h src/services/geometry/print/MeshBooleanService.h
+        src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
+        src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
+        src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
+        src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
+        src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h)
+    target_link_libraries(PrintPreparationCoordinatorTest PRIVATE Qt6::Core Qt6::Gui Qt6::Concurrent BrickSuite::Mcut)
+    bricksuite_stage_mcut_runtime(PrintPreparationCoordinatorTest)
+    add_test(NAME PrintPreparationCoordinator COMMAND PrintPreparationCoordinatorTest)
+
     foreach(LDRAW_TEST_TARGET IN ITEMS LDrawLibraryTest LDrawParserTest LDrawGeometryTest LDrawObjExportTest)
         qt_add_executable(${LDRAW_TEST_TARGET} EXCLUDE_FROM_ALL
             tests/LDrawGeometryFoundationTest.cpp
@@ -1656,6 +1750,8 @@ if(BUILD_TESTING)
         src/services/builds/PickABrickPartResolutionService.h src/services/builds/PickABrickPartResolutionService.cpp
         src/ui/builds/MissingPartsExportDialog.h src/ui/builds/MissingPartsExportDialog.cpp
         src/ui/builds/MissingPartsExportPreparationState.h
+        src/ui/common/SessionFileDialogDirectoryService.h
+        src/ui/common/SessionFileDialogDirectoryService.cpp
         src/settings/UserSettings.h src/settings/UserSettings.cpp
         src/services/CredentialStore.h src/services/CredentialStore.cpp
         src/services/database/AutomaticBackupPolicy.h
@@ -2147,6 +2243,34 @@ if(BUILD_TESTING)
         src/models/WhatCanIBuildPartSelection.h)
     target_link_libraries(WhatCanIBuildLaunchSelectionTest PRIVATE Qt6::Core)
     add_test(NAME WhatCanIBuildLaunchSelection COMMAND WhatCanIBuildLaunchSelectionTest)
+
+    function(bricksuite_configure_test_runtime test_name)
+        if(WIN32)
+            get_filename_component(_bricksuite_mingw_runtime_dir
+                "${CMAKE_CXX_COMPILER}" DIRECTORY)
+            if(OPENSSL_ROOT_DIR)
+                set(_bricksuite_openssl_runtime_dir "${OPENSSL_ROOT_DIR}/bin")
+            else()
+                get_filename_component(_bricksuite_openssl_library_dir
+                    "${OPENSSL_CRYPTO_LIBRARY}" DIRECTORY)
+                get_filename_component(_bricksuite_openssl_root
+                    "${_bricksuite_openssl_library_dir}" DIRECTORY)
+                set(_bricksuite_openssl_runtime_dir "${_bricksuite_openssl_root}/bin")
+            endif()
+            set_property(TEST "${test_name}" APPEND PROPERTY ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:${_bricksuite_mingw_runtime_dir}"
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+                "PATH=path_list_prepend:${_bricksuite_openssl_runtime_dir}"
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:mcut>"
+                "QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins"
+                "QT_QPA_PLATFORM_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins/platforms")
+        endif()
+    endfunction()
+
+    get_property(_bricksuite_configured_tests DIRECTORY PROPERTY TESTS)
+    foreach(_bricksuite_test IN LISTS _bricksuite_configured_tests)
+        bricksuite_configure_test_runtime("${_bricksuite_test}")
+    endforeach()
 endif()
 
 if(WIN32)

@@ -3,6 +3,7 @@
 #include "../../services/geometry/PartMesh.h"
 #include "../../services/geometry/PartViewerCamera.h"
 #include "../../services/geometry/PartViewerState.h"
+#include "PreparedMeshRenderAdapter.h"
 
 #include <QOpenGLBuffer>
 #include <QOpenGLFunctions_3_3_Core>
@@ -19,6 +20,9 @@ public:
     explicit LDrawViewportWidget(QWidget* parent=nullptr);
     ~LDrawViewportWidget() override;
     void setMesh(const LDrawGeometry::PartMesh& mesh, bool resetCamera);
+    void setPreparedMesh(const PreparedMeshRenderData& mesh);
+    void setSourceIssueOverlay(const SourceMeshIssueRenderData& issues);
+    void setShowMeshIssues(bool show);
     void clearMesh();
     void setUniformScale(float scale);
     void setRenderMode(PartViewerRenderMode mode);
@@ -49,12 +53,16 @@ private:
     void bindAttributes(QOpenGLBuffer& buffer);
     void drawFaces();
     void drawLines();
+    void drawIssueOverlay();
     void drawAxes();
     void drawAxisLabels();
     QVector<Vertex> conditionalLineVertices()const;
     static Vertex vertex(const QVector3D& p,const QVector3D& n,const QVector4D& c);
 
     LDrawGeometry::PartMesh m_mesh;
+    PreparedMeshRenderData m_prepared;
+    SourceMeshIssueRenderData m_issues;
+    bool m_usingPrepared=false;
     PartViewerCamera m_camera;
     PartViewerRenderMode m_mode=PartViewerRenderMode::SolidEdges;
     QOpenGLShaderProgram* m_program=nullptr;
@@ -64,13 +72,18 @@ private:
     QOpenGLBuffer m_hardEdges{QOpenGLBuffer::VertexBuffer};
     QOpenGLBuffer m_conditionalEdges{QOpenGLBuffer::VertexBuffer};
     QOpenGLBuffer m_axes{QOpenGLBuffer::VertexBuffer};
+    QOpenGLBuffer m_boundaryIssues{QOpenGLBuffer::VertexBuffer};
+    QOpenGLBuffer m_nonManifoldIssues{QOpenGLBuffer::VertexBuffer};
     int m_culledFaceVertices=0;
     int m_twoSidedFaceVertices=0;
     int m_wireVertices=0;
     int m_hardEdgeVertices=0;
+    int m_boundaryIssueVertices=0;
+    int m_nonManifoldIssueVertices=0;
     bool m_ready=false;
     bool m_meshDirty=false;
     bool m_showAxes=partViewerShowAxesDefault();
+    bool m_showMeshIssues=false;
     QColor m_modelColor{QStringLiteral("#C0C5C8")};
     QPointF m_lastMouse;
 };

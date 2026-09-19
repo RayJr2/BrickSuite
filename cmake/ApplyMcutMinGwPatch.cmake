@@ -1,0 +1,20 @@
+if(NOT DEFINED MCUT_SOURCE_DIR)
+    message(FATAL_ERROR "MCUT_SOURCE_DIR is required")
+endif()
+
+set(header "${MCUT_SOURCE_DIR}/include/mcut/internal/tpool.h")
+file(READ "${header}" contents)
+set(original "#if _WIN32 // on windows")
+set(replacement "#if defined(_MSC_VER) // MSVC SAL annotation")
+string(FIND "${contents}" "${replacement}" already_patched)
+if(NOT already_patched EQUAL -1)
+    return()
+endif()
+string(FIND "${contents}" "${original}" patch_at)
+if(patch_at EQUAL -1)
+    message(FATAL_ERROR
+        "MCUT v1.3.0 MinGW patch precondition failed; refusing to patch an unexpected source revision")
+endif()
+string(REPLACE "${original}" "${replacement}" contents "${contents}")
+file(WRITE "${header}" "${contents}")
+

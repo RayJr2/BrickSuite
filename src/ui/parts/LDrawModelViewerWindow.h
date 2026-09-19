@@ -1,17 +1,22 @@
 #pragma once
 
-#include "../../services/geometry/PartMesh.h"
+#include "../../services/geometry/LDrawLoadResult.h"
 #include "../../services/geometry/PartViewerState.h"
+#include "../../services/geometry/print/PrintPreparation.h"
+#include "../../services/geometry/print/PrintMesh.h"
 
 #include <QDialog>
 #include <QStringList>
 #include <optional>
+#include <memory>
 
 class QComboBox;
+class QCheckBox;
 class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
 class LDrawViewportWidget;
+class PrintPreparationCoordinator;
 
 struct LDrawModelViewerRequest
 {
@@ -26,20 +31,30 @@ class LDrawModelViewerWindow : public QDialog
 {
     Q_OBJECT
 public:
-    explicit LDrawModelViewerWindow(QWidget* parent=nullptr);
+    explicit LDrawModelViewerWindow(PrintPreparationCoordinator* coordinator,QWidget* parent=nullptr);
     void showPart(const LDrawModelViewerRequest& request);
 protected:
     void closeEvent(QCloseEvent* event)override;
 private:
     enum class LoadBehavior{ResetView,PreserveView};
     void startLoad(LoadBehavior behavior);
-    void applyResult(const LDrawGeometry::Result& result,LoadBehavior behavior);
+    void applyResult(const LDrawGeometry::LDrawLoadResult& result,LoadBehavior behavior);
+    void invalidatePreparation();
+    void startPreparation();
+    void applyPreparationProgress(quint64 generation,const PrintGeometry::PrintPreparationProgress& progress);
+    void applyPreparationResult(quint64 generation,const PrintGeometry::PrintPreparationResult& result);
+    void updatePreparationControls();
+    void selectGeometry();
     void updateDimensions();
     void exportObj();
     void saveWindowGeometry();
 
     LDrawModelViewerRequest m_request;
     LDrawGeometry::PartMesh m_mesh;
+    LDrawGeometry::LDrawLoadResult m_loadResult;
+    std::shared_ptr<const PrintGeometry::PreparedMesh>m_preparedMesh;
+    PrintGeometry::MeshAnalysisResult m_sourceAnalysis;
+    PrintGeometry::PrintMesh m_sourcePrintMesh;
     PartViewerState m_state;
     LDrawViewportWidget* m_viewport=nullptr;
     QComboBox* m_candidate=nullptr;
@@ -47,16 +62,26 @@ private:
     QComboBox* m_renderMode=nullptr;
     QComboBox* m_standardView=nullptr;
     QComboBox* m_modelColor=nullptr;
+    QComboBox* m_geometryView=nullptr;
     QLabel* m_status=nullptr;
     QLabel* m_part=nullptr;
     QLabel* m_source=nullptr;
     QLabel* m_dimensions=nullptr;
     QLabel* m_counts=nullptr;
     QLabel* m_bfc=nullptr;
+    QLabel* m_sourceMeshStatus=nullptr;
+    QLabel* m_preparedMeshStatus=nullptr;
     QDoubleSpinBox* m_scale=nullptr;
     QPushButton* m_reload=nullptr;
     QPushButton* m_fit=nullptr;
     QPushButton* m_resetView=nullptr;
     QPushButton* m_export=nullptr;
+    QPushButton* m_prepare=nullptr;
+    QCheckBox* m_showMeshIssues=nullptr;
+    PrintPreparationCoordinator* m_coordinator=nullptr;
+    quint64 m_sourceGeneration=0;
+    bool m_sourceReady=false;
+    bool m_preparing=false;
+    bool m_prepareBlocked=false;
     QString m_renderingError;
 };

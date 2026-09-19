@@ -47,6 +47,27 @@ https://sqlite.org/copyright.html
 SQLite downloads:
 https://sqlite.org/download.html
 
+## MCUT
+
+BrickSuite uses MCUT v1.3.0, pinned to upstream commit
+`047d75ffe6e33ede572cb25217047a4756188401`, from:
+https://github.com/cutdigital/mcut
+
+MCUT is licensed under the GNU Lesser General Public License version 3 or
+later. BrickSuite uses MCUT as a shared library. Binary distributions must
+retain the applicable MCUT copyright and license notices and satisfy the LGPL
+requirements that permit users to replace or relink the shared library.
+
+BrickSuite applies one narrow MinGW compatibility patch to the pinned source:
+the MSVC SAL `_Acquires_lock_` annotation in `tpool.h` is limited to MSVC. The
+patch does not alter MCUT geometry behavior and fails closed if the pinned
+source text is not present.
+
+MCUT's optional `mio` dependency is pinned to commit
+`474d060bddd1d9a3e69c439e31ae6f3dae3d55ad` to avoid a moving configuration
+reference. BrickSuite disables the upstream tutorials/tests that use it, so
+`mio` is not linked or distributed in the current runtime.
+
 ## Rebrickable
 
 BrickSuite interoperates with Rebrickable reference data, CSV exports,

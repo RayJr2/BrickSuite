@@ -35,6 +35,13 @@ int main(int argc,char**argv)
     if(!require(validation.valid,"valid library accepted"))return 1;
     auto loaded=LDrawLibraryService::loadPart(temp.path(),"3001");
     if(!require(loaded.ok(),qPrintable(loaded.error.message)))return 1;
+    if(!require(loaded.sourceModel && !loaded.sourceModel->files.isEmpty()
+                && loaded.sourceModel->files.first().relativePath==QStringLiteral("parts/3001.dat"),
+                "production source model identity"))return 1;
+    if(!require(!loaded.dependencyFingerprint.dependencies.isEmpty()
+                && loaded.dependencyFingerprint.dependencies.first().relativePath==QStringLiteral("parts/3001.dat")
+                && loaded.dependencyFingerprint.dependencies.first().size>0,
+                "dependency fingerprint records normalized identity and file metadata"))return 1;
     if(!require(loaded.mesh.triangles.size()==3,"triangle and deterministic quad triangulation"))return 1;
     if(!require(loaded.mesh.triangles.at(0).backFaceCull
                 && loaded.mesh.triangles.at(1).backFaceCull,

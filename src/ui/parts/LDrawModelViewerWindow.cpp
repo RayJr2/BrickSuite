@@ -1,6 +1,8 @@
 #include "LDrawModelViewerWindow.h"
 
 #include "LDrawViewportWidget.h"
+#include "PreparedMeshRenderAdapter.h"
+#include "PrintPreparationCoordinator.h"
 #include "../common/SessionFileDialogDirectoryService.h"
 #include "../help/HelpManager.h"
 #include "../helpers/ColorComboHelper.h"
@@ -8,6 +10,8 @@
 #include "../../services/geometry/LDrawLibraryService.h"
 #include "../../services/geometry/LDrawColorResolver.h"
 #include "../../services/geometry/LDrawObjWriter.h"
+#include "../../services/geometry/print/PrintMeshAnalysis.h"
+#include "../../services/geometry/print/PrintMeshConversion.h"
 #include "../../settings/UserSettings.h"
 
 #include <QtConcurrentRun>
@@ -26,9 +30,12 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QStandardItemModel>
 #include <QVBoxLayout>
 
-LDrawModelViewerWindow::LDrawModelViewerWindow(QWidget* parent):QDialog(parent)
+namespace { struct SourceAnalysisPayload { PrintGeometry::PrintMesh mesh;PrintGeometry::MeshAnalysisResult analysis; }; }
+
+LDrawModelViewerWindow::LDrawModelViewerWindow(PrintPreparationCoordinator*coordinator,QWidget* parent):QDialog(parent),m_coordinator(coordinator)
 {
     setWindowTitle(tr("3D Model Viewer"));setModal(false);resize(1050,760);
     HelpManager::setContextTopic(this,HelpTopic::LDrawModels);
@@ -53,7 +60,9 @@ LDrawModelViewerWindow::LDrawModelViewerWindow(QWidget* parent):QDialog(parent)
     colorRow->addWidget(m_modelColor);colorRow->addStretch();root->addLayout(colorRow);
     m_viewport=new LDrawViewportWidget(this);root->addWidget(m_viewport,1);
     auto*info=new QFormLayout;m_part=new QLabel(this);m_source=new QLabel(this);m_source->setTextInteractionFlags(Qt::TextSelectableByMouse);m_dimensions=new QLabel(this);m_counts=new QLabel(this);m_bfc=new QLabel(this);m_status=new QLabel(this);m_status->setWordWrap(true);
-    info->addRow(tr("Part:"),m_part);info->addRow(tr("Source:"),m_source);info->addRow(tr("Dimensions:"),m_dimensions);info->addRow(tr("Geometry:"),m_counts);info->addRow(tr("BFC:"),m_bfc);info->addRow(tr("Status:"),m_status);info->addRow(tr("Printability:"),new QLabel(tr("Mesh repair / printability validation: Not performed"),this));root->addLayout(info);
+    info->addRow(tr("Part:"),m_part);info->addRow(tr("Source:"),m_source);info->addRow(tr("Dimensions:"),m_dimensions);info->addRow(tr("Geometry:"),m_counts);info->addRow(tr("BFC:"),m_bfc);info->addRow(tr("Status:"),m_status);
+    auto*meshControls=new QWidget(this);auto*meshRow=new QHBoxLayout(meshControls);meshRow->setContentsMargins(0,0,0,0);meshRow->addWidget(new QLabel(tr("View:"),this));m_geometryView=new QComboBox(this);m_geometryView->addItem(tr("Source"),0);m_geometryView->addItem(tr("Prepared"),1);meshRow->addWidget(m_geometryView);m_prepare=new QPushButton(tr("Prepare for Printing"),this);m_prepare->setToolTip(tr("Create validated nominal print geometry from the selected LDraw model."));meshRow->addWidget(m_prepare);m_showMeshIssues=new QCheckBox(tr("Show Mesh Issues"),this);m_showMeshIssues->setToolTip(tr("Highlight Source mesh boundaries and topology issues."));meshRow->addWidget(m_showMeshIssues);meshRow->addStretch();info->addRow(meshControls);
+    m_sourceMeshStatus=new QLabel(tr("Source Mesh: Loading…"),this);m_preparedMeshStatus=new QLabel(tr("Prepared Mesh: Not prepared"),this);info->addRow(m_sourceMeshStatus);info->addRow(m_preparedMeshStatus);root->addLayout(info);
     auto*actions=new QHBoxLayout;actions->addWidget(new QLabel(tr("Scale:"),this));m_scale=new QDoubleSpinBox(this);m_scale->setRange(1.0,1000.0);m_scale->setDecimals(2);m_scale->setSingleStep(0.5);m_scale->setSuffix(tr(" %"));m_scale->setValue(100.0);actions->addWidget(m_scale);auto*reset=new QPushButton(tr("Reset"),this);actions->addWidget(reset);actions->addStretch();m_export=new QPushButton(tr("Export OBJ..."),this);actions->addWidget(m_export);auto*buttons=new QDialogButtonBox(QDialogButtonBox::Help|QDialogButtonBox::Close,this);actions->addWidget(buttons);root->addLayout(actions);
     connect(m_candidate,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int){if(m_candidate->currentIndex()<0)return;startLoad(LoadBehavior::ResetView);});
     connect(m_reload,&QPushButton::clicked,this,[this]{startLoad(LoadBehavior::PreserveView);});
@@ -65,6 +74,12 @@ LDrawModelViewerWindow::LDrawModelViewerWindow(QWidget* parent):QDialog(parent)
     connect(showAxes,&QCheckBox::toggled,m_viewport,&LDrawViewportWidget::setShowAxes);
     connect(m_modelColor,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int index){const QColor color(QStringLiteral("#")+m_modelColor->itemData(index,Qt::UserRole+1).toString().remove(QLatin1Char('#')));if(color.isValid())m_viewport->setModelColor(color);});
     connect(m_scale,qOverload<double>(&QDoubleSpinBox::valueChanged),this,[this](double value){m_state.setScalePercent(value);m_viewport->setUniformScale(float(value/100.0));updateDimensions();});
+    connect(m_geometryView,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int){selectGeometry();});
+    connect(m_prepare,&QPushButton::clicked,this,&LDrawModelViewerWindow::startPreparation);
+    connect(m_showMeshIssues,&QCheckBox::toggled,m_viewport,&LDrawViewportWidget::setShowMeshIssues);
+    connect(m_coordinator,&PrintPreparationCoordinator::progress,this,&LDrawModelViewerWindow::applyPreparationProgress);
+    connect(m_coordinator,&PrintPreparationCoordinator::completed,this,&LDrawModelViewerWindow::applyPreparationResult);
+    connect(m_coordinator,&PrintPreparationCoordinator::busyChanged,this,[this](bool){updatePreparationControls();});
     connect(reset,&QPushButton::clicked,this,[this]{m_scale->setValue(100.0);});connect(m_export,&QPushButton::clicked,this,&LDrawModelViewerWindow::exportObj);
     connect(buttons,&QDialogButtonBox::rejected,this,&QDialog::close);connect(buttons,&QDialogButtonBox::helpRequested,this,[this]{HelpManager::showTopic(HelpTopic::LDrawModels,this);});
     connect(m_viewport,&LDrawViewportWidget::renderingError,this,[this](const QString&message){m_renderingError=message;m_status->setText(message);m_projection->setEnabled(false);m_renderMode->setEnabled(false);m_standardView->setEnabled(false);m_fit->setEnabled(false);m_resetView->setEnabled(false);});
@@ -84,32 +99,79 @@ void LDrawModelViewerWindow::showPart(const LDrawModelViewerRequest& request)
 
 void LDrawModelViewerWindow::startLoad(LoadBehavior behavior)
 {
-    const QString id=m_candidate->currentText().trimmed();if(id.isEmpty()){m_status->setText(tr("No authoritative LDraw identity is available."));return;}
     const quint64 generation=behavior==LoadBehavior::PreserveView?m_state.beginReload():m_state.beginNewModelLoad();
+    m_sourceGeneration=generation;invalidatePreparation();m_sourceReady=false;m_sourceMeshStatus->setText(tr("Source Mesh: Loading…"));updatePreparationControls();
+    const QString id=m_candidate->currentText().trimmed();if(id.isEmpty()){m_status->setText(tr("No authoritative LDraw identity is available."));m_sourceMeshStatus->setText(tr("Source Mesh: Unavailable"));m_viewport->clearMesh();return;}
     if(behavior==LoadBehavior::ResetView){
         QSignalBlocker scaleBlocker(m_scale);m_scale->setValue(100.0);m_viewport->setUniformScale(1.0f);
         QSignalBlocker projectionBlocker(m_projection);m_projection->setCurrentIndex(0);
     }
     m_status->setText(tr("Loading 3D model..."));m_export->setEnabled(false);m_reload->setEnabled(false);
-    const QString root=UserSettings::instance().ldrawLibraryPath();auto*watcher=new QFutureWatcher<LDrawGeometry::Result>(this);QPointer<LDrawModelViewerWindow> self(this);
-    connect(watcher,&QFutureWatcher<LDrawGeometry::Result>::finished,this,[self,watcher,generation,behavior]{const auto result=watcher->result();watcher->deleteLater();if(!self||!self->m_state.accepts(generation))return;self->m_reload->setEnabled(true);self->applyResult(result,behavior);});
+    const QString root=UserSettings::instance().ldrawLibraryPath();auto*watcher=new QFutureWatcher<LDrawGeometry::LDrawLoadResult>(this);QPointer<LDrawModelViewerWindow> self(this);
+    connect(watcher,&QFutureWatcher<LDrawGeometry::LDrawLoadResult>::finished,this,[self,watcher,generation,behavior]{const auto result=watcher->result();watcher->deleteLater();if(!self||!self->m_state.accepts(generation))return;self->m_reload->setEnabled(true);self->applyResult(result,behavior);});
     watcher->setFuture(QtConcurrent::run([root,id]{return LDrawLibraryService::loadPart(root,id);}));
 }
 
-void LDrawModelViewerWindow::applyResult(const LDrawGeometry::Result&result,LoadBehavior behavior)
+void LDrawModelViewerWindow::applyResult(const LDrawGeometry::LDrawLoadResult&result,LoadBehavior behavior)
 {
-    if(!result.ok()){m_status->setText(result.error.message);m_source->setText(result.error.reference);return;}
-    m_mesh=result.mesh;m_status->setText(m_renderingError.isEmpty()?tr("Geometry loaded successfully."):m_renderingError);m_source->setText(QStringLiteral("%1 (%2)").arg(m_mesh.sourceRelativePath,m_mesh.sourceProvenance));
+    if(!result.ok()){m_status->setText(result.error.message);m_source->setText(result.error.reference);m_sourceMeshStatus->setText(tr("Source Mesh: Unavailable"));updatePreparationControls();return;}
+    m_loadResult=result;m_mesh=result.mesh;m_status->setText(m_renderingError.isEmpty()?tr("Geometry loaded successfully."):m_renderingError);m_source->setText(QStringLiteral("%1 (%2)").arg(m_mesh.sourceRelativePath,m_mesh.sourceProvenance));
     m_counts->setText(tr("%1 triangles, %2 hard edges, %3 conditional edges; %4 degenerate faces omitted").arg(m_mesh.triangles.size()).arg(m_mesh.hardEdges.size()).arg(m_mesh.conditionalEdges.size()).arg(m_mesh.degenerateFaces));
     m_bfc->setText(m_mesh.bfcCertified?tr("Certified source geometry encountered."):tr("No BFC certification was found in the loaded source."));
     m_viewport->setMesh(m_mesh,behavior==LoadBehavior::ResetView);m_export->setEnabled(!m_mesh.triangles.isEmpty());updateDimensions();
+    const quint64 generation=m_sourceGeneration;auto*watcher=new QFutureWatcher<SourceAnalysisPayload>(this);QPointer<LDrawModelViewerWindow>self(this);
+    connect(watcher,&QFutureWatcher<SourceAnalysisPayload>::finished,this,[self,watcher,generation]{auto payload=watcher->result();watcher->deleteLater();if(!self||!self->m_state.accepts(generation))return;self->m_sourcePrintMesh=std::move(payload.mesh);self->m_sourceAnalysis=std::move(payload.analysis);self->m_sourceReady=true;const auto&a=self->m_sourceAnalysis;self->m_sourceMeshStatus->setText(a.boundaryEdges||a.nonManifoldEdges?self->tr("Source Mesh: Preparation recommended"):self->tr("Source Mesh: Closed"));self->m_sourceMeshStatus->setToolTip(self->tr("%1 components · %2 boundary edges · %3 non-manifold edges · %4 triangles").arg(a.connectedComponents).arg(a.boundaryEdges).arg(a.nonManifoldEdges).arg(a.triangles));self->m_viewport->setSourceIssueOverlay(PreparedMeshRenderAdapter::sourceIssues(self->m_sourcePrintMesh,a));self->updatePreparationControls();});
+    const auto source=m_mesh;watcher->setFuture(QtConcurrent::run([source]{SourceAnalysisPayload payload;payload.mesh=PrintGeometry::PrintMeshConversion::fromPartMesh(source);payload.analysis=PrintGeometry::analyzeSource(payload.mesh);return payload;}));
+}
+
+void LDrawModelViewerWindow::invalidatePreparation()
+{
+    if(m_coordinator)m_coordinator->cancel();m_preparing=false;m_preparedMesh.reset();m_prepareBlocked=false;
+    {QSignalBlocker blocker(m_geometryView);m_geometryView->setCurrentIndex(m_geometryView->findData(0));}
+    m_preparedMeshStatus->setText(tr("Prepared Mesh: Not prepared"));m_preparedMeshStatus->setToolTip({});if(!m_mesh.triangles.isEmpty())m_viewport->setMesh(m_mesh,false);m_viewport->setShowMeshIssues(m_showMeshIssues->isChecked());
+    updatePreparationControls();
+}
+
+void LDrawModelViewerWindow::startPreparation()
+{
+    if(!m_sourceReady||m_preparing||!m_loadResult.ok())return;
+    PrintGeometry::PrintPreparationRequest request;request.partReference=m_request.partNumber;request.ldrawIdentity=m_candidate->currentText().trimmed();request.libraryAuthority=UserSettings::instance().ldrawLibraryPath();request.loadResult=m_loadResult;
+    if(!m_coordinator->start(m_sourceGeneration,request))return;m_preparing=true;m_preparedMeshStatus->setText(tr("Prepared Mesh: Preparing — Analyzing Source…"));updatePreparationControls();
+}
+
+void LDrawModelViewerWindow::applyPreparationProgress(quint64 generation,const PrintGeometry::PrintPreparationProgress&progress)
+{
+    if(!m_preparing||!m_state.accepts(generation))return;QString phase;using P=PrintGeometry::PrintPreparationPhase;switch(progress.phase){case P::SourceAnalysis:phase=tr("Analyzing Source");break;case P::SemanticConstruction:phase=tr("Building semantic operands");break;case P::OperandValidation:phase=tr("Validating operands");break;case P::BooleanComposition:phase=progress.totalOperations>0&&progress.currentOperation>0?tr("Composing solids (%1 of %2)").arg(progress.currentOperation).arg(progress.totalOperations):tr("Composing solids");break;case P::FinalValidation:phase=tr("Validating Prepared mesh");break;}m_preparedMeshStatus->setText(tr("Prepared Mesh: Preparing — %1…").arg(phase));
+}
+
+void LDrawModelViewerWindow::applyPreparationResult(quint64 generation,const PrintGeometry::PrintPreparationResult&result)
+{
+    if(!m_state.accepts(generation))return;m_preparing=false;m_preparedMeshStatus->setToolTip(result.diagnostic);
+    using S=PrintGeometry::PrintPreparationState;switch(result.state){case S::Ready:if(result.preparedMesh){m_preparedMesh=result.preparedMesh;m_preparedMeshStatus->setText(tr("Prepared Mesh: Ready for Printing"));{QSignalBlocker blocker(m_geometryView);m_geometryView->setCurrentIndex(m_geometryView->findData(1));}selectGeometry();}break;case S::Unsupported:m_prepareBlocked=true;m_preparedMeshStatus->setText(tr("Prepared Mesh: Built-in preparation unsupported"));break;case S::Ambiguous:m_prepareBlocked=true;m_preparedMeshStatus->setText(tr("Prepared Mesh: Construction ambiguous"));break;case S::Failed:m_preparedMeshStatus->setText(tr("Prepared Mesh: Preparation failed"));break;case S::Cancelled:return;}updatePreparationControls();
+}
+
+void LDrawModelViewerWindow::updatePreparationControls()
+{
+    const bool ready=bool(m_preparedMesh);m_prepare->setEnabled(m_sourceReady&&!m_preparing&&!ready&&!m_prepareBlocked&&m_coordinator&&!m_coordinator->busy());
+    if(auto*model=qobject_cast<QStandardItemModel*>(m_geometryView->model()))if(auto*item=model->item(m_geometryView->findData(1)))item->setEnabled(ready);
+    m_showMeshIssues->setEnabled(m_sourceReady&&m_geometryView->currentData().toInt()==0);
+}
+
+void LDrawModelViewerWindow::selectGeometry()
+{
+    const bool prepared=m_geometryView->currentData().toInt()==1&&m_preparedMesh;if(prepared)m_viewport->setPreparedMesh(PreparedMeshRenderAdapter::fromPreparedMesh(*m_preparedMesh));else if(!m_mesh.triangles.isEmpty())m_viewport->setMesh(m_mesh,false);m_viewport->setShowMeshIssues(!prepared&&m_showMeshIssues->isChecked());updateDimensions();updatePreparationControls();
+    if(prepared){m_counts->setText(tr("%1 triangles, %2 topology edges").arg(m_preparedMesh->preparedTriangleCount).arg(PreparedMeshRenderAdapter::fromPreparedMesh(*m_preparedMesh).topologyEdges.size()));m_bfc->setText(tr("Prepared geometry is consistently outward-oriented."));}
+    else if(!m_mesh.triangles.isEmpty()){m_counts->setText(tr("%1 triangles, %2 hard edges, %3 conditional edges; %4 degenerate faces omitted").arg(m_mesh.triangles.size()).arg(m_mesh.hardEdges.size()).arg(m_mesh.conditionalEdges.size()).arg(m_mesh.degenerateFaces));m_bfc->setText(m_mesh.bfcCertified?tr("Certified source geometry encountered."):tr("No BFC certification was found in the loaded source."));}
 }
 
 void LDrawModelViewerWindow::updateDimensions()
 {
-    if(!m_mesh.hasBounds){m_dimensions->clear();return;}const QVector3D original=m_mesh.dimensionsMm();const QVector3D scaled=original*float(m_state.scalePercent()/100.0);
+    const bool prepared=m_geometryView&&m_geometryView->currentData().toInt()==1&&m_preparedMesh;QVector3D original;
+    if(prepared){const auto&b=m_preparedMesh->millimetreBounds;if(!b.valid){m_dimensions->clear();return;}original={float(b.maximum.x-b.minimum.x),float(b.maximum.y-b.minimum.y),float(b.maximum.z-b.minimum.z)};}
+    else {if(!m_mesh.hasBounds){m_dimensions->clear();return;}original=m_mesh.dimensionsMm();}
+    const QVector3D scaled=original*float(m_state.scalePercent()/100.0);
     const auto text=[](const QVector3D&v){return QStringLiteral("%1 × %2 × %3 mm").arg(v.x(),0,'f',2).arg(v.y(),0,'f',2).arg(v.z(),0,'f',2);};
-    m_dimensions->setText(qFuzzyCompare(m_state.scalePercent(),100.0)?text(original):tr("Original: %1    Scaled: %2").arg(text(original),text(scaled)));
+    const QString prefix=prepared?tr("Prepared: "):tr("Source: ");m_dimensions->setText(qFuzzyCompare(m_state.scalePercent(),100.0)?prefix+text(original):tr("%1Original: %2    Scaled: %3").arg(prefix,text(original),text(scaled)));
 }
 
 void LDrawModelViewerWindow::exportObj()
@@ -120,4 +182,4 @@ void LDrawModelViewerWindow::exportObj()
 }
 
 void LDrawModelViewerWindow::saveWindowGeometry(){UserSettings::instance().setLDrawModelViewerGeometry(saveGeometry());}
-void LDrawModelViewerWindow::closeEvent(QCloseEvent*event){saveWindowGeometry();QDialog::closeEvent(event);}
+void LDrawModelViewerWindow::closeEvent(QCloseEvent*event){if(m_coordinator)m_coordinator->cancel();saveWindowGeometry();QDialog::closeEvent(event);}

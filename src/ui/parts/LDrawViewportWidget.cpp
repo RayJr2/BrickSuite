@@ -47,11 +47,18 @@ LDrawViewportWidget::~LDrawViewportWidget()
 
 void LDrawViewportWidget::setMesh(const LDrawGeometry::PartMesh& mesh,bool resetCamera)
 {
-    m_mesh=mesh;m_meshDirty=true;
+    m_mesh=mesh;m_usingPrepared=false;m_meshDirty=true;
     if(mesh.hasBounds){m_camera.setBounds(mesh.minimumBounds,mesh.maximumBounds,resetCamera);if(resetCamera){m_camera.setProjection(PartViewerCamera::Projection::Perspective);m_camera.setView(PartViewerCamera::View::Isometric);m_camera.fit();}}
     update();
 }
-void LDrawViewportWidget::clearMesh(){m_mesh={};m_meshDirty=true;update();}
+void LDrawViewportWidget::setPreparedMesh(const PreparedMeshRenderData&mesh)
+{
+    m_prepared=mesh;m_usingPrepared=true;m_meshDirty=true;
+    if(mesh.hasBounds)m_camera.setBounds(mesh.minimumBounds,mesh.maximumBounds,false);update();
+}
+void LDrawViewportWidget::setSourceIssueOverlay(const SourceMeshIssueRenderData&issues){m_issues=issues;m_meshDirty=true;update();}
+void LDrawViewportWidget::setShowMeshIssues(bool show){m_showMeshIssues=show;update();}
+void LDrawViewportWidget::clearMesh(){m_mesh={};m_prepared={};m_usingPrepared=false;m_meshDirty=true;update();}
 void LDrawViewportWidget::setUniformScale(float scale){m_camera.setScale(scale);update();}
 void LDrawViewportWidget::setRenderMode(PartViewerRenderMode mode){m_mode=mode;update();}
 void LDrawViewportWidget::setProjection(PartViewerCamera::Projection value){m_camera.setProjection(value);update();}
@@ -76,7 +83,7 @@ void LDrawViewportWidget::initializeGL()
         const QString error=m_program->log();delete m_program;m_program=nullptr;
         emit renderingError(tr("The 3D shaders could not be initialized: %1").arg(error));return;
     }
-    m_vao.create();m_faces.create();m_wire.create();m_hardEdges.create();m_conditionalEdges.create();m_axes.create();
+    m_vao.create();m_faces.create();m_wire.create();m_hardEdges.create();m_conditionalEdges.create();m_axes.create();m_boundaryIssues.create();m_nonManifoldIssues.create();
     const QVector3D n;const QVector4D red(0.95f,0.20f,0.20f,1),green(0.25f,0.90f,0.30f,1),blue(0.25f,0.50f,1,1);
     QVector<Vertex> axes;
     const auto addAxis=[&axes,&n](const QVector3D&end,const QVector3D&a,const QVector3D&b,const QVector4D&color){axes<<vertex({},n,color)<<vertex(end,n,color)<<vertex(end,n,color)<<vertex(a,n,color)<<vertex(end,n,color)<<vertex(b,n,color);};
@@ -106,6 +113,7 @@ void LDrawViewportWidget::paintGL()
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
     }else if(passes.visibleFaces)drawFaces();
     if(passes.triangleEdges||passes.ldrawEdges)drawLines();
+    if(m_showMeshIssues&&!m_usingPrepared)drawIssueOverlay();
     m_program->release();
     if(m_showAxes){drawAxes();drawAxisLabels();}
 }
@@ -124,7 +132,7 @@ void LDrawViewportWidget::establishMainRenderState()
 
 void LDrawViewportWidget::destroyResources()
 {
-    m_faces.destroy();m_wire.destroy();m_hardEdges.destroy();m_conditionalEdges.destroy();m_axes.destroy();m_vao.destroy();
+    m_faces.destroy();m_wire.destroy();m_hardEdges.destroy();m_conditionalEdges.destroy();m_axes.destroy();m_boundaryIssues.destroy();m_nonManifoldIssues.destroy();m_vao.destroy();
     delete m_program;m_program=nullptr;m_ready=false;
 }
 
@@ -137,11 +145,13 @@ void LDrawViewportWidget::uploadBuffer(QOpenGLBuffer& buffer,const QVector<Verte
 void LDrawViewportWidget::uploadMesh()
 {
     QVector<Vertex> culled,twoSided,wire,hard;
-    for(const auto&t:m_mesh.triangles){auto&target=t.backFaceCull?culled:twoSided;const auto color=LDrawColorResolver::faceColor(t.color,m_modelColor);target<<vertex(t.a,t.normal,color)<<vertex(t.b,t.normal,color)<<vertex(t.c,t.normal,color);const auto edge=LDrawColorResolver::edgeColor(t.color,m_modelColor);const QVector3D n;wire<<vertex(t.a,n,edge)<<vertex(t.b,n,edge)<<vertex(t.b,n,edge)<<vertex(t.c,n,edge)<<vertex(t.c,n,edge)<<vertex(t.a,n,edge);}
+    if(m_usingPrepared){const QVector4D face(m_modelColor.redF(),m_modelColor.greenF(),m_modelColor.blueF(),1);const auto edge=LDrawColorResolver::edgeColor(QStringLiteral("16"),m_modelColor);for(const auto&t:m_prepared.triangles)culled<<vertex(t.a,t.normal,face)<<vertex(t.b,t.normal,face)<<vertex(t.c,t.normal,face);for(const auto&e:m_prepared.topologyEdges)wire<<vertex(e.a,{},edge)<<vertex(e.b,{},edge);for(const auto&e:m_prepared.featureEdges)hard<<vertex(e.a,{},edge)<<vertex(e.b,{},edge);}
+    else for(const auto&t:m_mesh.triangles){auto&target=t.backFaceCull?culled:twoSided;const auto color=LDrawColorResolver::faceColor(t.color,m_modelColor);target<<vertex(t.a,t.normal,color)<<vertex(t.b,t.normal,color)<<vertex(t.c,t.normal,color);const auto edge=LDrawColorResolver::edgeColor(t.color,m_modelColor);const QVector3D n;wire<<vertex(t.a,n,edge)<<vertex(t.b,n,edge)<<vertex(t.b,n,edge)<<vertex(t.c,n,edge)<<vertex(t.c,n,edge)<<vertex(t.a,n,edge);}
     culled+=twoSided;m_culledFaceVertices=culled.size()-twoSided.size();m_twoSidedFaceVertices=twoSided.size();
-    for(const auto&e:m_mesh.hardEdges){const auto color=LDrawColorResolver::edgeColor(e.color,m_modelColor);hard<<vertex(e.a,{},color)<<vertex(e.b,{},color);}
+    if(!m_usingPrepared)for(const auto&e:m_mesh.hardEdges){const auto color=LDrawColorResolver::edgeColor(e.color,m_modelColor);hard<<vertex(e.a,{},color)<<vertex(e.b,{},color);}
     uploadBuffer(m_faces,culled);uploadBuffer(m_wire,wire);uploadBuffer(m_hardEdges,hard);
-    m_wireVertices=wire.size();m_hardEdgeVertices=hard.size();m_meshDirty=false;
+    QVector<Vertex>boundary,nonManifold;const QVector4D amber(1.0f,0.62f,0.08f,1),magenta(0.95f,0.20f,0.85f,1);for(const auto&e:m_issues.boundaryEdges)boundary<<vertex(e.a,{},amber)<<vertex(e.b,{},amber);for(const auto&e:m_issues.nonManifoldEdges)nonManifold<<vertex(e.a,{},magenta)<<vertex(e.b,{},magenta);uploadBuffer(m_boundaryIssues,boundary);uploadBuffer(m_nonManifoldIssues,nonManifold);
+    m_wireVertices=wire.size();m_hardEdgeVertices=hard.size();m_boundaryIssueVertices=boundary.size();m_nonManifoldIssueVertices=nonManifold.size();m_meshDirty=false;
 }
 
 void LDrawViewportWidget::bindAttributes(QOpenGLBuffer& buffer)
@@ -203,10 +213,19 @@ void LDrawViewportWidget::drawLines()
     m_program->setUniformValue("overrideColor",wireframe);
     if(wireframe)m_program->setUniformValue("inspectionColor",LDrawColorResolver::wireframeColor());
     if(passes.triangleEdges){bindAttributes(m_wire);glDrawArrays(GL_LINES,0,m_wireVertices);m_wire.release();m_vao.release();}
-    if(passes.ldrawEdges){
+    if(m_usingPrepared&&passes.ldrawEdges&&!passes.triangleEdges){bindAttributes(m_hardEdges);glDrawArrays(GL_LINES,0,m_hardEdgeVertices);m_hardEdges.release();m_vao.release();}
+    if(passes.ldrawEdges&&!m_usingPrepared){
         bindAttributes(m_hardEdges);glDrawArrays(GL_LINES,0,m_hardEdgeVertices);m_hardEdges.release();m_vao.release();
         const auto conditional=conditionalLineVertices();uploadBuffer(m_conditionalEdges,conditional);bindAttributes(m_conditionalEdges);glDrawArrays(GL_LINES,0,conditional.size());m_conditionalEdges.release();m_vao.release();
     }
+}
+
+void LDrawViewportWidget::drawIssueOverlay()
+{
+    m_program->setUniformValue("lighting",false);m_program->setUniformValue("overrideColor",false);glDepthFunc(GL_LEQUAL);
+    if(m_boundaryIssueVertices){bindAttributes(m_boundaryIssues);glDrawArrays(GL_LINES,0,m_boundaryIssueVertices);m_boundaryIssues.release();m_vao.release();}
+    if(m_nonManifoldIssueVertices){bindAttributes(m_nonManifoldIssues);glDrawArrays(GL_LINES,0,m_nonManifoldIssueVertices);m_nonManifoldIssues.release();m_vao.release();}
+    glDepthFunc(GL_LESS);
 }
 
 void LDrawViewportWidget::mousePressEvent(QMouseEvent*event){m_lastMouse=event->position();event->accept();}

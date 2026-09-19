@@ -72,12 +72,6 @@ struct PartMesh {
     QVector3D dimensionsMm() const { return dimensionsLdu() * 0.4f; }
 };
 
-struct Result {
-    PartMesh mesh;
-    Error error;
-    bool ok() const { return error.code == ErrorCode::None; }
-};
-
 struct LibraryValidation {
     bool valid = false;
     QString normalizedRoot;
