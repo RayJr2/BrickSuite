@@ -16,8 +16,9 @@
 <p>Unsupported or ambiguous construction is reported without replacing Source geometry. Preparation failures leave Source available for inspection.</p>
 <h2>Uniform Scale and OBJ export</h2>
 <p><b>Scale</b> changes every displayed dimension uniformly without modifying the installed source or authoritative mesh. At 100%, 1 LDraw unit = 0.4 mm. Scaling is not specialized LEGO fit or tolerance correction.</p>
-<p><b>Export 3D Model...</b> writes OBJ or binary STL in millimetres at the displayed Scale. A validated Prepared Mesh is selected by default and identified as Ready for Printing; the authoritative Source Mesh remains selectable.</p>
+<p><b>Export 3D Model...</b> writes OBJ, binary STL, or standards-based 3MF in millimetres at the displayed Scale. A validated Prepared Mesh is selected by default and identified as Ready for Printing; the authoritative Source Mesh remains selectable. BrickSuite writes a portable model 3MF, not slicer project settings.</p>
 <p>Source export is not a BrickSuite printability guarantee. When preparation is unavailable, unsupported, ambiguous, or fails, Source OBJ and STL remain available for analysis or possible repair by your slicer.</p>
+<p>3MF stores the selected Model Color as the model's base color. Printed decorations and multi-color surface details are not currently reproduced. Filament and printer assignments remain controlled by the slicer.</p>
 <h2>Safety and limitations</h2>
-<p>BrickSuite rejects absolute, traversal, escaping symbolic-link, cyclic, ambiguous-case, malformed, and excessive references. Review geometry in your slicer before printing. The viewer does not currently provide STL or 3MF export, slicing, CAD editing, whole-model viewing, or remote Host geometry transport.</p>
+<p>BrickSuite rejects absolute, traversal, escaping symbolic-link, cyclic, ambiguous-case, malformed, and excessive references. Review geometry in your slicer before printing. The viewer does not currently provide slicing, CAD editing, whole-model viewing, or remote Host geometry transport.</p>
 </body></html>

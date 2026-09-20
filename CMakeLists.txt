@@ -6,6 +6,7 @@ project(BrickSuite
 )
 
 include(cmake/BrickSuiteMcut.cmake)
+include(cmake/BrickSuiteLib3mf.cmake)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -431,6 +432,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/LDrawIdentitySelection.h
     src/services/geometry/LDrawObjWriter.cpp src/services/geometry/LDrawObjWriter.h
     src/services/geometry/BinaryStlWriter.cpp src/services/geometry/BinaryStlWriter.h
+    src/services/geometry/ThreeMfWriter.cpp src/services/geometry/ThreeMfWriter.h
     src/services/geometry/ModelExportPolicy.h
     src/services/geometry/print/PrintMesh.h src/services/geometry/print/PreparedMesh.h
     src/services/geometry/print/SemanticOperand.h src/services/geometry/print/LDrawPrintPreparationProfile.h
@@ -641,7 +643,7 @@ target_link_libraries(BrickSuite PRIVATE
     Qt6::OpenGLWidgets
     ZLIB::ZLIB
     OpenSSL::Crypto
-    BrickSuite::Mcut
+    BrickSuite::Mcut BrickSuite::Lib3mf
 )
 bricksuite_stage_mcut_runtime(BrickSuite)
 
@@ -744,9 +746,10 @@ if(BUILD_TESTING)
             src/services/geometry/LDrawLibraryService.h src/services/geometry/LDrawLibraryService.cpp
             src/services/geometry/LDrawObjWriter.h src/services/geometry/LDrawObjWriter.cpp
             src/services/geometry/BinaryStlWriter.h src/services/geometry/BinaryStlWriter.cpp
+            src/services/geometry/ThreeMfWriter.h src/services/geometry/ThreeMfWriter.cpp
             src/services/geometry/ModelExportPolicy.h
             src/services/geometry/print/PrintMeshConversion.h src/services/geometry/print/PrintMeshConversion.cpp)
-        target_link_libraries(${LDRAW_TEST_TARGET} PRIVATE Qt6::Core Qt6::Gui)
+        target_link_libraries(${LDRAW_TEST_TARGET} PRIVATE Qt6::Core Qt6::Gui BrickSuite::Lib3mf)
         add_test(NAME ${LDRAW_TEST_TARGET} COMMAND ${LDRAW_TEST_TARGET})
     endforeach()
 

@@ -11,6 +11,7 @@
 #include "../../services/geometry/LDrawColorResolver.h"
 #include "../../services/geometry/LDrawObjWriter.h"
 #include "../../services/geometry/BinaryStlWriter.h"
+#include "../../services/geometry/ThreeMfWriter.h"
 #include "../../services/geometry/print/PrintMeshAnalysis.h"
 #include "../../services/geometry/print/PrintMeshConversion.h"
 #include "../../settings/UserSettings.h"
@@ -74,7 +75,7 @@ LDrawModelViewerWindow::LDrawModelViewerWindow(PrintPreparationCoordinator*coord
     connect(m_fit,&QPushButton::clicked,m_viewport,&LDrawViewportWidget::fitModel);
     connect(m_resetView,&QPushButton::clicked,m_viewport,&LDrawViewportWidget::resetView);
     connect(showAxes,&QCheckBox::toggled,m_viewport,&LDrawViewportWidget::setShowAxes);
-    connect(m_modelColor,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int index){const QColor color(QStringLiteral("#")+m_modelColor->itemData(index,Qt::UserRole+1).toString().remove(QLatin1Char('#')));if(color.isValid())m_viewport->setModelColor(color);});
+    connect(m_modelColor,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int){const QColor color=currentModelColor();if(color.isValid())m_viewport->setModelColor(color);});
     connect(m_scale,qOverload<double>(&QDoubleSpinBox::valueChanged),this,[this](double value){m_state.setScalePercent(value);m_viewport->setUniformScale(float(value/100.0));updateDimensions();});
     connect(m_geometryView,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int){selectGeometry();});
     connect(m_prepare,&QPushButton::clicked,this,&LDrawModelViewerWindow::startPreparation);
@@ -94,7 +95,7 @@ void LDrawModelViewerWindow::showPart(const LDrawModelViewerRequest& request)
     int colorIndex=-1;if(request.initialRebrickableColorId)colorIndex=m_modelColor->findData(*request.initialRebrickableColorId);
     if(colorIndex<0){for(int i=0;i<m_modelColor->count();++i)if(m_modelColor->itemText(i).compare(QStringLiteral("Light Bluish Gray"),Qt::CaseInsensitive)==0){colorIndex=i;break;}}
     if(colorIndex<0)colorIndex=0;m_modelColor->setCurrentIndex(colorIndex);
-    const QColor selected(QStringLiteral("#")+m_modelColor->itemData(colorIndex,Qt::UserRole+1).toString().remove(QLatin1Char('#')));if(selected.isValid())m_viewport->setModelColor(selected);
+    const QColor selected=currentModelColor();if(selected.isValid())m_viewport->setModelColor(selected);
     {QSignalBlocker blocker(m_candidate);m_candidate->clear();m_candidate->addItems(request.candidates);m_candidate->setCurrentIndex(request.candidates.isEmpty()?-1:0);}
     m_candidate->setVisible(request.candidates.size()>1);startLoad(LoadBehavior::ResetView);
 }
@@ -176,11 +177,19 @@ void LDrawModelViewerWindow::updateDimensions()
     const QString prefix=prepared?tr("Prepared: "):tr("Source: ");m_dimensions->setText(qFuzzyCompare(m_state.scalePercent(),100.0)?prefix+text(original):tr("%1Original: %2    Scaled: %3").arg(prefix,text(original),text(scaled)));
 }
 
+QColor LDrawModelViewerWindow::currentModelColor() const
+{
+    if(!m_modelColor||m_modelColor->currentIndex()<0)return {};
+    QString hex=m_modelColor->currentData(Qt::UserRole+1).toString().trimmed();
+    if(!hex.startsWith(QLatin1Char('#')))hex.prepend(QLatin1Char('#'));
+    return QColor(hex);
+}
+
 void LDrawModelViewerWindow::exportModel()
 {
-    QDialog d(this);d.setWindowTitle(tr("Export 3D Model"));auto*l=new QFormLayout(&d);QComboBox geometry(&d),format(&d);geometry.addItem(tr("Source Mesh"),0);if(m_preparedMesh)geometry.addItem(tr("Prepared Mesh — Ready for Printing"),1);if(m_preparedMesh)geometry.setCurrentIndex(1);format.addItems({tr("OBJ"),tr("Binary STL")});l->addRow(tr("Geometry:"),&geometry);l->addRow(tr("Format:"),&format);l->addRow(tr("Scale:"),new QLabel(QString::number(m_state.scalePercent(),'f',2)+QStringLiteral("%"),&d));auto*note=new QLabel(m_preparedMesh?tr("Prepared geometry is Ready for Printing. Source remains available."):tr("Source export is not a BrickSuite printability guarantee. Your slicer may need to repair it."),&d);note->setWordWrap(true);l->addRow(note);QDialogButtonBox buttons(QDialogButtonBox::Save|QDialogButtonBox::Cancel,&d);l->addRow(&buttons);connect(&buttons,&QDialogButtonBox::accepted,&d,&QDialog::accept);connect(&buttons,&QDialogButtonBox::rejected,&d,&QDialog::reject);if(d.exec()!=QDialog::Accepted)return;
-    const bool stl=format.currentIndex()==1,prepared=geometry.currentData().toInt()==1;auto&directories=SessionFileDialogDirectoryService::instance();const QString id=m_candidate->currentText().trimmed(),ext=stl?QStringLiteral(".stl"):QStringLiteral(".obj");QString path=QFileDialog::getSaveFileName(this,tr("Export 3D Model"),directories.initialFilePath(FileDialogDirectoryCategory::SaveExport,id+ext),stl?tr("Binary STL (*.stl)"):tr("Wavefront OBJ (*.obj)"));if(path.isEmpty())return;if(!path.endsWith(ext,Qt::CaseInsensitive))path+=ext;directories.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);const auto source=PrintGeometry::PrintMeshConversion::fromPartMesh(m_mesh);const auto&mesh=prepared?m_preparedMesh->mesh:source;const double scale=m_state.scalePercent()/100.0;QString failure;
-    if(stl){if(!BinaryStlWriter::write(mesh,path,scale,&failure))QMessageBox::critical(this,tr("Export 3D Model"),failure);else m_status->setText(tr("3D model exported successfully."));}else{LDrawObjWriter::Options options;options.uniformScale=scale;options.partNumber=m_request.partNumber;options.ldrawId=id;options.geometryLabel=prepared?QStringLiteral("Prepared"):QStringLiteral("Source");LDrawGeometry::Error error;if(!LDrawObjWriter::write(mesh,path,options,&error))QMessageBox::critical(this,tr("Export 3D Model"),error.message);else m_status->setText(tr("3D model exported successfully."));}
+    QDialog d(this);d.setWindowTitle(tr("Export 3D Model"));auto*l=new QFormLayout(&d);QComboBox geometry(&d),format(&d);geometry.addItem(tr("Source Mesh"),0);if(m_preparedMesh)geometry.addItem(tr("Prepared Mesh — Ready for Printing"),1);if(m_preparedMesh)geometry.setCurrentIndex(1);format.addItems({tr("OBJ"),tr("Binary STL"),tr("3MF")});l->addRow(tr("Geometry:"),&geometry);l->addRow(tr("Format:"),&format);l->addRow(tr("Scale:"),new QLabel(QString::number(m_state.scalePercent(),'f',2)+QStringLiteral("%"),&d));auto*note=new QLabel(m_preparedMesh?tr("Prepared geometry is Ready for Printing. Source remains available."):tr("Source export is not a BrickSuite printability guarantee. Your slicer may need to repair it."),&d);note->setWordWrap(true);l->addRow(note);QDialogButtonBox buttons(QDialogButtonBox::Save|QDialogButtonBox::Cancel,&d);l->addRow(&buttons);connect(&buttons,&QDialogButtonBox::accepted,&d,&QDialog::accept);connect(&buttons,&QDialogButtonBox::rejected,&d,&QDialog::reject);if(d.exec()!=QDialog::Accepted)return;
+    const bool stl=format.currentIndex()==1,threeMf=format.currentIndex()==2,prepared=geometry.currentData().toInt()==1;auto&directories=SessionFileDialogDirectoryService::instance();const QString id=m_candidate->currentText().trimmed(),ext=threeMf?QStringLiteral(".3mf"):(stl?QStringLiteral(".stl"):QStringLiteral(".obj"));QString path=QFileDialog::getSaveFileName(this,tr("Export 3D Model"),directories.initialFilePath(FileDialogDirectoryCategory::SaveExport,id+ext),threeMf?tr("3MF Model (*.3mf)"):(stl?tr("Binary STL (*.stl)"):tr("Wavefront OBJ (*.obj)")));if(path.isEmpty())return;if(!path.endsWith(ext,Qt::CaseInsensitive))path+=ext;directories.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);const auto source=PrintGeometry::PrintMeshConversion::fromPartMesh(m_mesh);const auto&mesh=prepared?m_preparedMesh->mesh:source;const double scale=m_state.scalePercent()/100.0;QString failure;
+    if(threeMf){ThreeMfWriter::Options options;options.uniformScale=scale;options.objectName=id;options.partIdentity=m_request.partNumber;options.modelColor=currentModelColor();if(!ThreeMfWriter::write(mesh,path,options,&failure))QMessageBox::critical(this,tr("Export 3D Model"),failure);else m_status->setText(tr("3D model exported successfully."));}else if(stl){if(!BinaryStlWriter::write(mesh,path,scale,&failure))QMessageBox::critical(this,tr("Export 3D Model"),failure);else m_status->setText(tr("3D model exported successfully."));}else{LDrawObjWriter::Options options;options.uniformScale=scale;options.partNumber=m_request.partNumber;options.ldrawId=id;options.geometryLabel=prepared?QStringLiteral("Prepared"):QStringLiteral("Source");LDrawGeometry::Error error;if(!LDrawObjWriter::write(mesh,path,options,&error))QMessageBox::critical(this,tr("Export 3D Model"),error.message);else m_status->setText(tr("3D model exported successfully."));}
 }
 
 void LDrawModelViewerWindow::saveWindowGeometry(){UserSettings::instance().setLDrawModelViewerGeometry(saveGeometry());}

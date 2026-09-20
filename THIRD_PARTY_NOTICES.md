@@ -58,6 +58,15 @@ later. BrickSuite uses MCUT as a shared library. Binary distributions must
 retain the applicable MCUT copyright and license notices and satisfy the LGPL
 requirements that permit users to replace or relink the shared library.
 
+## lib3mf
+
+BrickSuite uses lib3mf v2.5.0, pinned to upstream commit
+`64bb454d1fcb53effa57d3cef752a10d740d41a2`, from
+https://github.com/3MFConsortium/lib3mf. lib3mf is distributed under the
+BSD 2-Clause License. The build uses lib3mf's pinned bundled zlib, libzip,
+cpp-base64, and fast_float sources; their applicable notices remain part of
+the upstream source and packaged license materials.
+
 BrickSuite applies one narrow MinGW compatibility patch to the pinned source:
 the MSVC SAL `_Acquires_lock_` annotation in `tpool.h` is limited to MSVC. The
 patch does not alter MCUT geometry behavior and fails closed if the pinned

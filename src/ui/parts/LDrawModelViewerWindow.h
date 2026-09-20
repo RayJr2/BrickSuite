@@ -12,6 +12,7 @@
 
 class QComboBox;
 class QCheckBox;
+class QColor;
 class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
@@ -46,6 +47,7 @@ private:
     void updatePreparationControls();
     void selectGeometry();
     void updateDimensions();
+    QColor currentModelColor() const;
     void exportModel();
     void saveWindowGeometry();
 
