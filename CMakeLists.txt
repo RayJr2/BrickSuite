@@ -450,6 +450,8 @@ qt_add_executable(BrickSuite
     src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
     src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
     src/services/geometry/print/PreparedObjProofWriter.cpp src/services/geometry/print/PreparedObjProofWriter.h
+    src/services/geometry/print/ManufacturingMesh.h
+    src/services/geometry/print/ManufacturingMeshService.cpp src/services/geometry/print/ManufacturingMeshService.h
     src/services/geometry/ConditionalEdgeVisibility.cpp src/services/geometry/ConditionalEdgeVisibility.h
     src/services/geometry/LDrawColorResolver.cpp src/services/geometry/LDrawColorResolver.h
     src/services/geometry/PartViewerCamera.cpp src/services/geometry/PartViewerCamera.h
@@ -734,6 +736,21 @@ if(BUILD_TESTING)
         src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h)
     target_link_libraries(FitCalibrationLibraryTest PRIVATE Qt6::Core)
     add_test(NAME FitCalibrationLibrary COMMAND FitCalibrationLibraryTest)
+
+    qt_add_executable(ManufacturingMeshServiceTest EXCLUDE_FROM_ALL
+        tests/ManufacturingMeshServiceTest.cpp
+        src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
+        src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
+        src/services/geometry/print/ManufacturingMesh.h
+        src/services/geometry/print/ManufacturingMeshService.cpp src/services/geometry/print/ManufacturingMeshService.h
+        src/services/geometry/print/FunctionalOperandRegenerator.cpp src/services/geometry/print/FunctionalOperandRegenerator.h
+        src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
+        src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
+        src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
+        src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h)
+    target_link_libraries(ManufacturingMeshServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
+    bricksuite_stage_mcut_runtime(ManufacturingMeshServiceTest)
+    add_test(NAME ManufacturingMeshService COMMAND ManufacturingMeshServiceTest)
 
     qt_add_executable(LDrawPrintPreparationServiceTest EXCLUDE_FROM_ALL
         tests/LDrawPrintPreparationServiceTest.cpp

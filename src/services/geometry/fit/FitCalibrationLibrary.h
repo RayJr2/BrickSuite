@@ -29,6 +29,7 @@ struct FitProfile {
     QString processFingerprint;
     QString sourceSessionIdentity;
     QDateTime verifiedUtc;
+    FitEvidenceState verificationState = FitEvidenceState::Verified;
     QVector<FitProfileCorrection> corrections;
 };
 

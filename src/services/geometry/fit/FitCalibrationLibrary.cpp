@@ -101,6 +101,7 @@ QJsonObject FitProfileJson::toJson(const FitProfile& profile) {
             {"profileIdentity", profile.profileIdentity}, {"name", profile.name},
             {"process", processJson(profile.process)}, {"processFingerprint", profile.processFingerprint},
             {"sourceSessionIdentity", profile.sourceSessionIdentity},
+            {"verificationState", profile.verificationState == FitEvidenceState::Verified ? "verified" : "not-verified"},
             {"verifiedUtc", profile.verifiedUtc.toUTC().toString(Qt::ISODateWithMs)}, {"corrections", corrections}};
 }
 
@@ -119,6 +120,7 @@ bool FitProfileJson::fromJson(const QJsonObject& json, FitProfile* output, QStri
     profile.processFingerprint = json.value("processFingerprint").toString();
     profile.sourceSessionIdentity = json.value("sourceSessionIdentity").toString();
     profile.verifiedUtc = QDateTime::fromString(json.value("verifiedUtc").toString(), Qt::ISODateWithMs);
+    profile.verificationState = json.value("verificationState").toString("verified") == "verified" ? FitEvidenceState::Verified : FitEvidenceState::Draft;
     for (const auto& value : json.value("corrections").toArray()) {
         if (!value.isObject()) { fail(error, "A Fit Profile correction is malformed."); return false; }
         const auto item = value.toObject(); FitProfileCorrection correction;
@@ -230,6 +232,7 @@ bool FitCalibrationLibrary::loadProfile(const QString& identity, FitProfile* pro
     QJsonObject json; return readObject(fileForIdentity(profilesDirectory(), identity), &json, error) && FitProfileJson::fromJson(json, profile, error);
 }
 bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QString* reason) {
+    if (profile.verificationState != FitEvidenceState::Verified) { fail(reason, "The Fit Profile is not Verified."); return false; }
     if (profile.processFingerprint != processFingerprint(profile.process)) { fail(reason, "The stored manufacturing-process fingerprint no longer matches."); return false; }
     for (const auto& correction : profile.corrections) {
         if (correction.semanticContractVersion != currentSemanticContractVersion()) { fail(reason, "The functional semantic contract has changed."); return false; }
