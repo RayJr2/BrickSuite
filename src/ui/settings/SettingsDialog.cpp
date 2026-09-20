@@ -441,6 +441,7 @@ void SettingsDialog::loadSettings()
         m_ldrawLibraryEdit->text());
     m_ldrawLibraryStatusLabel->setText(ldrawValidation.status);
     m_meshRepairEnabledCheck->setChecked(settings.meshRepairEnabled());
+    m_autoFitEnabledCheck->setChecked(settings.autoFitEnabled());
 }
 
 void SettingsDialog::saveSettings()
@@ -561,6 +562,7 @@ void SettingsDialog::saveSettings()
     settings.setRebrickableMinimumRequestIntervalMs(rebrickableRequestIntervalMs);
     settings.setLDrawLibraryPath(m_ldrawLibraryEdit->text());
     settings.setMeshRepairEnabled(m_meshRepairEnabledCheck->isChecked());
+    settings.setAutoFitEnabled(m_autoFitEnabledCheck->isChecked());
     m_networkManager.refreshRebrickableCoordination();
     settings.setAutomaticBackupEnabled(m_automaticBackupEnabledCheck->isChecked());
     settings.setAutomaticBackupRoot(backupRoot);
@@ -1400,9 +1402,12 @@ void SettingsDialog::build3DModelsTab()
         tr("Allow future print workflows to prepare geometry automatically. "
            "The 3D viewer's Prepare for Printing action remains available when this is off."));
     preparationLayout->addWidget(m_meshRepairEnabledCheck);
+    m_autoFitEnabledCheck = new QCheckBox(tr("Auto Fit"), preparationGroup);
+    m_autoFitEnabledCheck->setObjectName(QStringLiteral("autoFitEnabledCheck"));
+    m_autoFitEnabledCheck->setToolTip(tr("Automatically use a ManufacturingMesh only when exactly one compatible managed Verified Fit Profile can be resolved. Explicit per-export selection remains available."));
+    preparationLayout->addWidget(m_autoFitEnabledCheck);
     auto* preparationExplanation = new QLabel(
-        tr("Controls automatic built-in mesh preparation for print workflows. "
-           "Opening the 3D viewer never starts preparation automatically."),
+        tr("Mesh Repair controls automatic built-in preparation. Auto Fit is disabled by default and may derive compensated export geometry only from a uniquely compatible Verified Fit Profile. Source and nominal Prepared geometry are never modified."),
         preparationGroup);
     preparationExplanation->setWordWrap(true);
     preparationLayout->addWidget(preparationExplanation);

@@ -38,6 +38,7 @@ constexpr auto kGroupBrickset = "Brickset";
 constexpr auto kGroupLDraw = "LDraw";
 constexpr auto kLDrawLibraryPathKey = "LibraryPath";
 constexpr auto kMeshRepairEnabledKey = "EnableMeshRepair";
+constexpr auto kAutoFitEnabledKey = "AutoFitEnabled";
 
 constexpr auto kThemeKey = "Theme";
 
@@ -778,6 +779,23 @@ void UserSettings::setMeshRepairEnabled(bool enabled)
     QSettings settings;
     settings.beginGroup(kGroupLDraw);
     settings.setValue(kMeshRepairEnabledKey, enabled);
+    settings.endGroup();
+}
+
+bool UserSettings::autoFitEnabled() const
+{
+    QSettings settings;
+    settings.beginGroup(kGroupLDraw);
+    const bool enabled = settings.value(kAutoFitEnabledKey, false).toBool();
+    settings.endGroup();
+    return enabled;
+}
+
+void UserSettings::setAutoFitEnabled(bool enabled)
+{
+    QSettings settings;
+    settings.beginGroup(kGroupLDraw);
+    settings.setValue(kAutoFitEnabledKey, enabled);
     settings.endGroup();
 }
 

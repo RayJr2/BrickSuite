@@ -29,6 +29,11 @@ int main(int argc, char** argv)
 
     UserSettings& settings = UserSettings::instance();
     bool ok = true;
+    ok &= check(!settings.autoFitEnabled(), "Auto Fit is disabled by default");
+    settings.setAutoFitEnabled(true);
+    ok &= check(settings.autoFitEnabled(), "enabled Auto Fit persists");
+    settings.setAutoFitEnabled(false);
+    ok &= check(!settings.autoFitEnabled(), "disabled Auto Fit persists");
     ok &= check(settings.meshRepairEnabled(), "Mesh Repair is enabled by default");
     ok &= check(MeshRepairSettingsPolicy::allowsAutomaticPreparation(
                     settings.meshRepairEnabled()),

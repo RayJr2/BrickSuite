@@ -131,6 +131,7 @@ private:
     QLineEdit* m_ldrawLibraryEdit = nullptr;
     QLabel* m_ldrawLibraryStatusLabel = nullptr;
     QCheckBox* m_meshRepairEnabledCheck = nullptr;
+    QCheckBox* m_autoFitEnabledCheck = nullptr;
 
     // Appearance
     QComboBox* m_themeCombo = nullptr;

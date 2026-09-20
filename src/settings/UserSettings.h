@@ -181,6 +181,8 @@ public:
     void setLDrawLibraryPath(const QString& path);
     bool meshRepairEnabled() const;
     void setMeshRepairEnabled(bool enabled);
+    bool autoFitEnabled() const;
+    void setAutoFitEnabled(bool enabled);
 
     bool automaticBackupEnabled() const;
     void setAutomaticBackupEnabled(bool enabled);
