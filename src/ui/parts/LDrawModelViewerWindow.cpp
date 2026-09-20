@@ -3,6 +3,7 @@
 #include "LDrawViewportWidget.h"
 #include "PreparedMeshRenderAdapter.h"
 #include "PrintPreparationCoordinator.h"
+#include "ManufacturingMeshDiagnosticDialog.h"
 #include "../common/SessionFileDialogDirectoryService.h"
 #include "../help/HelpManager.h"
 #include "../helpers/ColorComboHelper.h"
@@ -64,7 +65,7 @@ LDrawModelViewerWindow::LDrawModelViewerWindow(PrintPreparationCoordinator*coord
     m_viewport=new LDrawViewportWidget(this);root->addWidget(m_viewport,1);
     auto*info=new QFormLayout;m_part=new QLabel(this);m_source=new QLabel(this);m_source->setTextInteractionFlags(Qt::TextSelectableByMouse);m_dimensions=new QLabel(this);m_counts=new QLabel(this);m_bfc=new QLabel(this);m_status=new QLabel(this);m_status->setWordWrap(true);
     info->addRow(tr("Part:"),m_part);info->addRow(tr("Source:"),m_source);info->addRow(tr("Dimensions:"),m_dimensions);info->addRow(tr("Geometry:"),m_counts);info->addRow(tr("BFC:"),m_bfc);info->addRow(tr("Status:"),m_status);
-    auto*meshControls=new QWidget(this);auto*meshRow=new QHBoxLayout(meshControls);meshRow->setContentsMargins(0,0,0,0);meshRow->addWidget(new QLabel(tr("View:"),this));m_geometryView=new QComboBox(this);m_geometryView->addItem(tr("Source"),0);m_geometryView->addItem(tr("Prepared"),1);meshRow->addWidget(m_geometryView);m_prepare=new QPushButton(tr("Prepare for Printing"),this);m_prepare->setToolTip(tr("Create validated nominal print geometry from the selected LDraw model."));meshRow->addWidget(m_prepare);m_showMeshIssues=new QCheckBox(tr("Show Mesh Issues"),this);m_showMeshIssues->setToolTip(tr("Highlight Source mesh boundaries and topology issues."));meshRow->addWidget(m_showMeshIssues);meshRow->addStretch();info->addRow(meshControls);
+    auto*meshControls=new QWidget(this);auto*meshRow=new QHBoxLayout(meshControls);meshRow->setContentsMargins(0,0,0,0);meshRow->addWidget(new QLabel(tr("View:"),this));m_geometryView=new QComboBox(this);m_geometryView->addItem(tr("Source"),0);m_geometryView->addItem(tr("Prepared"),1);meshRow->addWidget(m_geometryView);m_prepare=new QPushButton(tr("Prepare for Printing"),this);m_prepare->setToolTip(tr("Create validated nominal print geometry from the selected LDraw model."));meshRow->addWidget(m_prepare);m_manufacturingProof=new QPushButton(tr("Manufacturing Proof..."),this);m_manufacturingProof->setToolTip(tr("Generate and export a diagnostic profile-compensated ManufacturingMesh for Part 3700."));meshRow->addWidget(m_manufacturingProof);m_showMeshIssues=new QCheckBox(tr("Show Mesh Issues"),this);m_showMeshIssues->setToolTip(tr("Highlight Source mesh boundaries and topology issues."));meshRow->addWidget(m_showMeshIssues);meshRow->addStretch();info->addRow(meshControls);
     m_sourceMeshStatus=new QLabel(tr("Source Mesh: Loading…"),this);m_preparedMeshStatus=new QLabel(tr("Prepared Mesh: Not prepared"),this);info->addRow(m_sourceMeshStatus);info->addRow(m_preparedMeshStatus);root->addLayout(info);
     auto*actions=new QHBoxLayout;actions->addWidget(new QLabel(tr("Scale:"),this));m_scale=new QDoubleSpinBox(this);m_scale->setRange(1.0,1000.0);m_scale->setDecimals(2);m_scale->setSingleStep(0.5);m_scale->setSuffix(tr(" %"));m_scale->setValue(100.0);actions->addWidget(m_scale);auto*reset=new QPushButton(tr("Reset"),this);actions->addWidget(reset);actions->addStretch();m_export=new QPushButton(tr("Export 3D Model..."),this);actions->addWidget(m_export);auto*buttons=new QDialogButtonBox(QDialogButtonBox::Help|QDialogButtonBox::Close,this);actions->addWidget(buttons);root->addLayout(actions);
     connect(m_candidate,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int){if(m_candidate->currentIndex()<0)return;startLoad(LoadBehavior::ResetView);});
@@ -79,6 +80,7 @@ LDrawModelViewerWindow::LDrawModelViewerWindow(PrintPreparationCoordinator*coord
     connect(m_scale,qOverload<double>(&QDoubleSpinBox::valueChanged),this,[this](double value){m_state.setScalePercent(value);m_viewport->setUniformScale(float(value/100.0));updateDimensions();});
     connect(m_geometryView,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int){selectGeometry();});
     connect(m_prepare,&QPushButton::clicked,this,&LDrawModelViewerWindow::startPreparation);
+    connect(m_manufacturingProof,&QPushButton::clicked,this,[this]{if(!m_preparedMesh)return;ManufacturingMeshDiagnosticDialog dialog(m_loadResult,*m_preparedMesh,m_state.scalePercent()/100.0,currentModelColor(),this);dialog.exec();});
     connect(m_showMeshIssues,&QCheckBox::toggled,m_viewport,&LDrawViewportWidget::setShowMeshIssues);
     connect(m_coordinator,&PrintPreparationCoordinator::progress,this,&LDrawModelViewerWindow::applyPreparationProgress);
     connect(m_coordinator,&PrintPreparationCoordinator::completed,this,&LDrawModelViewerWindow::applyPreparationResult);
@@ -156,6 +158,7 @@ void LDrawModelViewerWindow::applyPreparationResult(quint64 generation,const Pri
 void LDrawModelViewerWindow::updatePreparationControls()
 {
     const bool ready=bool(m_preparedMesh);const bool manualPreparationAllowed=MeshRepairSettingsPolicy::allowsExplicitPreparation(UserSettings::instance().meshRepairEnabled());m_prepare->setEnabled(manualPreparationAllowed&&m_sourceReady&&!m_preparing&&!ready&&!m_prepareBlocked&&m_coordinator&&!m_coordinator->busy());
+    const bool proofPart=m_request.partNumber==QStringLiteral("3700");m_manufacturingProof->setVisible(proofPart);m_manufacturingProof->setEnabled(proofPart&&ready&&!m_preparing);
     if(auto*model=qobject_cast<QStandardItemModel*>(m_geometryView->model()))if(auto*item=model->item(m_geometryView->findData(1)))item->setEnabled(ready);
     m_showMeshIssues->setEnabled(m_sourceReady&&m_geometryView->currentData().toInt()==0);
 }

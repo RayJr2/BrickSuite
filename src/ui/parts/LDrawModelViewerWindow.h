@@ -79,6 +79,7 @@ private:
     QPushButton* m_resetView=nullptr;
     QPushButton* m_export=nullptr;
     QPushButton* m_prepare=nullptr;
+    QPushButton* m_manufacturingProof=nullptr;
     QCheckBox* m_showMeshIssues=nullptr;
     PrintPreparationCoordinator* m_coordinator=nullptr;
     quint64 m_sourceGeneration=0;

@@ -423,6 +423,7 @@ qt_add_executable(BrickSuite
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
     src/ui/parts/LDrawModelViewerManager.cpp src/ui/parts/LDrawModelViewerManager.h
     src/ui/parts/LDrawModelViewerWindow.cpp src/ui/parts/LDrawModelViewerWindow.h
+    src/ui/parts/ManufacturingMeshDiagnosticDialog.cpp src/ui/parts/ManufacturingMeshDiagnosticDialog.h
     src/ui/parts/LDrawViewportWidget.cpp src/ui/parts/LDrawViewportWidget.h
     src/ui/parts/PrintPreparationCoordinator.cpp src/ui/parts/PrintPreparationCoordinator.h
     src/ui/parts/PreparedMeshRenderAdapter.cpp src/ui/parts/PreparedMeshRenderAdapter.h
@@ -452,6 +453,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/print/PreparedObjProofWriter.cpp src/services/geometry/print/PreparedObjProofWriter.h
     src/services/geometry/print/ManufacturingMesh.h
     src/services/geometry/print/ManufacturingMeshService.cpp src/services/geometry/print/ManufacturingMeshService.h
+    src/services/geometry/print/ManufacturingMeshDiagnosticExporter.cpp src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h
     src/services/geometry/ConditionalEdgeVisibility.cpp src/services/geometry/ConditionalEdgeVisibility.h
     src/services/geometry/LDrawColorResolver.cpp src/services/geometry/LDrawColorResolver.h
     src/services/geometry/PartViewerCamera.cpp src/services/geometry/PartViewerCamera.h
@@ -743,12 +745,14 @@ if(BUILD_TESTING)
         src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
         src/services/geometry/print/ManufacturingMesh.h
         src/services/geometry/print/ManufacturingMeshService.cpp src/services/geometry/print/ManufacturingMeshService.h
+        src/services/geometry/print/ManufacturingMeshDiagnosticExporter.cpp src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h
+        src/services/geometry/ThreeMfWriter.cpp src/services/geometry/ThreeMfWriter.h
         src/services/geometry/print/FunctionalOperandRegenerator.cpp src/services/geometry/print/FunctionalOperandRegenerator.h
         src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
         src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
         src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
         src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h)
-    target_link_libraries(ManufacturingMeshServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
+    target_link_libraries(ManufacturingMeshServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
     bricksuite_stage_mcut_runtime(ManufacturingMeshServiceTest)
     add_test(NAME ManufacturingMeshService COMMAND ManufacturingMeshServiceTest)
 
