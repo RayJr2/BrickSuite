@@ -4,6 +4,7 @@
 #include "PrintMeshAnalysis.h"
 
 #include <QElapsedTimer>
+#include <QCryptographicHash>
 #include <QSet>
 
 #include <algorithm>
@@ -90,7 +91,8 @@ bool circularPassage(const Component&c,Point*axisOut)
     *axisOut=axis;return true;
 }
 
-bool closeRoundPassage(const Component&c,const Point&axis,PrintMesh*out,int*added)
+struct RoundPassageRecipe {Point origin,axis,profileU,profileV;double radius=0.0,axialExtent=0.0,engagementExtent=0.0;QVector<FunctionalRadialSection>radialProfile;};
+bool closeRoundPassage(const Component&c,const Point&axis,PrintMesh*out,int*added,RoundPassageRecipe*recipe)
 {
     const Point c0=center(c.mesh,c.loops[0]),c1=center(c.mesh,c.loops[1]);const double separation=length(sub(c1,c0));
     struct Band{double radius=0.0,minimum=1e100,maximum=-1e100;};std::vector<Band>bands;
@@ -103,7 +105,30 @@ bool closeRoundPassage(const Component&c,const Point&axis,PrintMesh*out,int*adde
     for(const auto&section:sections)for(int i=0;i<Segments;++i){const double angle=2.0*3.14159265358979323846*double(i)/double(Segments),cs=std::cos(angle),sn=std::sin(angle);mesh.vertices.push_back({c0.x+axis.x*section.first+(basis.x*cs+perpendicular.x*sn)*section.second,c0.y+axis.y*section.first+(basis.y*cs+perpendicular.y*sn)*section.second,c0.z+axis.z*section.first+(basis.z*cs+perpendicular.z*sn)*section.second});}
     for(std::size_t s=0;s+1<sections.size();++s)for(int i=0;i<Segments;++i){const int n=(i+1)%Segments;const auto a=std::uint32_t(s*Segments+i),b=std::uint32_t(s*Segments+n),d=std::uint32_t((s+1)*Segments+i),e=std::uint32_t((s+1)*Segments+n);mesh.faces.push_back({a,b,d});mesh.faces.push_back({b,e,d});}
     const auto firstCenter=std::uint32_t(mesh.vertices.size());mesh.vertices.push_back({c0.x-axis.x*InterfaceIntrusionMm,c0.y-axis.y*InterfaceIntrusionMm,c0.z-axis.z*InterfaceIntrusionMm});const auto lastCenter=std::uint32_t(mesh.vertices.size());mesh.vertices.push_back({c0.x+axis.x*(separation+InterfaceIntrusionMm),c0.y+axis.y*(separation+InterfaceIntrusionMm),c0.z+axis.z*(separation+InterfaceIntrusionMm)});
-    const auto lastBase=std::uint32_t((sections.size()-1)*Segments);for(int i=0;i<Segments;++i){const auto n=(i+1)%Segments;mesh.faces.push_back({firstCenter,std::uint32_t(n),std::uint32_t(i)});mesh.faces.push_back({lastCenter,lastBase+std::uint32_t(i),lastBase+std::uint32_t(n)});}normalize(&mesh);if(!validateBooleanOperand(analyzeSource(mesh)).ok())return false;*added=int(mesh.faces.size());*out=std::move(mesh);return true;
+    const auto lastBase=std::uint32_t((sections.size()-1)*Segments);for(int i=0;i<Segments;++i){const auto n=(i+1)%Segments;mesh.faces.push_back({firstCenter,std::uint32_t(n),std::uint32_t(i)});mesh.faces.push_back({lastCenter,lastBase+std::uint32_t(i),lastBase+std::uint32_t(n)});}normalize(&mesh);if(!validateBooleanOperand(analyzeSource(mesh)).ok())return false;
+    if(recipe){recipe->origin={(c0.x+c1.x)*.5,(c0.y+c1.y)*.5,(c0.z+c1.z)*.5};recipe->axis=axis;recipe->profileU=basis;recipe->profileV=perpendicular;recipe->radius=inner?inner->radius:outer->radius;recipe->axialExtent=separation;recipe->engagementExtent=inner?inner->maximum-inner->minimum:separation;for(const auto&section:sections)recipe->radialProfile.push_back({section.first-separation*.5,section.second});}
+    *added=int(mesh.faces.size());*out=std::move(mesh);return true;
+}
+
+QString featureIdentity(const QVector<FunctionalFeatureProvenance>&provenance,const RoundPassageRecipe&r)
+{
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    for(const auto&p:provenance)hash.addData(QString("%1|%2|%3|%4\n").arg(p.sourceFile).arg(p.referenceId).arg(p.sourceLine).arg(p.inverted).toUtf8());
+    hash.addData(QString("%1|%2|%3|%4|%5|%6|%7|%8|%9").arg(r.origin.x,0,'g',17).arg(r.origin.y,0,'g',17).arg(r.origin.z,0,'g',17).arg(r.axis.x,0,'g',17).arg(r.axis.y,0,'g',17).arg(r.axis.z,0,'g',17).arg(r.radius,0,'g',17).arg(r.axialExtent,0,'g',17).arg(r.engagementExtent,0,'g',17).toUtf8());for(const auto&s:r.radialProfile)hash.addData(QString("|%1:%2").arg(s.axialPositionMillimetres,0,'g',17).arg(s.radiusMillimetres,0,'g',17).toUtf8());
+    return QStringLiteral("round-passage:")+QString::fromLatin1(hash.result().toHex());
+}
+
+QVector<int> reviewedPegHoleEvidence(const Component&passage,const LDrawGeometry::LDrawSourceModel&source)
+{
+    if(passage.loops.size()!=2)return{};const Point openings[2]={center(passage.mesh,passage.loops[0]),center(passage.mesh,passage.loops[1])};QVector<int>matches;
+    for(const auto&record:source.references){if(record.fileId<0||record.fileId>=source.files.size()||!source.files[record.fileId].relativePath.endsWith(QStringLiteral("peghole.dat"),Qt::CaseInsensitive))continue;const auto&t=record.accumulatedTransform;const Point origin=convert(QVector3D(float(t[3]),float(t[7]),float(t[11])));for(const auto&opening:openings)if(length(sub(origin,opening))<=ContactMm){matches.push_back(record.id);break;}}
+    std::sort(matches.begin(),matches.end());matches.erase(std::unique(matches.begin(),matches.end()),matches.end());return matches.size()==2?matches:QVector<int>{};
+}
+
+void appendFeatureProvenance(const Component&component,const LDrawGeometry::LDrawSourceModel&source,QVector<FunctionalFeatureProvenance>*out)
+{
+    QSet<QString>seen;for(const auto&p:*out)seen.insert(QString("%1|%2|%3|%4").arg(p.sourceFile).arg(p.referenceId).arg(p.sourceLine).arg(p.inverted));
+    for(int triangle:component.sourceTriangles){const auto&s=source.surfaces[triangle];const auto&f=source.files[s.fileId];const QString key=QString("%1|%2|%3|%4").arg(f.relativePath).arg(s.referenceId).arg(s.sourceLine).arg(s.inverted);if(seen.contains(key))continue;seen.insert(key);out->push_back({f.relativePath,s.referenceId,s.sourceLine,s.inverted});}
 }
 
 bool opensOnOppositeBounds(const Component&passage,const MeshBounds&bounds,const Point&axis)
@@ -182,19 +207,22 @@ LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDr
     if(groups.empty()||groups.size()>MaxGroups){r.status=Status::ResourceLimitExceeded;r.diagnostics<<"Semantic group limit was exceeded.";return r;}int loopCount=0;for(const auto&g:groups)loopCount+=int(g.loops.size());if(loopCount>MaxLoops){r.status=Status::ResourceLimitExceeded;r.diagnostics<<"Boundary loop limit was exceeded.";return r;}
     auto certified=[&](const Component&g,QStringList*files){QSet<int>ids;for(int ti:g.sourceTriangles){if(ti<0||ti>=effective.sourceModel->surfaces.size())return false;const auto&s=effective.sourceModel->surfaces[ti];if(!s.certified)return false;ids.insert(s.fileId);}for(int id:ids){if(id<0||id>=effective.sourceModel->files.size())return false;const auto&f=effective.sourceModel->files[id];if(f.classification==LDrawGeometry::SourceClassification::Unknown)return false;files->append(f.relativePath);}files->sort();return true;};
     int body=-1;double bodySpan=-1;for(int i=0;i<int(groups.size());++i){if(cancellationRequested&&cancellationRequested()){r.status=Status::Cancelled;r.diagnostics<<"Semantic preparation was cancelled during grouping.";return r;}auto a=analyzeSource(groups[i].mesh);if(!validatePreparedMesh(a,true).ok())continue;auto d=sub(a.bounds.maximum,a.bounds.minimum);double span=d.x*d.y*d.z;if(span>bodySpan){body=i;bodySpan=span;}}
-    int passage=-1;
+    int passage=-1;FunctionalFeature passageFeature;
     if(body<0){
         for(auto&group:groups)repairCollinearSeams(&group);
         for(int pi=0;pi<int(groups.size())&&body<0;++pi){
             Point axis;const auto passageAnalysis=analyzeSource(groups[pi].mesh);QStringList passageFiles;
             if(passageAnalysis.signedVolume>=0.0||!circularPassage(groups[pi],&axis)||!certified(groups[pi],&passageFiles))continue;
             for(int si=0;si<int(groups.size());++si){if(si==pi||groups[si].loops.size()<2)continue;const auto shellAnalysis=analyzeSource(groups[si].mesh);QStringList shellFiles;
-                if(!opensOnOppositeBounds(groups[pi],shellAnalysis.bounds,axis)||!hasMatchingOpenings(groups[si],groups[pi])||!certified(groups[si],&shellFiles))continue;
+                const auto pegHoleEvidence=reviewedPegHoleEvidence(groups[pi],*effective.sourceModel);if(!opensOnOppositeBounds(groups[pi],shellAnalysis.bounds,axis)||!hasMatchingOpenings(groups[si],groups[pi])||!certified(groups[si],&shellFiles)||pegHoleEvidence.size()!=2)continue;
                 PrintMesh closedShell,closedPassage;int shellAdded=0,passageAdded=0;
-                const bool shellClosed=closePlanarLoops(groups[si],&closedShell,&shellAdded),passageClosed=closeRoundPassage(groups[pi],axis,&closedPassage,&passageAdded);
+                RoundPassageRecipe recipe;const bool shellClosed=closePlanarLoops(groups[si],&closedShell,&shellAdded),passageClosed=closeRoundPassage(groups[pi],axis,&closedPassage,&passageAdded,&recipe);
                 if(!shellClosed||!passageClosed){r.diagnostics<<QString("Round passage candidate closure rejected (shellClosed=%1, passageClosed=%2).").arg(shellClosed).arg(passageClosed);continue;}
                 groups[si].mesh=std::move(closedShell);groups[si].loops.clear();groups[pi].mesh=std::move(closedPassage);groups[pi].loops.clear();
                 body=si;passage=pi;r.closureTriangles+=shellAdded+passageAdded;
+                passageFeature.family=FunctionalInterfaceFamily::RoundTechnicPassage;passageFeature.role=FunctionalInterfaceRole::Female;passageFeature.materialSide=FunctionalMaterialSide::EmptyInsideMaterialOutside;passageFeature.eligibility=FunctionalEligibility::Eligible;passageFeature.confidence=SemanticConfidence::HighConfidence;passageFeature.frame={recipe.origin,recipe.axis,recipe.profileU,recipe.profileV,false};passageFeature.nominalRadiusMillimetres=recipe.radius;passageFeature.nominalDiameterMillimetres=recipe.radius*2.0;passageFeature.nominalAxialExtentMillimetres=recipe.axialExtent;passageFeature.nominalEngagementExtentMillimetres=recipe.engagementExtent;passageFeature.radialProfile=recipe.radialProfile;passageFeature.operandAction=FunctionalOperandAction::Subtract;passageFeature.constructionRecipe=QStringLiteral("round-through-passage-v1");passageFeature.evidenceContract=QStringLiteral("official-ldraw-peghole-pair-v1");
+                appendFeatureProvenance(groups[pi],*effective.sourceModel,&passageFeature.provenance);appendFeatureProvenance(groups[si],*effective.sourceModel,&passageFeature.provenance);for(int reference:pegHoleEvidence){const auto&record=effective.sourceModel->references[reference];const auto&file=effective.sourceModel->files[record.fileId];passageFeature.provenance.push_back({file.relativePath,record.id,record.sourceLine,record.inverted});}for(const auto&p:passageFeature.provenance)if(p.referenceId>=0&&p.referenceId<effective.sourceModel->references.size())passageFeature.frame.mirrored=passageFeature.frame.mirrored||effective.sourceModel->references[p.referenceId].mirrored;
+                std::sort(passageFeature.provenance.begin(),passageFeature.provenance.end(),[](const auto&a,const auto&b){return std::tie(a.sourceFile,a.referenceId,a.sourceLine,a.inverted)<std::tie(b.sourceFile,b.referenceId,b.sourceLine,b.inverted);});passageFeature.stableIdentity=featureIdentity(passageFeature.provenance,recipe);passageFeature.governingOperandIdentity=passageFeature.stableIdentity+QStringLiteral(":operand");
                 r.diagnostics<<QString("Certified round through-passage recognized structurally between opposed body openings (passage group %1, body group %2).").arg(pi).arg(si);break;
             }
         }
@@ -203,7 +231,7 @@ LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDr
     QVector<int>order;order<<body;if(passage>=0)order<<passage;for(int loopCount:{1,2})for(int i=0;i<int(groups.size());++i)if(i!=body&&i!=passage&&int(groups[i].loops.size())==loopCount)order<<i;
     for(int index:order){if(cancellationRequested&&cancellationRequested()){r.status=Status::Cancelled;r.diagnostics<<"Semantic preparation was cancelled between operands.";return r;}const auto&g=groups[index];SemanticOperand op;op.sourceMesh=g.mesh;op.confidence=SemanticConfidence::HighConfidence;QStringList files;if(!certified(g,&files)){r.status=Status::UncertifiedGeometry;r.diagnostics<<QString("Group %1 is uncertified or not official.").arg(index);return r;}op.sourceFiles=files;
         if(index==body){op.role=SemanticRole::PrimaryBody;op.feature=SemanticFeature::BodyOrCavity;op.closedMesh=g.mesh;normalize(&op.closedMesh);op.analysis=analyzeSource(op.closedMesh);}
-        else if(index==passage){op.role=SemanticRole::SubtractivePassage;op.feature=SemanticFeature::RoundThroughPassage;op.closedMesh=g.mesh;normalize(&op.closedMesh);op.analysis=analyzeSource(op.closedMesh);}
+        else if(index==passage){op.role=SemanticRole::SubtractivePassage;op.feature=SemanticFeature::RoundThroughPassage;op.closedMesh=g.mesh;normalize(&op.closedMesh);op.analysis=analyzeSource(op.closedMesh);op.functionalFeatures.push_back(passageFeature);}
         else {bool contacts=true;for(const auto&loop:g.loops)contacts=contacts&&inBounds(bodyBounds,center(g.mesh,loop),ContactMm);if(!contacts){r.status=Status::AmbiguousBoundary;r.diagnostics<<QString("Group %1 does not contact the body at its boundary.").arg(index);return r;}
             if(g.loops.size()==1){op.role=SemanticRole::AdditiveAttachment;op.feature=SemanticFeature::Stud;if(!closeSingle(g,&op.closedMesh,&op.closureTriangles,passage>=0)){r.status=Status::OperandClosureFailed;r.diagnostics<<QString("Single-loop closure failed for group %1.").arg(index);return r;}}
             else if(g.loops.size()==2){op.role=SemanticRole::HollowAdditiveAttachment;op.feature=SemanticFeature::Tube;if(!closeAnnularBoundary(g,&op.closedMesh,&op.closureTriangles)){r.status=Status::OperandClosureFailed;r.diagnostics<<QString("Nested-loop annular closure failed for group %1.").arg(index);return r;}}

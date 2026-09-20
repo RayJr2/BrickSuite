@@ -47,7 +47,7 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
         auto prepared=std::make_shared<PreparedMesh>();
         prepared->mesh=std::move(accumulated);prepared->millimetreBounds=finalAnalysis.bounds;
         prepared->sourceAnalysis=sourceAnalysis;prepared->finalAnalysis=finalAnalysis;
-        prepared->componentCount=finalAnalysis.connectedComponents;prepared->semanticOperandCount=std::size_t(operands.size());
+        prepared->componentCount=finalAnalysis.connectedComponents;prepared->semanticOperandCount=std::size_t(operands.size());for(const auto&operand:operands)prepared->functionalFeatures.append(operand.functionalFeatures);
         prepared->partReference=request.partReference;prepared->ldrawIdentity=request.ldrawIdentity;
         prepared->dependencyFingerprint=request.loadResult.dependencyFingerprint;
         prepared->preparationProfileVersion=request.profile.identity;prepared->mcutVersion=backend->versionIdentity();

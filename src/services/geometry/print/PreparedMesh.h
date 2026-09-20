@@ -15,5 +15,6 @@ struct PreparedMesh { PrintMesh mesh;MeshBounds millimetreBounds;MeshAnalysisRes
     QString preparationProfileVersion,mcutVersion,preparationMethod;
     QStringList operationSummary;QVector<BooleanOperationSummary> operations;PrintPreparationTimings timings;
     DimensionalFidelityResult dimensionalFidelity;std::size_t semanticOperandCount=0,sourceTriangleCount=0,preparedTriangleCount=0;
+    QVector<FunctionalFeature> functionalFeatures;
     QStringList warnings;qint64 elapsedMilliseconds=0; };
 }
