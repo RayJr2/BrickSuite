@@ -10,6 +10,14 @@ struct FemaleClearanceDiameterCorrection {
     double millimetres = 0.0;
 };
 
+// Independent dimensional controls for an ordinary solid male stud. Diameter
+// governs radial clutch; height governs axial seating and is never inferred
+// from the diameter correction.
+struct MaleStudDimensionalCorrection {
+    double diameterMillimetres = 0.0;
+    double heightMillimetres = 0.0;
+};
+
 enum class FunctionalOperandRegenerationError {
     None,
     UnsupportedFeature,
@@ -22,7 +30,9 @@ struct FunctionalOperandRegenerationResult {
     FunctionalOperandRegenerationError error = FunctionalOperandRegenerationError::InvalidContract;
     QString featureIdentity;
     double requestedDiameterCorrectionMillimetres = 0.0;
+    double requestedHeightCorrectionMillimetres = 0.0;
     double resultingGoverningRadiusMillimetres = 0.0;
+    double resultingAxialExtentMillimetres = 0.0;
     QVector<FunctionalRadialSection> executedProfile;
     PrintMesh mesh;
     MeshAnalysisResult analysis;
@@ -35,6 +45,9 @@ public:
     static FunctionalOperandRegenerationResult regenerate(
         const FunctionalFeature& feature,
         FemaleClearanceDiameterCorrection correction);
+    static FunctionalOperandRegenerationResult regenerateStud(
+        const FunctionalFeature& feature,
+        MaleStudDimensionalCorrection correction);
 };
 
 } // namespace PrintGeometry

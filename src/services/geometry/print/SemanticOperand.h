@@ -6,7 +6,7 @@ namespace PrintGeometry {
 enum class SemanticRole { PrimaryBody,SubtractivePassage,AdditiveAttachment,HollowAdditiveAttachment };
 enum class SemanticFeature { BodyOrCavity,RoundThroughPassage,Stud,Tube,TubeBoreInterface };
 enum class SemanticConfidence { HighConfidence,Ambiguous,Unsupported };
-enum class FunctionalInterfaceFamily { RoundTechnicPassage };
+enum class FunctionalInterfaceFamily { RoundTechnicPassage, StandardStud };
 enum class FunctionalInterfaceRole { Female, Male };
 enum class FunctionalMaterialSide { EmptyInsideMaterialOutside, MaterialInside };
 enum class FunctionalEligibility { Eligible, RecognizedNotEligible, Unsupported };

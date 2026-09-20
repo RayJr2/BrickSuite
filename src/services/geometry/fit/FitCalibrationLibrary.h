@@ -45,6 +45,13 @@ struct FitSessionSummary {
     FitEvidenceState state = FitEvidenceState::Draft;
 };
 
+struct FitCalibrationWorkspace {
+    QString identity;
+    QString displayName;
+    FitCalibrationProcess process;
+    QVector<FitCalibrationSession> featureSessions;
+};
+
 struct FitProfileSummary {
     QString identity;
     QString name;
@@ -71,18 +78,26 @@ public:
 
     static QString newStableIdentity();
     static QString processFingerprint(const FitCalibrationProcess&);
+    static QString manufacturingContextFingerprint(const FitCalibrationProcess&);
+    static QString workspaceDisplayName(const FitCalibrationProcess&);
     static QString currentSemanticContractVersion();
     static QString currentRegeneratorAlgorithmVersion();
+    static QString sessionDisplayName(const FitCalibrationSession&);
+    static FitCalibrationSession continuationSession(const FitCalibrationSession&, const FitCalibrationExperiment&, FitCalibrationExperiment);
 
     bool saveSession(FitCalibrationSession*, QString* error = nullptr);
     bool loadSession(const QString& identity, FitCalibrationSession*, QString* error = nullptr) const;
     QVector<FitSessionSummary> sessions(QVector<FitLibraryIssue>* issues = nullptr) const;
+    QVector<FitCalibrationWorkspace> workspaces(QVector<FitLibraryIssue>* issues = nullptr) const;
 
     bool importSession(const QString& portablePath, FitCalibrationSession*, QString* error = nullptr);
+    bool importSessionIntoWorkspace(const QString& portablePath, const FitCalibrationWorkspace* selectedWorkspace,
+                                    FitCalibrationSession*, QString* error = nullptr);
     bool exportSession(const QString& identity, const QString& portablePath, QString* error = nullptr) const;
 
     static bool promoteVerifiedSession(const FitCalibrationSession&, const QString& profileName,
                                        FitProfile*, QString* error = nullptr);
+    static bool mergeVerifiedSession(const FitCalibrationSession&, FitProfile*, QString* error = nullptr);
     bool saveProfile(FitProfile*, QString* error = nullptr);
     bool loadProfile(const QString& identity, FitProfile*, QString* error = nullptr) const;
     QVector<FitProfileSummary> profiles(QVector<FitLibraryIssue>* issues = nullptr) const;

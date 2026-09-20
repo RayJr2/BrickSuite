@@ -99,6 +99,7 @@ int main(int argc,char**argv)
         ok&=check(loaded.ok(),id+" load");
         if(!loaded.ok())continue;
         const auto semantic=LDrawSemanticOperandBuilder::build(loaded);
+        if(id==QStringLiteral("3001")&&semantic.ok()){int studCount=0;for(const auto&operand:semantic.operands)for(const auto&functional:operand.functionalFeatures)if(functional.family==FunctionalInterfaceFamily::StandardStud){++studCount;ok&=check(functional.role==FunctionalInterfaceRole::Male&&std::abs(functional.nominalDiameterMillimetres-4.8)<1e-9&&std::abs(functional.nominalAxialExtentMillimetres-1.6)<1e-9&&functional.evidenceContract==QStringLiteral("official-ldraw-standard-stud-v1"),"3001 standard stud functional contract");}ok&=check(studCount==8,"3001 recognizes eight reusable ordinary solid studs");}
         QTextStream(stdout)<<id
             <<" semanticStatus="<<int(semantic.status)
             <<" groups="<<semantic.semanticGroups
