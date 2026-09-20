@@ -1,0 +1,54 @@
+#include "FunctionalOperandRegenerator.h"
+
+#include "PrintMeshAnalysis.h"
+
+#include <algorithm>
+#include <cmath>
+
+namespace PrintGeometry {
+namespace {
+constexpr int RoundProfileSegments = 16;
+constexpr double ContractTolerance = 1e-6;
+constexpr double MinimumRadiusMillimetres = 1e-4;
+
+double dot(const Point&a,const Point&b){return a.x*b.x+a.y*b.y+a.z*b.z;}
+double length(const Point&p){return std::sqrt(dot(p,p));}
+Point cross(const Point&a,const Point&b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
+void normalize(PrintMesh*mesh){const auto analysis=analyzeSource(*mesh);if(analysis.signedVolume<0.0)for(auto&face:mesh->faces)std::swap(face[1],face[2]);}
+
+FunctionalOperandRegenerationResult failure(FunctionalOperandRegenerationError error,const FunctionalFeature&feature,FemaleClearanceDiameterCorrection correction,const QString&diagnostic)
+{
+    FunctionalOperandRegenerationResult result;result.error=error;result.featureIdentity=feature.stableIdentity;result.requestedDiameterCorrectionMillimetres=correction.millimetres;result.diagnostic=diagnostic;return result;
+}
+}
+
+FunctionalOperandRegenerationResult FunctionalOperandRegenerator::regenerate(const FunctionalFeature&feature,FemaleClearanceDiameterCorrection correction)
+{
+    if(feature.family!=FunctionalInterfaceFamily::RoundTechnicPassage||feature.role!=FunctionalInterfaceRole::Female||feature.materialSide!=FunctionalMaterialSide::EmptyInsideMaterialOutside||feature.operandAction!=FunctionalOperandAction::Subtract||feature.eligibility!=FunctionalEligibility::Eligible||feature.confidence!=SemanticConfidence::HighConfidence||feature.constructionRecipe!=QStringLiteral("round-through-passage-v1"))
+        return failure(FunctionalOperandRegenerationError::UnsupportedFeature,feature,correction,QStringLiteral("The functional feature is not eligible for round female-passage regeneration."));
+    if(feature.stableIdentity.isEmpty()||feature.radialProfile.size()<2||!std::isfinite(correction.millimetres)||!std::isfinite(feature.nominalRadiusMillimetres)||feature.nominalRadiusMillimetres<=MinimumRadiusMillimetres)
+        return failure(FunctionalOperandRegenerationError::InvalidContract,feature,correction,QStringLiteral("The retained functional contract is incomplete or non-finite."));
+    const auto&frame=feature.frame;const double axisLength=length(frame.axis),uLength=length(frame.profileU),vLength=length(frame.profileV);
+    if(std::abs(axisLength-1.0)>ContractTolerance||std::abs(uLength-1.0)>ContractTolerance||std::abs(vLength-1.0)>ContractTolerance||std::abs(dot(frame.axis,frame.profileU))>ContractTolerance||std::abs(dot(frame.axis,frame.profileV))>ContractTolerance||std::abs(dot(frame.profileU,frame.profileV))>ContractTolerance||dot(cross(frame.axis,frame.profileU),frame.profileV)<1.0-ContractTolerance)
+        return failure(FunctionalOperandRegenerationError::InvalidContract,feature,correction,QStringLiteral("The retained functional frame is not right-handed and orthonormal."));
+
+    FunctionalOperandRegenerationResult result;result.featureIdentity=feature.stableIdentity;result.requestedDiameterCorrectionMillimetres=correction.millimetres;result.resultingGoverningRadiusMillimetres=feature.nominalRadiusMillimetres+correction.millimetres*.5;result.executedProfile=feature.radialProfile;
+    if(result.resultingGoverningRadiusMillimetres<=MinimumRadiusMillimetres)
+        return failure(FunctionalOperandRegenerationError::UnsafeCorrection,feature,correction,QStringLiteral("The correction would collapse or invert the governing clearance profile."));
+
+    double smallestProtectedRadius=1e100;int governedSections=0;
+    for(auto&section:result.executedProfile){if(!std::isfinite(section.axialPositionMillimetres)||!std::isfinite(section.radiusMillimetres)||section.radiusMillimetres<=MinimumRadiusMillimetres)return failure(FunctionalOperandRegenerationError::InvalidContract,feature,correction,QStringLiteral("The retained radial profile is invalid."));if(std::abs(section.radiusMillimetres-feature.nominalRadiusMillimetres)<=ContractTolerance){section.radiusMillimetres=result.resultingGoverningRadiusMillimetres;++governedSections;}else smallestProtectedRadius=std::min(smallestProtectedRadius,section.radiusMillimetres);}
+    for(int i=1;i<result.executedProfile.size();++i)if(result.executedProfile[i].axialPositionMillimetres+ContractTolerance<result.executedProfile[i-1].axialPositionMillimetres)return failure(FunctionalOperandRegenerationError::InvalidContract,feature,correction,QStringLiteral("The retained radial profile is not axially ordered."));
+    if(governedSections==0)return failure(FunctionalOperandRegenerationError::InvalidContract,feature,correction,QStringLiteral("The retained profile has no governed clearance sections."));
+    if(smallestProtectedRadius<1e99&&result.resultingGoverningRadiusMillimetres>=smallestProtectedRadius-ContractTolerance)return failure(FunctionalOperandRegenerationError::UnsafeCorrection,feature,correction,QStringLiteral("The correction would collapse the protected entrance transition."));
+
+    auto&mesh=result.mesh;const double pi=3.14159265358979323846;
+    for(const auto&section:result.executedProfile)for(int i=0;i<RoundProfileSegments;++i){const double angle=2.0*pi*double(i)/double(RoundProfileSegments),cs=std::cos(angle),sn=std::sin(angle);const Point radial{frame.profileU.x*cs+frame.profileV.x*sn,frame.profileU.y*cs+frame.profileV.y*sn,frame.profileU.z*cs+frame.profileV.z*sn};mesh.vertices.push_back({frame.origin.x+frame.axis.x*section.axialPositionMillimetres+radial.x*section.radiusMillimetres,frame.origin.y+frame.axis.y*section.axialPositionMillimetres+radial.y*section.radiusMillimetres,frame.origin.z+frame.axis.z*section.axialPositionMillimetres+radial.z*section.radiusMillimetres});}
+    for(int section=0;section+1<result.executedProfile.size();++section)for(int i=0;i<RoundProfileSegments;++i){const int next=(i+1)%RoundProfileSegments;const auto a=std::uint32_t(section*RoundProfileSegments+i),b=std::uint32_t(section*RoundProfileSegments+next),d=std::uint32_t((section+1)*RoundProfileSegments+i),e=std::uint32_t((section+1)*RoundProfileSegments+next);mesh.faces.push_back({a,b,d});mesh.faces.push_back({b,e,d});}
+    const auto firstCenter=std::uint32_t(mesh.vertices.size());const auto&first=result.executedProfile.front();mesh.vertices.push_back({frame.origin.x+frame.axis.x*first.axialPositionMillimetres,frame.origin.y+frame.axis.y*first.axialPositionMillimetres,frame.origin.z+frame.axis.z*first.axialPositionMillimetres});const auto lastCenter=std::uint32_t(mesh.vertices.size());const auto&last=result.executedProfile.back();mesh.vertices.push_back({frame.origin.x+frame.axis.x*last.axialPositionMillimetres,frame.origin.y+frame.axis.y*last.axialPositionMillimetres,frame.origin.z+frame.axis.z*last.axialPositionMillimetres});const auto lastBase=std::uint32_t((result.executedProfile.size()-1)*RoundProfileSegments);
+    for(int i=0;i<RoundProfileSegments;++i){const auto next=std::uint32_t((i+1)%RoundProfileSegments);mesh.faces.push_back({firstCenter,next,std::uint32_t(i)});mesh.faces.push_back({lastCenter,lastBase+std::uint32_t(i),lastBase+next});}
+    normalize(&mesh);result.analysis=analyzeSource(mesh);const auto validation=validateBooleanOperand(result.analysis);if(!validation.ok())return failure(FunctionalOperandRegenerationError::InvalidGeneratedOperand,feature,correction,QStringLiteral("The regenerated operand failed validation: %1").arg(QString::fromStdString(validation.message)));
+    result.error=FunctionalOperandRegenerationError::None;result.diagnostic=QStringLiteral("Functional operand regenerated from the retained semantic contract.");return result;
+}
+
+} // namespace PrintGeometry

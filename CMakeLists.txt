@@ -436,6 +436,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/ModelExportPolicy.h
     src/services/geometry/print/PrintMesh.h src/services/geometry/print/PreparedMesh.h
     src/services/geometry/print/SemanticOperand.h src/services/geometry/print/LDrawPrintPreparationProfile.h
+    src/services/geometry/print/FunctionalOperandRegenerator.cpp src/services/geometry/print/FunctionalOperandRegenerator.h
     src/services/geometry/print/PrintMeshConversion.cpp src/services/geometry/print/PrintMeshConversion.h
     src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
     src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
@@ -689,6 +690,22 @@ if(BUILD_TESTING)
     target_link_libraries(LDrawSemanticOperandTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
     bricksuite_stage_mcut_runtime(LDrawSemanticOperandTest)
     add_test(NAME LDrawSemanticOperand COMMAND LDrawSemanticOperandTest)
+
+    qt_add_executable(FunctionalOperandRegeneratorTest EXCLUDE_FROM_ALL
+        tests/FunctionalOperandRegeneratorTest.cpp
+        src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
+        src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
+        src/services/geometry/print/PrintMesh.h src/services/geometry/print/SemanticOperand.h
+        src/services/geometry/print/LDrawPrintPreparationProfile.h
+        src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
+        src/services/geometry/print/MeshBooleanService.h
+        src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
+        src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
+        src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
+        src/services/geometry/print/FunctionalOperandRegenerator.cpp src/services/geometry/print/FunctionalOperandRegenerator.h)
+    target_link_libraries(FunctionalOperandRegeneratorTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
+    bricksuite_stage_mcut_runtime(FunctionalOperandRegeneratorTest)
+    add_test(NAME FunctionalOperandRegenerator COMMAND FunctionalOperandRegeneratorTest)
 
     qt_add_executable(LDrawPrintPreparationServiceTest EXCLUDE_FROM_ALL
         tests/LDrawPrintPreparationServiceTest.cpp

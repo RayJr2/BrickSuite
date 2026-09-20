@@ -1,0 +1,80 @@
+#include "../src/services/geometry/print/FunctionalOperandRegenerator.h"
+#include "../src/services/geometry/print/LDrawPrintGeometryBuilder.h"
+#include "../src/services/geometry/print/McutMeshBooleanService.h"
+#include "../src/services/geometry/print/PrintMeshAnalysis.h"
+#include "../src/services/geometry/LDrawLibraryService.h"
+
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QTextStream>
+
+#include <algorithm>
+#include <cmath>
+
+using namespace PrintGeometry;
+namespace {
+bool check(bool value,const QString&message){if(!value)QTextStream(stderr)<<"FAIL: "<<message<<Qt::endl;return value;}
+double distance(Point a,Point b){const double x=a.x-b.x,y=a.y-b.y,z=a.z-b.z;return std::sqrt(x*x+y*y+z*z);}
+Point dimensions(const MeshBounds&b){return {b.maximum.x-b.minimum.x,b.maximum.y-b.minimum.y,b.maximum.z-b.minimum.z};}
+
+FunctionalFeature fixture(Point origin={0,0,0},Point axis={0,0,1},Point u={1,0,0},Point v={0,1,0},bool mirrored=false)
+{
+    FunctionalFeature feature;feature.stableIdentity="fixture-feature";feature.family=FunctionalInterfaceFamily::RoundTechnicPassage;feature.role=FunctionalInterfaceRole::Female;feature.materialSide=FunctionalMaterialSide::EmptyInsideMaterialOutside;feature.eligibility=FunctionalEligibility::Eligible;feature.confidence=SemanticConfidence::HighConfidence;feature.frame={origin,axis,u,v,mirrored};feature.nominalRadiusMillimetres=1;feature.nominalDiameterMillimetres=2;feature.nominalAxialExtentMillimetres=4;feature.nominalEngagementExtentMillimetres=4;feature.operandAction=FunctionalOperandAction::Subtract;feature.governingOperandIdentity="fixture-feature:operand";feature.constructionRecipe="round-through-passage-v1";feature.evidenceContract="fixture";feature.radialProfile={{-2.1,2},{-2,2},{-2,1},{2,1},{2,2},{2.1,2}};return feature;
+}
+
+bool equivalentMesh(const PrintMesh&a,const PrintMesh&b,double tolerance=1e-9)
+{
+    if(a.faces!=b.faces||a.vertices.size()!=b.vertices.size())return false;for(std::size_t i=0;i<a.vertices.size();++i)if(distance(a.vertices[i],b.vertices[i])>tolerance)return false;return true;
+}
+
+int roleOrder(SemanticRole role){return role==SemanticRole::PrimaryBody?0:role==SemanticRole::SubtractivePassage?1:role==SemanticRole::AdditiveAttachment?2:3;}
+QString operandIdentity(const SemanticOperand&operand){return operand.sourceFiles.join('|');}
+
+struct Composition {bool ok=false;PrintMesh mesh;MeshAnalysisResult analysis;qint64 milliseconds=0;};
+Composition compose(QVector<SemanticOperand>operands,const PrintMesh*replacement={})
+{
+    std::stable_sort(operands.begin(),operands.end(),[](const auto&a,const auto&b){const int ar=roleOrder(a.role),br=roleOrder(b.role);return ar==br?operandIdentity(a)<operandIdentity(b):ar<br;});
+    McutMeshBooleanService booleanService;Composition result;if(operands.isEmpty())return result;PrintMesh accumulated=operands.front().closedMesh;QElapsedTimer timer;timer.start();
+    for(int i=1;i<operands.size();++i){const PrintMesh&operand=(replacement&&operands[i].feature==SemanticFeature::RoundThroughPassage)?*replacement:operands[i].closedMesh;auto operation=operands[i].role==SemanticRole::SubtractivePassage?booleanService.subtract(accumulated,operand):booleanService.unite(accumulated,operand);if(!operation.ok())return result;accumulated=std::move(operation.mesh);}
+    result.milliseconds=timer.elapsed();result.mesh=std::move(accumulated);result.analysis=analyzeSource(result.mesh);result.ok=validatePreparedMesh(result.analysis).ok();return result;
+}
+
+bool segmentOpen(const PrintMesh&mesh,const Point&start,const Point&end)
+{
+    const Point direction{end.x-start.x,end.y-start.y,end.z-start.z};auto sub=[](Point a,Point b){return Point{a.x-b.x,a.y-b.y,a.z-b.z};};auto cross=[](Point a,Point b){return Point{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};};auto dot=[](Point a,Point b){return a.x*b.x+a.y*b.y+a.z*b.z;};
+    for(const auto&face:mesh.faces){const auto&a=mesh.vertices[face[0]],&b=mesh.vertices[face[1]],&c=mesh.vertices[face[2]];const Point e1=sub(b,a),e2=sub(c,a),p=cross(direction,e2);const double determinant=dot(e1,p);if(std::abs(determinant)<1e-10)continue;const double inverse=1.0/determinant;const Point t=sub(start,a);const double u=dot(t,p)*inverse;if(u<0||u>1)continue;const Point q=cross(t,e1);const double v=dot(direction,q)*inverse;if(v<0||u+v>1)continue;const double at=dot(e2,q)*inverse;if(at>=0&&at<=1)return false;}return true;
+}
+}
+
+int main(int argc,char**argv)
+{
+    QCoreApplication app(argc,argv);bool ok=true;const auto nominalFeature=fixture();
+    const auto zero=FunctionalOperandRegenerator::regenerate(nominalFeature,{0});const auto positive=FunctionalOperandRegenerator::regenerate(nominalFeature,{.2});const auto negative=FunctionalOperandRegenerator::regenerate(nominalFeature,{-.2});
+    ok&=check(zero.ok()&&positive.ok()&&negative.ok(),"zero, positive, and negative diagnostic regeneration");
+    ok&=check(std::abs(positive.resultingGoverningRadiusMillimetres-1.1)<1e-12&&std::abs(negative.resultingGoverningRadiusMillimetres-.9)<1e-12,"diameter correction changes radius by exactly one half");
+    ok&=check(positive.featureIdentity==nominalFeature.stableIdentity&&negative.featureIdentity==nominalFeature.stableIdentity,"functional identity remains constant across executions");
+    ok&=check(positive.executedProfile[0].radiusMillimetres==2&&positive.executedProfile[1].radiusMillimetres==2&&positive.executedProfile[4].radiusMillimetres==2&&positive.executedProfile[5].radiusMillimetres==2,"protected entrance radii remain nominal");
+    ok&=check(positive.executedProfile[2].radiusMillimetres==1.1&&positive.executedProfile[3].radiusMillimetres==1.1&&negative.executedProfile[2].radiusMillimetres==.9&&negative.executedProfile[3].radiusMillimetres==.9,"only governed engagement radii change");
+    for(int i=0;i<nominalFeature.radialProfile.size();++i)ok&=check(positive.executedProfile[i].axialPositionMillimetres==nominalFeature.radialProfile[i].axialPositionMillimetres,"axial profile positions protected");
+    ok&=check(zero.analysis.boundaryEdges==0&&zero.analysis.nonManifoldEdges==0&&zero.analysis.nonManifoldVertices==0&&zero.analysis.selfIntersections==0&&zero.analysis.connectedComponents==1&&zero.analysis.signedVolume>0,"regenerated operand passes strict Boolean validation");
+    const auto repeated=FunctionalOperandRegenerator::regenerate(nominalFeature,{.2});ok&=check(repeated.ok()&&equivalentMesh(repeated.mesh,positive.mesh)&&std::abs(repeated.analysis.absoluteVolume-positive.analysis.absoluteVolume)<1e-12,"regeneration is deterministic");
+    const auto rotated=FunctionalOperandRegenerator::regenerate(fixture({3,4,5},{1,0,0},{0,1,0},{0,0,1}),{.2});ok&=check(rotated.ok()&&std::abs(dimensions(rotated.analysis.bounds).x-4.2)<1e-9&&std::abs(dimensions(rotated.analysis.bounds).y-4.0)<1e-9,"rotated frame governs axial and radial geometry");
+    const auto mirrored=FunctionalOperandRegenerator::regenerate(fixture({0,0,0},{0,0,1},{-1,0,0},{0,-1,0},true),{.2});
+    const auto mirroredDimensions=dimensions(mirrored.analysis.bounds);
+    const auto positiveDimensions=dimensions(positive.analysis.bounds);
+    ok&=check(mirrored.ok()&&mirrored.featureIdentity=="fixture-feature"&&std::abs(mirrored.analysis.absoluteVolume-positive.analysis.absoluteVolume)<1e-12&&std::abs(mirroredDimensions.x-positiveDimensions.x)<1e-9&&std::abs(mirroredDimensions.y-positiveDimensions.y)<1e-9&&std::abs(mirroredDimensions.z-positiveDimensions.z)<1e-9,"mirrored right-handed frame preserves regenerated dimensions and volume");
+    ok&=check(FunctionalOperandRegenerator::regenerate(nominalFeature,{2.0}).error==FunctionalOperandRegenerationError::UnsafeCorrection,"profile-transition collapse rejected safely");
+    ok&=check(FunctionalOperandRegenerator::regenerate(nominalFeature,{-2.0}).error==FunctionalOperandRegenerationError::UnsafeCorrection,"clearance collapse rejected safely");
+
+    const auto args=app.arguments();const int libraryAt=args.indexOf("--ldraw");if(libraryAt<0||libraryAt+1>=args.size())return ok?0:1;
+    const auto loaded=LDrawLibraryService::loadPart(args[libraryAt+1],"3700");ok&=check(loaded.ok(),"real 3700 load");if(!loaded.ok())return 1;const auto semantic=LDrawSemanticOperandBuilder::build(loaded);ok&=check(semantic.ok(),"real 3700 semantic recognition");
+    const SemanticOperand*passage=nullptr;for(const auto&operand:semantic.operands)if(operand.feature==SemanticFeature::RoundThroughPassage){passage=&operand;break;}ok&=check(passage&&passage->functionalFeatures.size()==1,"real 3700 functional passage and governing operand");if(!passage)return 1;const auto&feature=passage->functionalFeatures.front();
+    QTextStream profileOutput(stdout);profileOutput<<"3700 nominalProfile=";for(const auto&section:feature.radialProfile)profileOutput<<'['<<section.axialPositionMillimetres<<':'<<section.radiusMillimetres<<']';profileOutput<<Qt::endl;
+    const auto realZero=FunctionalOperandRegenerator::regenerate(feature,{0}),realPositive=FunctionalOperandRegenerator::regenerate(feature,{.2}),realNegative=FunctionalOperandRegenerator::regenerate(feature,{-.2});ok&=check(realZero.ok()&&realPositive.ok()&&realNegative.ok(),"real 3700 diagnostic regeneration");ok&=check(equivalentMesh(realZero.mesh,passage->closedMesh,1e-8),"zero correction reproduces nominal closed operand topology and coordinates");
+    const auto nominalComposition=compose(semantic.operands),zeroComposition=compose(semantic.operands,&realZero.mesh),positiveComposition=compose(semantic.operands,&realPositive.mesh),negativeComposition=compose(semantic.operands,&realNegative.mesh);ok&=check(nominalComposition.ok&&zeroComposition.ok&&positiveComposition.ok&&negativeComposition.ok,"real 3700 Boolean recomposition validates");ok&=check(nominalComposition.analysis.triangles==1106&&zeroComposition.analysis.triangles==1106&&std::abs(nominalComposition.analysis.absoluteVolume-zeroComposition.analysis.absoluteVolume)<1e-6,"zero correction reproduces nominal Boolean result metrics");
+    const auto nominalDimensions=dimensions(nominalComposition.analysis.bounds);for(const auto*composition:{&positiveComposition,&negativeComposition}){const auto adjustedDimensions=dimensions(composition->analysis.bounds);ok&=check(std::abs(adjustedDimensions.x-nominalDimensions.x)<1e-9&&std::abs(adjustedDimensions.y-nominalDimensions.y)<1e-9&&std::abs(adjustedDimensions.z-nominalDimensions.z)<1e-9,"external 3700 bounds protected");ok&=check(composition->analysis.connectedComponents==1&&composition->analysis.boundaryEdges==0&&composition->analysis.nonManifoldEdges==0&&composition->analysis.nonManifoldVertices==0&&composition->analysis.selfIntersections==0,"diagnostic Boolean result topology valid");}
+    ok&=check(positiveComposition.analysis.absoluteVolume<nominalComposition.analysis.absoluteVolume&&negativeComposition.analysis.absoluteVolume>nominalComposition.analysis.absoluteVolume,"positive female clearance removes material and negative correction adds material");ok&=check(segmentOpen(positiveComposition.mesh,{0,-4.1,-4},{0,4.1,-4})&&segmentOpen(negativeComposition.mesh,{0,-4.1,-4},{0,4.1,-4}),"corrected passage remains open");
+    for(const auto&execution:{realZero,realPositive,realNegative})QTextStream(stdout)<<"3700 diameterCorrection="<<execution.requestedDiameterCorrectionMillimetres<<" radius="<<execution.resultingGoverningRadiusMillimetres<<" operandTriangles="<<execution.analysis.triangles<<" operandVolume="<<execution.analysis.absoluteVolume<<Qt::endl;
+    for(const auto&entry:{std::pair<const char*,const Composition*>{"nominal",&nominalComposition},std::pair<const char*,const Composition*>{"zero",&zeroComposition},std::pair<const char*,const Composition*>{"positive",&positiveComposition},std::pair<const char*,const Composition*>{"negative",&negativeComposition}}){const auto d=dimensions(entry.second->analysis.bounds);QTextStream(stdout)<<"3700 "<<entry.first<<" finalTriangles="<<entry.second->analysis.triangles<<" components="<<entry.second->analysis.connectedComponents<<" boundaries="<<entry.second->analysis.boundaryEdges<<" nonManifold="<<entry.second->analysis.nonManifoldEdges<<" intersections="<<entry.second->analysis.selfIntersections<<" volume="<<entry.second->analysis.absoluteVolume<<" dimensions="<<d.x<<','<<d.y<<','<<d.z<<" booleanMs="<<entry.second->milliseconds<<Qt::endl;}
+    return ok?0:1;
+}
