@@ -1,5 +1,7 @@
 #include "../src/services/geometry/LDrawLibraryService.h"
 #include "../src/services/geometry/LDrawObjWriter.h"
+#include "../src/services/geometry/BinaryStlWriter.h"
+#include "../src/services/geometry/ModelExportPolicy.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -8,6 +10,7 @@
 #include <QDebug>
 #include <QTemporaryDir>
 #include <QTextStream>
+#include <QDataStream>
 #include <cmath>
 
 namespace {
@@ -117,5 +120,25 @@ int main(int argc,char**argv)
     if(!require(!firstNormal(scaledBytes).isEmpty()
                 &&firstNormal(scaledBytes)==firstNormal(fractionalBytes),
                 "uniform scale leaves transformed normals unchanged"))return 1;
+
+    PrintGeometry::PrintMesh prepared;
+    prepared.vertices={{0,0,0},{10,0,0},{0,20,0}};prepared.faces={{0,1,2}};
+    LDrawObjWriter::Options preparedOptions;preparedOptions.geometryLabel="Prepared";preparedOptions.uniformScale=1.005;preparedOptions.partNumber="3001";
+    const QString preparedObj=root.filePath("prepared.obj");
+    if(!require(LDrawObjWriter::write(prepared,preparedObj,preparedOptions,&error),"prepared OBJ export"))return 1;
+    QFile preparedFile(preparedObj);if(!require(preparedFile.open(QIODevice::ReadOnly),"open prepared OBJ"))return 1;const auto preparedBytes=preparedFile.readAll();
+    if(!require(preparedBytes.contains("# Geometry: Prepared")&&preparedBytes.contains("v 10.050000 0.000000 0.000000"),"prepared OBJ canonical coordinates and 100.5 percent scale"))return 1;
+    for(double scale:{1.0,1.005,2.0}){
+        const QString stlPath=root.filePath(QString("prepared-%1.stl").arg(scale));QString stlError;
+        if(!require(BinaryStlWriter::write(prepared,stlPath,scale,&stlError),"binary STL export"))return 1;
+        QFile stl(stlPath);if(!require(stl.open(QIODevice::ReadOnly),"open binary STL"))return 1;const QByteArray stlBytes=stl.readAll();
+        if(!require(stlBytes.size()==134&&stlBytes.left(21)==QByteArray("BrickSuite binary STL"),"binary STL deterministic header and exact size"))return 1;
+        QDataStream stream(stlBytes.mid(80));stream.setByteOrder(QDataStream::LittleEndian);stream.setFloatingPointPrecision(QDataStream::SinglePrecision);quint32 count=0;float nx,ny,nz,ax,ay,az,bx,by,bz,cx,cy,cz;quint16 attributes=1;stream>>count>>nx>>ny>>nz>>ax>>ay>>az>>bx>>by>>bz>>cx>>cy>>cz>>attributes;
+        if(!require(count==1&&std::abs(nz-1.0f)<0.0001f&&std::abs(bx-float(10*scale))<0.0001f&&attributes==0,"binary STL count, winding normal, scale and attributes"))return 1;
+    }
+    QString stlError;if(!require(!BinaryStlWriter::write({},root.filePath("empty.stl"),1.0,&stlError),"empty STL rejected"))return 1;
+    const auto ready=ModelExportSelectionPolicy::forStatus(ModelPreparationStatus::Ready,true);
+    if(!require(ready.sourceAvailable&&ready.preparedAvailable&&ready.preparedDefault,"Ready export policy"))return 1;
+    for(auto state:{ModelPreparationStatus::NotPrepared,ModelPreparationStatus::Unsupported,ModelPreparationStatus::Ambiguous,ModelPreparationStatus::Failed}){const auto p=ModelExportSelectionPolicy::forStatus(state,false);if(!require(p.sourceAvailable&&!p.preparedAvailable&&!p.preparedDefault,"Source fallback export policy"))return 1;}
     return 0;
 }

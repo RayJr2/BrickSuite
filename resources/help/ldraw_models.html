@@ -16,7 +16,8 @@
 <p>Unsupported or ambiguous construction is reported without replacing Source geometry. Preparation failures leave Source available for inspection.</p>
 <h2>Uniform Scale and OBJ export</h2>
 <p><b>Scale</b> changes every displayed dimension uniformly without modifying the installed source or authoritative mesh. At 100%, 1 LDraw unit = 0.4 mm. Scaling is not specialized LEGO fit or tolerance correction.</p>
-<p>The current <b>Export OBJ...</b> workflow exports <b>Source</b> engineering geometry in millimetres at the displayed Scale, even when Prepared is selected for inspection. The export header records Scale and resulting dimensions. Prepared print-format export is a later workflow.</p>
+<p><b>Export 3D Model...</b> writes OBJ or binary STL in millimetres at the displayed Scale. A validated Prepared Mesh is selected by default and identified as Ready for Printing; the authoritative Source Mesh remains selectable.</p>
+<p>Source export is not a BrickSuite printability guarantee. When preparation is unavailable, unsupported, ambiguous, or fails, Source OBJ and STL remain available for analysis or possible repair by your slicer.</p>
 <h2>Safety and limitations</h2>
 <p>BrickSuite rejects absolute, traversal, escaping symbolic-link, cyclic, ambiguous-case, malformed, and excessive references. Review geometry in your slicer before printing. The viewer does not currently provide STL or 3MF export, slicing, CAD editing, whole-model viewing, or remote Host geometry transport.</p>
 </body></html>

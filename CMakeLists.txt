@@ -430,6 +430,8 @@ qt_add_executable(BrickSuite
     src/services/geometry/LDrawIdentityService.cpp src/services/geometry/LDrawIdentityService.h
     src/services/geometry/LDrawIdentitySelection.h
     src/services/geometry/LDrawObjWriter.cpp src/services/geometry/LDrawObjWriter.h
+    src/services/geometry/BinaryStlWriter.cpp src/services/geometry/BinaryStlWriter.h
+    src/services/geometry/ModelExportPolicy.h
     src/services/geometry/print/PrintMesh.h src/services/geometry/print/PreparedMesh.h
     src/services/geometry/print/SemanticOperand.h src/services/geometry/print/LDrawPrintPreparationProfile.h
     src/services/geometry/print/PrintMeshConversion.cpp src/services/geometry/print/PrintMeshConversion.h
@@ -740,7 +742,10 @@ if(BUILD_TESTING)
             tests/LDrawGeometryFoundationTest.cpp
             src/services/geometry/PartMesh.h
             src/services/geometry/LDrawLibraryService.h src/services/geometry/LDrawLibraryService.cpp
-            src/services/geometry/LDrawObjWriter.h src/services/geometry/LDrawObjWriter.cpp)
+            src/services/geometry/LDrawObjWriter.h src/services/geometry/LDrawObjWriter.cpp
+            src/services/geometry/BinaryStlWriter.h src/services/geometry/BinaryStlWriter.cpp
+            src/services/geometry/ModelExportPolicy.h
+            src/services/geometry/print/PrintMeshConversion.h src/services/geometry/print/PrintMeshConversion.cpp)
         target_link_libraries(${LDRAW_TEST_TARGET} PRIVATE Qt6::Core Qt6::Gui)
         add_test(NAME ${LDRAW_TEST_TARGET} COMMAND ${LDRAW_TEST_TARGET})
     endforeach()

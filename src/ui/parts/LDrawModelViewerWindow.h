@@ -46,7 +46,7 @@ private:
     void updatePreparationControls();
     void selectGeometry();
     void updateDimensions();
-    void exportObj();
+    void exportModel();
     void saveWindowGeometry();
 
     LDrawModelViewerRequest m_request;
