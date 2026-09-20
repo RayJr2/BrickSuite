@@ -10,6 +10,7 @@ namespace PrintGeometry {
 enum class FitObservation { Unevaluated, TooTight, Acceptable, Preferred, TooLoose, UnableToEvaluate };
 enum class FitEvidenceState { Draft, Experimental, CandidateSelected, Verified, Stale };
 enum class FitPrintedOrientation { Unknown, FeatureAxisParallelToBuildPlate, FeatureAxisPerpendicularToBuildPlate, OtherUnsupported };
+enum class FitCalibrationStage { None, Coarse, Fine };
 
 struct FitCalibrationObservation { FitObservation result=FitObservation::Unevaluated; int repeatNumber=1; double measuredDiameterMillimetres=0; bool hasMeasuredDiameter=false; QString notes; QDateTime performedUtc; };
 struct FitCalibrationCandidate { int index=0; double diameterCorrectionMillimetres=0; double functionalDiameterMillimetres=0; QVector<FitCalibrationObservation> observations; };
@@ -32,5 +33,6 @@ public:
     static bool validate(const FitCalibrationExperiment&,QString*error=nullptr);
     static void markStaleIfArtifactChanged(FitCalibrationExperiment*,const QString&);
     static QString guidanceText(const FitCalibrationExperiment&);
+    static FitCalibrationStage preferredSessionStage(const FitCalibrationSession&);
 };
 } // namespace PrintGeometry
