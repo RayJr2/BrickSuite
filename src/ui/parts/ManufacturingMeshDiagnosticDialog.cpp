@@ -16,22 +16,11 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QVBoxLayout>
-#include <algorithm>
 
 using namespace PrintGeometry;
 
 namespace {
 constexpr auto ProofOrientation = FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
-
-const FitProfileCorrection* proofCorrection(const FitProfile& profile)
-{
-    const auto found = std::find_if(profile.corrections.cbegin(), profile.corrections.cend(), [](const auto& correction) {
-        return correction.featureFamily == QStringLiteral("RoundTechnicPassage")
-            && correction.featureRole == QStringLiteral("female")
-            && correction.printedOrientation == QStringLiteral("feature-axis-perpendicular-to-build-plate");
-    });
-    return found == profile.corrections.cend() ? nullptr : &*found;
-}
 
 QString processDescription(const FitProfile& profile)
 {
@@ -107,7 +96,7 @@ void ManufacturingMeshDiagnosticDialog::populateProfiles()
             continue;
         FitProfile profile;
         QString error;
-        if (!library.loadProfile(summary.identity, &profile, &error) || !proofCorrection(profile))
+        if (!library.loadProfile(summary.identity, &profile, &error) || !ManufacturingMeshService::compatibleCorrection(profile, ProofOrientation))
             continue;
         m_profiles->addItem(summary.name, summary.identity);
     }
@@ -135,7 +124,7 @@ void ManufacturingMeshDiagnosticDialog::updateProfileDetails()
         m_generate->setEnabled(false);
         return;
     }
-    const auto* correction = proofCorrection(profile);
+    const auto* correction = ManufacturingMeshService::compatibleCorrection(profile, ProofOrientation);
     if (!correction) {
         m_profileDetails->setText(tr("The selected profile no longer contains the required correction."));
         m_generate->setEnabled(false);

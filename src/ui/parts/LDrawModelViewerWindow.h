@@ -18,6 +18,7 @@ class QLabel;
 class QPushButton;
 class LDrawViewportWidget;
 class PrintPreparationCoordinator;
+namespace PrintGeometry { struct FitProfile; }
 
 struct LDrawModelViewerRequest
 {
@@ -49,6 +50,8 @@ private:
     void updateDimensions();
     QColor currentModelColor() const;
     void exportModel();
+    void startManufacturingExport(const PrintGeometry::FitProfile&,bool stl,bool threeMf,
+                                  const QString& path,const QString& ldrawId,double scale,const QColor& color);
     void saveWindowGeometry();
 
     LDrawModelViewerRequest m_request;

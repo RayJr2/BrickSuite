@@ -15,6 +15,7 @@ public:
     using BooleanServiceFactory=std::function<std::unique_ptr<MeshBooleanService>()>;
     using SemanticBuilderFunction=std::function<LDrawSemanticOperandBuilder::Result(const LDrawGeometry::LDrawLoadResult&)>;
     explicit ManufacturingMeshService(BooleanServiceFactory factory={},SemanticBuilderFunction builder={});
+    static const FitProfileCorrection* compatibleCorrection(const FitProfile&,FitPrintedOrientation,QString* reason=nullptr);
     ManufacturingMeshResult generate(const LDrawGeometry::LDrawLoadResult&,const PreparedMesh&,const FitProfile&,FitPrintedOrientation)const;
 private:BooleanServiceFactory m_factory;SemanticBuilderFunction m_builder;
 };
