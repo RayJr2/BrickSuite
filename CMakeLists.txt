@@ -426,6 +426,7 @@ qt_add_executable(BrickSuite
     src/ui/parts/LDrawViewportWidget.cpp src/ui/parts/LDrawViewportWidget.h
     src/ui/parts/PrintPreparationCoordinator.cpp src/ui/parts/PrintPreparationCoordinator.h
     src/ui/parts/PreparedMeshRenderAdapter.cpp src/ui/parts/PreparedMeshRenderAdapter.h
+    src/ui/parts/FitCalibrationDialog.cpp src/ui/parts/FitCalibrationDialog.h
     src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
     src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
     src/services/geometry/LDrawIdentityService.cpp src/services/geometry/LDrawIdentityService.h
@@ -437,6 +438,8 @@ qt_add_executable(BrickSuite
     src/services/geometry/print/PrintMesh.h src/services/geometry/print/PreparedMesh.h
     src/services/geometry/print/SemanticOperand.h src/services/geometry/print/LDrawPrintPreparationProfile.h
     src/services/geometry/print/FunctionalOperandRegenerator.cpp src/services/geometry/print/FunctionalOperandRegenerator.h
+    src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
+    src/services/geometry/fit/RoundTechnicCalibrationArtifact.cpp src/services/geometry/fit/RoundTechnicCalibrationArtifact.h
     src/services/geometry/print/PrintMeshConversion.cpp src/services/geometry/print/PrintMeshConversion.h
     src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
     src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
@@ -706,6 +709,23 @@ if(BUILD_TESTING)
     target_link_libraries(FunctionalOperandRegeneratorTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
     bricksuite_stage_mcut_runtime(FunctionalOperandRegeneratorTest)
     add_test(NAME FunctionalOperandRegenerator COMMAND FunctionalOperandRegeneratorTest)
+
+    qt_add_executable(FitCalibrationArtifactTest EXCLUDE_FROM_ALL
+        tests/FitCalibrationArtifactTest.cpp
+        src/services/geometry/LDrawLoadResult.h src/services/geometry/LDrawSourceModel.h src/services/geometry/PartMesh.h
+        src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
+        src/services/geometry/ThreeMfWriter.cpp src/services/geometry/ThreeMfWriter.h
+        src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
+        src/services/geometry/fit/RoundTechnicCalibrationArtifact.cpp src/services/geometry/fit/RoundTechnicCalibrationArtifact.h
+        src/services/geometry/print/PrintMesh.h src/services/geometry/print/SemanticOperand.h
+        src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
+        src/services/geometry/print/FunctionalOperandRegenerator.cpp src/services/geometry/print/FunctionalOperandRegenerator.h
+        src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
+        src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
+        src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h)
+    target_link_libraries(FitCalibrationArtifactTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
+    bricksuite_stage_mcut_runtime(FitCalibrationArtifactTest)
+    add_test(NAME FitCalibrationArtifact COMMAND FitCalibrationArtifactTest)
 
     qt_add_executable(LDrawPrintPreparationServiceTest EXCLUDE_FROM_ALL
         tests/LDrawPrintPreparationServiceTest.cpp

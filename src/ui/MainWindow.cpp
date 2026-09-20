@@ -97,6 +97,7 @@
 #include "../network/OperationalInvalidationPublisher.h"
 
 #include <QPointer>
+#include "parts/FitCalibrationDialog.h"
 
 #include <QAction>
 #include <QApplication>
@@ -974,6 +975,14 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     // Tools menu
     auto* toolsMenu = menuBar()->addMenu("Tools");
+
+    auto* fitCalibrationAction = toolsMenu->addAction("LEGO Fit Calibration...");
+    connect(fitCalibrationAction, &QAction::triggered, this, [this]() {
+        auto* dialog = new FitCalibrationDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->show();
+    });
+    toolsMenu->addSeparator();
 
 #ifndef NDEBUG
     auto* inventoryColorAuditAction =
