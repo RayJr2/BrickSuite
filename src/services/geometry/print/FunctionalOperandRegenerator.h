@@ -17,6 +17,7 @@ struct MaleStudDimensionalCorrection {
     double diameterMillimetres = 0.0;
     double heightMillimetres = 0.0;
 };
+struct ReceivingTubeOutsideDiameterCorrection { double millimetres = 0.0; };
 
 enum class FunctionalOperandRegenerationError {
     None,
@@ -48,6 +49,9 @@ public:
     static FunctionalOperandRegenerationResult regenerateStud(
         const FunctionalFeature& feature,
         MaleStudDimensionalCorrection correction);
+    static FunctionalOperandRegenerationResult regenerateReceivingTube(
+        const FunctionalFeature& feature,
+        ReceivingTubeOutsideDiameterCorrection correction);
 };
 
 } // namespace PrintGeometry

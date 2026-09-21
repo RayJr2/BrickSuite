@@ -66,4 +66,16 @@ FunctionalOperandRegenerationResult FunctionalOperandRegenerator::regenerateStud
     normalize(&mesh);result.analysis=analyzeSource(mesh);const auto validation=validateBooleanOperand(result.analysis);if(!validation.ok()){result.error=FunctionalOperandRegenerationError::InvalidGeneratedOperand;result.diagnostic=QStringLiteral("The regenerated standard stud failed validation: %1").arg(QString::fromStdString(validation.message));return result;}result.error=FunctionalOperandRegenerationError::None;result.diagnostic=open?QStringLiteral("Standard open stud regenerated with independent radial and axial corrections while preserving its bore."):QStringLiteral("Standard stud regenerated with independent radial and axial corrections.");return result;
 }
 
+FunctionalOperandRegenerationResult FunctionalOperandRegenerator::regenerateReceivingTube(
+    const FunctionalFeature& feature, ReceivingTubeOutsideDiameterCorrection correction)
+{
+    FunctionalOperandRegenerationResult rejected;rejected.featureIdentity=feature.stableIdentity;rejected.requestedDiameterCorrectionMillimetres=correction.millimetres;
+    if(feature.family!=FunctionalInterfaceFamily::StudReceivingClutch||feature.role!=FunctionalInterfaceRole::Female||feature.materialSide!=FunctionalMaterialSide::MaterialInside||feature.operandAction!=FunctionalOperandAction::Unite||feature.eligibility!=FunctionalEligibility::Eligible||feature.confidence!=SemanticConfidence::HighConfidence||feature.constructionRecipe!=QStringLiteral("stud-receiving-tube-wall-cell-v1")||feature.evidenceContract!=QStringLiteral("official-ldraw-stud4-tube-wall-cell-v1")){
+        rejected.error=FunctionalOperandRegenerationError::UnsupportedFeature;rejected.diagnostic=QStringLiteral("The feature is not an eligible TubeWallCell receiving-tube contract.");return rejected;}
+    FunctionalFeature annulus=feature;annulus.family=FunctionalInterfaceFamily::StandardStud;annulus.role=FunctionalInterfaceRole::Male;annulus.constructionRecipe=QStringLiteral("standard-open-stud-v1");
+    auto result=regenerateStud(annulus,{correction.millimetres,0.0});result.featureIdentity=feature.stableIdentity;
+    if(result.ok())result.diagnostic=QStringLiteral("TubeWallCell receiving-tube OD regenerated while preserving the protected bore and axial extent.");
+    return result;
+}
+
 } // namespace PrintGeometry
