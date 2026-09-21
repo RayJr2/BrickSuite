@@ -3,6 +3,7 @@
 #include "LDrawPrintGeometryBuilder.h"
 #include "ManufacturingMesh.h"
 #include "MeshBooleanService.h"
+#include "../PrintOrientation.h"
 #include "../fit/FitCalibrationLibrary.h"
 #include <functional>
 #include <memory>
@@ -18,6 +19,10 @@ public:
     explicit ManufacturingMeshService(BooleanServiceFactory factory={},SemanticBuilderFunction builder={});
     static const FitProfileCorrection* compatibleCorrection(const FitProfile&,FitPrintedOrientation,QString* reason=nullptr);
     static ManufacturingMeshCorrections compatibleCorrections(const FitProfile&,FitPrintedOrientation,QString* reason=nullptr);
+    static FitPrintedOrientation transformedOrientation(const FunctionalFeature&,const PrintOrientation&);
+    static bool hasApplicableCorrection(const FitProfile&,const LDrawSemanticOperandBuilder::Result&,const PrintOrientation&,QString* reason=nullptr);
+    static bool hasApplicableCorrection(const FitProfile&,const LDrawGeometry::LDrawLoadResult&,const PrintOrientation&,QString* reason=nullptr);
+    ManufacturingMeshResult generate(const LDrawGeometry::LDrawLoadResult&,const PreparedMesh&,const FitProfile&,const PrintOrientation&)const;
     ManufacturingMeshResult generate(const LDrawGeometry::LDrawLoadResult&,const PreparedMesh&,const FitProfile&,FitPrintedOrientation)const;
 private:BooleanServiceFactory m_factory;SemanticBuilderFunction m_builder;
 };

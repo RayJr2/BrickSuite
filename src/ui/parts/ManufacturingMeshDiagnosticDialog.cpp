@@ -20,8 +20,6 @@
 using namespace PrintGeometry;
 
 namespace {
-constexpr auto ProofOrientation = FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
-
 QString processDescription(const FitProfile& profile)
 {
     const auto& process = profile.process;
@@ -98,7 +96,7 @@ void ManufacturingMeshDiagnosticDialog::populateProfiles()
             continue;
         FitProfile profile;
         QString error;
-        if (!library.loadProfile(summary.identity, &profile, &error) || !ManufacturingMeshService::compatibleCorrection(profile, ProofOrientation))
+        if (!library.loadProfile(summary.identity, &profile, &error) || !ManufacturingMeshService::hasApplicableCorrection(profile, m_source, m_printOrientation))
             continue;
         m_profiles->addItem(summary.name, summary.identity);
     }
@@ -126,15 +124,14 @@ void ManufacturingMeshDiagnosticDialog::updateProfileDetails()
         m_generate->setEnabled(false);
         return;
     }
-    const auto* correction = ManufacturingMeshService::compatibleCorrection(profile, ProofOrientation);
-    if (!correction) {
+    QString applicability;
+    if (!ManufacturingMeshService::hasApplicableCorrection(profile, m_source, m_printOrientation, &applicability)) {
         m_profileDetails->setText(tr("The selected profile no longer contains the required correction."));
         m_generate->setEnabled(false);
         return;
     }
-    m_profileDetails->setText(QStringLiteral("%1\nProfile: %2 · Source session: %3\n%4 / %5 · correction: %6 mm diameter")
-        .arg(processDescription(profile), profile.profileIdentity, profile.sourceSessionIdentity,
-             correction->featureFamily, correction->featureRole, signedMillimetres(correction->valueMillimetres)));
+    m_profileDetails->setText(QStringLiteral("%1\nProfile: %2 · Source session: %3\n%4")
+        .arg(processDescription(profile), profile.profileIdentity, profile.sourceSessionIdentity, applicability));
 }
 
 void ManufacturingMeshDiagnosticDialog::generate()
@@ -157,6 +154,7 @@ void ManufacturingMeshDiagnosticDialog::generate()
     m_result->setText(tr("Generating a separate ManufacturingMesh..."));
     const auto source = m_source;
     const auto prepared = m_prepared;
+    const auto printOrientation = m_printOrientation;
     auto* watcher = new QFutureWatcher<ManufacturingMeshResult>(this);
     QPointer<ManufacturingMeshDiagnosticDialog> self(this);
     connect(watcher, &QFutureWatcher<ManufacturingMeshResult>::finished, this, [self, watcher] {
@@ -177,8 +175,8 @@ void ManufacturingMeshDiagnosticDialog::generate()
         self->showResult(*generated.manufacturingMesh);
         self->m_export->setEnabled(true);
     });
-    watcher->setFuture(QtConcurrent::run([source, prepared, profile] {
-        return ManufacturingMeshService().generate(source, prepared, profile, ProofOrientation);
+    watcher->setFuture(QtConcurrent::run([source, prepared, profile, printOrientation] {
+        return ManufacturingMeshService().generate(source, prepared, profile, printOrientation);
     }));
 }
 
