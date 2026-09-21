@@ -23,6 +23,7 @@ struct FunctionalFeature {
     SemanticConfidence confidence=SemanticConfidence::Unsupported;
     FunctionalFeatureFrame frame;
     double nominalRadiusMillimetres=0.0,nominalDiameterMillimetres=0.0,nominalAxialExtentMillimetres=0.0,nominalEngagementExtentMillimetres=0.0;
+    double protectedInnerRadiusMillimetres=0.0;
     FunctionalOperandAction operandAction=FunctionalOperandAction::Subtract;
     QString governingOperandIdentity,constructionRecipe,evidenceContract;
     QVector<FunctionalRadialSection> radialProfile;

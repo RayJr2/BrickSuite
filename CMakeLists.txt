@@ -744,6 +744,8 @@ if(BUILD_TESTING)
 
     qt_add_executable(ManufacturingMeshServiceTest EXCLUDE_FROM_ALL
         tests/ManufacturingMeshServiceTest.cpp
+        src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
+        src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
         src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
         src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
         src/services/geometry/print/ManufacturingMesh.h

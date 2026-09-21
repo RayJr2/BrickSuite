@@ -5,6 +5,7 @@
 
 #include <QElapsedTimer>
 #include <QCryptographicHash>
+#include <QHash>
 #include <QSet>
 
 #include <algorithm>
@@ -131,22 +132,25 @@ void appendFeatureProvenance(const Component&component,const LDrawGeometry::LDra
     for(int triangle:component.sourceTriangles){const auto&s=source.surfaces[triangle];const auto&f=source.files[s.fileId];const QString key=QString("%1|%2|%3|%4").arg(f.relativePath).arg(s.referenceId).arg(s.sourceLine).arg(s.inverted);if(seen.contains(key))continue;seen.insert(key);out->push_back({f.relativePath,s.referenceId,s.sourceLine,s.inverted});}
 }
 
-int reviewedStandardStudReference(const Component&component,const LDrawGeometry::LDrawSourceModel&source)
+struct StandardStudReference { int reference=-1; bool open=false; };
+StandardStudReference reviewedStandardStudReference(const Component&component,const LDrawGeometry::LDrawSourceModel&source)
 {
-    QSet<int> matches;
+    QSet<int> matches;QHash<int,bool> open;
     for(int triangle:component.sourceTriangles){
-        if(triangle<0||triangle>=source.surfaces.size())return -1;
+        if(triangle<0||triangle>=source.surfaces.size())return{};
         int reference=source.surfaces[triangle].referenceId;
         while(reference>=0&&reference<source.references.size()){
             const auto&record=source.references[reference];
             if(record.fileId>=0&&record.fileId<source.files.size()){
                 const QString path=source.files[record.fileId].relativePath;
-                if(path.compare(QStringLiteral("p/stud.dat"),Qt::CaseInsensitive)==0||path.compare(QStringLiteral("stud.dat"),Qt::CaseInsensitive)==0){matches.insert(reference);break;}
+                const bool solid=path.compare(QStringLiteral("p/stud.dat"),Qt::CaseInsensitive)==0||path.compare(QStringLiteral("stud.dat"),Qt::CaseInsensitive)==0;
+                const bool hollow=path.compare(QStringLiteral("p/stud2.dat"),Qt::CaseInsensitive)==0||path.compare(QStringLiteral("stud2.dat"),Qt::CaseInsensitive)==0;
+                if(solid||hollow){matches.insert(reference);open.insert(reference,hollow);break;}
             }
             reference=record.parentId;
         }
     }
-    return matches.size()==1?*matches.cbegin():-1;
+    if(matches.size()!=1)return{};const int reference=*matches.cbegin();return{reference,open.value(reference)};
 }
 
 Point transformedDirection(const std::array<double,12>&t,double x,double y,double z)
@@ -156,12 +160,13 @@ Point transformedDirection(const std::array<double,12>&t,double x,double y,doubl
     return magnitude>1e-12?Point{converted.x/magnitude,converted.y/magnitude,converted.z/magnitude}:Point{};
 }
 
-FunctionalFeature standardStudFeature(int reference,const LDrawGeometry::LDrawSourceModel&source,const Component&component)
+FunctionalFeature standardStudFeature(StandardStudReference stud,const LDrawGeometry::LDrawSourceModel&source,const Component&component)
 {
+    const int reference=stud.reference;
     FunctionalFeature feature;if(reference<0||reference>=source.references.size())return feature;const auto&record=source.references[reference];const auto&t=record.accumulatedTransform;
     feature.family=FunctionalInterfaceFamily::StandardStud;feature.role=FunctionalInterfaceRole::Male;feature.materialSide=FunctionalMaterialSide::MaterialInside;feature.eligibility=FunctionalEligibility::Eligible;feature.confidence=SemanticConfidence::HighConfidence;feature.operandAction=FunctionalOperandAction::Unite;
     feature.frame.origin=convert(QVector3D(float(t[3]),float(t[7]),float(t[11])));feature.frame.axis=transformedDirection(t,0,-1,0);feature.frame.profileU=transformedDirection(t,1,0,0);feature.frame.profileV=cross(feature.frame.axis,feature.frame.profileU);feature.frame.mirrored=record.mirrored;
-    feature.nominalRadiusMillimetres=2.4;feature.nominalDiameterMillimetres=4.8;feature.nominalAxialExtentMillimetres=1.6;feature.nominalEngagementExtentMillimetres=1.6;feature.radialProfile={{0.0,2.4},{1.6,2.4}};feature.constructionRecipe=QStringLiteral("standard-solid-stud-v1");feature.evidenceContract=QStringLiteral("official-ldraw-standard-stud-v1");
+    feature.nominalRadiusMillimetres=2.4;feature.nominalDiameterMillimetres=4.8;feature.nominalAxialExtentMillimetres=1.6;feature.nominalEngagementExtentMillimetres=1.6;feature.protectedInnerRadiusMillimetres=stud.open?1.6:0.0;feature.radialProfile={{0.0,2.4},{1.6,2.4}};feature.constructionRecipe=stud.open?QStringLiteral("standard-open-stud-v1"):QStringLiteral("standard-solid-stud-v1");feature.evidenceContract=QStringLiteral("official-ldraw-standard-stud-v1");
     appendFeatureProvenance(component,source,&feature.provenance);if(record.fileId>=0&&record.fileId<source.files.size())feature.provenance.push_back({source.files[record.fileId].relativePath,record.id,record.sourceLine,record.inverted});
     QCryptographicHash hash(QCryptographicHash::Sha256);hash.addData(QString("%1|%2|%3|%4|%5|%6|%7").arg(record.id).arg(record.sourceLine).arg(feature.frame.origin.x,0,'g',17).arg(feature.frame.origin.y,0,'g',17).arg(feature.frame.origin.z,0,'g',17).arg(feature.frame.axis.x,0,'g',17).arg(feature.frame.axis.y,0,'g',17).toUtf8());hash.addData(QString("|%1").arg(feature.frame.axis.z,0,'g',17).toUtf8());feature.stableIdentity=QStringLiteral("standard-stud:")+QString::fromLatin1(hash.result().toHex());feature.governingOperandIdentity=feature.stableIdentity+QStringLiteral(":operand");return feature;
 }
@@ -268,8 +273,8 @@ LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDr
         if(index==body){op.role=SemanticRole::PrimaryBody;op.feature=SemanticFeature::BodyOrCavity;op.closedMesh=g.mesh;normalize(&op.closedMesh);op.analysis=analyzeSource(op.closedMesh);}
         else if(index==passage){op.role=SemanticRole::SubtractivePassage;op.feature=SemanticFeature::RoundThroughPassage;op.closedMesh=g.mesh;normalize(&op.closedMesh);op.analysis=analyzeSource(op.closedMesh);op.functionalFeatures.push_back(passageFeature);}
         else {bool contacts=true;for(const auto&loop:g.loops)contacts=contacts&&inBounds(bodyBounds,center(g.mesh,loop),ContactMm);if(!contacts){r.status=Status::AmbiguousBoundary;r.diagnostics<<QString("Group %1 does not contact the body at its boundary.").arg(index);return r;}
-            if(g.loops.size()==1){op.role=SemanticRole::AdditiveAttachment;op.feature=SemanticFeature::Stud;if(!closeSingle(g,&op.closedMesh,&op.closureTriangles,passage>=0)){r.status=Status::OperandClosureFailed;r.diagnostics<<QString("Single-loop closure failed for group %1.").arg(index);return r;}const int studReference=reviewedStandardStudReference(g,*effective.sourceModel);if(studReference>=0){op.functionalFeatures.push_back(standardStudFeature(studReference,*effective.sourceModel,g));r.diagnostics<<QString("Official standard solid stud recognized for group %1.").arg(index);}}
-            else if(g.loops.size()==2){op.role=SemanticRole::HollowAdditiveAttachment;op.feature=SemanticFeature::Tube;if(!closeAnnularBoundary(g,&op.closedMesh,&op.closureTriangles)){r.status=Status::OperandClosureFailed;r.diagnostics<<QString("Nested-loop annular closure failed for group %1.").arg(index);return r;}}
+            if(g.loops.size()==1){op.role=SemanticRole::AdditiveAttachment;op.feature=SemanticFeature::Stud;if(!closeSingle(g,&op.closedMesh,&op.closureTriangles,passage>=0)){r.status=Status::OperandClosureFailed;r.diagnostics<<QString("Single-loop closure failed for group %1.").arg(index);return r;}const auto studReference=reviewedStandardStudReference(g,*effective.sourceModel);if(studReference.reference>=0){op.functionalFeatures.push_back(standardStudFeature(studReference,*effective.sourceModel,g));r.diagnostics<<QString("Official standard solid stud recognized for group %1.").arg(index);}}
+            else if(g.loops.size()==2){op.role=SemanticRole::HollowAdditiveAttachment;op.feature=SemanticFeature::Tube;if(!closeAnnularBoundary(g,&op.closedMesh,&op.closureTriangles)){r.status=Status::OperandClosureFailed;r.diagnostics<<QString("Nested-loop annular closure failed for group %1.").arg(index);return r;}const auto studReference=reviewedStandardStudReference(g,*effective.sourceModel);if(studReference.reference>=0&&studReference.open){op.feature=SemanticFeature::Stud;op.functionalFeatures.push_back(standardStudFeature(studReference,*effective.sourceModel,g));r.diagnostics<<QString("Official standard open stud recognized for group %1; its inner bore remains protected.").arg(index);}}
             else {r.status=Status::UnsupportedBoundaryTopology;r.diagnostics<<QString("Group %1 has %2 boundary loops.").arg(index).arg(g.loops.size());return r;}op.analysis=analyzeSource(op.closedMesh);}
         const auto operandValidation=validateBooleanOperand(op.analysis);if(!operandValidation.ok()){r.status=Status::OperandValidationFailed;r.diagnostics<<QString("The %1 operand failed Boolean-operand validation: %2 (boundaryEdges=%3, components=%4, nonManifoldVertices=%5, selfIntersections=%6).").arg(roleName(op.role),QString::fromStdString(operandValidation.message)).arg(op.analysis.boundaryEdges).arg(op.analysis.connectedComponents).arg(op.analysis.nonManifoldVertices).arg(op.analysis.selfIntersections);return r;}r.closureTriangles+=op.closureTriangles;r.operands.push_back(std::move(op));}
     if(r.operands.size()>MaxOperands){r.status=Status::ResourceLimitExceeded;r.diagnostics<<"Semantic operand limit was exceeded.";return r;}r.semanticGenerationMs=phase.elapsed();r.status=Status::Ready;

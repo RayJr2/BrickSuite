@@ -9,8 +9,10 @@ struct ManufacturingMesh {
     MeshAnalysisResult analysis;
     QString identity, partReference, nominalPreparationIdentity;
     QString fitProfileIdentity, sourceSessionIdentity, featureIdentity;
+    QStringList featureIdentities;
     QString semanticContractVersion, correctionContractVersion, regeneratorAlgorithmVersion, booleanVersion;
     double nominalDiameterMillimetres=0, diameterCorrectionMillimetres=0, manufacturingDiameterMillimetres=0;
+    double nominalHeightMillimetres=0, heightCorrectionMillimetres=0, manufacturingHeightMillimetres=0;
     QStringList provenance;
 };
 }

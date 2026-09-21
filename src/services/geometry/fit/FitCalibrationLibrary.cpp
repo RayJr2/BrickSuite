@@ -126,14 +126,20 @@ bool mergeSharedContext(FitCalibrationProcess* imported, const FitCalibrationPro
 
 QJsonObject FitProfileJson::toJson(const FitProfile& profile) {
     QJsonArray corrections;
-    for (const auto& correction : profile.corrections) corrections.push_back(QJsonObject{
+    for (const auto& correction : profile.corrections) {
+        QJsonObject item{
         {"featureFamily", correction.featureFamily}, {"featureRole", correction.featureRole},
         {"printedOrientation", correction.printedOrientation}, {"valueMillimetres", correction.valueMillimetres},
         {"units", correction.units}, {"semantics", correction.semantics},
         {"correctionContractVersion", correction.correctionContractVersion},
         {"semanticContractVersion", correction.semanticContractVersion},
         {"regeneratorAlgorithmVersion", correction.regeneratorAlgorithmVersion},
-        {"calibrationArtifactIdentity", correction.calibrationArtifactIdentity}});
+        {"calibrationArtifactIdentity", correction.calibrationArtifactIdentity}};
+        if (correction.hasRequiredDiameterCorrection) {
+            item["requiredDiameterCorrectionMillimetres"] = correction.requiredDiameterCorrectionMillimetres;
+        }
+        corrections.push_back(item);
+    }
     return {{"formatVersion", CurrentFormatVersion}, {"documentType", "fit-profile"},
             {"profileIdentity", profile.profileIdentity}, {"name", profile.name},
             {"process", processJson(profile.process)}, {"processFingerprint", profile.processFingerprint},
@@ -168,6 +174,13 @@ bool FitProfileJson::fromJson(const QJsonObject& json, FitProfile* output, QStri
         correction.semanticContractVersion = item.value("semanticContractVersion").toString();
         correction.regeneratorAlgorithmVersion = item.value("regeneratorAlgorithmVersion").toString();
         correction.calibrationArtifactIdentity = item.value("calibrationArtifactIdentity").toString();
+        if (item.contains("requiredDiameterCorrectionMillimetres")) {
+            if (!item.value("requiredDiameterCorrectionMillimetres").isDouble()) {
+                fail(error, "A Fit Profile correction dependency is malformed."); return false;
+            }
+            correction.hasRequiredDiameterCorrection = true;
+            correction.requiredDiameterCorrectionMillimetres = item.value("requiredDiameterCorrectionMillimetres").toDouble();
+        }
         if (correction.featureFamily.isEmpty() || correction.featureRole.isEmpty() || correction.printedOrientation.isEmpty() ||
             correction.units != "millimetres" || correction.semantics.isEmpty() || correction.calibrationArtifactIdentity.isEmpty()) {
             fail(error, "A Fit Profile correction is incomplete."); return false;
@@ -337,6 +350,10 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
             ? QStringLiteral("male-stud-height") : QStringLiteral("male-stud-diameter");
         correction.correctionContractVersion = experiment.correctionDimension == FitCorrectionDimension::Height
             ? QStringLiteral("male-stud-height-v1") : QStringLiteral("male-stud-diameter-v1");
+        if (experiment.correctionDimension == FitCorrectionDimension::Height) {
+            correction.hasRequiredDiameterCorrection = true;
+            correction.requiredDiameterCorrectionMillimetres = experiment.fixedDiameterCorrectionMillimetres;
+        }
     }
     correction.semanticContractVersion = experiment.hasRegenerationPrototype && !experiment.regenerationPrototype.evidenceContract.isEmpty()
         ? experiment.regenerationPrototype.evidenceContract : currentSemanticContractVersion();
@@ -349,13 +366,16 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
     profile.corrections.push_back(correction); *output = profile; return true;
 }
 bool FitCalibrationLibrary::mergeVerifiedSession(const FitCalibrationSession&session,FitProfile*profile,QString*error){if(!profile){fail(error,"There is no Fit Profile to update.");return false;}FitProfile addition;if(!promoteVerifiedSession(session,profile->name,&addition,error))return false;if(manufacturingContextFingerprint(profile->process)!=manufacturingContextFingerprint(addition.process)){fail(error,"The verified calibration uses a different manufacturing process.");return false;}profile->processFingerprint=manufacturingContextFingerprint(profile->process);const auto&incoming=addition.corrections.front();const auto sameContract=[&](const FitProfileCorrection&existing){return existing.featureFamily==incoming.featureFamily&&existing.featureRole==incoming.featureRole&&existing.printedOrientation==incoming.printedOrientation&&existing.semantics==incoming.semantics&&existing.correctionContractVersion==incoming.correctionContractVersion;};auto existing=std::find_if(profile->corrections.begin(),profile->corrections.end(),sameContract);if(existing==profile->corrections.end())profile->corrections.push_back(incoming);else *existing=incoming;if(!profile->verifiedUtc.isValid()||addition.verifiedUtc>profile->verifiedUtc)profile->verifiedUtc=addition.verifiedUtc;return true;}
+bool FitCalibrationLibrary::saveVerifiedWorkspaceProfile(const FitCalibrationWorkspace&workspace,const QString&profileName,FitProfile*output,QString*error){QVector<FitProfile>matching;for(const auto&summary:profiles()){FitProfile candidate;if(loadProfile(summary.identity,&candidate,nullptr)&&manufacturingContextFingerprint(candidate.process)==workspace.identity)matching.push_back(candidate);}if(matching.size()>1){fail(error,"More than one Fit Profile already uses this manufacturing context. BrickSuite will not guess which profile to update.");return false;}QVector<FitCalibrationSession>verified;for(const auto&session:workspace.featureSessions){const auto*experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(experiment&&experiment->state==FitEvidenceState::Verified)verified.push_back(session);}if(verified.isEmpty()){fail(error,"This manufacturing workspace has no Verified calibration evidence.");return false;}FitProfile profile;if(matching.isEmpty()){if(!promoteVerifiedSession(verified.front(),profileName,&profile,error))return false;}else{profile=matching.front();if(!profileName.trimmed().isEmpty())profile.name=profileName.trimmed();}for(const auto&session:verified)if(!mergeVerifiedSession(session,&profile,error))return false;if(!saveProfile(&profile,error))return false;if(output)*output=profile;return true;}
 bool FitCalibrationLibrary::saveProfile(FitProfile* profile, QString* error) {
     if (!profile || profile->corrections.isEmpty() || profile->sourceSessionIdentity.isEmpty()) { fail(error, "The Fit Profile is incomplete."); return false; }
     if (profile->profileIdentity.isEmpty()) profile->profileIdentity = newStableIdentity();
     return writeJson(fileForIdentity(profilesDirectory(), profile->profileIdentity), FitProfileJson::toJson(*profile), error);
 }
 bool FitCalibrationLibrary::loadProfile(const QString& identity, FitProfile* profile, QString* error) const {
-    QJsonObject json; return readObject(fileForIdentity(profilesDirectory(), identity), &json, error) && FitProfileJson::fromJson(json, profile, error);
+    QJsonObject json;if(!readObject(fileForIdentity(profilesDirectory(),identity),&json,error)||!FitProfileJson::fromJson(json,profile,error))return false;
+    for(auto&correction:profile->corrections){if(correction.semantics!=QStringLiteral("male-stud-height")||correction.hasRequiredDiameterCorrection)continue;bool found=false;double required=0;for(const auto&summary:sessions()){FitCalibrationSession session;if(!loadSession(summary.identity,&session,nullptr)||manufacturingContextFingerprint(session.process)!=manufacturingContextFingerprint(profile->process))continue;const FitCalibrationExperiment*experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(!experiment||experiment->artifactIdentity!=correction.calibrationArtifactIdentity||experiment->featureFamily!=QStringLiteral("StandardStud")||experiment->correctionDimension!=FitCorrectionDimension::Height)continue;if(found&&std::abs(required-experiment->fixedDiameterCorrectionMillimetres)>1e-9){found=false;break;}required=experiment->fixedDiameterCorrectionMillimetres;found=true;}if(found){correction.hasRequiredDiameterCorrection=true;correction.requiredDiameterCorrectionMillimetres=required;}}
+    return true;
 }
 bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QString* reason) {
     if (profile.verificationState != FitEvidenceState::Verified) { fail(reason, "The Fit Profile is not Verified."); return false; }

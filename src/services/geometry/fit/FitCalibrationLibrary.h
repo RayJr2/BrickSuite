@@ -20,6 +20,8 @@ struct FitProfileCorrection {
     QString semanticContractVersion;
     QString regeneratorAlgorithmVersion = "functional-operand-regenerator-v1";
     QString calibrationArtifactIdentity;
+    bool hasRequiredDiameterCorrection = false;
+    double requiredDiameterCorrectionMillimetres = 0;
 };
 
 struct FitProfile {
@@ -98,6 +100,8 @@ public:
     static bool promoteVerifiedSession(const FitCalibrationSession&, const QString& profileName,
                                        FitProfile*, QString* error = nullptr);
     static bool mergeVerifiedSession(const FitCalibrationSession&, FitProfile*, QString* error = nullptr);
+    bool saveVerifiedWorkspaceProfile(const FitCalibrationWorkspace&, const QString& profileName,
+                                      FitProfile*, QString* error = nullptr);
     bool saveProfile(FitProfile*, QString* error = nullptr);
     bool loadProfile(const QString& identity, FitProfile*, QString* error = nullptr) const;
     QVector<FitProfileSummary> profiles(QVector<FitLibraryIssue>* issues = nullptr) const;
