@@ -25,6 +25,7 @@ public:
     void setShowMeshIssues(bool show);
     void clearMesh();
     void setUniformScale(float scale);
+    void setPrintOrientation(const PrintOrientation& orientation);
     void setRenderMode(PartViewerRenderMode mode);
     void setProjection(PartViewerCamera::Projection projection);
     void setStandardView(PartViewerCamera::View view);
@@ -85,5 +86,6 @@ private:
     bool m_showAxes=partViewerShowAxesDefault();
     bool m_showMeshIssues=false;
     QColor m_modelColor{QStringLiteral("#C0C5C8")};
+    PrintOrientation m_printOrientation;
     QPointF m_lastMouse;
 };

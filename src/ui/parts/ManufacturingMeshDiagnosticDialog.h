@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../services/geometry/LDrawLoadResult.h"
+#include "../../services/geometry/PrintOrientation.h"
 #include "../../services/geometry/print/PreparedMesh.h"
 
 #include <QColor>
@@ -21,6 +22,7 @@ public:
                                       const PrintGeometry::PreparedMesh& prepared,
                                       double uniformScale,
                                       const QColor& modelColor,
+                                      const PrintOrientation& printOrientation,
                                       QWidget* parent = nullptr);
 
 private:
@@ -34,6 +36,7 @@ private:
     PrintGeometry::PreparedMesh m_prepared;
     double m_uniformScale = 1.0;
     QColor m_modelColor;
+    PrintOrientation m_printOrientation;
     std::shared_ptr<const PrintGeometry::ManufacturingMesh> m_manufacturingMesh;
     QComboBox* m_profiles = nullptr;
     QLabel* m_profileDetails = nullptr;

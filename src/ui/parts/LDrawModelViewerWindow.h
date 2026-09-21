@@ -48,6 +48,8 @@ private:
     void updatePreparationControls();
     void selectGeometry();
     void updateDimensions();
+    void applyPrintRotation(PrintOrientation::Rotation rotation);
+    void updatePrintOrientationLabel();
     QColor currentModelColor() const;
     void exportModel();
     void startManufacturingExport(const PrintGeometry::FitProfile&,bool stl,bool threeMf,
@@ -76,6 +78,7 @@ private:
     QLabel* m_bfc=nullptr;
     QLabel* m_sourceMeshStatus=nullptr;
     QLabel* m_preparedMeshStatus=nullptr;
+    QLabel* m_printOrientationLabel=nullptr;
     QDoubleSpinBox* m_scale=nullptr;
     QPushButton* m_reload=nullptr;
     QPushButton* m_fit=nullptr;

@@ -60,6 +60,7 @@ void LDrawViewportWidget::setSourceIssueOverlay(const SourceMeshIssueRenderData&
 void LDrawViewportWidget::setShowMeshIssues(bool show){m_showMeshIssues=show;update();}
 void LDrawViewportWidget::clearMesh(){m_mesh={};m_prepared={};m_usingPrepared=false;m_meshDirty=true;update();}
 void LDrawViewportWidget::setUniformScale(float scale){m_camera.setScale(scale);update();}
+void LDrawViewportWidget::setPrintOrientation(const PrintOrientation& orientation){m_printOrientation=orientation;update();}
 void LDrawViewportWidget::setRenderMode(PartViewerRenderMode mode){m_mode=mode;update();}
 void LDrawViewportWidget::setProjection(PartViewerCamera::Projection value){m_camera.setProjection(value);update();}
 void LDrawViewportWidget::setStandardView(PartViewerCamera::View view){m_camera.setView(view);update();}
@@ -104,8 +105,9 @@ void LDrawViewportWidget::paintGL()
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     if(!m_ready||!m_program)return;
     if(m_meshDirty)uploadMesh();
-    m_program->bind();m_program->setUniformValue("mvp",m_camera.modelViewProjection());
-    m_program->setUniformValue("normalMatrix",m_camera.modelViewMatrix().normalMatrix());
+    const QMatrix4x4 orientation=m_printOrientation.matrix();
+    m_program->bind();m_program->setUniformValue("mvp",m_camera.modelViewProjection()*orientation);
+    m_program->setUniformValue("normalMatrix",(m_camera.modelViewMatrix()*orientation).normalMatrix());
     const PartViewerRenderPasses passes=partViewerRenderPasses(m_mode);
     if(passes.depthPrepass){
         glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE);
@@ -173,7 +175,7 @@ void LDrawViewportWidget::drawFaces()
 
 QVector<LDrawViewportWidget::Vertex> LDrawViewportWidget::conditionalLineVertices()const
 {
-    QVector<Vertex> result;const QMatrix4x4 matrix=m_camera.modelViewProjection();
+    QVector<Vertex> result;const QMatrix4x4 matrix=m_camera.modelViewProjection()*m_printOrientation.matrix();
     for(const auto&e:m_mesh.conditionalEdges)if(ConditionalEdgeVisibility::isVisible(e,matrix)){const auto color=LDrawColorResolver::edgeColor(e.color,m_modelColor);result<<vertex(e.a,{},color)<<vertex(e.b,{},color);}
     return result;
 }

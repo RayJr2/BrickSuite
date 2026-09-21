@@ -41,9 +41,10 @@ QString signedMillimetres(double value)
 
 ManufacturingMeshDiagnosticDialog::ManufacturingMeshDiagnosticDialog(
     const LDrawGeometry::LDrawLoadResult& source, const PreparedMesh& prepared,
-    double uniformScale, const QColor& modelColor, QWidget* parent)
+    double uniformScale, const QColor& modelColor, const PrintOrientation& printOrientation,
+    QWidget* parent)
     : QDialog(parent), m_source(source), m_prepared(prepared),
-      m_uniformScale(uniformScale), m_modelColor(modelColor)
+      m_uniformScale(uniformScale), m_modelColor(modelColor), m_printOrientation(printOrientation)
 {
     setWindowTitle(tr("ManufacturingMesh Proof — Part 3700"));
     setModal(true);
@@ -57,6 +58,7 @@ ManufacturingMeshDiagnosticDialog::ManufacturingMeshDiagnosticDialog(
     auto* form = new QFormLayout;
     form->addRow(tr("Part:"), new QLabel(QStringLiteral("3700 — Technic Brick 1 x 2 with Hole"), this));
     form->addRow(tr("Nominal geometry:"), new QLabel(tr("Prepared Mesh (unchanged)"), this));
+    form->addRow(tr("Print orientation:"), new QLabel(m_printOrientation.summary(), this));
     m_profiles = new QComboBox(this);
     m_profiles->setMinimumContentsLength(38);
     form->addRow(tr("Verified Fit Profile:"), m_profiles);
@@ -207,8 +209,10 @@ void ManufacturingMeshDiagnosticDialog::exportMesh()
     if (!path.endsWith(QStringLiteral(".3mf"), Qt::CaseInsensitive))
         path += QStringLiteral(".3mf");
     directories.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport, path);
+    ManufacturingMesh orientedMesh = *m_manufacturingMesh;
+    orientedMesh.mesh = m_printOrientation.apply(orientedMesh.mesh);
     QString error;
-    if (!ManufacturingMeshDiagnosticExporter::writeThreeMf(*m_manufacturingMesh, path, m_uniformScale, m_modelColor, &error)) {
+    if (!ManufacturingMeshDiagnosticExporter::writeThreeMf(orientedMesh, path, m_uniformScale, m_modelColor, &error)) {
         QMessageBox::critical(this, tr("Export ManufacturingMesh"), error);
         return;
     }

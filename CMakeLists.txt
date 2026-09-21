@@ -460,6 +460,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/LDrawColorResolver.cpp src/services/geometry/LDrawColorResolver.h
     src/services/geometry/PartViewerCamera.cpp src/services/geometry/PartViewerCamera.h
     src/services/geometry/PartViewerState.h
+    src/services/geometry/PrintOrientation.h
     src/ui/parts/PartReferenceDialog.h
     src/ui/parts/PartReferenceDialog.cpp
     src/ui/parts/AddPartReferenceDialog.h
@@ -838,7 +839,8 @@ if(BUILD_TESTING)
         src/services/geometry/ConditionalEdgeVisibility.cpp src/services/geometry/ConditionalEdgeVisibility.h
         src/services/geometry/LDrawColorResolver.cpp src/services/geometry/LDrawColorResolver.h
         src/services/geometry/PartViewerCamera.cpp src/services/geometry/PartViewerCamera.h
-        src/services/geometry/PartViewerState.h)
+        src/services/geometry/PartViewerState.h
+        src/services/geometry/PrintOrientation.h)
     target_link_libraries(PartViewerMathTest PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME PartViewerMath COMMAND PartViewerMathTest)
 

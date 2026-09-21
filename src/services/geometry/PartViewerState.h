@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PrintOrientation.h"
+
 #include <QStringList>
 #include <QtGlobal>
 #include <QVector3D>
@@ -39,13 +41,16 @@ inline bool partViewerShowAxesDefault(){return true;}
 class PartViewerState
 {
 public:
-    quint64 beginNewModelLoad(){m_scalePercent=100.0;return ++m_generation;}
+    quint64 beginNewModelLoad(){m_scalePercent=100.0;m_printOrientation.reset();return ++m_generation;}
     quint64 beginReload(){return ++m_generation;}
     bool accepts(quint64 generation)const{return generation==m_generation;}
     void setScalePercent(double value){m_scalePercent=qBound(1.0,value,1000.0);}
     void resetScale(){m_scalePercent=100.0;}
     double scalePercent()const{return m_scalePercent;}
+    PrintOrientation& printOrientation(){return m_printOrientation;}
+    const PrintOrientation& printOrientation()const{return m_printOrientation;}
 private:
     quint64 m_generation=0;
     double m_scalePercent=100.0;
+    PrintOrientation m_printOrientation;
 };
