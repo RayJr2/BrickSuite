@@ -22,6 +22,10 @@ public:
                                             const PrintOrientation& printOrientation);
     static AutoFitProfileResolution resolve(bool enabled, const QString& partReference,
                                             const QVector<FitProfile>& candidates,
+                                            const LDrawGeometry::LDrawLoadResult& source,
+                                            const PrintOrientation& printOrientation);
+    static AutoFitProfileResolution resolve(bool enabled, const QString& partReference,
+                                            const QVector<FitProfile>& candidates,
                                             FitPrintedOrientation orientation);
     static AutoFitProfileResolution resolveManaged(bool enabled, const QString& partReference,
                                                    const FitCalibrationLibrary& library,
