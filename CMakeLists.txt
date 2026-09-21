@@ -784,6 +784,7 @@ if(BUILD_TESTING)
         src/services/geometry/print/ManufacturingMesh.h
         src/services/geometry/print/ManufacturingMeshService.cpp src/services/geometry/print/ManufacturingMeshService.h
         src/services/geometry/print/FrictionlessTechnicPinSemantic.cpp src/services/geometry/print/FrictionlessTechnicPinSemantic.h
+        src/services/geometry/print/FrictionTechnicPinSemantic.cpp src/services/geometry/print/FrictionTechnicPinSemantic.h
         src/services/geometry/print/ManufacturingMeshDiagnosticExporter.cpp src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h
         src/services/geometry/print/AutoFitProfileResolver.cpp src/services/geometry/print/AutoFitProfileResolver.h
         src/services/geometry/ThreeMfWriter.cpp src/services/geometry/ThreeMfWriter.h
@@ -800,6 +801,7 @@ if(BUILD_TESTING)
     qt_add_executable(LDrawPrintPreparationServiceTest EXCLUDE_FROM_ALL
         tests/LDrawPrintPreparationServiceTest.cpp
         src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
+        src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
         src/services/geometry/print/PrintMesh.h src/services/geometry/print/PreparedMesh.h
         src/services/geometry/print/SemanticOperand.h src/services/geometry/print/LDrawPrintPreparationProfile.h
         src/services/geometry/print/PrintPreparation.h src/services/geometry/print/MeshBooleanService.h

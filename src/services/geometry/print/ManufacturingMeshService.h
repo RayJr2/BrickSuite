@@ -11,7 +11,7 @@
 namespace PrintGeometry {
 enum class ManufacturingMeshError { None, InvalidInput, UnsupportedProofPart, IncompatibleProfile, MissingCorrection, SemanticFailure, RegenerationFailure, BooleanFailure, InvalidResult };
 struct ManufacturingMeshResult { ManufacturingMeshError error=ManufacturingMeshError::InvalidInput;std::shared_ptr<ManufacturingMesh> manufacturingMesh;QString diagnostic;bool ok()const{return error==ManufacturingMeshError::None;} };
-struct ManufacturingMeshCorrections { const FitProfileCorrection* femaleDiameter=nullptr;const FitProfileCorrection* studDiameter=nullptr;const FitProfileCorrection* studHeight=nullptr;const FitProfileCorrection* receivingTubeDiameter=nullptr;const FitProfileCorrection* frictionlessPinDiameter=nullptr;QString studHeightDiagnostic;bool any()const{return femaleDiameter||studDiameter||studHeight||receivingTubeDiameter||frictionlessPinDiameter;} };
+struct ManufacturingMeshCorrections { const FitProfileCorrection* femaleDiameter=nullptr;const FitProfileCorrection* studDiameter=nullptr;const FitProfileCorrection* studHeight=nullptr;const FitProfileCorrection* receivingTubeDiameter=nullptr;const FitProfileCorrection* frictionlessPinDiameter=nullptr;const FitProfileCorrection* frictionPinDiameter=nullptr;QString studHeightDiagnostic;bool any()const{return femaleDiameter||studDiameter||studHeight||receivingTubeDiameter||frictionlessPinDiameter||frictionPinDiameter;} };
 class ManufacturingMeshService {
 public:
     using BooleanServiceFactory=std::function<std::unique_ptr<MeshBooleanService>()>;

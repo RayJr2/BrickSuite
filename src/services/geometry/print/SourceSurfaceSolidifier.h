@@ -14,6 +14,7 @@ struct SourceSurfaceSolidificationResult {
     double samplingPitchMillimetres = 0.0;
     double meanSurfaceDeviationBeforeProjectionMillimetres = 0.0;
     double meanSurfaceDeviationAfterProjectionMillimetres = 0.0;
+    double surfaceProjectionFraction = 0.0;
     std::size_t projectedVertices = 0;
     bool successful = false;
 };
