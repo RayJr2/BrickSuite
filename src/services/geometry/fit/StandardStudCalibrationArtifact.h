@@ -35,6 +35,11 @@ public:
     static QString diameterArtifactIdentity();
     static QString heightArtifactIdentity();
     static QString orientationIdentity();
+    static bool heightVerificationDefinition(
+        const FitCalibrationExperiment& provisionalHeight,
+        double verifiedDiameterCorrectionMillimetres,
+        StandardStudCalibrationArtifactDefinition*,
+        QString* error = nullptr);
     static StandardStudCalibrationArtifactResult generate(
         const FunctionalFeature&, const StandardStudCalibrationArtifactDefinition&);
     static FitCalibrationExperiment observationTemplate(

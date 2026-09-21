@@ -27,6 +27,14 @@ QString StandardStudCalibrationArtifact::diameterArtifactIdentity(){return QStri
 QString StandardStudCalibrationArtifact::heightArtifactIdentity(){return QStringLiteral("standard-stud-male-height-perpendicular-v1");}
 QString StandardStudCalibrationArtifact::orientationIdentity(){return QStringLiteral("flat-base-stud-axis-perpendicular-v1");}
 
+bool StandardStudCalibrationArtifact::heightVerificationDefinition(const FitCalibrationExperiment&provisionalHeight,double verifiedDiameterCorrectionMillimetres,StandardStudCalibrationArtifactDefinition*out,QString*error)
+{
+    if(!out||provisionalHeight.featureFamily!=QStringLiteral("StandardStud")||provisionalHeight.featureRole!=QStringLiteral("male")||provisionalHeight.correctionDimension!=FitCorrectionDimension::Height||provisionalHeight.artifactIdentity.isEmpty()||provisionalHeight.preferredCandidateIndex<=0||!std::isfinite(verifiedDiameterCorrectionMillimetres)){if(error)*error=QStringLiteral("A preferred Stud Height experiment and Verified Stud OD correction are required.");return false;}
+    const auto preferred=std::find_if(provisionalHeight.candidates.cbegin(),provisionalHeight.candidates.cend(),[&](const auto&candidate){return candidate.index==provisionalHeight.preferredCandidateIndex;});
+    if(preferred==provisionalHeight.candidates.cend()){if(error)*error=QStringLiteral("The preferred Stud Height candidate is unavailable.");return false;}
+    StandardStudCalibrationArtifactDefinition definition;definition.artifactIdentity=QStringLiteral("standard-stud-male-height-direct-verification-v2");definition.parentArtifactIdentity=provisionalHeight.artifactIdentity;definition.dimension=StandardStudCalibrationDimension::Height;definition.centerCorrectionMillimetres=preferred->heightCorrectionMillimetres;definition.candidateSpacingMillimetres=provisionalHeight.candidateSpacingMillimetres>0?std::min(.05,provisionalHeight.candidateSpacingMillimetres):.05;definition.fixedDiameterCorrectionMillimetres=verifiedDiameterCorrectionMillimetres;definition.candidateCount=3;*out=definition;if(error)error->clear();return true;
+}
+
 StandardStudCalibrationArtifactResult StandardStudCalibrationArtifact::generate(const FunctionalFeature&prototype,const StandardStudCalibrationArtifactDefinition&definition)
 {
     StandardStudCalibrationArtifactResult result;result.artifactIdentity=definition.artifactIdentity;result.orientationIdentity=orientationIdentity();result.dimension=definition.dimension;result.regenerationPrototype=prototype;
