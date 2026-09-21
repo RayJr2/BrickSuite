@@ -75,6 +75,8 @@ QString fileForIdentity(const QString& directory, const QString& identity) {
     return QDir(directory).filePath(identity + ".json");
 }
 FitEvidenceState sessionState(const FitCalibrationSession& session) {
+    if (session.hasFineExperiment && session.fineExperiment.state == FitEvidenceState::Verified) return FitEvidenceState::Verified;
+    if (session.hasCoarseExperiment && session.coarseExperiment.state == FitEvidenceState::Verified) return FitEvidenceState::Verified;
     if (session.hasFineExperiment) return session.fineExperiment.state;
     if (session.hasCoarseExperiment) return session.coarseExperiment.state;
     return FitEvidenceState::Draft;
@@ -85,9 +87,15 @@ QString legacyProcessFingerprint(const FitCalibrationProcess& process) {
 const FitCalibrationExperiment* representativeExperiment(const FitCalibrationSession& session) {
     return session.hasFineExperiment ? &session.fineExperiment : (session.hasCoarseExperiment ? &session.coarseExperiment : nullptr);
 }
+const FitCalibrationExperiment* verifiedExperiment(const FitCalibrationSession& session) {
+    if (session.hasFineExperiment && session.fineExperiment.state == FitEvidenceState::Verified) return &session.fineExperiment;
+    if (session.hasCoarseExperiment && session.coarseExperiment.state == FitEvidenceState::Verified) return &session.coarseExperiment;
+    return nullptr;
+}
 bool sameFeature(const FitCalibrationSession& left, const FitCalibrationSession& right) {
     const auto* a = representativeExperiment(left); const auto* b = representativeExperiment(right);
-    return a && b && a->featureFamily == b->featureFamily && a->featureRole == b->featureRole && a->correctionDimension == b->correctionDimension;
+    return a && b && a->featureFamily == b->featureFamily && a->featureRole == b->featureRole && a->correctionDimension == b->correctionDimension
+        && left.process.actualPrintedOrientation == right.process.actualPrintedOrientation;
 }
 bool unresolvedSharedText(const QString& value, bool compensationContext) {
     const QString normalized = value.simplified().toLower();
@@ -202,7 +210,7 @@ QString FitCalibrationLibrary::profilesDirectory() const { return QDir(m_root).f
 QString FitCalibrationLibrary::newStableIdentity() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 QString FitCalibrationLibrary::currentSemanticContractVersion() { return "official-ldraw-peghole-pair-v1"; }
 QString FitCalibrationLibrary::currentRegeneratorAlgorithmVersion() { return "functional-operand-regenerator-v1"; }
-QString FitCalibrationLibrary::sessionDisplayName(const FitCalibrationSession&session){const FitCalibrationExperiment*experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(!experiment)return QStringLiteral("Empty calibration session");QString feature=experiment->featureFamily==QStringLiteral("StandardStud")?QStringLiteral("Standard Stud"):QStringLiteral("Round Technic Passage");if(experiment->featureFamily==QStringLiteral("StandardStud"))feature+=experiment->correctionDimension==FitCorrectionDimension::Height?QStringLiteral(" Height"):QStringLiteral(" OD");QString stage;if(experiment->state==FitEvidenceState::Verified)stage=QStringLiteral("Verified");else if(experiment->artifactIdentity.contains(QStringLiteral("direct-verification")))stage=QStringLiteral("Verification");else if(experiment->artifactIdentity.contains(QStringLiteral("extension")))stage=QStringLiteral("Extended Search");else if(!experiment->parentArtifactIdentity.isEmpty())stage=QStringLiteral("Fine Search / Verification");else stage=QStringLiteral("Coarse Search");QString process;if(!session.process.printerIdentity.isEmpty()||!session.process.materialIdentity.isEmpty()){process=QStringLiteral(" — %1 / %2").arg(session.process.printerIdentity.isEmpty()?QStringLiteral("Unknown printer"):session.process.printerIdentity,session.process.materialIdentity.isEmpty()?QStringLiteral("Unknown material"):session.process.materialIdentity);}return QStringLiteral("%1 — %2%3").arg(feature,stage,process);}
+QString FitCalibrationLibrary::sessionDisplayName(const FitCalibrationSession&session){const FitCalibrationExperiment*experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(!experiment)return QStringLiteral("Empty calibration session");QString feature=experiment->featureFamily==QStringLiteral("StandardStud")?QStringLiteral("Standard Stud"):QStringLiteral("Round Technic Passage");if(experiment->featureFamily==QStringLiteral("StandardStud"))feature+=experiment->correctionDimension==FitCorrectionDimension::Height?QStringLiteral(" Height"):QStringLiteral(" OD");const QString orientation=session.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate?QStringLiteral(" — Parallel"):session.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate?QStringLiteral(" — Perpendicular"):QString();QString stage;if(experiment->state==FitEvidenceState::Verified)stage=QStringLiteral("Verified");else if(experiment->artifactIdentity.contains(QStringLiteral("direct-verification")))stage=QStringLiteral("Verification");else if(experiment->artifactIdentity.contains(QStringLiteral("extension")))stage=QStringLiteral("Extended Search");else if(!experiment->parentArtifactIdentity.isEmpty())stage=QStringLiteral("Fine Search / Verification");else stage=QStringLiteral("Coarse Search");QString process;if(!session.process.printerIdentity.isEmpty()||!session.process.materialIdentity.isEmpty()){process=QStringLiteral(" — %1 / %2").arg(session.process.printerIdentity.isEmpty()?QStringLiteral("Unknown printer"):session.process.printerIdentity,session.process.materialIdentity.isEmpty()?QStringLiteral("Unknown material"):session.process.materialIdentity);}return QStringLiteral("%1%2 — %3%4").arg(feature,orientation,stage,process);}
 FitCalibrationSession FitCalibrationLibrary::continuationSession(const FitCalibrationSession&parent,const FitCalibrationExperiment&source,FitCalibrationExperiment child){FitCalibrationSession result;result.sessionIdentity=newStableIdentity();result.process=parent.process;result.hasCoarseExperiment=true;result.coarseExperiment=source;result.coarseExperiment.process=result.process;result.hasFineExperiment=true;child.process=result.process;child.state=FitEvidenceState::Draft;child.preferredCandidateIndex=0;for(auto&candidate:child.candidates)candidate.observations.clear();result.fineExperiment=std::move(child);return result;}
 QString FitCalibrationLibrary::processFingerprint(const FitCalibrationProcess& process) {
     return manufacturingContextFingerprint(process);
@@ -256,10 +264,8 @@ QVector<FitCalibrationWorkspace> FitCalibrationLibrary::workspaces(QVector<FitLi
             result.back().process.actualPrintedOrientation = FitPrintedOrientation::Unknown;
             result.back().process.orientationNotes.clear();
         }
-        const auto* incoming = session.hasFineExperiment ? &session.fineExperiment : &session.coarseExperiment;
-        auto sameFeature = std::find_if(result[index].featureSessions.begin(), result[index].featureSessions.end(), [&](const auto& existing) {
-            const auto* current = existing.hasFineExperiment ? &existing.fineExperiment : &existing.coarseExperiment;
-            return current->featureFamily == incoming->featureFamily && current->featureRole == incoming->featureRole && current->correctionDimension == incoming->correctionDimension;
+        auto matchingFeature = std::find_if(result[index].featureSessions.begin(), result[index].featureSessions.end(), [&](const auto& existing) {
+            return sameFeature(existing, session);
         });
         auto rank = [](const FitCalibrationSession& item) {
             const auto* stage = item.hasFineExperiment ? &item.fineExperiment : &item.coarseExperiment;
@@ -268,8 +274,8 @@ QVector<FitCalibrationWorkspace> FitCalibrationLibrary::workspaces(QVector<FitLi
                 + (stage->artifactIdentity.contains(QStringLiteral("extension")) ? 2 : 0)
                 + (item.hasCoarseExperiment && !item.coarseExperiment.parentArtifactIdentity.isEmpty() ? 1 : 0);
         };
-        if (sameFeature == result[index].featureSessions.end()) result[index].featureSessions.push_back(session);
-        else if (rank(session) > rank(*sameFeature)) *sameFeature = session;
+        if (matchingFeature == result[index].featureSessions.end()) result[index].featureSessions.push_back(session);
+        else if (rank(session) > rank(*matchingFeature)) *matchingFeature = session;
     }
     std::sort(result.begin(), result.end(), [](const auto& left, const auto& right) { return left.displayName < right.displayName; });
     return result;
@@ -322,12 +328,13 @@ bool FitCalibrationLibrary::exportSession(const QString& identity, const QString
 }
 
 bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& session, const QString& name, FitProfile* output, QString* error) {
-    if (!output || session.sessionIdentity.isEmpty() || !session.hasFineExperiment || session.fineExperiment.state != FitEvidenceState::Verified) {
-        fail(error, "Only an explicitly Verified fine-search calibration session can create a Fit Profile."); return false;
+    const auto* verified = verifiedExperiment(session);
+    if (!output || session.sessionIdentity.isEmpty() || !verified) {
+        fail(error, "Only explicitly Verified calibration evidence can create or update a Fit Profile."); return false;
     }
     QString validation;
-    if (!FitCalibrationEvidencePolicy::validate(session.fineExperiment, &validation)) { fail(error, validation); return false; }
-    const auto& experiment = session.fineExperiment;
+    if (!FitCalibrationEvidencePolicy::validate(*verified, &validation)) { fail(error, validation); return false; }
+    const auto& experiment = *verified;
     auto evidenceProof = experiment; evidenceProof.state = FitEvidenceState::CandidateSelected; QString evidenceError;
     if (!FitCalibrationEvidencePolicy::markVerified(&evidenceProof, &evidenceError)) {
         fail(error, QStringLiteral("The stored Verified evidence no longer satisfies the verification policy: %1").arg(evidenceError)); return false;
@@ -366,7 +373,7 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
     profile.corrections.push_back(correction); *output = profile; return true;
 }
 bool FitCalibrationLibrary::mergeVerifiedSession(const FitCalibrationSession&session,FitProfile*profile,QString*error){if(!profile){fail(error,"There is no Fit Profile to update.");return false;}FitProfile addition;if(!promoteVerifiedSession(session,profile->name,&addition,error))return false;if(manufacturingContextFingerprint(profile->process)!=manufacturingContextFingerprint(addition.process)){fail(error,"The verified calibration uses a different manufacturing process.");return false;}profile->processFingerprint=manufacturingContextFingerprint(profile->process);const auto&incoming=addition.corrections.front();const auto sameContract=[&](const FitProfileCorrection&existing){return existing.featureFamily==incoming.featureFamily&&existing.featureRole==incoming.featureRole&&existing.printedOrientation==incoming.printedOrientation&&existing.semantics==incoming.semantics&&existing.correctionContractVersion==incoming.correctionContractVersion;};auto existing=std::find_if(profile->corrections.begin(),profile->corrections.end(),sameContract);if(existing==profile->corrections.end())profile->corrections.push_back(incoming);else *existing=incoming;if(!profile->verifiedUtc.isValid()||addition.verifiedUtc>profile->verifiedUtc)profile->verifiedUtc=addition.verifiedUtc;return true;}
-bool FitCalibrationLibrary::saveVerifiedWorkspaceProfile(const FitCalibrationWorkspace&workspace,const QString&profileName,FitProfile*output,QString*error){QVector<FitProfile>matching;for(const auto&summary:profiles()){FitProfile candidate;if(loadProfile(summary.identity,&candidate,nullptr)&&manufacturingContextFingerprint(candidate.process)==workspace.identity)matching.push_back(candidate);}if(matching.size()>1){fail(error,"More than one Fit Profile already uses this manufacturing context. BrickSuite will not guess which profile to update.");return false;}QVector<FitCalibrationSession>verified;for(const auto&session:workspace.featureSessions){const auto*experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(experiment&&experiment->state==FitEvidenceState::Verified)verified.push_back(session);}if(verified.isEmpty()){fail(error,"This manufacturing workspace has no Verified calibration evidence.");return false;}FitProfile profile;if(matching.isEmpty()){if(!promoteVerifiedSession(verified.front(),profileName,&profile,error))return false;}else{profile=matching.front();if(!profileName.trimmed().isEmpty())profile.name=profileName.trimmed();}for(const auto&session:verified)if(!mergeVerifiedSession(session,&profile,error))return false;if(!saveProfile(&profile,error))return false;if(output)*output=profile;return true;}
+bool FitCalibrationLibrary::saveVerifiedWorkspaceProfile(const FitCalibrationWorkspace&workspace,const QString&profileName,FitProfile*output,QString*error){QVector<FitProfile>matching;for(const auto&summary:profiles()){FitProfile candidate;if(loadProfile(summary.identity,&candidate,nullptr)&&manufacturingContextFingerprint(candidate.process)==workspace.identity)matching.push_back(candidate);}if(matching.size()>1){fail(error,"More than one Fit Profile already uses this manufacturing context. BrickSuite will not guess which profile to update.");return false;}QVector<FitCalibrationSession>verified;for(const auto&session:workspace.featureSessions)if(verifiedExperiment(session))verified.push_back(session);if(verified.isEmpty()){fail(error,"This manufacturing workspace has no Verified calibration evidence.");return false;}FitProfile profile;if(matching.isEmpty()){if(!promoteVerifiedSession(verified.front(),profileName,&profile,error))return false;}else{profile=matching.front();if(!profileName.trimmed().isEmpty())profile.name=profileName.trimmed();}for(const auto&session:verified)if(!mergeVerifiedSession(session,&profile,error))return false;if(!saveProfile(&profile,error))return false;if(output)*output=profile;return true;}
 bool FitCalibrationLibrary::saveProfile(FitProfile* profile, QString* error) {
     if (!profile || profile->corrections.isEmpty() || profile->sourceSessionIdentity.isEmpty()) { fail(error, "The Fit Profile is incomplete."); return false; }
     if (profile->profileIdentity.isEmpty()) profile->profileIdentity = newStableIdentity();

@@ -22,12 +22,16 @@ struct RoundTechnicCalibrationArtifactDefinition {
     double centerDiameterCorrectionMillimetres = 0.0;
     double candidateSpacingMillimetres = 0.1;
     int candidateCount = 7;
+    FitPrintedOrientation printedOrientation = FitPrintedOrientation::Unknown;
 };
 
 class RoundTechnicCalibrationArtifact {
 public:
     static QString artifactIdentity();
     static QString orientationIdentity();
+    static QString parallelArtifactIdentity();
+    static RoundTechnicCalibrationArtifactDefinition parallelCoarseDefinition();
+    static FunctionalFeature canonicalPrototype();
     static QVector<double> diameterCorrectionsMillimetres();
     static RoundTechnicCalibrationArtifactResult generate(const FunctionalFeature& prototype);
     static RoundTechnicCalibrationArtifactResult generate(const FunctionalFeature& prototype,
