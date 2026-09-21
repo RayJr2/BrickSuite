@@ -32,6 +32,16 @@ public:
         QMatrix4x4 result;for(int row=0;row<3;++row)for(int column=0;column<3;++column)result(row,column)=float(m_matrix[std::size_t(row*3+column)]);return result;
     }
 
+    QMatrix4x4 ldrawDisplayMatrix() const
+    {
+        // Display geometry is retained in LDraw coordinates, while PrintOrientation
+        // is authoritative in the canonical export basis (X, Z, -Y).
+        static constexpr Matrix toPrint{1,0,0, 0,0,1, 0,-1,0};
+        static constexpr Matrix toLDraw{1,0,0, 0,0,-1, 0,1,0};
+        const Matrix display=multiply(toLDraw,multiply(m_matrix,toPrint));
+        QMatrix4x4 result;for(int row=0;row<3;++row)for(int column=0;column<3;++column)result(row,column)=float(display[std::size_t(row*3+column)]);return result;
+    }
+
     QString summary() const
     {
         if(isIdentity())return QStringLiteral("Nominal");

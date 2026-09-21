@@ -94,7 +94,7 @@ int main(int argc,char**argv)
     QDir().mkpath(output);
     auto cache=std::make_shared<PrintPreparationCache>();
     LDrawPrintPreparationService service(cache);
-    for(const QString&id:{QStringLiteral("3003"),QStringLiteral("3001"),QStringLiteral("3622"),QStringLiteral("3700"),QStringLiteral("11477"),QStringLiteral("32064a"),QStringLiteral("3037"),QStringLiteral("6553")}){
+    for(const QString&id:{QStringLiteral("3003"),QStringLiteral("3001"),QStringLiteral("3622"),QStringLiteral("3700"),QStringLiteral("11477"),QStringLiteral("3673"),QStringLiteral("4274"),QStringLiteral("2780"),QStringLiteral("32064a"),QStringLiteral("3037"),QStringLiteral("6553")}){
         auto loaded=LDrawLibraryService::loadPart(args[libraryAt+1],id);
         ok&=check(loaded.ok(),id+" load");
         if(!loaded.ok())continue;
@@ -118,13 +118,23 @@ int main(int argc,char**argv)
         request.libraryAuthority=args[libraryAt+1];
         request.loadResult=loaded;
         auto result=service.prepare(request);
-        if(id=="32064a"||id=="3037"||id=="6553"){ok&=check(!result.ready(),id+" remains safely unsupported");continue;}
+        if(id=="2780"||id=="32064a"||id=="3037"||id=="6553"){ok&=check(!result.ready(),id+" remains safely unsupported");continue;}
         ok&=check(result.ready()&&!result.cacheHit,id+" production preparation");
         if(!result.ready())continue;
         if(id=="11477"){
             ok&=check(semantic.stitchDiagnostics.trianglesBefore==152&&semantic.stitchDiagnostics.trianglesAfter==156,"11477 certified stitching triangle metrics");
             ok&=check(semantic.stitchDiagnostics.boundariesBefore==8&&semantic.stitchDiagnostics.boundariesAfter==0&&semantic.stitchDiagnostics.acceptedSplits==4,"11477 certified stitching closes topology-only seams");
             ok&=check(result.semanticOperandCount==1&&result.operations.isEmpty(),"11477 is one closed semantic body without Boolean reconstruction");
+        }
+        if(id=="3673"||id=="4274"){
+            const auto&mesh=result.preparedMesh->mesh;const auto&bounds=result.finalAnalysis.bounds;const double expectedLength=id=="3673"?16.0:9.6;
+            ok&=check(result.preparedMesh->preparationMethod=="Certified authoritative LDraw source-surface volumetric solidification",id+" uses reusable source-surface solidification");
+            ok&=check(result.finalAnalysis.boundaryEdges==0&&result.finalAnalysis.nonManifoldEdges==0&&result.finalAnalysis.nonManifoldVertices==0&&result.finalAnalysis.selfIntersections==0&&result.finalAnalysis.connectedComponents==1,id+" is one independently valid printable manifold");
+            ok&=check(std::abs(bounds.maximum.x-bounds.minimum.x-expectedLength)<1e-6&&std::abs(bounds.maximum.y-bounds.minimum.y-6.4)<1e-6&&std::abs(bounds.maximum.z-bounds.minimum.z-6.4)<1e-6,id+" preserves authoritative external dimensions");
+            ok&=check(segmentRemainsOpen(mesh,{bounds.minimum.x-.1,0,0},{bounds.maximum.x+.1,0,0}),id+" preserves its protected axial bore");
+            ok&=check(segmentRemainsOpen(mesh,{-6.0,-3.3,0},{-6.0,3.3,0}),id+" preserves opposed longitudinal slot access to the bore");
+            ok&=check(!segmentRemainsOpen(mesh,{bounds.minimum.x+.2,0,1.7},{bounds.minimum.x+.2,0,3.3}),id+" preserves end engagement material away from the intentional slot");
+            if(id=="4274"){ok&=check(segmentRemainsOpen(mesh,{.8,-1.5,0},{.8,1.5,0}),"4274 preserves open attachment bore");ok&=check(!segmentRemainsOpen(mesh,{.8,1.7,0},{.8,2.5,0}),"4274 preserves attachment annulus");}
         }
         QString error;
         ok&=check(PreparedObjProofWriter::write(result.preparedMesh->mesh,QDir(output).filePath(id+"-ldraw-aware-proof.obj"),&error),error);

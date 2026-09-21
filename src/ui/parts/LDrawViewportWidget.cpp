@@ -105,7 +105,7 @@ void LDrawViewportWidget::paintGL()
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     if(!m_ready||!m_program)return;
     if(m_meshDirty)uploadMesh();
-    const QMatrix4x4 orientation=m_printOrientation.matrix();
+    const QMatrix4x4 orientation=m_printOrientation.ldrawDisplayMatrix();
     m_program->bind();m_program->setUniformValue("mvp",m_camera.modelViewProjection()*orientation);
     m_program->setUniformValue("normalMatrix",(m_camera.modelViewMatrix()*orientation).normalMatrix());
     const PartViewerRenderPasses passes=partViewerRenderPasses(m_mode);
@@ -175,7 +175,7 @@ void LDrawViewportWidget::drawFaces()
 
 QVector<LDrawViewportWidget::Vertex> LDrawViewportWidget::conditionalLineVertices()const
 {
-    QVector<Vertex> result;const QMatrix4x4 matrix=m_camera.modelViewProjection()*m_printOrientation.matrix();
+    QVector<Vertex> result;const QMatrix4x4 matrix=m_camera.modelViewProjection()*m_printOrientation.ldrawDisplayMatrix();
     for(const auto&e:m_mesh.conditionalEdges)if(ConditionalEdgeVisibility::isVisible(e,matrix)){const auto color=LDrawColorResolver::edgeColor(e.color,m_modelColor);result<<vertex(e.a,{},color)<<vertex(e.b,{},color);}
     return result;
 }

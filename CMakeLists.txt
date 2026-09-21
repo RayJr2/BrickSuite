@@ -455,6 +455,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h
     src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
     src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
+    src/services/geometry/print/SourceSurfaceSolidifier.cpp src/services/geometry/print/SourceSurfaceSolidifier.h
     src/services/geometry/print/PreparedObjProofWriter.cpp src/services/geometry/print/PreparedObjProofWriter.h
     src/services/geometry/print/ManufacturingMesh.h
     src/services/geometry/print/ManufacturingMeshService.cpp src/services/geometry/print/ManufacturingMeshService.h
@@ -688,6 +689,16 @@ if(BUILD_TESTING)
     target_link_libraries(LDrawCertifiedInterfaceStitcherTest PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME LDrawCertifiedInterfaceStitcher COMMAND LDrawCertifiedInterfaceStitcherTest)
 
+    qt_add_executable(SourceSurfaceSolidifierTest EXCLUDE_FROM_ALL
+        tests/SourceSurfaceSolidifierTest.cpp
+        src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
+        src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
+        src/services/geometry/print/PrintMesh.h
+        src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
+        src/services/geometry/print/SourceSurfaceSolidifier.cpp src/services/geometry/print/SourceSurfaceSolidifier.h)
+    target_link_libraries(SourceSurfaceSolidifierTest PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME SourceSurfaceSolidifier COMMAND SourceSurfaceSolidifierTest)
+
     qt_add_executable(LDrawSemanticOperandTest EXCLUDE_FROM_ALL tests/LDrawSemanticOperandTest.cpp
         src/ui/parts/PreparedMeshRenderAdapter.cpp src/ui/parts/PreparedMeshRenderAdapter.h
         src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
@@ -699,6 +710,7 @@ if(BUILD_TESTING)
         src/services/geometry/print/MeshBooleanService.h src/services/geometry/print/PrintPreparation.h
         src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
         src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h
+        src/services/geometry/print/SourceSurfaceSolidifier.cpp src/services/geometry/print/SourceSurfaceSolidifier.h
         src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
         src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
         src/services/geometry/print/PreparedObjProofWriter.cpp src/services/geometry/print/PreparedObjProofWriter.h)
@@ -789,7 +801,8 @@ if(BUILD_TESTING)
         src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
         src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
         src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
-        src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h)
+        src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h
+        src/services/geometry/print/SourceSurfaceSolidifier.cpp src/services/geometry/print/SourceSurfaceSolidifier.h)
     target_link_libraries(LDrawPrintPreparationServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
     bricksuite_stage_mcut_runtime(LDrawPrintPreparationServiceTest)
     add_test(NAME LDrawPrintPreparationService COMMAND LDrawPrintPreparationServiceTest)
@@ -822,7 +835,8 @@ if(BUILD_TESTING)
         src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
         src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
         src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
-        src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h)
+        src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h
+        src/services/geometry/print/SourceSurfaceSolidifier.cpp src/services/geometry/print/SourceSurfaceSolidifier.h)
     target_link_libraries(PrintPreparationCoordinatorTest PRIVATE Qt6::Core Qt6::Gui Qt6::Concurrent BrickSuite::Mcut)
     bricksuite_stage_mcut_runtime(PrintPreparationCoordinatorTest)
     add_test(NAME PrintPreparationCoordinator COMMAND PrintPreparationCoordinatorTest)
