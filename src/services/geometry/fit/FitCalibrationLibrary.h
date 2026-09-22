@@ -88,12 +88,14 @@ public:
     static QString currentSemanticContractVersion();
     static QString currentRegeneratorAlgorithmVersion();
     static QString sessionDisplayName(const FitCalibrationSession&);
+    static QString featureDisplayName(const FitCalibrationExperiment&, FitPrintedOrientation);
     static FitCalibrationSession continuationSession(const FitCalibrationSession&, const FitCalibrationExperiment&, FitCalibrationExperiment);
 
     bool saveSession(FitCalibrationSession*, QString* error = nullptr);
     bool loadSession(const QString& identity, FitCalibrationSession*, QString* error = nullptr) const;
     QVector<FitSessionSummary> sessions(QVector<FitLibraryIssue>* issues = nullptr) const;
     QVector<FitCalibrationWorkspace> workspaces(QVector<FitLibraryIssue>* issues = nullptr) const;
+    QVector<FitCalibrationExperiment> coarseReviewHistory(const FitCalibrationSession&) const;
 
     bool importSession(const QString& portablePath, FitCalibrationSession*, QString* error = nullptr);
     bool importSessionIntoWorkspace(const QString& portablePath, const FitCalibrationWorkspace* selectedWorkspace,

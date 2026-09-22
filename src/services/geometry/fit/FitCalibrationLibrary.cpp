@@ -240,6 +240,36 @@ QString FitCalibrationLibrary::currentSemanticContractVersion() { return "offici
 QString FitCalibrationLibrary::currentRegeneratorAlgorithmVersion() { return "functional-operand-regenerator-v1"; }
 QString FitCalibrationLibrary::sessionDisplayName(const FitCalibrationSession&session){const FitCalibrationExperiment*experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(!experiment)return QStringLiteral("Empty calibration session");QString feature;if(experiment->featureFamily==QStringLiteral("StandardStud")){feature=QStringLiteral("Standard Stud");feature+=experiment->correctionDimension==FitCorrectionDimension::Height?QStringLiteral(" Height"):QStringLiteral(" OD");}else if(experiment->featureFamily==QStringLiteral("StudReceivingClutch"))feature=experiment->hasRegenerationPrototype&&experiment->regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-post-wall-cell-v1")?QStringLiteral("Stud Receiving Clutch — PostWallCell Post OD"):QStringLiteral("Stud Receiving Clutch — TubeWallCell OD");else if(experiment->featureFamily==QStringLiteral("FrictionlessTechnicPin"))feature=QStringLiteral("Frictionless Technic Pin — Envelope OD");else if(experiment->featureFamily==QStringLiteral("FrictionTechnicPin"))feature=QStringLiteral("Friction Technic Pin — Ridge Envelope OD");else if(experiment->featureFamily==QStringLiteral("TechnicAxle"))feature=QStringLiteral("Technic Axle — Tip-to-Tip Envelope");else if(experiment->featureFamily==QStringLiteral("TechnicAxleHole"))feature=experiment->hasRegenerationPrototype&&experiment->regenerationPrototype.constructionRecipe==QStringLiteral("technic-axle-hole-arm-width-clearance-v2")?QStringLiteral("Technic Axle Hole — Arm Width Clearance"):QStringLiteral("Technic Axle Hole — Tip-to-Tip Clearance");else feature=QStringLiteral("Round Technic Passage");const QString orientation=session.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate?QStringLiteral(" — Parallel"):session.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate?QStringLiteral(" — Perpendicular"):QString();QString stage;if(experiment->state==FitEvidenceState::Verified)stage=QStringLiteral("Verified");else if(experiment->artifactIdentity.contains(QStringLiteral("direct-verification")))stage=QStringLiteral("Verification");else if(experiment->artifactIdentity.contains(QStringLiteral("extension")))stage=QStringLiteral("Extended Search");else if(!experiment->parentArtifactIdentity.isEmpty())stage=QStringLiteral("Fine Search / Verification");else stage=QStringLiteral("Coarse Search");QString process;if(!session.process.printerIdentity.isEmpty()||!session.process.materialIdentity.isEmpty()){process=QStringLiteral(" — %1 / %2").arg(session.process.printerIdentity.isEmpty()?QStringLiteral("Unknown printer"):session.process.printerIdentity,session.process.materialIdentity.isEmpty()?QStringLiteral("Unknown material"):session.process.materialIdentity);}return QStringLiteral("%1%2 — %3%4").arg(feature,orientation,stage,process);}
 FitCalibrationSession FitCalibrationLibrary::continuationSession(const FitCalibrationSession&parent,const FitCalibrationExperiment&source,FitCalibrationExperiment child){FitCalibrationSession result;result.sessionIdentity=newStableIdentity();result.process=parent.process;result.hasCoarseExperiment=true;result.coarseExperiment=source;result.coarseExperiment.process=result.process;result.hasFineExperiment=true;child.process=result.process;child.state=FitEvidenceState::Draft;child.preferredCandidateIndex=0;for(auto&candidate:child.candidates)candidate.observations.clear();result.fineExperiment=std::move(child);return result;}
+QString FitCalibrationLibrary::featureDisplayName(const FitCalibrationExperiment& experiment,
+                                                  FitPrintedOrientation orientation)
+{
+    QString name;
+    if (experiment.featureFamily == QStringLiteral("StandardStud"))
+        name = experiment.correctionDimension == FitCorrectionDimension::Height
+            ? QStringLiteral("Stud Height") : QStringLiteral("Stud OD");
+    else if (experiment.featureFamily == QStringLiteral("StudReceivingClutch"))
+        name = experiment.hasRegenerationPrototype &&
+            experiment.regenerationPrototype.constructionRecipe == QStringLiteral("stud-receiving-post-wall-cell-v1")
+            ? QStringLiteral("Receiving Clutch — PostWallCell")
+            : QStringLiteral("Receiving Clutch — TubeWallCell");
+    else if (experiment.featureFamily == QStringLiteral("FrictionlessTechnicPin"))
+        name = QStringLiteral("Frictionless Technic Pin");
+    else if (experiment.featureFamily == QStringLiteral("FrictionTechnicPin"))
+        name = QStringLiteral("Friction Technic Pin");
+    else if (experiment.featureFamily == QStringLiteral("TechnicAxle"))
+        name = QStringLiteral("Technic Axle");
+    else if (experiment.featureFamily == QStringLiteral("TechnicAxleHole"))
+        name = experiment.hasRegenerationPrototype &&
+            experiment.regenerationPrototype.constructionRecipe == QStringLiteral("technic-axle-hole-arm-width-clearance-v2")
+            ? QStringLiteral("Technic Axle Hole — Arm Width")
+            : QStringLiteral("Technic Axle Hole — Tip Clearance");
+    else name = QStringLiteral("Technic Hole");
+    if (orientation == FitPrintedOrientation::FeatureAxisParallelToBuildPlate)
+        name += QStringLiteral(" — Parallel");
+    else if (orientation == FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate)
+        name += QStringLiteral(" — Perpendicular");
+    return name;
+}
 QString FitCalibrationLibrary::processFingerprint(const FitCalibrationProcess& process) {
     return manufacturingContextFingerprint(process);
 }
@@ -316,6 +346,52 @@ QVector<FitCalibrationWorkspace> FitCalibrationLibrary::workspaces(QVector<FitLi
     }
     std::sort(result.begin(), result.end(), [](const auto& left, const auto& right) { return left.displayName < right.displayName; });
     return result;
+}
+QVector<FitCalibrationExperiment> FitCalibrationLibrary::coarseReviewHistory(
+    const FitCalibrationSession& current) const
+{
+    QVector<FitCalibrationExperiment> reverseHistory;
+    const auto* representative = representativeExperiment(current);
+    if (!representative) return reverseHistory;
+    const QString context = manufacturingContextFingerprint(current.process);
+    QVector<FitCalibrationExperiment> available;
+    for (const auto& summary : sessions()) {
+        FitCalibrationSession candidate;
+        if (!loadSession(summary.identity, &candidate, nullptr) ||
+            manufacturingContextFingerprint(candidate.process) != context ||
+            candidate.process.actualPrintedOrientation != current.process.actualPrintedOrientation)
+            continue;
+        const auto add = [&](const FitCalibrationExperiment& experiment) {
+            if (experiment.featureFamily == representative->featureFamily &&
+                experiment.featureRole == representative->featureRole &&
+                experiment.correctionDimension == representative->correctionDimension &&
+                !experiment.artifactIdentity.isEmpty()) available.push_back(experiment);
+        };
+        if (candidate.hasCoarseExperiment) add(candidate.coarseExperiment);
+        if (candidate.hasFineExperiment) add(candidate.fineExperiment);
+    }
+    FitCalibrationExperiment stage;
+    if (current.hasCoarseExperiment) stage = current.coarseExperiment;
+    else {
+        const auto parent = current.fineExperiment.parentArtifactIdentity;
+        const auto found = std::find_if(available.cbegin(), available.cend(), [&](const auto& item) {
+            return item.artifactIdentity == parent;
+        });
+        if (found == available.cend()) return reverseHistory;
+        stage = *found;
+    }
+    QSet<QString> visited;
+    while (!stage.artifactIdentity.isEmpty() && !visited.contains(stage.artifactIdentity)) {
+        visited.insert(stage.artifactIdentity);
+        reverseHistory.push_back(stage);
+        const auto found = std::find_if(available.cbegin(), available.cend(), [&](const auto& item) {
+            return item.artifactIdentity == stage.parentArtifactIdentity;
+        });
+        if (found == available.cend()) break;
+        stage = *found;
+    }
+    std::reverse(reverseHistory.begin(), reverseHistory.end());
+    return reverseHistory;
 }
 bool FitCalibrationLibrary::importSession(const QString& path, FitCalibrationSession* output, QString* error) {
     QJsonObject json; FitCalibrationSession session;

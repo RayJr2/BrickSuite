@@ -17,9 +17,10 @@ private:
     void showWorkspace(const PrintGeometry::FitCalibrationWorkspace&, const QString& preferredSession = {}); void selectFeature(int);
     PrintGeometry::FitCalibrationSession m_session; QString m_path;
     PrintGeometry::FitCalibrationWorkspace m_workspace; int m_featureIndex=-1;
+    QVector<PrintGeometry::FitCalibrationExperiment> m_coarseHistory;
     PrintGeometry::FitCalibrationLibrary m_library;
     bool m_loading=false, m_dirty=false, m_savedConfirmation=false;
     QLineEdit *m_printer=nullptr,*m_material=nullptr,*m_profile=nullptr,*m_orientationNotes=nullptr,*m_compensationNotes=nullptr,*m_notes=nullptr;
-    QDoubleSpinBox *m_nozzle=nullptr,*m_layer=nullptr,*m_measured=nullptr; QComboBox *m_orientation=nullptr,*m_result=nullptr,*m_sessions=nullptr,*m_features=nullptr,*m_newFamily=nullptr; QSpinBox* m_repeat=nullptr; QTimer* m_autoSave=nullptr;
+    QDoubleSpinBox *m_nozzle=nullptr,*m_layer=nullptr,*m_measured=nullptr; QComboBox *m_orientation=nullptr,*m_result=nullptr,*m_sessions=nullptr,*m_features=nullptr,*m_newFamily=nullptr,*m_coarseReview=nullptr; QSpinBox* m_repeat=nullptr; QTimer* m_autoSave=nullptr;
     QTabWidget* m_tabs=nullptr; QTableWidget *m_coarseTable=nullptr,*m_fineTable=nullptr; QLabel *m_identity=nullptr,*m_coarseContext=nullptr,*m_fineContext=nullptr,*m_guidance=nullptr; QPushButton *m_save=nullptr,*m_generate=nullptr,*m_verify=nullptr;
 };

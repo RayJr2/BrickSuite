@@ -60,6 +60,61 @@ int main(int argc, char** argv) {
     ok &= require(FitCalibrationEvidencePolicy::preferredSessionStage(fineProgress) == FitCalibrationStage::Fine, "fine-search progress selects the Fine Search stage");
     auto coarseOnly = session; coarseOnly.hasFineExperiment = false; coarseOnly.hasCoarseExperiment = true; coarseOnly.coarseExperiment = session.fineExperiment; coarseOnly.coarseExperiment.parentArtifactIdentity.clear();
     ok &= require(FitCalibrationEvidencePolicy::preferredSessionStage(coarseOnly) == FitCalibrationStage::Coarse, "coarse-only session selects the Coarse Search stage");
+    FitCalibrationLibrary reviewLibrary(QDir(temporary.path()).filePath("historical-review"));
+    auto studRoot = coarseOnly;
+    studRoot.sessionIdentity = "stud-root";
+    studRoot.coarseExperiment.artifactIdentity = "standard-stud-od-coarse-v1";
+    studRoot.coarseExperiment.featureFamily = "StandardStud";
+    studRoot.coarseExperiment.featureRole = "male";
+    studRoot.coarseExperiment.state = FitEvidenceState::Experimental;
+    studRoot.coarseExperiment.preferredCandidateIndex = 0;
+    auto studExtension = studRoot;
+    studExtension.sessionIdentity = "stud-extension";
+    studExtension.coarseExperiment.artifactIdentity = "standard-stud-od-extension-v2";
+    studExtension.coarseExperiment.parentArtifactIdentity = studRoot.coarseExperiment.artifactIdentity;
+    studExtension.coarseExperiment.preferredCandidateIndex = 2;
+    auto studVerified = studExtension;
+    studVerified.sessionIdentity = "stud-verified";
+    studVerified.hasFineExperiment = true;
+    studVerified.fineExperiment = session.fineExperiment;
+    studVerified.fineExperiment.artifactIdentity = "standard-stud-od-direct-verification-v3";
+    studVerified.fineExperiment.parentArtifactIdentity = studExtension.coarseExperiment.artifactIdentity;
+    studVerified.fineExperiment.featureFamily = "StandardStud";
+    studVerified.fineExperiment.featureRole = "male";
+    for (int i = 0; i < studVerified.fineExperiment.candidates.size(); ++i)
+        studVerified.fineExperiment.candidates[i].functionalDiameterMillimetres = 5.10 + .05 * i;
+    ok &= require(reviewLibrary.saveSession(&studRoot, &error) &&
+                  reviewLibrary.saveSession(&studExtension, &error) &&
+                  reviewLibrary.saveSession(&studVerified, &error),
+                  "synthetic Stud OD lineage persists independently");
+    const auto studHistory = reviewLibrary.coarseReviewHistory(studVerified);
+    ok &= require(studHistory.size() == 2 &&
+                  studHistory[0].artifactIdentity == studRoot.coarseExperiment.artifactIdentity &&
+                  studHistory[1].artifactIdentity == studExtension.coarseExperiment.artifactIdentity &&
+                  studHistory[0].candidates[1].observations.size() == 2 &&
+                  studHistory[1].preferredCandidateIndex == 2 &&
+                  studVerified.fineExperiment.state == FitEvidenceState::Verified &&
+                  std::abs(studVerified.fineExperiment.candidates[0].functionalDiameterMillimetres-5.10) < 1e-9 &&
+                  std::abs(studVerified.fineExperiment.candidates[1].functionalDiameterMillimetres-5.15) < 1e-9 &&
+                  std::abs(studVerified.fineExperiment.candidates[2].functionalDiameterMillimetres-5.20) < 1e-9 &&
+                  studVerified.fineExperiment.artifactIdentity != studHistory.back().artifactIdentity,
+                  "Verified Stud OD retains separate coarse, extension, and verification review");
+    auto axleRoot = studRoot;
+    axleRoot.sessionIdentity = "axle-root";
+    axleRoot.coarseExperiment.artifactIdentity = "technic-axle-coarse-v1";
+    axleRoot.coarseExperiment.featureFamily = "TechnicAxle";
+    auto axleExtension = axleRoot;
+    axleExtension.sessionIdentity = "axle-extension";
+    axleExtension.coarseExperiment.artifactIdentity = "technic-axle-extension-v2";
+    axleExtension.coarseExperiment.parentArtifactIdentity = axleRoot.coarseExperiment.artifactIdentity;
+    ok &= require(reviewLibrary.saveSession(&axleRoot, &error) &&
+                  reviewLibrary.saveSession(&axleExtension, &error),
+                  "second-family range-extension lineage persists");
+    const auto axleHistory = reviewLibrary.coarseReviewHistory(axleExtension);
+    ok &= require(axleHistory.size() == 2 &&
+                  axleHistory.front().artifactIdentity == axleRoot.coarseExperiment.artifactIdentity &&
+                  axleHistory.back().artifactIdentity == axleExtension.coarseExperiment.artifactIdentity,
+                  "Technic Axle coarse extension remains independently retrievable");
     ok &= require(library.saveSession(&session, &error), "atomic managed session save: " + error);
     auto summaries = library.sessions(&issues);
     ok &= require(summaries.size() == 1 && summaries.front().identity == "stable-session" && summaries.front().displayName.contains("Bambu H2D"), "session discovery and meaningful name");

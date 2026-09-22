@@ -448,6 +448,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
     src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
     src/services/geometry/fit/FitCalibrationPackage.cpp src/services/geometry/fit/FitCalibrationPackage.h
+    src/services/geometry/fit/FitCalibrationFixtureLabel.cpp src/services/geometry/fit/FitCalibrationFixtureLabel.h
     src/services/geometry/fit/RoundTechnicCalibrationArtifact.cpp src/services/geometry/fit/RoundTechnicCalibrationArtifact.h
     src/services/geometry/fit/StandardStudCalibrationArtifact.cpp src/services/geometry/fit/StandardStudCalibrationArtifact.h
     src/services/geometry/fit/StudReceivingCalibrationArtifact.cpp src/services/geometry/fit/StudReceivingCalibrationArtifact.h
@@ -755,6 +756,7 @@ if(BUILD_TESTING)
         src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
         src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
         src/services/geometry/fit/FitCalibrationPackage.cpp src/services/geometry/fit/FitCalibrationPackage.h
+        src/services/geometry/fit/FitCalibrationFixtureLabel.cpp src/services/geometry/fit/FitCalibrationFixtureLabel.h
         src/services/geometry/fit/RoundTechnicCalibrationArtifact.cpp src/services/geometry/fit/RoundTechnicCalibrationArtifact.h
         src/services/geometry/fit/StandardStudCalibrationArtifact.cpp src/services/geometry/fit/StandardStudCalibrationArtifact.h
         src/services/geometry/fit/StudReceivingCalibrationArtifact.cpp src/services/geometry/fit/StudReceivingCalibrationArtifact.h

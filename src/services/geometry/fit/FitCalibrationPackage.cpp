@@ -1,6 +1,10 @@
 #include "FitCalibrationPackage.h"
 
 #include "FitCalibrationLibrary.h"
+#include "FitCalibrationFixtureLabel.h"
+#include "StandardStudCalibrationArtifact.h"
+#include "StudReceivingCalibrationArtifact.h"
+#include "TechnicAxleHoleCalibrationArtifact.h"
 #include "../print/PrintMeshAnalysis.h"
 
 #include <QCryptographicHash>
@@ -204,6 +208,30 @@ FitCalibrationZone FitCalibrationPackage::postWallCellZone(const PrintMesh& mesh
     return zone;
 }
 
+FitCalibrationZone FitCalibrationPackage::tubeWallCellZone(const PrintMesh& mesh,
+    const MeshBounds& bounds, const FitCalibrationExperiment& experiment,
+    const QString& sessionIdentity, const QString& context, const QString& file)
+{
+    auto zone = makeZone(mesh, bounds, experiment, sessionIdentity, context, file, QStringLiteral("TubeWallCell"));
+    zone.marker = {QStringLiteral("wall-notch"), {2, .4, 4.2}, {4, .4, 4.2},
+                   {bounds.maximum.x-2, .4, 4.2}, 1};
+    for (int i = 0; i < zone.candidates.size(); ++i) zone.candidates[i].position = {9.0+18.0*i, 8, 1.6};
+    return zone;
+}
+
+FitCalibrationZone FitCalibrationPackage::axleHoleArmWidthZone(const PrintMesh& mesh,
+    const MeshBounds& bounds, const FitCalibrationExperiment& experiment,
+    const QString& sessionIdentity, const QString& context, const QString& file)
+{
+    auto zone = makeZone(mesh, bounds, experiment, sessionIdentity, context, file,
+                         QStringLiteral("TechnicAxleHoleArmWidthV2"));
+    zone.correctionSemantic = QStringLiteral("arm-width");
+    zone.marker = {QStringLiteral("raised-side-tab"), {2, 17, 3.5}, {2, 17, 1.5},
+                   {bounds.maximum.x-2, 17, 1.5}, 1, false};
+    for (int i = 0; i < zone.candidates.size(); ++i) zone.candidates[i].position = {8.0+16.0*i, 8, 0};
+    return zone;
+}
+
 bool FitCalibrationPackage::validateZone(const FitCalibrationZone& zone, QString* error)
 {
     if (zone.version < 1 || zone.identity !=
@@ -245,7 +273,7 @@ bool FitCalibrationPackage::validateZone(const FitCalibrationZone& zone, QString
         return fail(error, QStringLiteral("The zone mesh is invalid or its recorded bounds differ from the physical mesh."));
     if (inside(zone.mesh, zone.marker.emptyWitness) ||
         !inside(zone.mesh, zone.marker.materialWitness) ||
-        !inside(zone.mesh, zone.marker.ordinaryEndWitness))
+        inside(zone.mesh, zone.marker.ordinaryEndWitness) != zone.marker.ordinaryEndMaterial)
         return fail(error, QStringLiteral("The declared Candidate #1 marker is absent from the physical mesh."));
     if (error) error->clear();
     return true;
@@ -290,7 +318,8 @@ bool FitCalibrationPackage::validate(const FitCalibrationPackageManifest& manife
                 experiment.modeledOrientationIdentity != zone.modeledOrientationIdentity ||
                 !experiment.hasRegenerationPrototype ||
                 experiment.regenerationPrototype.evidenceContract != zone.semanticContract ||
-                (experiment.correctionDimension == FitCorrectionDimension::Height
+                (experiment.regenerationPrototype.constructionRecipe == QStringLiteral("technic-axle-hole-arm-width-clearance-v2")
+                    ? QStringLiteral("arm-width") : experiment.correctionDimension == FitCorrectionDimension::Height
                     ? QStringLiteral("height") : QStringLiteral("diameter")) != zone.correctionSemantic ||
                 experiment.candidates.size() != zone.candidates.size()) return false;
             for (int i = 0; i < zone.candidates.size(); ++i)
@@ -320,11 +349,15 @@ QJsonObject FitCalibrationPackage::zoneToJson(const FitCalibrationZone& zone)
     const QJsonObject marker{{"kind", zone.marker.kind}, {"candidateIndex", zone.marker.candidateIndex},
         {"emptyWitness", pointJson(zone.marker.emptyWitness)},
         {"materialWitness", pointJson(zone.marker.materialWitness)},
-        {"ordinaryEndWitness", pointJson(zone.marker.ordinaryEndWitness)}};
+        {"ordinaryEndWitness", pointJson(zone.marker.ordinaryEndWitness)},
+        {"ordinaryEndMaterial", zone.marker.ordinaryEndMaterial}};
     return {{"identity", zone.identity}, {"version", zone.version},
         {"featureFamily", zone.featureFamily}, {"variant", zone.variant},
         {"correctionSemantic", zone.correctionSemantic}, {"semanticContract", zone.semanticContract},
         {"artifactIdentity", zone.artifactIdentity}, {"sessionIdentity", zone.sessionIdentity},
+        {"sessionFile", zone.sessionFile},
+        {"physicalLabel", zone.physicalLabel},
+        {"featureDisplayName", zone.featureDisplayName},
         {"manufacturingContextFingerprint", zone.manufacturingContextFingerprint},
         {"modeledOrientationIdentity", zone.modeledOrientationIdentity},
         {"intendedPrintOrientation", int(zone.intendedPrintOrientation)},
@@ -343,6 +376,9 @@ bool FitCalibrationPackage::zoneFromJson(const QJsonObject& json, FitCalibration
     zone.featureFamily = string("featureFamily"); zone.variant = string("variant");
     zone.correctionSemantic = string("correctionSemantic"); zone.semanticContract = string("semanticContract");
     zone.artifactIdentity = string("artifactIdentity"); zone.sessionIdentity = string("sessionIdentity");
+    zone.sessionFile = string("sessionFile");
+    zone.physicalLabel = string("physicalLabel");
+    zone.featureDisplayName = string("featureDisplayName");
     zone.manufacturingContextFingerprint = string("manufacturingContextFingerprint");
     zone.modeledOrientationIdentity = string("modeledOrientationIdentity");
     zone.intendedPrintOrientation = FitPrintedOrientation(json.value("intendedPrintOrientation").toInt());
@@ -355,6 +391,7 @@ bool FitCalibrationPackage::zoneFromJson(const QJsonObject& json, FitCalibration
     const auto marker = json.value("marker").toObject();
     zone.marker.kind = marker.value("kind").toString();
     zone.marker.candidateIndex = marker.value("candidateIndex").toInt();
+    zone.marker.ordinaryEndMaterial = marker.value("ordinaryEndMaterial").toBool(true);
     if (!readPoint(marker.value("emptyWitness"), &zone.marker.emptyWitness) ||
         !readPoint(marker.value("materialWitness"), &zone.marker.materialWitness) ||
         !readPoint(marker.value("ordinaryEndWitness"), &zone.marker.ordinaryEndWitness))
@@ -420,5 +457,125 @@ Point FitCalibrationPackage::placedMarker(const FitCalibrationZone& zone)
     return {zone.marker.emptyWitness.x+zone.translation.x,
             zone.marker.emptyWitness.y+zone.translation.y,
             zone.marker.emptyWitness.z+zone.translation.z};
+}
+
+bool FitCalibrationPackage::generateFourZonePilot(const FitCalibrationProcess& process,
+    FitCalibrationPackageManifest* manifest, QVector<FitCalibrationSession>* sessions,
+    PrintMesh* assembled, QString* error)
+{
+    if (!manifest || !sessions || !assembled || process.printerIdentity.trimmed().isEmpty() ||
+        process.materialIdentity.trimmed().isEmpty() || process.profileName.trimmed().isEmpty() ||
+        !process.hasNozzleDiameter || !process.hasLayerHeight ||
+        process.actualPrintedOrientation == FitPrintedOrientation::FeatureAxisParallelToBuildPlate ||
+        process.actualPrintedOrientation == FitPrintedOrientation::OtherUnsupported)
+        return fail(error, QStringLiteral("A complete compatible manufacturing context and three output destinations are required."));
+    const auto context = FitCalibrationLibrary::manufacturingContextFingerprint(process);
+    const QString member = QStringLiteral("unified-lego-fit-pilot.3mf");
+    FitCalibrationPackageManifest result;
+    result.identity = QStringLiteral("unified-lego-fit-pilot-v1:%1").arg(context.left(16));
+    result.manufacturingContextFingerprint = context;
+    QVector<FitCalibrationSession> linked;
+    const auto add = [&](FitCalibrationZone zone, FitCalibrationExperiment experiment,
+                         const QString& physicalLabel, double y) {
+        zone.translation = {0, y, 0};
+        zone.clearanceMillimetres = 4;
+        zone.physicalLabel = physicalLabel;
+        zone.featureDisplayName = FitCalibrationLibrary::featureDisplayName(
+            experiment, FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);
+        zone.sessionFile = QStringLiteral("%1-%2-session.json")
+            .arg(result.zones.size()+1, 2, 10, QChar('0')).arg(zone.variant);
+        FitCalibrationSession session;
+        session.sessionIdentity = zone.sessionIdentity;
+        session.process = process;
+        session.process.actualPrintedOrientation = FitPrintedOrientation::Unknown;
+        session.process.orientationNotes = experiment.process.orientationNotes;
+        session.hasCoarseExperiment = true;
+        session.coarseExperiment = experiment;
+        session.coarseExperiment.process = session.process;
+        linked.push_back(std::move(session));
+        result.zones.push_back(std::move(zone));
+    };
+    StandardStudCalibrationArtifactDefinition studDefinition;
+    studDefinition.artifactIdentity = QStringLiteral("standard-stud-male-od-perpendicular-pilot-labeled-v2");
+    const auto stud = StandardStudCalibrationArtifact::generate(
+        StandardStudCalibrationArtifact::canonicalPrototype(), studDefinition);
+    if (!stud.ok) return fail(error, stud.diagnostic);
+    const auto studExperiment = StandardStudCalibrationArtifact::observationTemplate(stud, studDefinition);
+    PrintMesh studLabeled;
+    QString studLabel;
+    if (!FitCalibrationFixtureLabel::recess(stud.mesh,
+        FitCalibrationLibrary::featureDisplayName(studExperiment,
+            FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate),
+        QStringLiteral("Stud OD"), {6, 86, .5, 4.5}, &studLabeled, &studLabel, error)) return false;
+    add(standardStudOdZone(studLabeled, analyzeSource(studLabeled).bounds, studExperiment,
+        result.identity+QStringLiteral(":stud-od"), context, member), studExperiment, studLabel, 0);
+
+    const auto tube = StudReceivingCalibrationArtifact::generateMarkedTubeWallCell();
+    if (!tube.ok) return fail(error, tube.diagnostic);
+    const auto tubeExperiment = StudReceivingCalibrationArtifact::observationTemplate(tube);
+    PrintMesh tubeLabeled;
+    QString tubeLabel;
+    if (!FitCalibrationFixtureLabel::recess(tube.mesh,
+        FitCalibrationLibrary::featureDisplayName(tubeExperiment,
+            FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate),
+        QStringLiteral("Clutch TubeWall"), {6, 120, 3, 8}, &tubeLabeled, &tubeLabel, error)) return false;
+    add(tubeWallCellZone(tubeLabeled, analyzeSource(tubeLabeled).bounds, tubeExperiment,
+        result.identity+QStringLiteral(":tube-wall"), context, member), tubeExperiment, tubeLabel, 26);
+
+    StudReceivingCalibrationArtifactDefinition postDefinition;
+    postDefinition.artifactIdentity = QStringLiteral("stud-receiving-clutch-post-wall-cell-perpendicular-pilot-labeled-v2");
+    const auto post = StudReceivingCalibrationArtifact::generate(
+        StudReceivingCalibrationArtifact::canonicalPostWallPrototype(), postDefinition);
+    if (!post.ok) return fail(error, post.diagnostic);
+    const auto postExperiment = StudReceivingCalibrationArtifact::observationTemplate(post, postDefinition);
+    PrintMesh postLabeled;
+    QString postLabel;
+    if (!FitCalibrationFixtureLabel::recess(post.mesh,
+        FitCalibrationLibrary::featureDisplayName(postExperiment,
+            FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate),
+        QStringLiteral("Clutch PostWall"), {6, 120, 1, 5}, &postLabeled, &postLabel, error)) return false;
+    add(postWallCellZone(postLabeled, analyzeSource(postLabeled).bounds, postExperiment,
+        result.identity+QStringLiteral(":post-wall"), context, member), postExperiment, postLabel, 58);
+
+    const auto axleBaseline = TechnicAxleHoleArmWidthCalibrationArtifact::generate();
+    if (!axleBaseline.ok) return fail(error, axleBaseline.diagnostic);
+    TechnicAxleHoleArmWidthArtifactDefinition axleDefinition;
+    axleDefinition.artifactIdentity = QStringLiteral("technic-axle-hole-arm-width-perpendicular-pilot-labeled-v3");
+    axleDefinition.parentArtifactIdentity = axleBaseline.parentArtifactIdentity;
+    const auto axle = TechnicAxleHoleArmWidthCalibrationArtifact::generate(
+        axleBaseline.regenerationPrototype, axleDefinition);
+    if (!axle.ok) return fail(error, axle.diagnostic);
+    const auto axleExperiment = TechnicAxleHoleArmWidthCalibrationArtifact::observationTemplate(axle, axleDefinition);
+    if (axleExperiment.regenerationPrototype.constructionRecipe !=
+        QStringLiteral("technic-axle-hole-arm-width-clearance-v2"))
+        return fail(error, QStringLiteral("The active axle-hole arm-width v2 contract is required."));
+    PrintMesh axleLabeled;
+    QString axleLabel;
+    if (!FitCalibrationFixtureLabel::recess(axle.mesh,
+        FitCalibrationLibrary::featureDisplayName(axleExperiment,
+            FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate),
+        QStringLiteral("Axle Hole Arm Width"), {6, 106, .5, 4.5},
+        &axleLabeled, &axleLabel, error)) return false;
+    add(axleHoleArmWidthZone(axleLabeled, analyzeSource(axleLabeled).bounds, axleExperiment,
+        result.identity+QStringLiteral(":axle-hole-arm-width"), context, member), axleExperiment, axleLabel, 82);
+    if (!validate(result, linked, error)) return false;
+
+    PrintMesh combined;
+    for (const auto& zone : result.zones) {
+        const auto offset = static_cast<std::uint32_t>(combined.vertices.size());
+        for (const auto& point : zone.mesh.vertices)
+            combined.vertices.push_back({point.x+zone.translation.x, point.y+zone.translation.y,
+                                         point.z+zone.translation.z});
+        for (const auto& face : zone.mesh.faces)
+            combined.faces.push_back({face[0]+offset, face[1]+offset, face[2]+offset});
+    }
+    const auto combinedAnalysis = analyzeSource(combined);
+    if (!validatePreparedMesh(combinedAnalysis, true).ok())
+        return fail(error, QStringLiteral("The assembled calibration fixture is not a valid printable mesh."));
+    *manifest = std::move(result);
+    *sessions = std::move(linked);
+    *assembled = std::move(combined);
+    if (error) error->clear();
+    return true;
 }
 } // namespace PrintGeometry

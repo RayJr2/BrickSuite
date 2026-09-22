@@ -25,6 +25,7 @@ public:
     static QString orientationIdentity();
     static QVector<double> diameterCorrectionsMillimetres();
     static StudReceivingCalibrationArtifactResult generate();
+    static StudReceivingCalibrationArtifactResult generateMarkedTubeWallCell();
     static StudReceivingCalibrationArtifactResult generatePostWallCell();
     static StudReceivingCalibrationArtifactResult generate(const FunctionalFeature&,const StudReceivingCalibrationArtifactDefinition&);
     static FitCalibrationExperiment observationTemplate(const StudReceivingCalibrationArtifactResult&);

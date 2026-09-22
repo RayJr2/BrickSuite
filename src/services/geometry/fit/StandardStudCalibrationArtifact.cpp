@@ -1,5 +1,7 @@
 #include "StandardStudCalibrationArtifact.h"
 #include "FitCalibrationPackage.h"
+#include "FitCalibrationFixtureLabel.h"
+#include "FitCalibrationLibrary.h"
 
 #include "../print/McutMeshBooleanService.h"
 #include "../print/PrintMeshAnalysis.h"
@@ -24,7 +26,7 @@ FunctionalFeature StandardStudCalibrationArtifact::canonicalPrototype()
 {
     FunctionalFeature f;f.stableIdentity=QStringLiteral("official-standard-stud-calibration-prototype");f.family=FunctionalInterfaceFamily::StandardStud;f.role=FunctionalInterfaceRole::Male;f.materialSide=FunctionalMaterialSide::MaterialInside;f.eligibility=FunctionalEligibility::Eligible;f.confidence=SemanticConfidence::HighConfidence;f.frame={{0,0,0},{0,0,1},{1,0,0},{0,1,0},false};f.nominalRadiusMillimetres=2.4;f.nominalDiameterMillimetres=4.8;f.nominalAxialExtentMillimetres=1.6;f.nominalEngagementExtentMillimetres=1.6;f.operandAction=FunctionalOperandAction::Unite;f.governingOperandIdentity=QStringLiteral("official-standard-stud-calibration-prototype:operand");f.constructionRecipe=QStringLiteral("standard-solid-stud-v1");f.evidenceContract=QStringLiteral("official-ldraw-standard-stud-v1");f.radialProfile={{0,2.4},{1.6,2.4}};return f;
 }
-QString StandardStudCalibrationArtifact::diameterArtifactIdentity(){return QStringLiteral("standard-stud-male-od-perpendicular-v1");}
+QString StandardStudCalibrationArtifact::diameterArtifactIdentity(){return QStringLiteral("standard-stud-male-od-perpendicular-labeled-v2");}
 QString StandardStudCalibrationArtifact::heightArtifactIdentity(){return QStringLiteral("standard-stud-male-height-perpendicular-v1");}
 QString StandardStudCalibrationArtifact::orientationIdentity(){return QStringLiteral("flat-base-stud-axis-perpendicular-v1");}
 
@@ -46,7 +48,20 @@ StandardStudCalibrationArtifactResult StandardStudCalibrationArtifact::generate(
                                      definition.candidateSpacingMillimetres,definition.candidateCount,&series,&result.diagnostic))return result;
     PrintMesh body=keyedBase(definition.candidateCount);McutMeshBooleanService booleans;
     for(int i=0;i<series.size();++i){const double varied=series[i].correctionMillimetres;MaleStudDimensionalCorrection correction;correction.diameterMillimetres=definition.dimension==StandardStudCalibrationDimension::Diameter?varied:definition.fixedDiameterCorrectionMillimetres;correction.heightMillimetres=definition.dimension==StandardStudCalibrationDimension::Height?varied:0.0;FunctionalFeature candidate=prototype;candidate.stableIdentity=series[i].identity;candidate.frame.origin={8.0+12.0*i,5.0,3.0};candidate.frame.axis={0,0,1};candidate.frame.profileU={1,0,0};candidate.frame.profileV={0,1,0};const auto regenerated=FunctionalOperandRegenerator::regenerateStud(candidate,correction);if(!regenerated.ok()){result.diagnostic=QStringLiteral("Stud candidate %1 could not be regenerated: %2").arg(i+1).arg(regenerated.diagnostic);return result;}const auto united=booleans.unite(body,regenerated.mesh);if(!united.ok()){result.diagnostic=QStringLiteral("Stud candidate %1 could not be joined to the calibration base.").arg(i+1);return result;}body=united.mesh;FitCalibrationCandidate record;record.index=series[i].index;record.diameterCorrectionMillimetres=correction.diameterMillimetres;record.functionalDiameterMillimetres=regenerated.resultingGoverningRadiusMillimetres*2.0;record.heightCorrectionMillimetres=correction.heightMillimetres;record.functionalHeightMillimetres=regenerated.resultingAxialExtentMillimetres;result.candidates.push_back(record);}
-    result.mesh=std::move(body);result.analysis=analyzeSource(result.mesh);const auto validation=validatePreparedMesh(result.analysis);if(!validation.ok()){result.diagnostic=QStringLiteral("The stud calibration artifact failed validation: %1").arg(QString::fromStdString(validation.message));return result;}result.ok=true;result.diagnostic=QStringLiteral("Standard stud calibration artifact generated at fixed 100% physical scale.");return result;
+    result.mesh=std::move(body);result.analysis=analyzeSource(result.mesh);const auto validation=validatePreparedMesh(result.analysis);if(!validation.ok()){result.diagnostic=QStringLiteral("The stud calibration artifact failed validation: %1").arg(QString::fromStdString(validation.message));return result;}
+    if (definition.dimension == StandardStudCalibrationDimension::Diameter &&
+        definition.artifactIdentity == diameterArtifactIdentity()) {
+        const auto experiment = observationTemplate(result, definition);
+        PrintMesh labeled;
+        if (!FitCalibrationFixtureLabel::recess(result.mesh,
+            FitCalibrationLibrary::featureDisplayName(experiment,
+                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate),
+            QStringLiteral("Stud OD"), {6, 86, .5, 4.5}, &labeled, nullptr, &result.diagnostic))
+            return result;
+        result.mesh = std::move(labeled);
+        result.analysis = analyzeSource(result.mesh);
+    }
+    result.ok=true;result.diagnostic=QStringLiteral("Standard stud calibration artifact generated at fixed 100% physical scale.");return result;
 }
 
 FitCalibrationExperiment StandardStudCalibrationArtifact::observationTemplate(const StandardStudCalibrationArtifactResult&a,const StandardStudCalibrationArtifactDefinition&d)

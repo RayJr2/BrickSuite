@@ -30,6 +30,7 @@ struct FitCandidateOneMarker {
     Point materialWitness;
     Point ordinaryEndWitness;
     int candidateIndex = 1;
+    bool ordinaryEndMaterial = true;
 };
 
 struct FitCalibrationZone {
@@ -41,6 +42,9 @@ struct FitCalibrationZone {
     QString semanticContract;
     QString artifactIdentity;
     QString sessionIdentity;
+    QString sessionFile;
+    QString physicalLabel;
+    QString featureDisplayName;
     QString manufacturingContextFingerprint;
     QString modeledOrientationIdentity;
     FitPrintedOrientation intendedPrintOrientation = FitPrintedOrientation::Unknown;
@@ -76,6 +80,16 @@ public:
                                                const QString& sessionIdentity,
                                                const QString& contextFingerprint,
                                                const QString& memberFile);
+    static FitCalibrationZone tubeWallCellZone(const PrintMesh&, const MeshBounds&,
+                                               const FitCalibrationExperiment&,
+                                               const QString& sessionIdentity,
+                                               const QString& contextFingerprint,
+                                               const QString& memberFile);
+    static FitCalibrationZone axleHoleArmWidthZone(const PrintMesh&, const MeshBounds&,
+                                                   const FitCalibrationExperiment&,
+                                                   const QString& sessionIdentity,
+                                                   const QString& contextFingerprint,
+                                                   const QString& memberFile);
     static bool validateZone(const FitCalibrationZone&, QString* error = nullptr);
     static bool validate(const FitCalibrationPackageManifest&,
                          const QVector<FitCalibrationSession>& sessions,
@@ -85,6 +99,10 @@ public:
     static QJsonObject toJson(const FitCalibrationPackageManifest&);
     static bool fromJson(const QJsonObject&, FitCalibrationPackageManifest*, QString* error = nullptr);
     static Point placedMarker(const FitCalibrationZone&);
+    static bool generateFourZonePilot(const FitCalibrationProcess&,
+                                      FitCalibrationPackageManifest*,
+                                      QVector<FitCalibrationSession>*, PrintMesh*,
+                                      QString* error = nullptr);
 };
 
 } // namespace PrintGeometry
