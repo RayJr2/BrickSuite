@@ -79,6 +79,7 @@ public:
     QString storageRoot() const { return m_root; }
     QString sessionsDirectory() const;
     QString profilesDirectory() const;
+    QString workspacesDirectory() const;
 
     static QString newStableIdentity();
     static QString processFingerprint(const FitCalibrationProcess&);
@@ -95,6 +96,8 @@ public:
     bool loadSession(const QString& identity, FitCalibrationSession*, QString* error = nullptr) const;
     QVector<FitSessionSummary> sessions(QVector<FitLibraryIssue>* issues = nullptr) const;
     QVector<FitCalibrationWorkspace> workspaces(QVector<FitLibraryIssue>* issues = nullptr) const;
+    bool createWorkspace(const FitCalibrationProcess&, FitCalibrationWorkspace*, QString* error = nullptr);
+    bool deleteWorkspace(const QString& identity, QString* backupPath = nullptr, QString* error = nullptr);
     QVector<FitCalibrationExperiment> coarseReviewHistory(const FitCalibrationSession&) const;
 
     bool importSession(const QString& portablePath, FitCalibrationSession*, QString* error = nullptr);

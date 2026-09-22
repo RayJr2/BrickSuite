@@ -36,8 +36,17 @@ struct FitCalibrationExperiment {
     int preferredCandidateIndex=0; FitEvidenceState state=FitEvidenceState::Draft; QDateTime performedUtc;
 };
 class FitCalibrationExperimentJson { public: static constexpr int CurrentFormatVersion=2; static QJsonObject toJson(const FitCalibrationExperiment&); static bool fromJson(const QJsonObject&,FitCalibrationExperiment*,QString*error=nullptr); };
-struct FitCalibrationSession { QString sessionIdentity; FitCalibrationProcess process; bool hasCoarseExperiment=false; FitCalibrationExperiment coarseExperiment; bool hasFineExperiment=false; FitCalibrationExperiment fineExperiment; };
-class FitCalibrationSessionJson { public: static constexpr int CurrentFormatVersion=3; static QJsonObject toJson(const FitCalibrationSession&); static bool fromJson(const QJsonObject&,FitCalibrationSession*,QString*error=nullptr); };
+struct FitCalibrationSession {
+    QString sessionIdentity;
+    FitCalibrationProcess process;
+    // Immutable snapshots of earlier physical stages. Current coarse/fine stages remain editable.
+    QVector<FitCalibrationExperiment> history;
+    bool hasCoarseExperiment=false;
+    FitCalibrationExperiment coarseExperiment;
+    bool hasFineExperiment=false;
+    FitCalibrationExperiment fineExperiment;
+};
+class FitCalibrationSessionJson { public: static constexpr int CurrentFormatVersion=4; static QJsonObject toJson(const FitCalibrationSession&); static bool fromJson(const QJsonObject&,FitCalibrationSession*,QString*error=nullptr); };
 class FitCalibrationEvidencePolicy {
 public:
     static double candidateCorrection(const FitCalibrationExperiment&,const FitCalibrationCandidate&);

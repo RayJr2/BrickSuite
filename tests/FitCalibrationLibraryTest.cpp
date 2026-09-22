@@ -54,6 +54,55 @@ int main(int argc, char** argv) {
     ok &= require(temporary.isValid(), "temporary storage root");
     FitCalibrationLibrary library(temporary.path()); QVector<FitLibraryIssue> issues;
     ok &= require(library.storageRoot() == QDir::cleanPath(temporary.path()) && library.sessions(&issues).isEmpty() && issues.isEmpty(), "override and empty library");
+    {
+        FitCalibrationLibrary managed(QDir(temporary.path()).filePath("workspace-management"));
+        auto process = verifiedSession().process;
+        FitCalibrationWorkspace created;
+        QString workspaceError;
+        ok &= require(managed.createWorkspace(process, &created, &workspaceError), "create empty managed workspace: " + workspaceError);
+        ok &= require(created.featureSessions.isEmpty() && managed.workspaces().size() == 1,
+                      "empty workspace is immediately discoverable");
+        FitCalibrationLibrary reopened(managed.storageRoot());
+        ok &= require(reopened.workspaces().size() == 1 && reopened.workspaces().front().identity == created.identity,
+                      "empty workspace survives library reopen");
+        ok &= require(!managed.createWorkspace(process, nullptr, &workspaceError) && managed.workspaces().size() == 1,
+                      "duplicate manufacturing context is rejected");
+        auto other = process; other.materialIdentity = "PLA";
+        FitCalibrationWorkspace retained;
+        ok &= require(managed.createWorkspace(other, &retained, &workspaceError), "independent workspace creation");
+        auto ownedSession = verifiedSession(); ownedSession.sessionIdentity = "workspace-owned-session";
+        ok &= require(managed.saveSession(&ownedSession, &workspaceError), "managed workspace session persists");
+        FitProfile ownedProfile;
+        ok &= require(FitCalibrationLibrary::promoteVerifiedSession(ownedSession, "Managed workspace profile", &ownedProfile, &workspaceError) &&
+                      managed.saveProfile(&ownedProfile, &workspaceError), "associated profile persists");
+        {
+            FitCalibrationLibrary blocked(QDir(temporary.path()).filePath("blocked-workspace-deletion"));
+            FitCalibrationWorkspace blockedWorkspace;
+            ok &= require(blocked.createWorkspace(process, &blockedWorkspace, &workspaceError), "workspace for backup-failure test");
+            QFile obstruction(QDir(blocked.storageRoot()).filePath("Backups"));
+            ok &= require(obstruction.open(QIODevice::WriteOnly), "create backup-directory obstruction");
+            obstruction.close();
+            QString rejectedBackup;
+            ok &= require(!blocked.deleteWorkspace(blockedWorkspace.identity, &rejectedBackup, &workspaceError) &&
+                          blocked.workspaces().size() == 1, "backup failure leaves selected workspace intact");
+        }
+        QString backup;
+        ok &= require(managed.deleteWorkspace(created.identity, &backup, &workspaceError),
+                      "selected workspace deletion: " + workspaceError);
+        ok &= require(QFile::exists(backup) && managed.workspaces().size() == 1 &&
+                      managed.workspaces().front().identity == retained.identity && managed.sessions().isEmpty() &&
+                      managed.profiles().isEmpty(),
+                      "deletion backs up selected context and profile while retaining unrelated workspace");
+        auto legacyUnknown = verifiedSession(); legacyUnknown.sessionIdentity = "legacy-unknown-context";
+        legacyUnknown.process.printerIdentity.clear(); legacyUnknown.process.materialIdentity.clear();
+        legacyUnknown.process.profileName.clear();
+        legacyUnknown.fineExperiment.process = legacyUnknown.process;
+        ok &= require(managed.saveSession(&legacyUnknown, &workspaceError), "legacy Unknown session fixture persists");
+        const QString unknownIdentity = FitCalibrationLibrary::manufacturingContextFingerprint(legacyUnknown.process);
+        ok &= require(managed.deleteWorkspace(unknownIdentity, &backup, &workspaceError) && QFile::exists(backup) &&
+                      managed.workspaces().size() == 1 && managed.workspaces().front().identity == retained.identity,
+                      "legacy Unknown workspace can be removed without changing the valid workspace");
+    }
     auto session = verifiedSession(); QString error;
     ok &= require(FitCalibrationEvidencePolicy::preferredSessionStage(session) == FitCalibrationStage::Fine, "Verified session selects the Fine Search stage");
     auto fineProgress = session; fineProgress.fineExperiment.state = FitEvidenceState::Experimental; fineProgress.fineExperiment.preferredCandidateIndex = 0;
@@ -99,6 +148,115 @@ int main(int argc, char** argv) {
                   std::abs(studVerified.fineExperiment.candidates[2].functionalDiameterMillimetres-5.20) < 1e-9 &&
                   studVerified.fineExperiment.artifactIdentity != studHistory.back().artifactIdentity,
                   "Verified Stud OD retains separate coarse, extension, and verification review");
+    auto richerRoot = studRoot;
+    richerRoot.sessionIdentity = "stud-root-with-more-evidence";
+    auto additionalObservation = richerRoot.coarseExperiment.candidates[1].observations.front();
+    additionalObservation.repeatNumber = 3;
+    richerRoot.coarseExperiment.candidates[1].observations.push_back(additionalObservation);
+    ok &= require(reviewLibrary.saveSession(&richerRoot, &error) &&
+                  reviewLibrary.coarseReviewHistory(studVerified).front().candidates[1].observations.size() == 3,
+                  "legacy duplicate artifact lookup prefers the saved stage with more observations");
+    FitCalibrationLibrary durableLibrary(QDir(temporary.path()).filePath("durable-lineage"));
+    auto durableRoot = studRoot;
+    durableRoot.sessionIdentity = "durable-stud-root";
+    durableRoot.coarseExperiment.candidates[1].observations[0].notes = "physical coarse observation";
+    ok &= require(durableLibrary.saveSession(&durableRoot, &error), "observed coarse stage saved");
+    auto extensionStage = studExtension.coarseExperiment;
+    extensionStage.candidates.clear();
+    for (int index = 1; index <= 7; ++index) {
+        FitCalibrationCandidate candidate;candidate.index = index;
+        candidate.functionalDiameterMillimetres = 5.10 + .05 * (index - 1);
+        candidate.diameterCorrectionMillimetres = candidate.functionalDiameterMillimetres - 4.8;
+        extensionStage.candidates.push_back(candidate);
+    }
+    auto firstContinuation = durableRoot;
+    firstContinuation.hasFineExperiment = true;
+    firstContinuation.fineExperiment = extensionStage;
+    ok &= require(firstContinuation.coarseExperiment.candidates[1].observations.size() == 2 &&
+                  firstContinuation.fineExperiment.candidates[1].observations.isEmpty() &&
+                  durableLibrary.saveSession(&firstContinuation, &error),
+                  "boundary extension starts empty and retains observed coarse evidence");
+    FitCalibrationObservation extensionObservation;
+    extensionObservation.result = FitObservation::Preferred;
+    extensionObservation.repeatNumber = 1;
+    firstContinuation.fineExperiment.candidates[1].observations.push_back(extensionObservation);
+    firstContinuation.fineExperiment.preferredCandidateIndex = 2;
+    ok &= require(durableLibrary.saveSession(&firstContinuation, &error), "extension observation saved");
+    auto verificationStage = studVerified.fineExperiment;
+    verificationStage.parentArtifactIdentity = extensionStage.artifactIdentity;
+    auto verifiedChild = FitCalibrationLibrary::continuationSession(
+        firstContinuation, firstContinuation.fineExperiment, verificationStage);
+    ok &= require(verifiedChild.sessionIdentity != firstContinuation.sessionIdentity &&
+                  verifiedChild.history.size() == 1 &&
+                  FitCalibrationSessionJson::toJson(verifiedChild).value("formatVersion").toInt() ==
+                      FitCalibrationSessionJson::CurrentFormatVersion &&
+                  verifiedChild.history[0].artifactIdentity == durableRoot.coarseExperiment.artifactIdentity &&
+                  verifiedChild.history[0].candidates[1].observations[0].notes == "physical coarse observation" &&
+                  verifiedChild.coarseExperiment.candidates[1].observations.size() == 1 &&
+                  verifiedChild.fineExperiment.candidates[0].observations.isEmpty(),
+                  "new verification child snapshots full earlier lineage and starts with fresh evidence");
+    verifiedChild.fineExperiment = studVerified.fineExperiment;
+    verifiedChild.fineExperiment.parentArtifactIdentity = extensionStage.artifactIdentity;
+    ok &= require(durableLibrary.saveSession(&verifiedChild, &error), "Verified continuation saved");
+    FitCalibrationSession reloadedChild, reloadedRoot;
+    ok &= require(durableLibrary.loadSession(verifiedChild.sessionIdentity, &reloadedChild, &error) &&
+                  durableLibrary.loadSession(firstContinuation.sessionIdentity, &reloadedRoot, &error) &&
+                  reloadedRoot.coarseExperiment.candidates[1].observations[0].notes == "physical coarse observation" &&
+                  reloadedChild.history.size() == 1 &&
+                  reloadedChild.history[0].candidates[1].observations.size() == 2 &&
+                  reloadedChild.coarseExperiment.candidates[1].observations.size() == 1 &&
+                  reloadedChild.fineExperiment.state == FitEvidenceState::Verified,
+                  "restart reload preserves all observed stages and final Verified evidence");
+    const auto durableHistory = durableLibrary.coarseReviewHistory(reloadedChild);
+    ok &= require(durableHistory.size() == 2 &&
+                  durableHistory[0].artifactIdentity == durableRoot.coarseExperiment.artifactIdentity &&
+                  durableHistory[1].artifactIdentity == extensionStage.artifactIdentity,
+                  "historical review resolves embedded coarse and extension evidence");
+    const QString chainExport = QDir(temporary.path()).filePath("durable-chain-export.json");
+    ok &= require(durableLibrary.exportSession(reloadedChild.sessionIdentity, chainExport, &error),
+                  "portable full-lineage export");
+    FitCalibrationLibrary importedChain(QDir(temporary.path()).filePath("imported-chain"));
+    FitCalibrationSession restoredChain;
+    ok &= require(importedChain.importSession(chainExport, &restoredChain, &error) &&
+                  restoredChain.history.size() == 1 &&
+                  restoredChain.history[0].candidates[1].observations.size() == 2 &&
+                  importedChain.coarseReviewHistory(restoredChain).size() == 2 &&
+                  restoredChain.fineExperiment.state == FitEvidenceState::Verified,
+                  "portable export/import restores complete observed lineage without parent files");
+    FitCalibrationLibrary monotonicLibrary(QDir(temporary.path()).filePath("monotonic-import"));
+    auto incompleteCopy = verifiedChild;
+    incompleteCopy.history.clear();
+    ok &= require(monotonicLibrary.saveSession(&incompleteCopy, &error) &&
+                  monotonicLibrary.importSession(chainExport, &restoredChain, &error) &&
+                  restoredChain.history.size() == 1 &&
+                  monotonicLibrary.sessions().size() == 1,
+                  "same-ID import can add missing historical evidence without duplicating current stages");
+    const QString parentExport = QDir(temporary.path()).filePath("durable-parent-export.json");
+    const auto importedWorkspace = importedChain.workspaces();
+    FitCalibrationSession separatelyImportedParent;
+    ok &= require(durableLibrary.exportSession(durableRoot.sessionIdentity, parentExport, &error) &&
+                  !importedWorkspace.isEmpty() &&
+                  importedChain.importSessionIntoWorkspace(parentExport, &importedWorkspace.front(),
+                                                           &separatelyImportedParent, &error) &&
+                  separatelyImportedParent.sessionIdentity != restoredChain.sessionIdentity &&
+                  importedChain.sessions().size() == 2 &&
+                  separatelyImportedParent.coarseExperiment.candidates[1].observations.size() == 2 &&
+                  importedChain.workspaces().front().featureSessions.size() == 1 &&
+                  importedChain.workspaces().front().featureSessions.front().fineExperiment.state == FitEvidenceState::Verified,
+                  "same-feature import preserves distinct observed parent and verified child records");
+    auto legacyMissing = verifiedChild;
+    legacyMissing.sessionIdentity = "legacy-missing-parent";
+    legacyMissing.history.clear();
+    legacyMissing.hasCoarseExperiment = false;
+    auto legacyJson = FitCalibrationSessionJson::toJson(legacyMissing);
+    legacyJson.remove("history");
+    FitCalibrationSession decodedLegacy;
+    FitCalibrationLibrary missingLibrary(QDir(temporary.path()).filePath("missing-lineage"));
+    ok &= require(FitCalibrationSessionJson::fromJson(legacyJson, &decodedLegacy, &error) &&
+                  decodedLegacy.history.isEmpty() &&
+                  missingLibrary.coarseReviewHistory(decodedLegacy).isEmpty() &&
+                  decodedLegacy.fineExperiment.state == FitEvidenceState::Verified,
+                  "missing legacy parent remains unavailable without fabricated observations");
     auto axleRoot = studRoot;
     axleRoot.sessionIdentity = "axle-root";
     axleRoot.coarseExperiment.artifactIdentity = "technic-axle-coarse-v1";
@@ -115,6 +273,38 @@ int main(int argc, char** argv) {
                   axleHistory.front().artifactIdentity == axleRoot.coarseExperiment.artifactIdentity &&
                   axleHistory.back().artifactIdentity == axleExtension.coarseExperiment.artifactIdentity,
                   "Technic Axle coarse extension remains independently retrievable");
+    axleExtension.history.push_back(axleRoot.coarseExperiment);
+    auto axleChild = FitCalibrationLibrary::continuationSession(axleExtension,
+        axleExtension.coarseExperiment, axleExtension.coarseExperiment);
+    axleChild.fineExperiment.artifactIdentity = "technic-axle-verification-v3";
+    axleChild.fineExperiment.parentArtifactIdentity = axleExtension.coarseExperiment.artifactIdentity;
+    ok &= require(axleChild.history.size() == 1 &&
+                  axleChild.history[0].artifactIdentity == axleRoot.coarseExperiment.artifactIdentity &&
+                  axleChild.coarseExperiment.artifactIdentity == axleExtension.coarseExperiment.artifactIdentity &&
+                  axleChild.fineExperiment.candidates[1].observations.isEmpty(),
+                  "second-family continuation retains source and clears child evidence");
+    const auto selectedDurableWorkspace = durableLibrary.workspaces();
+    const auto durableParentBeforeImport = reloadedRoot.coarseExperiment.candidates[1].observations.size();
+    FitCalibrationSession duplicateImport;
+    ok &= require(!selectedDurableWorkspace.isEmpty() &&
+                  durableLibrary.importSessionIntoWorkspace(chainExport, &selectedDurableWorkspace.front(),
+                                                            &duplicateImport, &error) &&
+                  duplicateImport.sessionIdentity == verifiedChild.sessionIdentity,
+                  "reimporting an identical full-lineage session is idempotent");
+    auto conflictingImport = verifiedChild;
+    conflictingImport.fineExperiment.candidates[0].observations.clear();
+    const QString conflictChainPath = QDir(temporary.path()).filePath("conflicting-chain.json");
+    QFile conflictChainFile(conflictChainPath);
+    ok &= require(conflictChainFile.open(QIODevice::WriteOnly) &&
+                  conflictChainFile.write(QJsonDocument(FitCalibrationSessionJson::toJson(conflictingImport)).toJson()) > 0,
+                  "conflicting import fixture created");
+    conflictChainFile.close();
+    ok &= require(!durableLibrary.importSessionIntoWorkspace(conflictChainPath,
+                  &selectedDurableWorkspace.front(), &duplicateImport, &error) &&
+                  error.contains("stable identity") &&
+                  durableLibrary.loadSession(firstContinuation.sessionIdentity, &reloadedRoot, &error) &&
+                  reloadedRoot.coarseExperiment.candidates[1].observations.size() == durableParentBeforeImport,
+                  "same-ID conflicting import cannot overwrite the sole observed parent");
     ok &= require(library.saveSession(&session, &error), "atomic managed session save: " + error);
     auto summaries = library.sessions(&issues);
     ok &= require(summaries.size() == 1 && summaries.front().identity == "stable-session" && summaries.front().displayName.contains("Bambu H2D"), "session discovery and meaningful name");

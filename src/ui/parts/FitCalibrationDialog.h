@@ -11,7 +11,7 @@ private:
     PrintGeometry::FitCalibrationExperiment* activeExperiment();
     QTableWidget* activeTable() const;
     bool openSession(const QString&); bool saveSession(); bool writeSession(const QString&);
-    void loadSession(); void resumeManagedSession(); void exportSession(); void createFitProfile(); void createSelectedCalibration(); void createCalibration(FitCalibrationFamily); void newTechnicCalibration(); void newStudCalibration(); void newReceivingClutchCalibration(); void newFrictionlessPinCalibration(); void newFrictionPinCalibration(); void newTechnicAxleCalibration(); void newTechnicAxleHoleCalibration(); void refreshLibrary(); void scheduleManagedSave();
+    void loadSession(); void resumeManagedSession(); void newWorkspace(); void deleteSelectedWorkspace(); void exportSession(); void createFitProfile(); void createSelectedCalibration(); void createCalibration(FitCalibrationFamily); void newTechnicCalibration(); void newStudCalibration(); void newReceivingClutchCalibration(); void newFrictionlessPinCalibration(); void newFrictionPinCalibration(); void newTechnicAxleCalibration(); void newTechnicAxleHoleCalibration(); void refreshLibrary(); void scheduleManagedSave();
     void addObservation(); void selectPreferred(); void markVerified(); void generateFineSearch();
     void readProcess(); void showSession(const PrintGeometry::FitCalibrationSession&,const QString&); void refresh(); void refreshTable(QTableWidget*,const PrintGeometry::FitCalibrationExperiment*); void updateGuidance();
     void showWorkspace(const PrintGeometry::FitCalibrationWorkspace&, const QString& preferredSession = {}); void selectFeature(int);
