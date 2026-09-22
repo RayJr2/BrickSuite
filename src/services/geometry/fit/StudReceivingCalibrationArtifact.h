@@ -19,10 +19,13 @@ struct StudReceivingCalibrationArtifactResult {
 class StudReceivingCalibrationArtifact {
 public:
     static FunctionalFeature canonicalPrototype();
+    static FunctionalFeature canonicalPostWallPrototype();
     static QString artifactIdentity();
+    static QString postWallArtifactIdentity();
     static QString orientationIdentity();
     static QVector<double> diameterCorrectionsMillimetres();
     static StudReceivingCalibrationArtifactResult generate();
+    static StudReceivingCalibrationArtifactResult generatePostWallCell();
     static StudReceivingCalibrationArtifactResult generate(const FunctionalFeature&,const StudReceivingCalibrationArtifactDefinition&);
     static FitCalibrationExperiment observationTemplate(const StudReceivingCalibrationArtifactResult&);
     static FitCalibrationExperiment observationTemplate(const StudReceivingCalibrationArtifactResult&,const StudReceivingCalibrationArtifactDefinition&);

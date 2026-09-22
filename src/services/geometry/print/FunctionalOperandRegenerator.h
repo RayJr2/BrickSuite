@@ -18,6 +18,7 @@ struct MaleStudDimensionalCorrection {
     double heightMillimetres = 0.0;
 };
 struct ReceivingTubeOutsideDiameterCorrection { double millimetres = 0.0; };
+struct ReceivingPostOutsideDiameterCorrection { double millimetres = 0.0; };
 struct FrictionlessPinEnvelopeDiameterCorrection { double millimetres = 0.0; };
 struct FrictionPinRidgeEnvelopeDiameterCorrection { double millimetres = 0.0; };
 struct TechnicAxleTipToTipCorrection { double millimetres = 0.0; };
@@ -59,6 +60,9 @@ public:
     static FunctionalOperandRegenerationResult regenerateReceivingTube(
         const FunctionalFeature& feature,
         ReceivingTubeOutsideDiameterCorrection correction);
+    static FunctionalOperandRegenerationResult regenerateReceivingPost(
+        const FunctionalFeature& feature,
+        ReceivingPostOutsideDiameterCorrection correction);
     static FunctionalOperandRegenerationResult regenerateFrictionlessPin(
         const FunctionalFeature& feature,
         FrictionlessPinEnvelopeDiameterCorrection correction);

@@ -79,6 +79,34 @@ FunctionalOperandRegenerationResult FunctionalOperandRegenerator::regenerateRece
     return result;
 }
 
+FunctionalOperandRegenerationResult FunctionalOperandRegenerator::regenerateReceivingPost(
+    const FunctionalFeature& feature, ReceivingPostOutsideDiameterCorrection correction)
+{
+    FunctionalOperandRegenerationResult rejected;
+    rejected.featureIdentity = feature.stableIdentity;
+    rejected.requestedDiameterCorrectionMillimetres = correction.millimetres;
+    if (feature.family != FunctionalInterfaceFamily::StudReceivingClutch
+        || feature.role != FunctionalInterfaceRole::Female
+        || feature.materialSide != FunctionalMaterialSide::MaterialInside
+        || feature.operandAction != FunctionalOperandAction::Unite
+        || feature.eligibility != FunctionalEligibility::Eligible
+        || feature.confidence != SemanticConfidence::HighConfidence
+        || feature.constructionRecipe != QStringLiteral("stud-receiving-post-wall-cell-v1")
+        || feature.evidenceContract != QStringLiteral("official-ldraw-stud3-post-wall-cell-v1")) {
+        rejected.error = FunctionalOperandRegenerationError::UnsupportedFeature;
+        rejected.diagnostic = QStringLiteral("The feature is not an eligible PostWallCell receiving-post contract.");
+        return rejected;
+    }
+    FunctionalFeature post = feature;
+    post.family = FunctionalInterfaceFamily::StandardStud;
+    post.role = FunctionalInterfaceRole::Male;
+    post.constructionRecipe = QStringLiteral("standard-solid-stud-v1");
+    auto result = regenerateStud(post, {correction.millimetres, 0.0});
+    result.featureIdentity = feature.stableIdentity;
+    if (result.ok()) result.diagnostic = QStringLiteral("PostWallCell post OD regenerated while preserving post height, wall positions, seating depth, and cell pitch.");
+    return result;
+}
+
 FunctionalOperandRegenerationResult FunctionalOperandRegenerator::regenerateFrictionlessPin(
     const FunctionalFeature&feature,FrictionlessPinEnvelopeDiameterCorrection correction)
 {
