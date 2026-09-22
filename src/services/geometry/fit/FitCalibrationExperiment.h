@@ -13,12 +13,14 @@ enum class FitPrintedOrientation { Unknown, FeatureAxisParallelToBuildPlate, Fea
 enum class FitCalibrationStage { None, Coarse, Fine };
 enum class FitCorrectionDimension { Diameter, Height };
 enum class FitPreferredBoundary { None, Lower, Upper };
+enum class FitUniformResult { None, AllTooTight, AllTooLoose };
 
 struct FitCalibrationSearchPlan {
     FitPreferredBoundary boundary=FitPreferredBoundary::None;
     double centerCorrectionMillimetres=0;
     double candidateSpacingMillimetres=0;
     int candidateCount=0;
+    FitUniformResult uniformResult=FitUniformResult::None;
 };
 
 struct FitCalibrationObservation { FitObservation result=FitObservation::Unevaluated; int repeatNumber=1; double measuredDiameterMillimetres=0; bool hasMeasuredDiameter=false; QString notes; QDateTime performedUtc; };

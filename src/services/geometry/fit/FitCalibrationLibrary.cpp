@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
@@ -106,6 +107,14 @@ bool unresolvedSharedText(const QString& value, bool compensationContext) {
     return compensationContext && normalized.startsWith(QStringLiteral("print at 100% scale")) &&
         normalized.contains(QStringLiteral("record")) && normalized.contains(QStringLiteral("compensation"));
 }
+QString canonicalProcessLabel(QString value) {
+    value = value.simplified().toCaseFolded();
+    const qsizetype annotation = value.indexOf(QStringLiteral(" @"));
+    if (annotation >= 0) value.truncate(annotation);
+    static const QRegularExpression millimetres(QStringLiteral("(\\d(?:[\\d.]*)?)\\s*mm\\b"));
+    value.replace(millimetres, QStringLiteral("\\1 mm"));
+    return value.simplified();
+}
 bool mergeSharedContext(FitCalibrationProcess* imported, const FitCalibrationProcess& selected, QString* error) {
     if (!imported) return false;
     auto mergeText = [&](QString* value, const QString& authority, const QString& label, bool compensationContext = false) {
@@ -117,9 +126,7 @@ bool mergeSharedContext(FitCalibrationProcess* imported, const FitCalibrationPro
         return true;
     };
     if (!mergeText(&imported->printerIdentity, selected.printerIdentity, QStringLiteral("printer")) ||
-        !mergeText(&imported->materialIdentity, selected.materialIdentity, QStringLiteral("material")) ||
-        !mergeText(&imported->profileName, selected.profileName, QStringLiteral("process/profile")) ||
-        !mergeText(&imported->dimensionalCompensationNotes, selected.dimensionalCompensationNotes, QStringLiteral("slicer-compensation context"), true)) return false;
+        !mergeText(&imported->materialIdentity, selected.materialIdentity, QStringLiteral("material"))) return false;
     if (!imported->hasNozzleDiameter) { imported->hasNozzleDiameter = selected.hasNozzleDiameter; imported->nozzleDiameterMillimetres = selected.nozzleDiameterMillimetres; }
     else if (selected.hasNozzleDiameter && std::abs(imported->nozzleDiameterMillimetres - selected.nozzleDiameterMillimetres) > 1e-9) {
         fail(error, QStringLiteral("The imported nozzle diameter conflicts with the selected workspace.")); return false;
@@ -128,6 +135,17 @@ bool mergeSharedContext(FitCalibrationProcess* imported, const FitCalibrationPro
     else if (selected.hasLayerHeight && std::abs(imported->layerHeightMillimetres - selected.layerHeightMillimetres) > 1e-9) {
         fail(error, QStringLiteral("The imported layer height conflicts with the selected workspace.")); return false;
     }
+    if (unresolvedSharedText(imported->profileName, false)) imported->profileName = selected.profileName;
+    else if (!selected.profileName.trimmed().isEmpty() && imported->profileName.trimmed() != selected.profileName.trimmed()) {
+        if (FitCalibrationLibrary::processIdentityFingerprint(*imported) != FitCalibrationLibrary::processIdentityFingerprint(selected)) {
+            fail(error, QStringLiteral("The imported process/profile '%1' conflicts with the selected workspace value '%2'.")
+                            .arg(imported->profileName.trimmed(), selected.profileName.trimmed()));
+            return false;
+        }
+        imported->profileName = selected.profileName;
+    }
+    if (!mergeText(&imported->dimensionalCompensationNotes, selected.dimensionalCompensationNotes,
+                   QStringLiteral("slicer-compensation context"), true)) return false;
     return true;
 }
 }
@@ -210,10 +228,19 @@ QString FitCalibrationLibrary::profilesDirectory() const { return QDir(m_root).f
 QString FitCalibrationLibrary::newStableIdentity() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 QString FitCalibrationLibrary::currentSemanticContractVersion() { return "official-ldraw-peghole-pair-v1"; }
 QString FitCalibrationLibrary::currentRegeneratorAlgorithmVersion() { return "functional-operand-regenerator-v1"; }
-QString FitCalibrationLibrary::sessionDisplayName(const FitCalibrationSession&session){const FitCalibrationExperiment*experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(!experiment)return QStringLiteral("Empty calibration session");QString feature;if(experiment->featureFamily==QStringLiteral("StandardStud")){feature=QStringLiteral("Standard Stud");feature+=experiment->correctionDimension==FitCorrectionDimension::Height?QStringLiteral(" Height"):QStringLiteral(" OD");}else if(experiment->featureFamily==QStringLiteral("StudReceivingClutch"))feature=QStringLiteral("Stud Receiving Clutch — TubeWallCell OD");else if(experiment->featureFamily==QStringLiteral("FrictionlessTechnicPin"))feature=QStringLiteral("Frictionless Technic Pin — Envelope OD");else if(experiment->featureFamily==QStringLiteral("FrictionTechnicPin"))feature=QStringLiteral("Friction Technic Pin — Ridge Envelope OD");else feature=QStringLiteral("Round Technic Passage");const QString orientation=session.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate?QStringLiteral(" — Parallel"):session.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate?QStringLiteral(" — Perpendicular"):QString();QString stage;if(experiment->state==FitEvidenceState::Verified)stage=QStringLiteral("Verified");else if(experiment->artifactIdentity.contains(QStringLiteral("direct-verification")))stage=QStringLiteral("Verification");else if(experiment->artifactIdentity.contains(QStringLiteral("extension")))stage=QStringLiteral("Extended Search");else if(!experiment->parentArtifactIdentity.isEmpty())stage=QStringLiteral("Fine Search / Verification");else stage=QStringLiteral("Coarse Search");QString process;if(!session.process.printerIdentity.isEmpty()||!session.process.materialIdentity.isEmpty()){process=QStringLiteral(" — %1 / %2").arg(session.process.printerIdentity.isEmpty()?QStringLiteral("Unknown printer"):session.process.printerIdentity,session.process.materialIdentity.isEmpty()?QStringLiteral("Unknown material"):session.process.materialIdentity);}return QStringLiteral("%1%2 — %3%4").arg(feature,orientation,stage,process);}
+QString FitCalibrationLibrary::sessionDisplayName(const FitCalibrationSession&session){const FitCalibrationExperiment*experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(!experiment)return QStringLiteral("Empty calibration session");QString feature;if(experiment->featureFamily==QStringLiteral("StandardStud")){feature=QStringLiteral("Standard Stud");feature+=experiment->correctionDimension==FitCorrectionDimension::Height?QStringLiteral(" Height"):QStringLiteral(" OD");}else if(experiment->featureFamily==QStringLiteral("StudReceivingClutch"))feature=QStringLiteral("Stud Receiving Clutch — TubeWallCell OD");else if(experiment->featureFamily==QStringLiteral("FrictionlessTechnicPin"))feature=QStringLiteral("Frictionless Technic Pin — Envelope OD");else if(experiment->featureFamily==QStringLiteral("FrictionTechnicPin"))feature=QStringLiteral("Friction Technic Pin — Ridge Envelope OD");else if(experiment->featureFamily==QStringLiteral("TechnicAxle"))feature=QStringLiteral("Technic Axle — Tip-to-Tip Envelope");else if(experiment->featureFamily==QStringLiteral("TechnicAxleHole"))feature=QStringLiteral("Technic Axle Hole — Tip-to-Tip Clearance");else feature=QStringLiteral("Round Technic Passage");const QString orientation=session.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate?QStringLiteral(" — Parallel"):session.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate?QStringLiteral(" — Perpendicular"):QString();QString stage;if(experiment->state==FitEvidenceState::Verified)stage=QStringLiteral("Verified");else if(experiment->artifactIdentity.contains(QStringLiteral("direct-verification")))stage=QStringLiteral("Verification");else if(experiment->artifactIdentity.contains(QStringLiteral("extension")))stage=QStringLiteral("Extended Search");else if(!experiment->parentArtifactIdentity.isEmpty())stage=QStringLiteral("Fine Search / Verification");else stage=QStringLiteral("Coarse Search");QString process;if(!session.process.printerIdentity.isEmpty()||!session.process.materialIdentity.isEmpty()){process=QStringLiteral(" — %1 / %2").arg(session.process.printerIdentity.isEmpty()?QStringLiteral("Unknown printer"):session.process.printerIdentity,session.process.materialIdentity.isEmpty()?QStringLiteral("Unknown material"):session.process.materialIdentity);}return QStringLiteral("%1%2 — %3%4").arg(feature,orientation,stage,process);}
 FitCalibrationSession FitCalibrationLibrary::continuationSession(const FitCalibrationSession&parent,const FitCalibrationExperiment&source,FitCalibrationExperiment child){FitCalibrationSession result;result.sessionIdentity=newStableIdentity();result.process=parent.process;result.hasCoarseExperiment=true;result.coarseExperiment=source;result.coarseExperiment.process=result.process;result.hasFineExperiment=true;child.process=result.process;child.state=FitEvidenceState::Draft;child.preferredCandidateIndex=0;for(auto&candidate:child.candidates)candidate.observations.clear();result.fineExperiment=std::move(child);return result;}
 QString FitCalibrationLibrary::processFingerprint(const FitCalibrationProcess& process) {
     return manufacturingContextFingerprint(process);
+}
+QString FitCalibrationLibrary::processIdentityFingerprint(const FitCalibrationProcess& process) {
+    QJsonObject identity{{"printerIdentity", process.printerIdentity.simplified().toCaseFolded()},
+                         {"materialIdentity", process.materialIdentity.simplified().toCaseFolded()},
+                         {"profileIdentity", canonicalProcessLabel(process.profileName)}};
+    if (process.hasNozzleDiameter) identity["nozzleDiameterMillimetres"] = process.nozzleDiameterMillimetres;
+    if (process.hasLayerHeight) identity["layerHeightMillimetres"] = process.layerHeightMillimetres;
+    return QString::fromLatin1(QCryptographicHash::hash(
+        QJsonDocument(identity).toJson(QJsonDocument::Compact), QCryptographicHash::Sha256).toHex());
 }
 QString FitCalibrationLibrary::manufacturingContextFingerprint(const FitCalibrationProcess& process) {
     QJsonObject context{{"printerIdentity", process.printerIdentity}, {"materialIdentity", process.materialIdentity},
@@ -301,7 +328,13 @@ bool FitCalibrationLibrary::importSessionIntoWorkspace(const QString& path, cons
     if (completeContext) {
         const QString identity = manufacturingContextFingerprint(session.process);
         const auto available = workspaces();
-        const auto match = std::find_if(available.cbegin(), available.cend(), [&](const auto& workspace) { return workspace.identity == identity; });
+        auto match = std::find_if(available.cbegin(), available.cend(), [&](const auto& workspace) { return workspace.identity == identity; });
+        if (match == available.cend()) {
+            const QString processIdentity = processIdentityFingerprint(session.process);
+            match = std::find_if(available.cbegin(), available.cend(), [&](const auto& workspace) {
+                return processIdentityFingerprint(workspace.process) == processIdentity;
+            });
+        }
         if (match != available.cend()) { matchingWorkspace = *match; targetWorkspace = &matchingWorkspace; }
     }
     if (targetWorkspace && !targetWorkspace->featureSessions.isEmpty()) {
@@ -370,6 +403,12 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
     } else if (experiment.featureFamily == QStringLiteral("FrictionTechnicPin")) {
         correction.semantics = QStringLiteral("male-friction-technic-pin-ridge-envelope-diameter");
         correction.correctionContractVersion = QStringLiteral("male-friction-technic-pin-ridge-envelope-diameter-v1");
+    } else if (experiment.featureFamily == QStringLiteral("TechnicAxle")) {
+        correction.semantics = QStringLiteral("male-technic-axle-tip-to-tip-envelope");
+        correction.correctionContractVersion = QStringLiteral("male-technic-axle-tip-to-tip-envelope-v1");
+    } else if (experiment.featureFamily == QStringLiteral("TechnicAxleHole")) {
+        correction.semantics = QStringLiteral("female-technic-axle-hole-tip-to-tip-clearance");
+        correction.correctionContractVersion = QStringLiteral("female-technic-axle-hole-tip-to-tip-clearance-v1");
     }
     correction.semanticContractVersion = experiment.hasRegenerationPrototype && !experiment.regenerationPrototype.evidenceContract.isEmpty()
         ? experiment.regenerationPrototype.evidenceContract : currentSemanticContractVersion();
@@ -421,7 +460,17 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-confric5-friction-pin-v1")
             && correction.semantics == QStringLiteral("male-friction-technic-pin-ridge-envelope-diameter")
             && correction.correctionContractVersion == QStringLiteral("male-friction-technic-pin-ridge-envelope-diameter-v1");
-        if (!roundPassage && !standardStud && !receivingClutch && !frictionlessPin && !frictionPin) { fail(reason, "The functional semantic or correction interpretation contract has changed."); return false; }
+        const bool technicAxle = correction.featureFamily == QStringLiteral("TechnicAxle")
+            && correction.featureRole == QStringLiteral("male")
+            && correction.semanticContractVersion == QStringLiteral("official-ldraw-axle-cross-profile-v1")
+            && correction.semantics == QStringLiteral("male-technic-axle-tip-to-tip-envelope")
+            && correction.correctionContractVersion == QStringLiteral("male-technic-axle-tip-to-tip-envelope-v1");
+        const bool technicAxleHole = correction.featureFamily == QStringLiteral("TechnicAxleHole")
+            && correction.featureRole == QStringLiteral("female")
+            && correction.semanticContractVersion == QStringLiteral("official-ldraw-axlehole-cross-profile-v1")
+            && correction.semantics == QStringLiteral("female-technic-axle-hole-tip-to-tip-clearance")
+            && correction.correctionContractVersion == QStringLiteral("female-technic-axle-hole-tip-to-tip-clearance-v1");
+        if (!roundPassage && !standardStud && !receivingClutch && !frictionlessPin && !frictionPin && !technicAxle && !technicAxleHole) { fail(reason, "The functional semantic or correction interpretation contract has changed."); return false; }
         if (correction.regeneratorAlgorithmVersion != currentRegeneratorAlgorithmVersion()) { fail(reason, "The functional regenerator version has changed."); return false; }
         if (correction.printedOrientation == "unknown" || correction.printedOrientation == "other-unsupported") { fail(reason, "The calibrated print orientation is unsupported."); return false; }
     }

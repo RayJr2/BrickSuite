@@ -7,6 +7,8 @@ QVector<FitCalibrationFamilyOption> FitCalibrationFamilyCatalog::availableFamili
         {FitCalibrationFamily::StandardStud, QStringLiteral("Standard Stud")},
         {FitCalibrationFamily::StudReceivingClutch, QStringLiteral("Stud Receiving Clutch")},
         {FitCalibrationFamily::FrictionlessTechnicPin, QStringLiteral("Frictionless Technic Pin")},
-        {FitCalibrationFamily::FrictionTechnicPin, QStringLiteral("Friction Technic Pin")}
+        {FitCalibrationFamily::FrictionTechnicPin, QStringLiteral("Friction Technic Pin")},
+        {FitCalibrationFamily::TechnicAxle, QStringLiteral("Technic Axle")},
+        {FitCalibrationFamily::TechnicAxleHole, QStringLiteral("Technic Axle Hole")}
     };
 }

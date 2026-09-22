@@ -6,7 +6,7 @@ namespace PrintGeometry {
 enum class SemanticRole { PrimaryBody,SubtractivePassage,AdditiveAttachment,HollowAdditiveAttachment };
 enum class SemanticFeature { BodyOrCavity,RoundThroughPassage,Stud,Tube,TubeBoreInterface };
 enum class SemanticConfidence { HighConfidence,Ambiguous,Unsupported };
-enum class FunctionalInterfaceFamily { RoundTechnicPassage, StandardStud, StudReceivingClutch, FrictionlessTechnicPin, FrictionTechnicPin };
+enum class FunctionalInterfaceFamily { RoundTechnicPassage, StandardStud, StudReceivingClutch, FrictionlessTechnicPin, FrictionTechnicPin, TechnicAxle, TechnicAxleHole };
 enum class FunctionalInterfaceRole { Female, Male };
 enum class FunctionalMaterialSide { EmptyInsideMaterialOutside, MaterialInside };
 enum class FunctionalEligibility { Eligible, RecognizedNotEligible, Unsupported };
@@ -24,6 +24,7 @@ struct FunctionalFeature {
     FunctionalFeatureFrame frame;
     double nominalRadiusMillimetres=0.0,nominalDiameterMillimetres=0.0,nominalAxialExtentMillimetres=0.0,nominalEngagementExtentMillimetres=0.0;
     double protectedInnerRadiusMillimetres=0.0;
+    double protectedCrossArmHalfWidthMillimetres=0.0,nominalCrossShoulderRadiusMillimetres=0.0;
     FunctionalOperandAction operandAction=FunctionalOperandAction::Subtract;
     QString governingOperandIdentity,constructionRecipe,evidenceContract;
     QVector<FunctionalRadialSection> radialProfile;

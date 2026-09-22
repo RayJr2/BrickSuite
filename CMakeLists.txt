@@ -442,6 +442,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/print/FunctionalOperandRegenerator.cpp src/services/geometry/print/FunctionalOperandRegenerator.h
     src/services/geometry/print/FrictionlessTechnicPinSemantic.cpp src/services/geometry/print/FrictionlessTechnicPinSemantic.h
     src/services/geometry/print/FrictionTechnicPinSemantic.cpp src/services/geometry/print/FrictionTechnicPinSemantic.h
+    src/services/geometry/print/TechnicAxleSemantic.cpp src/services/geometry/print/TechnicAxleSemantic.h
     src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
     src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
     src/services/geometry/fit/RoundTechnicCalibrationArtifact.cpp src/services/geometry/fit/RoundTechnicCalibrationArtifact.h
@@ -449,6 +450,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/fit/StudReceivingCalibrationArtifact.cpp src/services/geometry/fit/StudReceivingCalibrationArtifact.h
     src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.h
     src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.h
+    src/services/geometry/fit/TechnicAxleCalibrationArtifact.cpp src/services/geometry/fit/TechnicAxleCalibrationArtifact.h
     src/services/geometry/print/PrintMeshConversion.cpp src/services/geometry/print/PrintMeshConversion.h
     src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
     src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
@@ -733,7 +735,9 @@ if(BUILD_TESTING)
         src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
         src/services/geometry/print/FunctionalOperandRegenerator.cpp src/services/geometry/print/FunctionalOperandRegenerator.h
         src/services/geometry/print/FrictionlessTechnicPinSemantic.cpp src/services/geometry/print/FrictionlessTechnicPinSemantic.h
-        src/services/geometry/print/FrictionTechnicPinSemantic.cpp src/services/geometry/print/FrictionTechnicPinSemantic.h)
+        src/services/geometry/print/FrictionTechnicPinSemantic.cpp src/services/geometry/print/FrictionTechnicPinSemantic.h
+        src/services/geometry/print/TechnicAxleSemantic.cpp src/services/geometry/print/TechnicAxleSemantic.h)
+
     target_link_libraries(FunctionalOperandRegeneratorTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
     bricksuite_stage_mcut_runtime(FunctionalOperandRegeneratorTest)
     add_test(NAME FunctionalOperandRegenerator COMMAND FunctionalOperandRegeneratorTest)
@@ -744,16 +748,19 @@ if(BUILD_TESTING)
         src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
         src/services/geometry/ThreeMfWriter.cpp src/services/geometry/ThreeMfWriter.h
         src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
+        src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
         src/services/geometry/fit/RoundTechnicCalibrationArtifact.cpp src/services/geometry/fit/RoundTechnicCalibrationArtifact.h
         src/services/geometry/fit/StandardStudCalibrationArtifact.cpp src/services/geometry/fit/StandardStudCalibrationArtifact.h
         src/services/geometry/fit/StudReceivingCalibrationArtifact.cpp src/services/geometry/fit/StudReceivingCalibrationArtifact.h
         src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.h
         src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.h
+        src/services/geometry/fit/TechnicAxleCalibrationArtifact.cpp src/services/geometry/fit/TechnicAxleCalibrationArtifact.h
         src/services/geometry/print/PrintMesh.h src/services/geometry/print/SemanticOperand.h
         src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
         src/services/geometry/print/FunctionalOperandRegenerator.cpp src/services/geometry/print/FunctionalOperandRegenerator.h
         src/services/geometry/print/FrictionlessTechnicPinSemantic.cpp src/services/geometry/print/FrictionlessTechnicPinSemantic.h
         src/services/geometry/print/FrictionTechnicPinSemantic.cpp src/services/geometry/print/FrictionTechnicPinSemantic.h
+        src/services/geometry/print/TechnicAxleSemantic.cpp src/services/geometry/print/TechnicAxleSemantic.h
         src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
         src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
         src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h)

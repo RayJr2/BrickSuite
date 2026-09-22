@@ -17,21 +17,25 @@ int main(int argc, char** argv)
 {
     QCoreApplication application(argc, argv);
     const auto options = FitCalibrationFamilyCatalog::availableFamilies();
-    bool ok = require(options.size() == 5, "all implemented calibration families are selectable");
+    bool ok = require(options.size() == 7, "all implemented calibration families are selectable");
 
     const QVector<FitCalibrationFamily> expectedFamilies = {
         FitCalibrationFamily::TechnicHole,
         FitCalibrationFamily::StandardStud,
         FitCalibrationFamily::StudReceivingClutch,
         FitCalibrationFamily::FrictionlessTechnicPin,
-        FitCalibrationFamily::FrictionTechnicPin
+        FitCalibrationFamily::FrictionTechnicPin,
+        FitCalibrationFamily::TechnicAxle,
+        FitCalibrationFamily::TechnicAxleHole
     };
     const QStringList expectedLabels = {
         QStringLiteral("Technic Hole"),
         QStringLiteral("Standard Stud"),
         QStringLiteral("Stud Receiving Clutch"),
         QStringLiteral("Frictionless Technic Pin"),
-        QStringLiteral("Friction Technic Pin")
+        QStringLiteral("Friction Technic Pin"),
+        QStringLiteral("Technic Axle"),
+        QStringLiteral("Technic Axle Hole")
     };
     QSet<int> uniqueFamilies;
     for (qsizetype i = 0; i < options.size(); ++i) {

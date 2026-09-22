@@ -80,6 +80,7 @@ public:
 
     static QString newStableIdentity();
     static QString processFingerprint(const FitCalibrationProcess&);
+    static QString processIdentityFingerprint(const FitCalibrationProcess&);
     static QString manufacturingContextFingerprint(const FitCalibrationProcess&);
     static QString workspaceDisplayName(const FitCalibrationProcess&);
     static QString currentSemanticContractVersion();
