@@ -800,6 +800,7 @@ if(BUILD_TESTING)
         src/services/geometry/print/FrictionTechnicPinSemantic.cpp src/services/geometry/print/FrictionTechnicPinSemantic.h
         src/services/geometry/print/TechnicAxleSemantic.cpp src/services/geometry/print/TechnicAxleSemantic.h
         src/services/geometry/print/RoundTechnicPassageSemantic.cpp src/services/geometry/print/RoundTechnicPassageSemantic.h
+        src/services/geometry/print/StudReceivingPostSemantic.cpp src/services/geometry/print/StudReceivingPostSemantic.h
         src/services/geometry/print/ManufacturingMeshDiagnosticExporter.cpp src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h
         src/services/geometry/print/AutoFitProfileResolver.cpp src/services/geometry/print/AutoFitProfileResolver.h
         src/services/geometry/ThreeMfWriter.cpp src/services/geometry/ThreeMfWriter.h
