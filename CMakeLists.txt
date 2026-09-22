@@ -447,6 +447,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/print/StudReceivingPostSemantic.cpp src/services/geometry/print/StudReceivingPostSemantic.h
     src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
     src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
+    src/services/geometry/fit/FitCalibrationPackage.cpp src/services/geometry/fit/FitCalibrationPackage.h
     src/services/geometry/fit/RoundTechnicCalibrationArtifact.cpp src/services/geometry/fit/RoundTechnicCalibrationArtifact.h
     src/services/geometry/fit/StandardStudCalibrationArtifact.cpp src/services/geometry/fit/StandardStudCalibrationArtifact.h
     src/services/geometry/fit/StudReceivingCalibrationArtifact.cpp src/services/geometry/fit/StudReceivingCalibrationArtifact.h
@@ -753,6 +754,7 @@ if(BUILD_TESTING)
         src/services/geometry/ThreeMfWriter.cpp src/services/geometry/ThreeMfWriter.h
         src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
         src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
+        src/services/geometry/fit/FitCalibrationPackage.cpp src/services/geometry/fit/FitCalibrationPackage.h
         src/services/geometry/fit/RoundTechnicCalibrationArtifact.cpp src/services/geometry/fit/RoundTechnicCalibrationArtifact.h
         src/services/geometry/fit/StandardStudCalibrationArtifact.cpp src/services/geometry/fit/StandardStudCalibrationArtifact.h
         src/services/geometry/fit/StudReceivingCalibrationArtifact.cpp src/services/geometry/fit/StudReceivingCalibrationArtifact.h
@@ -773,6 +775,14 @@ if(BUILD_TESTING)
     target_link_libraries(FitCalibrationArtifactTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
     bricksuite_stage_mcut_runtime(FitCalibrationArtifactTest)
     add_test(NAME FitCalibrationArtifact COMMAND FitCalibrationArtifactTest)
+
+    get_target_property(_fitArtifactSources FitCalibrationArtifactTest SOURCES)
+    list(REMOVE_ITEM _fitArtifactSources tests/FitCalibrationArtifactTest.cpp)
+    qt_add_executable(FitCalibrationPackageTest EXCLUDE_FROM_ALL
+        tests/FitCalibrationPackageTest.cpp ${_fitArtifactSources})
+    target_link_libraries(FitCalibrationPackageTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
+    bricksuite_stage_mcut_runtime(FitCalibrationPackageTest)
+    add_test(NAME FitCalibrationPackage COMMAND FitCalibrationPackageTest)
 
     qt_add_executable(FitCalibrationLibraryTest EXCLUDE_FROM_ALL
         tests/FitCalibrationLibraryTest.cpp
