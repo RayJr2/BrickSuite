@@ -22,6 +22,8 @@ struct FitProfileCorrection {
     QString calibrationArtifactIdentity;
     bool hasRequiredDiameterCorrection = false;
     double requiredDiameterCorrectionMillimetres = 0;
+    bool hasFixedTipToTipCorrection = false;
+    double fixedTipToTipCorrectionMillimetres = 0;
 };
 
 struct FitProfile {

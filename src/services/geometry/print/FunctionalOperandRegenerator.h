@@ -21,6 +21,10 @@ struct ReceivingTubeOutsideDiameterCorrection { double millimetres = 0.0; };
 struct FrictionlessPinEnvelopeDiameterCorrection { double millimetres = 0.0; };
 struct FrictionPinRidgeEnvelopeDiameterCorrection { double millimetres = 0.0; };
 struct TechnicAxleTipToTipCorrection { double millimetres = 0.0; };
+struct TechnicAxleHoleArmWidthCorrection {
+    double millimetres = 0.0;
+    double fixedTipToTipCorrectionMillimetres = 0.0;
+};
 
 enum class FunctionalOperandRegenerationError {
     None,
@@ -64,6 +68,9 @@ public:
     static FunctionalOperandRegenerationResult regenerateTechnicAxleProfile(
         const FunctionalFeature& feature,
         TechnicAxleTipToTipCorrection correction);
+    static FunctionalOperandRegenerationResult regenerateTechnicAxleHoleArmWidth(
+        const FunctionalFeature& feature,
+        TechnicAxleHoleArmWidthCorrection correction);
 };
 
 } // namespace PrintGeometry

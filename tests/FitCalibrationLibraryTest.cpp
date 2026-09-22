@@ -145,5 +145,35 @@ int main(int argc, char** argv) {
     auto frictionSession=pinSession;frictionSession.sessionIdentity="verified-friction-pin-session";frictionSession.fineExperiment.featureFamily="FrictionTechnicPin";frictionSession.fineExperiment.regenerationPrototype.family=FunctionalInterfaceFamily::FrictionTechnicPin;frictionSession.fineExperiment.regenerationPrototype.evidenceContract="official-ldraw-confric5-friction-pin-v1";frictionSession.fineExperiment.regenerationPrototype.constructionRecipe="friction-technic-pin-confric5-ridge-v1";FitProfile frictionProfile;ok&=require(FitCalibrationLibrary::promoteVerifiedSession(frictionSession,"Future friction pin profile",&frictionProfile,&error)&&frictionProfile.corrections.front().semantics=="male-friction-technic-pin-ridge-envelope-diameter"&&FitCalibrationLibrary::profileCompatibility(frictionProfile,&error),"future Verified friction-pin evidence retains a distinct compatible Fit Profile contract");
     auto axleSession=pinSession;axleSession.sessionIdentity="verified-technic-axle-session";axleSession.fineExperiment.featureFamily="TechnicAxle";axleSession.fineExperiment.featureRole="male";axleSession.fineExperiment.regenerationPrototype.family=FunctionalInterfaceFamily::TechnicAxle;axleSession.fineExperiment.regenerationPrototype.role=FunctionalInterfaceRole::Male;axleSession.fineExperiment.regenerationPrototype.materialSide=FunctionalMaterialSide::MaterialInside;axleSession.fineExperiment.regenerationPrototype.evidenceContract="official-ldraw-axle-cross-profile-v1";axleSession.fineExperiment.regenerationPrototype.constructionRecipe="technic-axle-cross-profile-v1";FitProfile axleProfile;ok&=require(FitCalibrationLibrary::promoteVerifiedSession(axleSession,"Future ordinary axle profile",&axleProfile,&error)&&axleProfile.corrections.front().semantics=="male-technic-axle-tip-to-tip-envelope"&&axleProfile.corrections.front().correctionContractVersion=="male-technic-axle-tip-to-tip-envelope-v1"&&FitCalibrationLibrary::profileCompatibility(axleProfile,&error),"future Verified ordinary axle evidence retains an independent compatible Fit Profile contract");auto axleRoundTrip=FitProfile{};ok&=require(FitProfileJson::fromJson(FitProfileJson::toJson(axleProfile),&axleRoundTrip,&error)&&axleRoundTrip.corrections.front().featureFamily=="TechnicAxle","ordinary axle Fit Profile contract survives JSON round trip");
     auto axleHoleSession=axleSession;axleHoleSession.sessionIdentity="verified-technic-axle-hole-session";axleHoleSession.fineExperiment.featureFamily="TechnicAxleHole";axleHoleSession.fineExperiment.featureRole="female";axleHoleSession.fineExperiment.regenerationPrototype.family=FunctionalInterfaceFamily::TechnicAxleHole;axleHoleSession.fineExperiment.regenerationPrototype.role=FunctionalInterfaceRole::Female;axleHoleSession.fineExperiment.regenerationPrototype.materialSide=FunctionalMaterialSide::EmptyInsideMaterialOutside;axleHoleSession.fineExperiment.regenerationPrototype.evidenceContract="official-ldraw-axlehole-cross-profile-v1";axleHoleSession.fineExperiment.regenerationPrototype.constructionRecipe="technic-axle-hole-cross-profile-v1";FitProfile axleHoleProfile;ok&=require(FitCalibrationLibrary::promoteVerifiedSession(axleHoleSession,"Future ordinary axle-hole profile",&axleHoleProfile,&error)&&axleHoleProfile.corrections.front().semantics=="female-technic-axle-hole-tip-to-tip-clearance"&&FitCalibrationLibrary::profileCompatibility(axleHoleProfile,&error),"future Verified ordinary axle-hole evidence remains distinct from the male axle correction");
+    auto unverifiedAxleHole = axleHoleSession;
+    unverifiedAxleHole.fineExperiment.state = FitEvidenceState::CandidateSelected;
+    FitProfile unavailableAxleHoleProfile;
+    ok &= require(!FitCalibrationLibrary::promoteVerifiedSession(unverifiedAxleHole, "Unverified axle-hole profile", &unavailableAxleHoleProfile, &error),
+                  "unverified Technic axle-hole evidence remains unavailable to Fit Profiles and ManufacturingMesh");
+    auto armWidthSession = axleHoleSession;
+    armWidthSession.sessionIdentity = "verified-technic-axle-hole-arm-width-session";
+    armWidthSession.fineExperiment.artifactIdentity = "technic-axle-hole-arm-width-perpendicular-coarse-v2";
+    armWidthSession.fineExperiment.regenerationPrototype.constructionRecipe = "technic-axle-hole-arm-width-clearance-v2";
+    armWidthSession.fineExperiment.regenerationPrototype.evidenceContract = "official-ldraw-axlehole-arm-width-clearance-v2";
+    armWidthSession.fineExperiment.fixedDiameterCorrectionMillimetres = .30;
+    FitProfile armWidthProfile;
+    ok &= require(FitCalibrationLibrary::promoteVerifiedSession(armWidthSession, "Future axle-hole arm-width profile", &armWidthProfile, &error) &&
+                  armWidthProfile.corrections.front().semantics == "female-technic-axle-hole-arm-width-clearance" &&
+                  armWidthProfile.corrections.front().hasFixedTipToTipCorrection &&
+                  std::abs(armWidthProfile.corrections.front().fixedTipToTipCorrectionMillimetres - .30) < 1e-9 &&
+                  FitCalibrationLibrary::profileCompatibility(armWidthProfile, &error),
+                  "corrected axle-hole arm-width evidence has a distinct future-ready Fit Profile contract");
+    ok &= require(FitCalibrationLibrary::mergeVerifiedSession(armWidthSession, &axleProfile, &error) &&
+                  axleProfile.corrections.size() == 2 && FitCalibrationLibrary::profileCompatibility(axleProfile, &error),
+                  "Verified male axle and female arm-width corrections coexist independently in one Fit Profile");
+    auto incompleteAxleHoleContext = axleProfile;
+    incompleteAxleHoleContext.corrections.back().hasFixedTipToTipCorrection = false;
+    ok &= require(FitCalibrationLibrary::profileCompatibility(incompleteAxleHoleContext, &error),
+                  "missing dependent axle-hole context does not hide independent corrections in a multi-family Fit Profile");
+    auto armWidthRoundTrip = FitProfile{};
+    ok &= require(FitProfileJson::fromJson(FitProfileJson::toJson(armWidthProfile), &armWidthRoundTrip, &error) &&
+                  armWidthRoundTrip.corrections.front().hasFixedTipToTipCorrection &&
+                  std::abs(armWidthRoundTrip.corrections.front().fixedTipToTipCorrectionMillimetres - .30) < 1e-9,
+                  "female v2 fixed tip-to-tip calibration context survives Fit Profile JSON round trip");
     return ok ? 0 : 1;
 }

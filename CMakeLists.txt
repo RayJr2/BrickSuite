@@ -451,6 +451,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.h
     src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.h
     src/services/geometry/fit/TechnicAxleCalibrationArtifact.cpp src/services/geometry/fit/TechnicAxleCalibrationArtifact.h
+    src/services/geometry/fit/TechnicAxleHoleCalibrationArtifact.cpp src/services/geometry/fit/TechnicAxleHoleCalibrationArtifact.h
     src/services/geometry/print/PrintMeshConversion.cpp src/services/geometry/print/PrintMeshConversion.h
     src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
     src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
@@ -755,6 +756,7 @@ if(BUILD_TESTING)
         src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.h
         src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.h
         src/services/geometry/fit/TechnicAxleCalibrationArtifact.cpp src/services/geometry/fit/TechnicAxleCalibrationArtifact.h
+        src/services/geometry/fit/TechnicAxleHoleCalibrationArtifact.cpp src/services/geometry/fit/TechnicAxleHoleCalibrationArtifact.h
         src/services/geometry/print/PrintMesh.h src/services/geometry/print/SemanticOperand.h
         src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
         src/services/geometry/print/FunctionalOperandRegenerator.cpp src/services/geometry/print/FunctionalOperandRegenerator.h
@@ -792,6 +794,7 @@ if(BUILD_TESTING)
         src/services/geometry/print/ManufacturingMeshService.cpp src/services/geometry/print/ManufacturingMeshService.h
         src/services/geometry/print/FrictionlessTechnicPinSemantic.cpp src/services/geometry/print/FrictionlessTechnicPinSemantic.h
         src/services/geometry/print/FrictionTechnicPinSemantic.cpp src/services/geometry/print/FrictionTechnicPinSemantic.h
+        src/services/geometry/print/TechnicAxleSemantic.cpp src/services/geometry/print/TechnicAxleSemantic.h
         src/services/geometry/print/ManufacturingMeshDiagnosticExporter.cpp src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h
         src/services/geometry/print/AutoFitProfileResolver.cpp src/services/geometry/print/AutoFitProfileResolver.h
         src/services/geometry/ThreeMfWriter.cpp src/services/geometry/ThreeMfWriter.h
