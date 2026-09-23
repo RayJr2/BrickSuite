@@ -5,6 +5,7 @@
 #include "RoundTechnicPassageSemantic.h"
 #include "StudReceivingPostSemantic.h"
 #include "StudReceivingWallPocketSemantic.h"
+#include "StudReceivingAntiStudSemantic.h"
 #include "FunctionalOperandRegenerator.h"
 #include "McutMeshBooleanService.h"
 #include "PrintMeshAnalysis.h"
@@ -38,7 +39,7 @@ const FitProfileCorrection* wallPocketCorrection(const FitProfile& profile,
         }
     return sharedOpening;
 }
-bool correctionApplies(const FunctionalFeature&feature,const ManufacturingMeshCorrections&corrections){return (feature.family==FunctionalInterfaceFamily::RoundTechnicPassage&&feature.role==FunctionalInterfaceRole::Female&&corrections.femaleDiameter&&feature.evidenceContract==corrections.femaleDiameter->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::StandardStud&&feature.role==FunctionalInterfaceRole::Male&&((corrections.studDiameter&&feature.evidenceContract==corrections.studDiameter->semanticContractVersion)||(corrections.studHeight&&feature.evidenceContract==corrections.studHeight->semanticContractVersion)))||(feature.family==FunctionalInterfaceFamily::StudReceivingClutch&&feature.role==FunctionalInterfaceRole::Female&&((corrections.receivingTubeDiameter&&feature.evidenceContract==corrections.receivingTubeDiameter->semanticContractVersion)||(corrections.receivingPostDiameter&&feature.evidenceContract==corrections.receivingPostDiameter->semanticContractVersion)||(corrections.receivingWallPocketWidth&&feature.evidenceContract==corrections.receivingWallPocketWidth->semanticContractVersion)))||(feature.family==FunctionalInterfaceFamily::FrictionlessTechnicPin&&feature.role==FunctionalInterfaceRole::Male&&corrections.frictionlessPinDiameter&&feature.evidenceContract==corrections.frictionlessPinDiameter->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::FrictionTechnicPin&&feature.role==FunctionalInterfaceRole::Male&&corrections.frictionPinDiameter&&feature.evidenceContract==corrections.frictionPinDiameter->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::TechnicAxle&&feature.role==FunctionalInterfaceRole::Male&&corrections.technicAxleTipToTip&&feature.evidenceContract==corrections.technicAxleTipToTip->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::TechnicAxleHole&&feature.role==FunctionalInterfaceRole::Female&&corrections.technicAxleHoleArmWidth);}
+bool correctionApplies(const FunctionalFeature&feature,const ManufacturingMeshCorrections&corrections){if(feature.constructionRecipe==QStringLiteral("stud-receiving-antistud-bore-v1"))return corrections.receivingAntiStudBoreDiameter&&feature.evidenceContract==corrections.receivingAntiStudBoreDiameter->semanticContractVersion;return (feature.family==FunctionalInterfaceFamily::RoundTechnicPassage&&feature.role==FunctionalInterfaceRole::Female&&corrections.femaleDiameter&&feature.evidenceContract==corrections.femaleDiameter->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::StandardStud&&feature.role==FunctionalInterfaceRole::Male&&((corrections.studDiameter&&feature.evidenceContract==corrections.studDiameter->semanticContractVersion)||(corrections.studHeight&&feature.evidenceContract==corrections.studHeight->semanticContractVersion)))||(feature.family==FunctionalInterfaceFamily::StudReceivingClutch&&feature.role==FunctionalInterfaceRole::Female&&((corrections.receivingTubeDiameter&&feature.evidenceContract==corrections.receivingTubeDiameter->semanticContractVersion)||(corrections.receivingPostDiameter&&feature.evidenceContract==corrections.receivingPostDiameter->semanticContractVersion)||(corrections.receivingWallPocketWidth&&feature.evidenceContract==corrections.receivingWallPocketWidth->semanticContractVersion)))||(feature.family==FunctionalInterfaceFamily::FrictionlessTechnicPin&&feature.role==FunctionalInterfaceRole::Male&&corrections.frictionlessPinDiameter&&feature.evidenceContract==corrections.frictionlessPinDiameter->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::FrictionTechnicPin&&feature.role==FunctionalInterfaceRole::Male&&corrections.frictionPinDiameter&&feature.evidenceContract==corrections.frictionPinDiameter->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::TechnicAxle&&feature.role==FunctionalInterfaceRole::Male&&corrections.technicAxleTipToTip&&feature.evidenceContract==corrections.technicAxleTipToTip->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::TechnicAxleHole&&feature.role==FunctionalInterfaceRole::Female&&corrections.technicAxleHoleArmWidth);}
 QString axisName(const Point&axis){return QStringLiteral("(%1, %2, %3)").arg(axis.x,0,'g',4).arg(axis.y,0,'g',4).arg(axis.z,0,'g',4);}
 }
 
@@ -48,13 +49,17 @@ ManufacturingMeshCorrections ManufacturingMeshService::compatibleCorrections(con
 {
     ManufacturingMeshCorrections result;QString compatibility;if(!FitCalibrationLibrary::profileCompatibility(profile,&compatibility)){if(reason)*reason=compatibility;return result;}const QString printedOrientation=orientationName(orientation);const FitProfileCorrection*heightCandidate=nullptr;
     for(const auto&correction:profile.corrections){if(matches(correction,"RoundTechnicPassage","female","female-diameter-clearance",printedOrientation))result.femaleDiameter=&correction;else if(matches(correction,"StandardStud","male","male-stud-diameter",printedOrientation))result.studDiameter=&correction;else if(matches(correction,"StandardStud","male","male-stud-height",printedOrientation))heightCandidate=&correction;else if(matches(correction,"StudReceivingClutch","female","female-stud-receiver-tube-od",printedOrientation))result.receivingTubeDiameter=&correction;else if(matches(correction,"StudReceivingClutch","female","female-stud-receiver-post-od",printedOrientation))result.receivingPostDiameter=&correction;else if(matches(correction,"StudReceivingClutch","female","female-stud-receiver-wall-pocket-opening-width",printedOrientation))result.receivingWallPocketWidth=&correction;else if(matches(correction,"FrictionlessTechnicPin","male","male-frictionless-technic-pin-envelope-diameter",printedOrientation))result.frictionlessPinDiameter=&correction;else if(matches(correction,"FrictionTechnicPin","male","male-friction-technic-pin-ridge-envelope-diameter",printedOrientation))result.frictionPinDiameter=&correction;else if(matches(correction,"TechnicAxle","male","male-technic-axle-tip-to-tip-envelope",printedOrientation))result.technicAxleTipToTip=&correction;else if(matches(correction,"TechnicAxleHole","female","female-technic-axle-hole-arm-width-clearance",printedOrientation)&&correction.correctionContractVersion==QStringLiteral("female-technic-axle-hole-arm-width-clearance-v2")&&correction.hasFixedTipToTipCorrection)result.technicAxleHoleArmWidth=&correction;}
+    for(const auto& correction:profile.corrections)
+        if(matches(correction,"StudReceivingClutch","female","female-stud-receiver-antistud-bore-diameter",printedOrientation) &&
+           correction.correctionContractVersion==QStringLiteral("female-stud-receiver-antistud-bore-diameter-v1"))
+            result.receivingAntiStudBoreDiameter=&correction;
     if(heightCandidate){if(!heightCandidate->hasRequiredDiameterCorrection)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction does not record its required Stud OD context and was not applied.");else if(!result.studDiameter)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction requires its matching Verified Stud OD correction and was not applied.");else if(std::abs(result.studDiameter->valueMillimetres-heightCandidate->requiredDiameterCorrectionMillimetres)>1e-9)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction was measured with a different Stud OD correction and was not applied.");else result.studHeight=heightCandidate;}
     if(reason)*reason=result.any()?(result.studHeightDiagnostic.isEmpty()?QStringLiteral("Compatible"):result.studHeightDiagnostic):(result.studHeightDiagnostic.isEmpty()?QStringLiteral("The selected profile has no compatible verified functional correction for this print orientation."):result.studHeightDiagnostic);return result;
 }
 
 const FitProfileCorrection* ManufacturingMeshService::compatibleCorrection(const FitProfile&profile,FitPrintedOrientation orientation,QString*reason)
 {
-    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth})if(candidate)return candidate;return nullptr;
+    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.receivingAntiStudBoreDiameter,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth})if(candidate)return candidate;return nullptr;
 }
 
 FitPrintedOrientation ManufacturingMeshService::transformedOrientation(const FunctionalFeature&feature,const PrintOrientation&printOrientation)
@@ -152,6 +157,43 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
             if (correction->semanticContractVersion != feature.evidenceContract)
                 provenance<<QStringLiteral("Shared shallow WallPocket opening calibration %1 applied to distinct production depth contract %2; pocket depth remains nominal.")
                     .arg(correction->semanticContractVersion,feature.evidenceContract);
+            replaced=true;
+        }
+        operand.functionalFeatures=retained;
+    }
+    for(auto& operand:operands){
+        if(operand.role!=SemanticRole::PrimaryBody)continue;
+        QVector<FunctionalFeature> retained;
+        for(const auto& feature:operand.functionalFeatures){
+            if(feature.constructionRecipe!=QStringLiteral("stud-receiving-antistud-bore-v1")){
+                retained.push_back(feature);continue;
+            }
+            const auto orientation=transformedOrientation(feature,printOrientation);
+            const auto corrections=compatibleCorrections(profile,orientation);
+            const auto* correction=corrections.receivingAntiStudBoreDiameter;
+            if(!correction || correction->semanticContractVersion!=feature.evidenceContract){
+                ++skipped;
+                provenance<<QStringLiteral("AntiStudBore %1 remained nominal: no applicable Verified bore correction for %2.")
+                    .arg(feature.stableIdentity,printOrientation.summary());
+                continue;
+            }
+            PrintMesh adjusted;QString diagnostic;
+            if(!StudReceivingAntiStudSemantic::adjustPrepared(source,operand.closedMesh,feature,
+                    correction->valueMillimetres,&adjusted,&diagnostic))
+                return fail(ManufacturingMeshError::RegenerationFailure,diagnostic);
+            operand.closedMesh=std::move(adjusted);
+            operand.analysis=analyzeSource(operand.closedMesh);
+            nominalDiameter=feature.nominalDiameterMillimetres;
+            diameterCorrection=correction->valueMillimetres;
+            manufacturingDiameter=nominalDiameter+diameterCorrection;
+            featureIdentities<<feature.stableIdentity;
+            semanticIdentities<<correction->semanticContractVersion;
+            contractIdentities<<correction->correctionContractVersion;
+            correctionIdentity<<QStringLiteral("%1=%2").arg(correction->correctionContractVersion)
+                .arg(diameterCorrection,0,'g',17);
+            provenance<<QStringLiteral("AntiStudBore %1: certified centered bore %2 mm + %3 mm = %4 mm; source-owned inner cylindrical wall adjusted, exterior retained.")
+                .arg(feature.stableIdentity).arg(nominalDiameter,0,'f',3)
+                .arg(diameterCorrection,0,'f',3).arg(manufacturingDiameter,0,'f',3);
             replaced=true;
         }
         operand.functionalFeatures=retained;

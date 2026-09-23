@@ -195,6 +195,124 @@ bool testWallPocket(const QStringList& args)
     }
     return ok;
 }
+bool validateAntiStudBoreSession(const QString& path)
+{
+    QString error;
+    QFile file(path);
+    if (!require(file.open(QIODevice::ReadOnly),"Open managed AntiStudBore session: "+path)) return false;
+    FitCalibrationSession decoded;
+    if (!require(FitCalibrationSessionJson::fromJson(QJsonDocument::fromJson(file.readAll()).object(),&decoded,&error),
+                 "Decode managed AntiStudBore session: "+error)) return false;
+    bool ok=require(!decoded.sessionIdentity.isEmpty()&&decoded.hasCoarseExperiment&&
+                    !decoded.hasFineExperiment&&decoded.history.isEmpty()&&
+                    decoded.coarseExperiment.parentArtifactIdentity.isEmpty()&&
+                    decoded.coarseExperiment.artifactIdentity==StudReceivingCalibrationArtifact::antiStudBoreArtifactIdentity()&&
+                    decoded.coarseExperiment.regenerationPrototype.evidenceContract==QStringLiteral("official-ldraw-stud4o-antistud-bore-v1")&&
+                    decoded.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate&&
+                    decoded.coarseExperiment.candidates.size()==7&&
+                    decoded.coarseExperiment.preferredCandidateIndex==0&&
+                    decoded.coarseExperiment.state!=FitEvidenceState::Verified,
+                    "AntiStudBore managed identity, lineage, orientation, and unverified stage");
+    for(int i=0;i<decoded.coarseExperiment.candidates.size();++i){
+        const auto& candidate=decoded.coarseExperiment.candidates[i];
+        ok&=require(candidate.index==i+1&&candidate.observations.isEmpty()&&
+                    std::abs(candidate.diameterCorrectionMillimetres-(-.3+i*.1))<1e-9&&
+                    std::abs(candidate.functionalDiameterMillimetres-(4.5+i*.1))<1e-9,
+                    QStringLiteral("Unobserved AntiStudBore candidate %1").arg(i+1));
+    }
+    QTemporaryDir root;
+    FitCalibrationLibrary library(root.path());
+    FitCalibrationWorkspace selected;
+    selected.process.printerIdentity=QStringLiteral("Test printer");
+    selected.process.materialIdentity=QStringLiteral("Test material");
+    selected.process.profileName=QStringLiteral("Test process");
+    selected.process.hasNozzleDiameter=true;selected.process.nozzleDiameterMillimetres=.4;
+    selected.process.hasLayerHeight=true;selected.process.layerHeightMillimetres=.2;
+    selected.process.dimensionalCompensationNotes=QStringLiteral("None");
+    FitCalibrationSession anchor;anchor.hasCoarseExperiment=true;anchor.coarseExperiment=decoded.coarseExperiment;
+    selected.featureSessions.push_back(anchor);
+    FitCalibrationSession imported;
+    ok&=require(library.importSessionIntoWorkspace(path,&selected,&imported,&error)&&
+                imported.sessionIdentity==decoded.sessionIdentity&&
+                imported.coarseExperiment.candidates[3].observations.isEmpty(),
+                "Import AntiStudBore into selected workspace: "+error);
+    FitCalibrationSession resumed;
+    ok&=require(library.loadSession(decoded.sessionIdentity,&resumed,&error)&&
+                resumed.coarseExperiment.regenerationPrototype.evidenceContract==
+                    QStringLiteral("official-ldraw-stud4o-antistud-bore-v1")&&
+                resumed.coarseExperiment.state!=FitEvidenceState::Verified,
+                "Resume managed AntiStudBore session: "+error);
+    return ok;
+}
+bool testAntiStudBore(const QStringList& args)
+{
+    bool ok=true;
+    const auto artifact=StudReceivingCalibrationArtifact::generateAntiStudBore();
+    ok&=require(artifact.ok,"distinct AntiStudBore fixture generation: "+artifact.diagnostic);
+    if(!artifact.ok)return false;
+    ok&=require(artifact.candidates.size()==7 && artifact.candidates[3].functionalDiameterMillimetres==4.8 &&
+                std::abs(artifact.candidates.front().functionalDiameterMillimetres-4.5)<1e-9 &&
+                std::abs(artifact.candidates.back().functionalDiameterMillimetres-5.1)<1e-9,
+                "AntiStudBore centered opening candidates span 4.50-5.10 mm with nominal #4");
+    ok&=require(artifact.analysis.connectedComponents==1 && artifact.analysis.boundaryEdges==0 &&
+                artifact.analysis.nonManifoldEdges==0 && artifact.analysis.selfIntersections==0,
+                "AntiStudBore shallow fixture is a validated closed printable mesh");
+    const auto experiment=StudReceivingCalibrationArtifact::observationTemplate(artifact);
+    ok&=require(experiment.regenerationPrototype.evidenceContract==QStringLiteral("official-ldraw-stud4o-antistud-bore-v1") &&
+                experiment.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
+                experiment.preferredCandidateIndex==0 && experiment.state!=FitEvidenceState::Verified &&
+                experiment.process.orientationNotes.contains(QStringLiteral("entering its center")),
+                "AntiStudBore session begins unobserved and distinctly labeled");
+    QString error;FitCalibrationExperiment restored;
+    ok&=require(FitCalibrationExperimentJson::fromJson(FitCalibrationExperimentJson::toJson(experiment),&restored,&error) &&
+                restored.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-antistud-bore-v1"),
+                "AntiStudBore source contract survives existing session JSON round-trip: "+error);
+    const auto repeated=StudReceivingCalibrationArtifact::generateAntiStudBore();
+    ok&=require(repeated.ok&&sameMesh(repeated.mesh,artifact.mesh),"AntiStudBore fixture is deterministic");
+    const int outputAt=args.indexOf(QStringLiteral("--anti-stud-output"));
+    if(outputAt>=0&&outputAt+1<args.size()){
+        QDir output(args[outputAt+1]);
+        ok&=require(output.mkpath(QStringLiteral(".")),"AntiStudBore proof output directory");
+        const QString fixturePath=output.filePath(FitCalibrationArtifactLocation::fixtureFileName(
+            FitCalibrationNameKey::ClutchAntiStudBore,QStringLiteral("coarse"),1));
+        const QString sessionPath=FitCalibrationArtifactLocation::companionPath(fixturePath);
+        if(QFileInfo::exists(fixturePath)||QFileInfo::exists(sessionPath)){
+            ok&=require(false,"Refusing to overwrite existing AntiStudBore calibration artifact");
+        }else{
+            PrintMesh labeled;
+            ok&=require(FitCalibrationFixtureLabel::recessStandalone(artifact.mesh,
+                FitCalibrationNameKey::ClutchAntiStudBore,&labeled,nullptr,&error),
+                "AntiStudBore fixture label: "+error);
+            if(!labeled.faces.empty()){
+                ThreeMfWriter::Options options;
+                options.objectName=artifact.artifactIdentity;
+                options.partIdentity=artifact.artifactIdentity;
+                options.modelColor=QColor("#0055BF");
+                ok&=require(ThreeMfWriter::write(labeled,fixturePath,options,&error),
+                            "AntiStudBore 3MF export: "+error);
+            }
+            QTemporaryDir managedRoot;
+            FitCalibrationLibrary managed(managedRoot.path());
+            FitCalibrationSession session;
+            session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
+            session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;
+            session.process.orientationNotes=experiment.process.orientationNotes;
+            session.hasCoarseExperiment=true;
+            session.coarseExperiment=experiment;
+            session.coarseExperiment.process=session.process;
+            ok&=require(managed.saveSession(&session,&error)&&
+                        managed.exportSession(session.sessionIdentity,sessionPath,&error),
+                        "AntiStudBore managed-session export: "+error);
+            if(QFileInfo::exists(sessionPath))ok&=validateAntiStudBoreSession(sessionPath);
+            QTextStream(stdout)<<"antiStudFixture="<<fixturePath<<Qt::endl
+                               <<"antiStudSession="<<sessionPath<<Qt::endl;
+        }
+    }
+    const int validateAt=args.indexOf(QStringLiteral("--anti-stud-validate-session"));
+    if(validateAt>=0&&validateAt+1<args.size())
+        ok&=validateAntiStudBoreSession(args[validateAt+1]);
+    return ok;
+}
 }
 
 int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;const auto artifact=RoundTechnicCalibrationArtifact::generate(fixture());ok&=require(artifact.ok,"synthetic calibration artifact generation");ok&=require(artifact.artifactIdentity=="round-technic-female-horizontal-v1"&&artifact.orientationIdentity=="flat-base-horizontal-axis-y-v1","versioned artifact and orientation identity");ok&=require(artifact.candidates.size()==7,"seven independent candidates");const auto expected=RoundTechnicCalibrationArtifact::diameterCorrectionsMillimetres();for(int i=0;i<expected.size();++i){ok&=require(std::abs(artifact.candidates[i].diameterCorrectionMillimetres-expected[i])<1e-12,"ordered correction map");ok&=require(std::abs(artifact.candidates[i].functionalDiameterMillimetres-(4.80012+expected[i]))<1e-9,"actual candidate diameter");}ok&=require(artifact.analysis.connectedComponents==1&&artifact.analysis.boundaryEdges==0&&artifact.analysis.nonManifoldEdges==0&&artifact.analysis.nonManifoldVertices==0&&artifact.analysis.selfIntersections==0,"printable topology");const auto bounds=artifact.analysis.bounds;ok&=require(std::abs((bounds.maximum.x-bounds.minimum.x)-92.0)<1e-6&&std::abs((bounds.maximum.y-bounds.minimum.y)-8.0)<1e-6&&std::abs((bounds.maximum.z-bounds.minimum.z)-14.0)<1e-6,"artifact dimensions");const auto repeated=RoundTechnicCalibrationArtifact::generate(fixture());ok&=require(repeated.ok&&sameMesh(repeated.mesh,artifact.mesh),"deterministic generation");
@@ -231,5 +349,6 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;const
     if(axleHole.ok){auto allTight=TechnicAxleHoleCalibrationArtifact::observationTemplate(axleHole);allTight.process.printerIdentity="Bambu H2D";allTight.process.materialIdentity="PETG";allTight.process.profileName="0.20mm Standard @BBL H2D";allTight.process.hasNozzleDiameter=true;allTight.process.nozzleDiameterMillimetres=.4;allTight.process.hasLayerHeight=true;allTight.process.layerHeightMillimetres=.2;allTight.process.dimensionalCompensationNotes="None / Bambu Studio defaults";FitCalibrationObservation tight;tight.result=FitObservation::TooTight;tight.repeatNumber=1;tight.performedUtc=QDateTime::currentDateTimeUtc();for(const auto&candidate:allTight.candidates)ok&=require(FitCalibrationEvidencePolicy::addObservation(&allTight,candidate.index,tight,&error),"axle-hole Too Tight evidence recorded");const auto plan=FitCalibrationEvidencePolicy::nextSearchPlan(allTight);ok&=require(allTight.preferredCandidateIndex==0&&plan.uniformResult==FitUniformResult::AllTooTight&&plan.boundary==FitPreferredBoundary::Upper&&FitCalibrationEvidencePolicy::continuationAvailable(allTight),"all Too Tight empty-inside evidence extends toward a larger female opening without Preferred");ok&=require(std::abs(plan.centerCorrectionMillimetres-.45)<1e-9&&std::abs(plan.candidateSpacingMillimetres-.05)<1e-9&&plan.candidateCount==7,"generic female continuation overlaps +0.30 mm and extends through +0.60 mm");TechnicAxleHoleCalibrationArtifactDefinition extension;extension.artifactIdentity="technic-axle-hole-tip-clearance-perpendicular-coarse-extension-v2";extension.parentArtifactIdentity=allTight.artifactIdentity;extension.centerTipToTipCorrectionMillimetres=plan.centerCorrectionMillimetres;extension.candidateSpacingMillimetres=plan.candidateSpacingMillimetres;extension.candidateCount=plan.candidateCount;const auto extended=TechnicAxleHoleCalibrationArtifact::generate(allTight.regenerationPrototype,extension);ok&=require(extended.ok&&extended.candidates.size()==7,"uniform axle-hole evidence generates an extended coarse artifact: "+extended.diagnostic);if(extended.ok){for(int i=0;i<7;++i)ok&=require(std::abs(extended.candidates[i].functionalDiameterMillimetres-(5.10+.05*i))<1e-9,"extended axle-hole candidates span 5.10 through 5.40 mm");const auto child=TechnicAxleHoleCalibrationArtifact::observationTemplate(extended,extension);FitCalibrationSession parent;parent.sessionIdentity="phase6c-axle-hole-evidence";parent.process=allTight.process;parent.hasCoarseExperiment=true;parent.coarseExperiment=allTight;const auto continued=FitCalibrationLibrary::continuationSession(parent,allTight,child);bool fresh=true;for(const auto&candidate:continued.fineExperiment.candidates)fresh&=candidate.observations.isEmpty();ok&=require(continued.coarseExperiment.candidates.size()==7&&continued.coarseExperiment.candidates.front().observations.front().result==FitObservation::TooTight&&continued.fineExperiment.parentArtifactIdentity==allTight.artifactIdentity&&continued.process.printerIdentity=="Bambu H2D"&&continued.process.materialIdentity=="PETG"&&continued.process.profileName=="0.20mm Standard @BBL H2D"&&continued.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate&&fresh,"axle-hole continuation preserves parent evidence, lineage, manufacturing context, and orientation while child evidence starts fresh");const int at=args.indexOf("--axle-hole-extension-output");if(at>=0&&at+1<args.size()){QDir output(args[at+1]);ok&=require(output.mkpath("."),"extended axle-hole output directory");const QString model=output.filePath("BrickSuite-technic-axle-hole-tip-clearance-perpendicular-coarse-extension-v2.3mf"),sessionPath=output.filePath("BrickSuite-technic-axle-hole-tip-clearance-perpendicular-coarse-extension-v2-session.json");ThreeMfWriter::Options options;options.objectName=extension.artifactIdentity;options.partIdentity=extension.artifactIdentity;options.modelColor=QColor("#A0A5A9");ok&=require(ThreeMfWriter::write(extended.mesh,model,options,&error),"extended axle-hole 3MF export: "+error);QSaveFile file(sessionPath);ok&=require(file.open(QIODevice::WriteOnly)&&file.write(QJsonDocument(FitCalibrationSessionJson::toJson(continued)).toJson(QJsonDocument::Indented))>0&&file.commit(),"extended axle-hole lineage session export");const auto b=extended.analysis.bounds;QTextStream(stdout)<<"axleHoleExtensionArtifact="<<model<<Qt::endl<<"axleHoleExtensionSession="<<sessionPath<<Qt::endl<<"axleHoleExtensionDimensions="<<(b.maximum.x-b.minimum.x)<<'x'<<(b.maximum.y-b.minimum.y)<<'x'<<(b.maximum.z-b.minimum.z)<<" mm"<<Qt::endl;}}}
     const auto axleHoleArmWidth=TechnicAxleHoleArmWidthCalibrationArtifact::generate();ok&=require(axleHoleArmWidth.ok&&axleHoleArmWidth.candidates.size()==7,"corrected axle-hole arm-width artifact: "+axleHoleArmWidth.diagnostic);if(axleHoleArmWidth.ok){for(int i=0;i<7;++i)ok&=require(std::abs(axleHoleArmWidth.candidates[i].functionalDiameterMillimetres-(1.60+.10*i))<1e-9,"axle-hole arm opening candidates span 1.60 through 2.20 mm");ok&=require(axleHoleArmWidth.analysis.connectedComponents==1&&axleHoleArmWidth.analysis.boundaryEdges==0&&axleHoleArmWidth.analysis.nonManifoldEdges==0&&axleHoleArmWidth.analysis.selfIntersections==0,"corrected arm-width artifact is a validated printable mesh");const auto repeated=TechnicAxleHoleArmWidthCalibrationArtifact::generate();ok&=require(repeated.ok&&sameMesh(repeated.mesh,axleHoleArmWidth.mesh),"corrected arm-width artifact generation is deterministic");const auto experiment=TechnicAxleHoleArmWidthCalibrationArtifact::observationTemplate(axleHoleArmWidth);ok&=require(experiment.parentArtifactIdentity=="technic-axle-hole-tip-clearance-perpendicular-coarse-extension-v2"&&experiment.fixedDiameterCorrectionMillimetres==.30&&experiment.regenerationPrototype.constructionRecipe=="technic-axle-hole-arm-width-clearance-v2"&&experiment.candidates.front().observations.isEmpty(),"new semantic contract retains old tip-to-tip lineage, fixes 5.10 mm tip clearance, and begins with fresh evidence");const int at=args.indexOf("--axle-hole-arm-width-output");if(at>=0&&at+1<args.size()){QDir output(args[at+1]);ok&=require(output.mkpath("."),"arm-width output directory");const QString model=output.filePath("BrickSuite-technic-axle-hole-arm-width-perpendicular-coarse-v2.3mf"),sessionPath=output.filePath("BrickSuite-technic-axle-hole-arm-width-perpendicular-coarse-v2-session.json");ThreeMfWriter::Options options;options.objectName=experiment.artifactIdentity;options.partIdentity=experiment.artifactIdentity;options.modelColor=QColor("#A0A5A9");ok&=require(ThreeMfWriter::write(axleHoleArmWidth.mesh,model,options,&error),"arm-width 3MF export: "+error);FitCalibrationSession corrected;corrected.sessionIdentity="phase6e-axle-hole-arm-width";corrected.process.printerIdentity="Bambu H2D";corrected.process.materialIdentity="PETG";corrected.process.profileName="0.20mm Standard @BBL H2D";corrected.process.hasNozzleDiameter=true;corrected.process.nozzleDiameterMillimetres=.4;corrected.process.hasLayerHeight=true;corrected.process.layerHeightMillimetres=.2;corrected.process.dimensionalCompensationNotes="None / Bambu Studio defaults";corrected.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;corrected.hasCoarseExperiment=true;corrected.coarseExperiment=experiment;corrected.coarseExperiment.process=corrected.process;QSaveFile file(sessionPath);ok&=require(file.open(QIODevice::WriteOnly)&&file.write(QJsonDocument(FitCalibrationSessionJson::toJson(corrected)).toJson(QJsonDocument::Indented))>0&&file.commit(),"arm-width session export");const auto b=axleHoleArmWidth.analysis.bounds;QTextStream(stdout)<<"axleHoleArmWidthArtifact="<<model<<Qt::endl<<"axleHoleArmWidthSession="<<sessionPath<<Qt::endl<<"axleHoleArmWidthDimensions="<<(b.maximum.x-b.minimum.x)<<'x'<<(b.maximum.y-b.minimum.y)<<'x'<<(b.maximum.z-b.minimum.z)<<" mm"<<Qt::endl;}}
     ok &= testWallPocket(args);
+    ok &= testAntiStudBore(args);
     return ok?0:1;
 }

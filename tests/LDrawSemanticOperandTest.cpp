@@ -1,6 +1,7 @@
 #include "../src/services/geometry/print/LDrawPrintPreparationService.h"
 #include "../src/services/geometry/print/PreparedObjProofWriter.h"
 #include "../src/services/geometry/print/PrintMeshAnalysis.h"
+#include "../src/services/geometry/print/StudReceivingAntiStudSemantic.h"
 #include "../src/services/geometry/LDrawLibraryService.h"
 #include "../src/ui/parts/PreparedMeshRenderAdapter.h"
 
@@ -94,11 +95,22 @@ int main(int argc,char**argv)
     QDir().mkpath(output);
     auto cache=std::make_shared<PrintPreparationCache>();
     LDrawPrintPreparationService service(cache);
-    for(const QString&id:{QStringLiteral("3003"),QStringLiteral("3001"),QStringLiteral("3622"),QStringLiteral("3700"),QStringLiteral("11477"),QStringLiteral("3673"),QStringLiteral("4274"),QStringLiteral("2780"),QStringLiteral("32064a"),QStringLiteral("3037"),QStringLiteral("6553")}){
+    for(const QString&id:{QStringLiteral("3003"),QStringLiteral("3001"),QStringLiteral("3622"),QStringLiteral("3700"),QStringLiteral("11477"),QStringLiteral("3673"),QStringLiteral("4274"),QStringLiteral("2780"),QStringLiteral("32064a"),QStringLiteral("3037"),QStringLiteral("6553"),QStringLiteral("11262")}){
         auto loaded=LDrawLibraryService::loadPart(args[libraryAt+1],id);
         ok&=check(loaded.ok(),id+" load");
         if(!loaded.ok())continue;
         const auto semantic=LDrawSemanticOperandBuilder::build(loaded);
+        const auto antiStud=StudReceivingAntiStudSemantic::recognize(loaded);
+        if(id==QStringLiteral("11262")){
+            ok&=check(antiStud.size()==1&&semantic.ok(),"real 11262 certified stud4o AntiStudBore prepares");
+            int retained=0;
+            for(const auto& operand:semantic.operands)for(const auto& functional:operand.functionalFeatures)
+                retained+=functional.constructionRecipe==QStringLiteral("stud-receiving-antistud-bore-v1");
+            ok&=check(retained==1&&std::abs(antiStud.front().nominalDiameterMillimetres-4.8)<1e-9,
+                      "11262 retains one distinct 4.80 mm centered AntiStudBore identity");
+        }
+        if(id==QStringLiteral("3001")||id==QStringLiteral("3700"))
+            ok&=check(antiStud.isEmpty(),id+" ordinary tube and Technic geometry is not AntiStudBore");
         if((id==QStringLiteral("3003")||id==QStringLiteral("3001")||id==QStringLiteral("3700"))&&semantic.ok()){int studCount=0,passageCount=0;for(const auto&operand:semantic.operands)for(const auto&functional:operand.functionalFeatures){if(functional.family==FunctionalInterfaceFamily::RoundTechnicPassage)++passageCount;if(functional.family==FunctionalInterfaceFamily::StandardStud){++studCount;ok&=check(functional.role==FunctionalInterfaceRole::Male&&std::abs(functional.nominalDiameterMillimetres-4.8)<1e-9&&std::abs(functional.nominalAxialExtentMillimetres-1.6)<1e-9&&functional.evidenceContract==QStringLiteral("official-ldraw-standard-stud-v1"),id+" standard stud functional contract");if(id==QStringLiteral("3700"))ok&=check(functional.constructionRecipe==QStringLiteral("standard-open-stud-v1")&&std::abs(functional.protectedInnerRadiusMillimetres-1.6)<1e-9,"3700 recognizes official open studs while protecting their bore");}}const int expectedStuds=id==QStringLiteral("3003")?4:(id==QStringLiteral("3001")?8:2);ok&=check(studCount==expectedStuds,id+" recognizes each reusable ordinary stud instance");if(id==QStringLiteral("3700"))ok&=check(passageCount==1,"3700 recognizes its mixed StandardStud and RoundTechnicPassage families");}
         QTextStream(stdout)<<id
             <<" semanticStatus="<<int(semantic.status)
@@ -121,6 +133,11 @@ int main(int argc,char**argv)
         if(id=="32064a"||id=="3037"||id=="6553"){ok&=check(!result.ready(),id+" remains safely unsupported");continue;}
         ok&=check(result.ready()&&!result.cacheHit,id+" production preparation");
         if(!result.ready())continue;
+        if(id==QStringLiteral("11262"))
+            ok&=check(result.preparedMesh->functionalFeatures.size()==1 &&
+                      result.preparedMesh->functionalFeatures.front().constructionRecipe==QStringLiteral("stud-receiving-antistud-bore-v1") &&
+                      result.finalAnalysis.boundaryEdges==0 && result.finalAnalysis.selfIntersections==0,
+                      "11262 PreparedMesh retains the authoritative AntiStudBore identity and valid topology");
         if(id=="11477"){
             ok&=check(semantic.stitchDiagnostics.trianglesBefore==152&&semantic.stitchDiagnostics.trianglesAfter==156,"11477 certified stitching triangle metrics");
             ok&=check(semantic.stitchDiagnostics.boundariesBefore==8&&semantic.stitchDiagnostics.boundariesAfter==0&&semantic.stitchDiagnostics.acceptedSplits==4,"11477 certified stitching closes topology-only seams");

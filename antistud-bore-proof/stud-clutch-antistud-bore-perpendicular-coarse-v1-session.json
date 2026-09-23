@@ -1,0 +1,139 @@
+{
+    "coarseExperiment": {
+        "artifactIdentity": "stud-receiving-clutch-antistud-bore-perpendicular-coarse-v1",
+        "candidateSpacingMillimetres": 0.1,
+        "candidates": [
+            {
+                "diameterCorrectionMillimetres": -0.30000000000000004,
+                "functionalDiameterMillimetres": 4.5,
+                "functionalHeightMillimetres": 0,
+                "heightCorrectionMillimetres": 0,
+                "index": 1,
+                "observations": [
+                ]
+            },
+            {
+                "diameterCorrectionMillimetres": -0.2,
+                "functionalDiameterMillimetres": 4.6,
+                "functionalHeightMillimetres": 0,
+                "heightCorrectionMillimetres": 0,
+                "index": 2,
+                "observations": [
+                ]
+            },
+            {
+                "diameterCorrectionMillimetres": -0.1,
+                "functionalDiameterMillimetres": 4.7,
+                "functionalHeightMillimetres": 0,
+                "heightCorrectionMillimetres": 0,
+                "index": 3,
+                "observations": [
+                ]
+            },
+            {
+                "diameterCorrectionMillimetres": 0,
+                "functionalDiameterMillimetres": 4.8,
+                "functionalHeightMillimetres": 0,
+                "heightCorrectionMillimetres": 0,
+                "index": 4,
+                "observations": [
+                ]
+            },
+            {
+                "diameterCorrectionMillimetres": 0.1,
+                "functionalDiameterMillimetres": 4.8999999999999995,
+                "functionalHeightMillimetres": 0,
+                "heightCorrectionMillimetres": 0,
+                "index": 5,
+                "observations": [
+                ]
+            },
+            {
+                "diameterCorrectionMillimetres": 0.2,
+                "functionalDiameterMillimetres": 5,
+                "functionalHeightMillimetres": 0,
+                "heightCorrectionMillimetres": 0,
+                "index": 6,
+                "observations": [
+                ]
+            },
+            {
+                "diameterCorrectionMillimetres": 0.30000000000000004,
+                "functionalDiameterMillimetres": 5.1,
+                "functionalHeightMillimetres": 0,
+                "heightCorrectionMillimetres": 0,
+                "index": 7,
+                "observations": [
+                ]
+            }
+        ],
+        "centerDiameterCorrectionMillimetres": 0,
+        "centerHeightCorrectionMillimetres": 0,
+        "correctionDimension": "diameter",
+        "evidenceState": "draft",
+        "featureFamily": "StudReceivingClutch",
+        "featureRole": "female",
+        "fixedDiameterCorrectionMillimetres": 0,
+        "formatVersion": 2,
+        "modeledOrientationIdentity": "flat-base-receiving-axis-perpendicular-v1",
+        "parentArtifactIdentity": "",
+        "performedUtc": "",
+        "preferredCandidateIndex": 0,
+        "regenerationPrototype": {
+            "axis": [
+                0,
+                0,
+                -1
+            ],
+            "constructionRecipe": "stud-receiving-antistud-bore-v1",
+            "evidenceContract": "official-ldraw-stud4o-antistud-bore-v1",
+            "family": "StudReceivingClutch",
+            "governingOperandIdentity": "official-stud4o-antistud-bore-prototype:body-bore",
+            "nominalAxialExtentMillimetres": 2,
+            "nominalCrossShoulderRadiusMillimetres": 0,
+            "nominalDiameterMillimetres": 4.8,
+            "nominalEngagementExtentMillimetres": 2,
+            "nominalRadiusMillimetres": 2.4,
+            "origin": [
+                0,
+                0,
+                4
+            ],
+            "profileU": [
+                1,
+                0,
+                0
+            ],
+            "profileV": [
+                0,
+                -1,
+                0
+            ],
+            "protectedCrossArmHalfWidthMillimetres": 0,
+            "protectedInnerRadiusMillimetres": 0,
+            "radialProfile": [
+                [
+                    0,
+                    2.4
+                ],
+                [
+                    2,
+                    2.4
+                ]
+            ],
+            "role": "female",
+            "stableIdentity": "official-stud4o-antistud-bore-prototype"
+        }
+    },
+    "documentType": "fit-calibration-session",
+    "formatVersion": 3,
+    "process": {
+        "actualPrintedOrientation": "axis-perpendicular-to-build-plate",
+        "dimensionalCompensationNotes": "",
+        "materialIdentity": "",
+        "orientationNotes": "Print the flat base down with centered bores open upward. Test each bore with a genuine LEGO stud entering its center, not the tube-and-wall cell. Candidate #1 is beside the wall notch.",
+        "printerIdentity": "",
+        "profileName": ""
+    },
+    "sessionIdentity": "ce56fea6-1e84-4420-a010-15232d9ecd9b"
+}

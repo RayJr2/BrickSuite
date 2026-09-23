@@ -212,7 +212,7 @@ void FitCalibrationDialog::generateFineSearch()
     auto&dirs=SessionFileDialogDirectoryService::instance();QString path=QFileDialog::getSaveFileName(this,QStringLiteral("Save %1 3MF").arg(title),fixtureDefault(nameKey,identity,stage),"3MF models (*.3mf)");if(path.isEmpty())return;if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
     PrintMesh mesh;FitCalibrationExperiment verification;QString diagnostic;
     if(source.featureFamily==QStringLiteral("StandardStud")){StandardStudCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.dimension=source.correctionDimension==FitCorrectionDimension::Height?StandardStudCalibrationDimension::Height:StandardStudCalibrationDimension::Diameter;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.fixedDiameterCorrectionMillimetres=source.fixedDiameterCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardStudCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StandardStudCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("StudReceivingClutch")){StudReceivingCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerDiameterCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const bool wallPocket=source.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-wall-pocket-square-v1");const auto artifact=wallPocket?StudReceivingCalibrationArtifact::generateWallPocket(source.regenerationPrototype,d):StudReceivingCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StudReceivingCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
+    else if(source.featureFamily==QStringLiteral("StudReceivingClutch")){StudReceivingCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerDiameterCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const bool wallPocket=source.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-wall-pocket-square-v1"),antiStud=source.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-antistud-bore-v1");const auto artifact=antiStud?StudReceivingCalibrationArtifact::generateAntiStudBore(source.regenerationPrototype,d):wallPocket?StudReceivingCalibrationArtifact::generateWallPocket(source.regenerationPrototype,d):StudReceivingCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StudReceivingCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("FrictionTechnicPin")){FrictionTechnicPinCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerRidgeEnvelopeCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=FrictionTechnicPinCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=FrictionTechnicPinCalibrationArtifact::observationTemplate(artifact);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("TechnicAxle")){TechnicAxleCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerTipToTipCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=TechnicAxleCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("TechnicAxleHole")&&(axleHoleModelCorrection||source.regenerationPrototype.constructionRecipe==QStringLiteral("technic-axle-hole-arm-width-clearance-v2"))){auto prototype=source.regenerationPrototype;if(axleHoleModelCorrection){prototype.constructionRecipe=QStringLiteral("technic-axle-hole-arm-width-clearance-v2");prototype.evidenceContract=QStringLiteral("official-ldraw-axlehole-arm-width-clearance-v2");}TechnicAxleHoleArmWidthArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;if(!axleHoleModelCorrection){d.centerArmWidthCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;}const auto artifact=TechnicAxleHoleArmWidthCalibrationArtifact::generate(prototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleHoleArmWidthCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
@@ -237,20 +237,24 @@ void FitCalibrationDialog::newReceivingClutchCalibration()
     bool accepted=false;
     const QString variant=QInputDialog::getItem(this,"Receiving Clutch Calibration","Variant:",
         {QStringLiteral("TubeWallCell"),QStringLiteral("PostWallCell"),
-         QStringLiteral("WallPocket")},0,false,&accepted);
+         QStringLiteral("WallPocket"),QStringLiteral("AntiStudBore")},0,false,&accepted);
     if(!accepted)return;
     const bool postWall=variant==QStringLiteral("PostWallCell");
     const bool wallPocket=variant.startsWith(QStringLiteral("WallPocket"));
-    const auto key=wallPocket?FitCalibrationNameKey::ClutchWallPocketPlate:
+    const bool antiStud=variant==QStringLiteral("AntiStudBore");
+    const auto key=antiStud?FitCalibrationNameKey::ClutchAntiStudBore:
+        wallPocket?FitCalibrationNameKey::ClutchWallPocketPlate:
         postWall?FitCalibrationNameKey::ClutchPostWall:FitCalibrationNameKey::ClutchTubeWall;
-    const QString identity=wallPocket?StudReceivingCalibrationArtifact::wallPocketArtifactIdentity(false):
+    const QString identity=antiStud?StudReceivingCalibrationArtifact::antiStudBoreArtifactIdentity():
+        wallPocket?StudReceivingCalibrationArtifact::wallPocketArtifactIdentity(false):
         postWall?StudReceivingCalibrationArtifact::postWallArtifactIdentity():StudReceivingCalibrationArtifact::artifactIdentity();
     auto&dirs=SessionFileDialogDirectoryService::instance();
     QString path=QFileDialog::getSaveFileName(this,QStringLiteral("Save %1 Calibration 3MF").arg(variant),fixtureDefault(key,identity),"3MF models (*.3mf)");
     if(path.isEmpty())return;
     if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";
     dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
-    const auto artifact=wallPocket?StudReceivingCalibrationArtifact::generateWallPocket(false):
+    const auto artifact=antiStud?StudReceivingCalibrationArtifact::generateAntiStudBore():
+        wallPocket?StudReceivingCalibrationArtifact::generateWallPocket(false):
         postWall?StudReceivingCalibrationArtifact::generatePostWallCell():StudReceivingCalibrationArtifact::generate();
     if(!artifact.ok){QMessageBox::warning(this,"Receiving Clutch Calibration",artifact.diagnostic);return;}
     ThreeMfWriter::Options options;options.objectName=artifact.artifactIdentity;options.partIdentity=artifact.artifactIdentity;options.modelColor=QColor("#0055BF");
@@ -263,7 +267,9 @@ void FitCalibrationDialog::newReceivingClutchCalibration()
     if(!m_library.saveSession(&session,&error)){QMessageBox::warning(this,"Receiving Clutch Calibration",error);return;}
     if(!writeCompanion(m_library,session,path,&error))QMessageBox::warning(this,"Calibration Artifact",QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));
     auto workspace=m_workspace;workspace.featureSessions.push_back(session);showWorkspace(workspace,session.sessionIdentity);refreshLibrary();
-    QMessageBox::information(this,"Receiving Clutch Calibration",wallPocket?
+    QMessageBox::information(this,"Receiving Clutch Calibration",antiStud?
+        QStringLiteral("The seven-bore AntiStudBore fixture was added to this workspace. Print flat-base down with bores open upward; Candidate #1 is beside the wall notch. Test centered stud entry, not tube-and-wall clutch."):
+        wallPocket?
         QStringLiteral("The seven-pocket shallow WallPocket fixture was added to this workspace. Print with pockets open upward; Candidate #1 is beside the wall notch. Its Verified opening correction serves both WallPocket depths."):
         postWall?QStringLiteral("The seven-cell PostWallCell artifact was added to this manufacturing workspace. Candidate #1 is beside the wall notch; test both bays with genuine LEGO studs."):
         QStringLiteral("The seven-cell TubeWallCell artifact was added to this manufacturing workspace. Test candidates left to right with a genuine LEGO stud in the normal tube-and-wall receiving position, not in the center bore."));

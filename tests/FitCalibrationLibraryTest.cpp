@@ -65,7 +65,9 @@ int main(int argc, char** argv) {
                       !slugs.contains(slug), "canonical names, label abbreviations, and new-file slugs are unique");
         canonicalNames.insert(canonical); abbreviations.insert(abbreviated); slugs.insert(slug);
     }
-    ok &= require(canonicalNames.size() == 13 &&
+    ok &= require(canonicalNames.size() == 14 &&
+                  QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::ClutchAntiStudBore).canonical)
+                      .contains(QStringLiteral("Anti-Stud Bore")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::ClutchWallPocketBrick).canonical)
                       .contains(QStringLiteral("Wall Pocket")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::LegacyAxleHoleTip).canonical) ==
@@ -440,6 +442,19 @@ int main(int argc, char** argv) {
                   "WallPocket evidence promotes through a distinct Verified profile contract: "+error);
     ok &= require(FitCalibrationLibrary::sessionDisplayName(wallPocketSession).contains("Wall Pocket"),
                   "managed workspace names WallPocket separately from TubeWallCell and PostWallCell");
+    auto antiStudSession=wallPocketSession;
+    antiStudSession.sessionIdentity="synthetic-antistud-bore-session";
+    antiStudSession.fineExperiment.artifactIdentity="antistud-bore-verification-test";
+    antiStudSession.fineExperiment.regenerationPrototype.constructionRecipe="stud-receiving-antistud-bore-v1";
+    antiStudSession.fineExperiment.regenerationPrototype.evidenceContract="official-ldraw-stud4o-antistud-bore-v1";
+    FitProfile antiStudProfile;
+    ok&=require(FitCalibrationLibrary::promoteVerifiedSession(antiStudSession,"Synthetic AntiStudBore profile",&antiStudProfile,&error) &&
+                antiStudProfile.corrections.size()==1 &&
+                antiStudProfile.corrections.front().semantics=="female-stud-receiver-antistud-bore-diameter" &&
+                FitCalibrationLibrary::profileCompatibility(antiStudProfile,&error),
+                "synthetic AntiStudBore evidence has a distinct compatible profile contract: "+error);
+    ok&=require(FitCalibrationLibrary::sessionDisplayName(antiStudSession).contains("Anti-Stud Bore"),
+                "managed workspace names AntiStudBore separately from other clutch mechanisms");
     auto platePocketSession = wallPocketSession;
     platePocketSession.sessionIdentity = "synthetic-plate-wall-pocket-session";
     platePocketSession.fineExperiment.artifactIdentity = "wall-pocket-plate-verification-test";

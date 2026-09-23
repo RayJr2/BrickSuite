@@ -9,6 +9,7 @@
 #include "../src/services/geometry/print/SourceSurfaceSolidifier.h"
 #include "../src/services/geometry/print/McutMeshBooleanService.h"
 #include "../src/services/geometry/print/StudReceivingWallPocketSemantic.h"
+#include "../src/services/geometry/print/StudReceivingAntiStudSemantic.h"
 #include "../src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h"
 #include "../src/services/geometry/LDrawLibraryService.h"
 #include "../src/services/geometry/ThreeMfWriter.h"
@@ -95,6 +96,160 @@ if(libraryAt>=0&&libraryAt+1<args.size()){const auto frictionPin=LDrawLibrarySer
 auto futureFrictionProfile=profile();futureFrictionProfile.profileIdentity="verified-friction-pin-profile";futureFrictionProfile.sourceSessionIdentity="verified-friction-pin-session";futureFrictionProfile.corrections.clear();FitProfileCorrection futureFriction;futureFriction.featureFamily="FrictionTechnicPin";futureFriction.featureRole="male";futureFriction.printedOrientation="feature-axis-perpendicular-to-build-plate";futureFriction.valueMillimetres=.05;futureFriction.semantics="male-friction-technic-pin-ridge-envelope-diameter";futureFriction.correctionContractVersion="male-friction-technic-pin-ridge-envelope-diameter-v1";futureFriction.semanticContractVersion="official-ldraw-confric5-friction-pin-v1";futureFriction.regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();futureFriction.calibrationArtifactIdentity="friction-pin-verification";futureFrictionProfile.corrections.push_back(futureFriction);QString futureReason;const auto productionFrictionCorrections=ManufacturingMeshService::compatibleCorrections(futureFrictionProfile,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,&futureReason);ok&=check(FitCalibrationLibrary::profileCompatibility(futureFrictionProfile,&futureReason)&&productionFrictionCorrections.frictionPinDiameter==&futureFrictionProfile.corrections.front()&&productionFrictionCorrections.any(),"Verified friction-pin profile data enters production correction selection");ok&=check(!ManufacturingMeshService::compatibleCorrections(futureFrictionProfile,FitPrintedOrientation::FeatureAxisParallelToBuildPlate).any(),"friction-pin correction remains orientation-specific");
 auto futureAxleProfile=profile();futureAxleProfile.profileIdentity="future-technic-axle-profile";futureAxleProfile.corrections.clear();FitProfileCorrection futureAxle;futureAxle.featureFamily="TechnicAxle";futureAxle.featureRole="male";futureAxle.printedOrientation="feature-axis-perpendicular-to-build-plate";futureAxle.valueMillimetres=.05;futureAxle.semantics="male-technic-axle-tip-to-tip-envelope";futureAxle.correctionContractVersion="male-technic-axle-tip-to-tip-envelope-v1";futureAxle.semanticContractVersion="official-ldraw-axle-cross-profile-v1";futureAxle.regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();futureAxle.calibrationArtifactIdentity="future-physical-verification";futureAxleProfile.corrections.push_back(futureAxle);ok&=check(FitCalibrationLibrary::profileCompatibility(futureAxleProfile,&futureReason)&&ManufacturingMeshService::compatibleCorrections(futureAxleProfile,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).technicAxleTipToTip,"Verified axle evidence is production-selectable and remains profile-driven");
 if(libraryAt>=0&&libraryAt+1<args.size()){const auto frictionSource=LDrawLibraryService::loadPart(args[libraryAt+1],QStringLiteral("2780"));ok&=check(frictionSource.ok(),"2780 real friction-pin source loads for production proof");if(frictionSource.ok()){auto solidified=SourceSurfaceSolidifier::solidify(frictionSource);if(!solidified.successful){const auto features=FrictionTechnicPinSemantic::recognize(frictionSource);if(!features.isEmpty()){auto core=features.front();core.nominalRadiusMillimetres=2.5;core.nominalDiameterMillimetres=5.0;core.nominalAxialExtentMillimetres=16.0;core.radialProfile={{-8.0,2.4},{-7.2,2.4},{-6.8,2.5},{-1.2,2.5},{-0.8,2.4},{0.8,2.4},{1.2,2.5},{6.4,2.5},{7.2,2.4},{8.0,2.4}};const auto reconstructed=FunctionalOperandRegenerator::regenerateFrictionPin(core,{});if(reconstructed.ok()){solidified.mesh=reconstructed.mesh;solidified.analysis=reconstructed.analysis;solidified.successful=true;solidified.diagnostic=QStringLiteral("Authoritative confric5 nominal operand reconstructed for the 2780 production seam.");}}}ok&=check(solidified.successful,"2780 geometry-faithful PreparedMesh is available: "+solidified.diagnostic);if(solidified.successful){PreparedMesh frictionPrepared;frictionPrepared.mesh=solidified.mesh;frictionPrepared.millimetreBounds=solidified.analysis.bounds;frictionPrepared.sourceAnalysis=solidified.analysis;frictionPrepared.finalAnalysis=solidified.analysis;frictionPrepared.partReference="2780";frictionPrepared.ldrawIdentity="parts/2780.dat";frictionPrepared.dependencyFingerprint=frictionSource.dependencyFingerprint;frictionPrepared.preparationProfileVersion="source-surface-solidifier-v1";frictionPrepared.mcutVersion="not-used";frictionPrepared.preparationMethod="authoritative-source-surface-solidification";frictionPrepared.sourceTriangleCount=frictionSource.mesh.triangles.size();frictionPrepared.preparedTriangleCount=frictionPrepared.mesh.faces.size();const auto sourceTrianglesBefore=frictionSource.mesh.triangles.size();const auto preparedBeforeFriction=frictionPrepared.mesh;const QVector<PrintOrientation>orientations={nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative};int matching=-1,incompatible=-1;for(int i=0;i<orientations.size();++i){if(ManufacturingMeshService::hasApplicableCorrection(futureFrictionProfile,frictionSource,orientations[i]))matching=i;else incompatible=i;}ok&=check(matching>=0&&incompatible>=0,"2780 has both a matching perpendicular and an incompatible Print Orientation");if(matching>=0){ManufacturingMeshService frictionService;const auto frictionResult=frictionService.generate(frictionSource,frictionPrepared,futureFrictionProfile,orientations[matching]);ok&=check(frictionResult.ok(),"2780 reaches profile-driven ManufacturingMesh: "+frictionResult.diagnostic);if(frictionResult.ok()){const auto&m=*frictionResult.manufacturingMesh;ok&=check(std::abs(m.nominalDiameterMillimetres-5.0)<1e-9&&std::abs(m.diameterCorrectionMillimetres-.05)<1e-9&&std::abs(m.manufacturingDiameterMillimetres-5.05)<1e-9,"2780 derives 5.050 mm friction-ridge envelope from profile data");ok&=check(m.featureIdentities.size()==2&&same(frictionPrepared.mesh,preparedBeforeFriction)&&frictionSource.mesh.triangles.size()==sourceTrianglesBefore,"both 2780 confric5 ends are corrected while Source and PreparedMesh remain immutable");const QString proof=m.provenance.join('|');ok&=check(proof.contains("4.800 mm compliant core")&&proof.contains("3.200 mm bore")&&proof.contains("slots, axial transitions, entrance geometry, and engagement length"),"2780 provenance records all protected friction-pin geometry");const auto repeated=frictionService.generate(frictionSource,frictionPrepared,futureFrictionProfile,orientations[matching]);ok&=check(repeated.ok()&&repeated.manufacturingMesh->identity==m.identity&&same(repeated.manufacturingMesh->mesh,m.mesh),"2780 ManufacturingMesh and provenance identity are deterministic");const auto autoFit=AutoFitProfileResolver::resolve(true,"2780",{futureFrictionProfile},frictionSource,orientations[matching]);ok&=check(autoFit.resolved()&&autoFit.profile.profileIdentity==futureFrictionProfile.profileIdentity,"2780 Auto Fit resolves the same Verified profile path");const auto autoFitOff=AutoFitProfileResolver::resolve(false,"2780",{futureFrictionProfile},frictionSource,orientations[matching]);ok&=check(autoFitOff.state==AutoFitResolutionState::Disabled&&same(frictionPrepared.mesh,preparedBeforeFriction),"2780 Auto Fit disabled remains nominal");QTemporaryDir output;const QString exportPath=output.filePath("2780-friction-pin-manufacturing.3mf");QString exportError;ok&=check(ManufacturingMeshDiagnosticExporter::writeThreeMf(m,exportPath,1.0,QColor("#A0A5A9"),&exportError),"explicit 2780 ManufacturingMesh export: "+exportError);if(QFileInfo::exists(exportPath)){Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();model->QueryReader("3mf")->ReadFromFile(exportPath.toStdString());auto meshes=model->GetMeshObjects();ok&=check(meshes->MoveNext()&&meshes->GetCurrentMeshObject()->GetTriangleCount()==m.mesh.faces.size(),"explicit 2780 export contains compensated ManufacturingMesh geometry");}}if(incompatible>=0){const auto mismatch=ManufacturingMeshService().generate(frictionSource,frictionPrepared,futureFrictionProfile,orientations[incompatible]);ok&=check(mismatch.error==ManufacturingMeshError::MissingCorrection&&!ManufacturingMeshService::hasApplicableCorrection(futureFrictionProfile,frictionSource,orientations[incompatible]),"2780 orientation mismatch stays nominal without guessing");}}}}
+}
+if (libraryAt >= 0 && libraryAt+1 < args.size()) {
+    const auto antiSource=LDrawLibraryService::loadPart(args[libraryAt+1],QStringLiteral("11262"));
+    const auto bores=StudReceivingAntiStudSemantic::recognize(antiSource);
+    ok&=check(antiSource.ok()&&bores.size()==1,"11262 has one authoritative centered stud4o AntiStudBore");
+    if(bores.size()==1){
+        const auto prepared=wallPocketPrepared(antiSource,QStringLiteral("11262"));
+        ok&=check(!prepared.mesh.faces.empty(),"11262 nominal AntiStudBore prepares");
+        if(!prepared.mesh.faces.empty()){
+            auto antiProfile=profile();antiProfile.profileIdentity="synthetic-antistud-bore-profile";antiProfile.corrections.clear();
+            FitProfileCorrection correction;correction.featureFamily="StudReceivingClutch";correction.featureRole="female";
+            correction.printedOrientation="feature-axis-perpendicular-to-build-plate";
+            correction.semantics="female-stud-receiver-antistud-bore-diameter";
+            correction.correctionContractVersion="female-stud-receiver-antistud-bore-diameter-v1";
+            correction.semanticContractVersion="official-ldraw-stud4o-antistud-bore-v1";
+            correction.regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
+            correction.calibrationArtifactIdentity="synthetic-test-only";
+            correction.valueMillimetres=.10;
+            antiProfile.corrections.push_back(correction);
+            ok&=check(FitCalibrationLibrary::profileCompatibility(antiProfile),"isolated AntiStudBore correction contract is compatible");
+            const auto before=prepared.mesh;const auto sourceCount=antiSource.mesh.triangles.size();
+            ManufacturingMeshService service;
+            ok&=check(ManufacturingMeshService::hasApplicableCorrection(antiProfile,antiSource,nominalOrientation),
+                      "perpendicular AntiStudBore profile is source-aware applicable");
+            const auto generated=service.generate(antiSource,prepared,antiProfile,nominalOrientation);
+            ok&=check(generated.ok(),"11262 AntiStudBore ManufacturingMesh: "+generated.diagnostic);
+            if(generated.ok()){
+                const auto& mesh=*generated.manufacturingMesh;
+                ok&=check(std::abs(mesh.nominalDiameterMillimetres-4.8)<1e-9&&
+                          std::abs(mesh.manufacturingDiameterMillimetres-4.9)<1e-9&&
+                          !same(mesh.mesh,before)&&same(prepared.mesh,before)&&antiSource.mesh.triangles.size()==sourceCount,
+                          "11262 only derived bore changes 4.80 to 4.90 mm; Source and Prepared remain unchanged");
+                ok&=check(mesh.provenance.join('|').contains("certified centered bore")&&
+                          mesh.analysis.boundaryEdges==0&&mesh.analysis.nonManifoldEdges==0,
+                          "11262 provenance and printable topology retain distinct AntiStudBore contract");
+                const auto repeat=service.generate(antiSource,prepared,antiProfile,nominalOrientation);
+                ok&=check(repeat.ok()&&repeat.manufacturingMesh->identity==mesh.identity&&
+                          same(repeat.manufacturingMesh->mesh,mesh.mesh),"AntiStudBore ManufacturingMesh deterministic");
+            }
+            auto zeroProfile=antiProfile;zeroProfile.corrections.front().valueMillimetres=0;
+            const auto zero=service.generate(antiSource,prepared,zeroProfile,nominalOrientation);
+            ok&=check(zero.ok()&&same(zero.manufacturingMesh->mesh,before),
+                      "synthetic Verified zero correction is nominal-equivalent");
+            ok&=check(AutoFitProfileResolver::resolve(true,"11262",{antiProfile},antiSource,nominalOrientation).resolved(),
+                      "AntiStudBore Auto Fit uses the same source-aware profile path");
+            ok&=check(service.generate(antiSource,prepared,antiProfile,xPositive).error==ManufacturingMeshError::MissingCorrection&&
+                      !ManufacturingMeshService::hasApplicableCorrection(antiProfile,antiSource,xPositive),
+                      "parallel AntiStudBore orientation remains nominal");
+            ok&=check(service.generate(antiSource,prepared,profile(),nominalOrientation).error==ManufacturingMeshError::MissingCorrection,
+                      "without AntiStudBore Verified evidence the production geometry stays nominal");
+            auto unverified=antiProfile;unverified.verificationState=FitEvidenceState::Draft;
+            ok&=check(!ManufacturingMeshService::hasApplicableCorrection(unverified,antiSource,nominalOrientation)&&
+                      service.generate(antiSource,prepared,unverified,nominalOrientation).error==ManufacturingMeshError::IncompatibleProfile,
+                      "unverified AntiStudBore evidence cannot enter ManufacturingMesh or Auto Fit");
+            const auto arguments=app.arguments();
+            const int profileAt=arguments.indexOf(QStringLiteral("--anti-stud-profile-root"));
+            if(profileAt>=0&&profileAt+1<arguments.size()){
+                FitCalibrationLibrary managed(arguments[profileAt+1]);
+                QVector<FitProfile> matchingProfiles;
+                for(const auto& summary:managed.profiles()){
+                    FitProfile candidate;QString loadError;
+                    if(!managed.loadProfile(summary.identity,&candidate,&loadError))continue;
+                    if(ManufacturingMeshService::hasApplicableCorrection(candidate,antiSource,nominalOrientation))
+                        matchingProfiles.push_back(candidate);
+                }
+                ok&=check(matchingProfiles.size()==1,"exactly one managed Verified AntiStudBore profile resolves 11262");
+                if(matchingProfiles.size()==1){
+                    const auto& verified=matchingProfiles.front();
+                    const auto* selected=ManufacturingMeshService::compatibleCorrections(verified,
+                        FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).receivingAntiStudBoreDiameter;
+                    ok&=check(selected&&std::abs(selected->valueMillimetres-.20)<1e-9,
+                              "managed Verified Candidate #6 correction is +0.20 mm");
+                    const auto resolved=AutoFitProfileResolver::resolve(true,"11262",{verified},antiSource,nominalOrientation);
+                    ok&=check(resolved.resolved()&&resolved.profile.profileIdentity==verified.profileIdentity,
+                              "11262 Auto Fit selects the managed Verified profile");
+                    const auto actual=service.generate(antiSource,prepared,verified,nominalOrientation);
+                    ok&=check(actual.ok(),"11262 managed-profile ManufacturingMesh: "+actual.diagnostic);
+                    if(actual.ok()){
+                        const auto& mesh=*actual.manufacturingMesh;
+                        const auto nominalBounds=analyzeSource(prepared.mesh).bounds;
+                        ok&=check(std::abs(mesh.nominalDiameterMillimetres-4.8)<1e-9&&
+                                  std::abs(mesh.diameterCorrectionMillimetres-.2)<1e-9&&
+                                  std::abs(mesh.manufacturingDiameterMillimetres-5.0)<1e-9&&
+                                  maximumBoundsDeviation(nominalBounds,mesh.analysis.bounds)<1e-6&&
+                                  same(prepared.mesh,before)&&antiSource.mesh.triangles.size()==sourceCount,
+                                  "managed profile produces a 5.00 mm bore with immutable Source, Prepared, and exterior bounds");
+                        const auto& bore=bores.front();
+                        int correctedWallVertices=0;
+                        int changedVertices=0;
+                        bool onlyInnerWallChanged=mesh.mesh.vertices.size()==before.vertices.size();
+                        for(std::size_t i=0;i<mesh.mesh.vertices.size()&&i<before.vertices.size();++i){
+                            const auto& nominalPoint=before.vertices[i];
+                            const auto& correctedPoint=mesh.mesh.vertices[i];
+                            const Point delta{correctedPoint.x-nominalPoint.x,correctedPoint.y-nominalPoint.y,
+                                              correctedPoint.z-nominalPoint.z};
+                            if(std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z)<1e-9)continue;
+                            ++changedVertices;
+                            const Point relative{nominalPoint.x-bore.frame.origin.x,
+                                                 nominalPoint.y-bore.frame.origin.y,
+                                                 nominalPoint.z-bore.frame.origin.z};
+                            const double axial=relative.x*bore.frame.axis.x+relative.y*bore.frame.axis.y+
+                                               relative.z*bore.frame.axis.z;
+                            const double rx=relative.x-axial*bore.frame.axis.x;
+                            const double ry=relative.y-axial*bore.frame.axis.y;
+                            const double rz=relative.z-axial*bore.frame.axis.z;
+                            onlyInnerWallChanged &= axial>=-1e-4&&
+                                axial<=bore.nominalAxialExtentMillimetres+1e-4&&
+                                std::abs(std::sqrt(rx*rx+ry*ry+rz*rz)-2.4)<1e-4;
+                        }
+                        ok&=check(onlyInnerWallChanged&&changedVertices>=16&&
+                                  mesh.mesh.faces==before.faces,
+                                  "only nominal certified-bore-radius vertices move; topology and other geometry stay fixed");
+                        for(const auto& point:mesh.mesh.vertices){
+                            const Point relative{point.x-bore.frame.origin.x,point.y-bore.frame.origin.y,
+                                                 point.z-bore.frame.origin.z};
+                            const double axial=relative.x*bore.frame.axis.x+relative.y*bore.frame.axis.y+
+                                               relative.z*bore.frame.axis.z;
+                            const double rx=relative.x-axial*bore.frame.axis.x;
+                            const double ry=relative.y-axial*bore.frame.axis.y;
+                            const double rz=relative.z-axial*bore.frame.axis.z;
+                            if(axial>=-1e-4&&axial<=bore.nominalAxialExtentMillimetres+1e-4&&
+                               std::abs(std::sqrt(rx*rx+ry*ry+rz*rz)-2.5)<1e-4)
+                                ++correctedWallVertices;
+                        }
+                        ok&=check(correctedWallVertices>=16&&mesh.analysis.boundaryEdges==0&&
+                                  mesh.analysis.nonManifoldEdges==0&&mesh.analysis.selfIntersections==0,
+                                  "11262 exported inner wall is physically 5.00 mm and remains manifold");
+                        const auto repeat=service.generate(antiSource,prepared,verified,nominalOrientation);
+                        ok&=check(repeat.ok()&&repeat.manufacturingMesh->identity==mesh.identity&&
+                                  same(repeat.manufacturingMesh->mesh,mesh.mesh),
+                                  "managed-profile 11262 ManufacturingMesh is deterministic");
+                        const int outputAt=arguments.indexOf(QStringLiteral("--anti-stud-output"));
+                        if(outputAt>=0&&outputAt+1<arguments.size()){
+                            const QString path=arguments[outputAt+1];
+                            QString exportError;
+                            ok&=check(!QFileInfo::exists(path),"Refuse to overwrite an existing 11262 proof artifact");
+                            if(!QFileInfo::exists(path))
+                                ok&=check(ManufacturingMeshDiagnosticExporter::writeThreeMf(mesh,path,1.0,
+                                          QColor("#A0A5A9"),&exportError),"11262 3MF proof export: "+exportError);
+                            if(QFileInfo::exists(path))QTextStream(stdout)<<"antiStudManufacturing="<<path<<Qt::endl;
+                        }
+                        QTextStream(stdout)<<"antiStudProfile="<<verified.profileIdentity
+                                           <<" correction="<<mesh.diameterCorrectionMillimetres
+                                           <<" bore="<<mesh.manufacturingDiameterMillimetres<<Qt::endl;
+                    }
+                }
+            }
+        }
+    }
+    for(const QString& negative:{QStringLiteral("3001"),QStringLiteral("3004"),QStringLiteral("3005"),QStringLiteral("3024"),QStringLiteral("3700")}){
+        const auto source=LDrawLibraryService::loadPart(args[libraryAt+1],negative);
+        ok&=check(source.ok()&&StudReceivingAntiStudSemantic::recognize(source).isEmpty(),
+                  negative+" non-AntiStudBore family remains excluded");
+    }
 }
 if (libraryAt >= 0 && libraryAt+1 < args.size()) {
     for (const QString& part : {QStringLiteral("3005"), QStringLiteral("3024")}) {

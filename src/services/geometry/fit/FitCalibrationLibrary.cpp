@@ -671,12 +671,16 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
     } else if (experiment.featureFamily == QStringLiteral("StudReceivingClutch")) {
         const bool wallPocket = experiment.hasRegenerationPrototype
             && experiment.regenerationPrototype.constructionRecipe == QStringLiteral("stud-receiving-wall-pocket-square-v1");
+        const bool antiStudBore = experiment.hasRegenerationPrototype
+            && experiment.regenerationPrototype.constructionRecipe == QStringLiteral("stud-receiving-antistud-bore-v1");
         const bool postWall = experiment.hasRegenerationPrototype
             && experiment.regenerationPrototype.constructionRecipe == QStringLiteral("stud-receiving-post-wall-cell-v1");
-        correction.semantics = wallPocket ? QStringLiteral("female-stud-receiver-wall-pocket-opening-width")
+        correction.semantics = antiStudBore ? QStringLiteral("female-stud-receiver-antistud-bore-diameter")
+            : wallPocket ? QStringLiteral("female-stud-receiver-wall-pocket-opening-width")
             : postWall ? QStringLiteral("female-stud-receiver-post-od")
                        : QStringLiteral("female-stud-receiver-tube-od");
-        correction.correctionContractVersion = wallPocket ? QStringLiteral("female-stud-receiver-wall-pocket-opening-width-v1")
+        correction.correctionContractVersion = antiStudBore ? QStringLiteral("female-stud-receiver-antistud-bore-diameter-v1")
+            : wallPocket ? QStringLiteral("female-stud-receiver-wall-pocket-opening-width-v1")
             : postWall ? QStringLiteral("female-stud-receiver-post-od-v1")
                        : QStringLiteral("female-stud-receiver-tube-od-v1");
     } else if (experiment.featureFamily == QStringLiteral("FrictionlessTechnicPin")) {
@@ -744,7 +748,10 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
                 || ((correction.semanticContractVersion == QStringLiteral("official-ldraw-box5-wall-pocket-plate-v1")
                      || correction.semanticContractVersion == QStringLiteral("official-ldraw-box5-wall-pocket-brick-v1"))
                     && correction.semantics == QStringLiteral("female-stud-receiver-wall-pocket-opening-width")
-                    && correction.correctionContractVersion == QStringLiteral("female-stud-receiver-wall-pocket-opening-width-v1")));
+                    && correction.correctionContractVersion == QStringLiteral("female-stud-receiver-wall-pocket-opening-width-v1"))
+                || (correction.semanticContractVersion == QStringLiteral("official-ldraw-stud4o-antistud-bore-v1")
+                    && correction.semantics == QStringLiteral("female-stud-receiver-antistud-bore-diameter")
+                    && correction.correctionContractVersion == QStringLiteral("female-stud-receiver-antistud-bore-diameter-v1")));
         const bool frictionlessPin = correction.featureFamily == QStringLiteral("FrictionlessTechnicPin")
             && correction.featureRole == QStringLiteral("male")
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-connect-frictionless-pin-v1")
