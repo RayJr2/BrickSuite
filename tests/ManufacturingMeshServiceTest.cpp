@@ -400,12 +400,20 @@ if (libraryAt >= 0 && libraryAt+1 < args.size()) {
 }
 const auto barZero=standardBarProfile(0.0);
 const auto cClipSynthetic=hypotheticalCClipProfile();
+auto cClipParallelSynthetic=cClipSynthetic;
+cClipParallelSynthetic.corrections.front().printedOrientation=QStringLiteral("feature-axis-parallel-to-build-plate");
+cClipParallelSynthetic.corrections.front().valueMillimetres=-.10;
 ok &= check(FitCalibrationLibrary::profileCompatibility(cClipSynthetic) &&
             ManufacturingMeshService::compatibleCorrections(cClipSynthetic,
                 FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).cClipClearance==&cClipSynthetic.corrections.front() &&
             !ManufacturingMeshService::compatibleCorrections(cClipSynthetic,
-                FitPrintedOrientation::FeatureAxisParallelToBuildPlate).cClipClearance,
-            "C-Clip production selector consumes only Verified perpendicular contact/throat evidence");
+                FitPrintedOrientation::FeatureAxisParallelToBuildPlate).cClipClearance &&
+            FitCalibrationLibrary::profileCompatibility(cClipParallelSynthetic) &&
+            ManufacturingMeshService::compatibleCorrections(cClipParallelSynthetic,
+                FitPrintedOrientation::FeatureAxisParallelToBuildPlate).cClipClearance==&cClipParallelSynthetic.corrections.front() &&
+            !ManufacturingMeshService::compatibleCorrections(cClipParallelSynthetic,
+                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).cClipClearance,
+            "C-Clip production selector requires evidence matching the actual print orientation");
 auto ballCalibrationOnly=profile();
 ballCalibrationOnly.corrections.clear();
 FitProfileCorrection ballEntry;
@@ -594,10 +602,13 @@ if(clipProfileAt>=0 && clipProfileAt+1<args.size()) {
             FitProfileJson::fromJson(document.object(),&actualClipProfile,&error);
         ok &= check(haveActualClipProfile,"actual managed C-Clip profile parses: "+error);
         if(haveActualClipProfile) {
-            const auto* correction=ManufacturingMeshService::compatibleCorrections(actualClipProfile,
+            const auto* perpendicularCorrection=ManufacturingMeshService::compatibleCorrections(actualClipProfile,
                 FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).cClipClearance;
-            ok &= check(correction && std::abs(correction->valueMillimetres)<1e-9,
-                        "actual physically Verified C-Clip correction is selected from managed profile data");
+            const auto* parallelCorrection=ManufacturingMeshService::compatibleCorrections(actualClipProfile,
+                FitPrintedOrientation::FeatureAxisParallelToBuildPlate).cClipClearance;
+            ok &= check(perpendicularCorrection && std::abs(perpendicularCorrection->valueMillimetres)<1e-9 &&
+                        parallelCorrection && std::abs(parallelCorrection->valueMillimetres+.05)<1e-9,
+                        "actual Verified perpendicular and parallel C-Clip entries remain separate in the managed profile");
         }
     }
 }
@@ -621,14 +632,17 @@ if(libraryAt>=0 && libraryAt+1<args.size()) {
             const auto before=prepared.mesh;
             const auto sourceBefore=clipSource.mesh.triangles;
             const QVector<PrintOrientation> orientations={nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative};
-            const FitProfile selected=haveActualClipProfile?actualClipProfile:[&]{auto p=cClipSynthetic;p.corrections.front().valueMillimetres=0;return p;}();
+            const FitProfile selected=haveActualClipProfile?actualClipProfile:[&]{auto p=cClipSynthetic;p.corrections.front().valueMillimetres=0;auto parallelEntry=cClipParallelSynthetic.corrections.front();parallelEntry.valueMillimetres=-.05;p.corrections.push_back(parallelEntry);return p;}();
             int matching=-1,incompatible=-1;
             for(int i=0;i<orientations.size();++i) {
-                if(ManufacturingMeshService::hasApplicableCorrection(selected,clipSource,orientations[i]))matching=i;
-                else incompatible=i;
+                if(ManufacturingMeshService::transformedOrientation(clips.front(),orientations[i])==
+                    FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate)matching=i;
+                else if(i==0)incompatible=i;
             }
-            ok &= check(matching>=0 && incompatible>=0,
-                        "11476 has a compatible perpendicular and an incompatible Print Orientation");
+            ok &= check(matching>=0 && incompatible==0 &&
+                        ManufacturingMeshService::transformedOrientation(clips.front(),nominalOrientation)==
+                            FitPrintedOrientation::FeatureAxisParallelToBuildPlate,
+                        "11476 Nominal print orientation is parallel and a rotation makes its clip axis perpendicular");
             if(matching>=0 && incompatible>=0) {
                 ManufacturingMeshService clipService;
                 const auto autoFit=AutoFitProfileResolver::resolve(true,part,{selected},clipSource,orientations[matching]);
@@ -710,15 +724,71 @@ if(libraryAt>=0 && libraryAt+1<args.size()) {
                                 std::abs(nonzero.manufacturingMesh->manufacturingDiameterMillimetres-3.3)<1e-9,
                                 "synthetic correction moves certified contact/throat only, preserving outer arms, unrelated geometry, Source and PreparedMesh");
                 }
-                ok &= check(!ManufacturingMeshService::hasApplicableCorrection(selected,clipSource,orientations[incompatible]) &&
-                            clipService.generate(clipSource,prepared,selected,orientations[incompatible]).error==ManufacturingMeshError::MissingCorrection &&
-                            AutoFitProfileResolver::resolve(true,part,{selected},clipSource,orientations[incompatible]).state==AutoFitResolutionState::NoCompatibleProfile,
-                            "unsupported C-Clip orientation remains nominal");
+                const auto parallelAutoFit=AutoFitProfileResolver::resolve(true,part,{selected},clipSource,nominalOrientation);
+                ok &= check(parallelAutoFit.resolved() && parallelAutoFit.profile.profileIdentity==selected.profileIdentity,
+                            "11476 Nominal-orientation Auto Fit selects the Verified parallel C-Clip entry");
+                if(haveActualClipProfile) {
+                    const FitCalibrationLibrary library(QDir::cleanPath(
+                        QFileInfo(args[clipProfileAt+1]).absolutePath()+QStringLiteral("/..")));
+                    const auto managed=AutoFitProfileResolver::resolveManaged(true,part,library,clipSource,nominalOrientation);
+                    ok &= check(managed.resolved() && managed.profile.profileIdentity==selected.profileIdentity,
+                                "11476 Nominal-orientation managed Auto Fit resolves Ray's parallel Verified profile");
+                }
+                const auto parallelResult=clipService.generate(clipSource,prepared,selected,nominalOrientation);
+                ok &= check(parallelResult.ok(),"11476 parallel ManufacturingMesh succeeds: "+parallelResult.diagnostic);
+                if(parallelResult.ok()) {
+                    const auto& mesh=*parallelResult.manufacturingMesh;
+                    ok &= check(mesh.fitProfileIdentity==selected.profileIdentity &&
+                                std::abs(mesh.diameterCorrectionMillimetres+.05)<1e-9 &&
+                                std::abs(mesh.manufacturingDiameterMillimetres-3.15)<1e-9 &&
+                                !same(mesh.mesh,before) && same(prepared.mesh,before) &&
+                                sameSource(clipSource.mesh.triangles,sourceBefore),
+                                "11476 Nominal orientation applies profile-driven 3.20 to 3.15 mm contact/throat correction only to ManufacturingMesh");
+                    const auto repeated=clipService.generate(clipSource,prepared,selected,nominalOrientation);
+                    ok &= check(repeated.ok() && repeated.manufacturingMesh->identity==mesh.identity &&
+                                same(repeated.manufacturingMesh->mesh,mesh.mesh),
+                                "11476 parallel ManufacturingMesh identity and geometry are deterministic");
+                    const int outputAt=args.indexOf(QStringLiteral("--c-clip-parallel-output"));
+                    if(outputAt>=0 && outputAt+1<args.size()) {
+                        QDir output(args[outputAt+1]);
+                        ok &= check(output.mkpath(QStringLiteral(".")),"parallel C-Clip proof directory exists");
+                        const QString path=output.filePath(QStringLiteral("11476-c-clip-parallel-manufacturing.3mf"));
+                        QString error;
+                        ok &= check(ManufacturingMeshDiagnosticExporter::writeThreeMf(mesh,path,1.0,
+                                    QColor("#A0A5A9"),&error),"11476 parallel ManufacturingMesh 3MF export: "+error);
+                        if(QFileInfo::exists(path)) {
+                            Lib3MF::CWrapper wrapper;
+                            auto model=wrapper.CreateModel();
+                            model->QueryReader("3mf")->ReadFromFile(path.toStdString());
+                            auto objects=model->GetMeshObjects();
+                            ok &= check(objects->MoveNext() &&
+                                        objects->GetCurrentMeshObject()->GetTriangleCount()==mesh.mesh.faces.size(),
+                                        "11476 parallel ManufacturingMesh 3MF reopens through lib3mf");
+                            QTextStream(stdout)<<"cClipParallelManufacturing="<<path<<Qt::endl;
+                        }
+                    }
+                }
+                auto perpendicularOnly=selected;
+                perpendicularOnly.corrections.removeIf([](const FitProfileCorrection& correction){
+                    return correction.featureFamily==QStringLiteral("CClipBarReceiver") &&
+                        correction.printedOrientation==QStringLiteral("feature-axis-parallel-to-build-plate");});
+                auto parallelOnly=selected;
+                parallelOnly.corrections.removeIf([](const FitProfileCorrection& correction){
+                    return correction.featureFamily==QStringLiteral("CClipBarReceiver") &&
+                        correction.printedOrientation==QStringLiteral("feature-axis-perpendicular-to-build-plate");});
+                ok &= check(!ManufacturingMeshService::hasApplicableCorrection(perpendicularOnly,clipSource,nominalOrientation) &&
+                            clipService.generate(clipSource,prepared,perpendicularOnly,nominalOrientation).error==ManufacturingMeshError::MissingCorrection &&
+                            AutoFitProfileResolver::resolve(true,part,{perpendicularOnly},clipSource,nominalOrientation).state==AutoFitResolutionState::NoCompatibleProfile &&
+                            !ManufacturingMeshService::hasApplicableCorrection(parallelOnly,clipSource,orientations[matching]) &&
+                            clipService.generate(clipSource,prepared,parallelOnly,orientations[matching]).error==ManufacturingMeshError::MissingCorrection,
+                            "perpendicular and parallel C-Clip evidence never substitutes across orientations");
                 auto unverified=selected;unverified.verificationState=FitEvidenceState::Draft;
                 ok &= check(!ManufacturingMeshService::hasApplicableCorrection(unverified,clipSource,orientations[matching]) &&
                             clipService.generate(clipSource,prepared,unverified,orientations[matching]).error==ManufacturingMeshError::IncompatibleProfile &&
-                            AutoFitProfileResolver::resolve(true,part,{unverified},clipSource,orientations[matching]).state==AutoFitResolutionState::NoCompatibleProfile,
-                            "unverified C-Clip evidence remains nominal");
+                            AutoFitProfileResolver::resolve(true,part,{unverified},clipSource,orientations[matching]).state==AutoFitResolutionState::NoCompatibleProfile &&
+                            !ManufacturingMeshService::hasApplicableCorrection(unverified,clipSource,nominalOrientation) &&
+                            clipService.generate(clipSource,prepared,unverified,nominalOrientation).error==ManufacturingMeshError::IncompatibleProfile,
+                            "unverified C-Clip evidence remains nominal in both orientations");
                 auto missing=selected;missing.corrections.removeIf([](const FitProfileCorrection& correction){
                     return correction.featureFamily==QStringLiteral("CClipBarReceiver");});
                 ok &= check(!ManufacturingMeshService::hasApplicableCorrection(missing,clipSource,orientations[matching]) &&

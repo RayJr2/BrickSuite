@@ -56,7 +56,8 @@ ManufacturingMeshCorrections ManufacturingMeshService::compatibleCorrections(con
         if(matches(correction,"StudReceivingClutch","female","female-stud-receiver-antistud-bore-diameter",printedOrientation) &&
            correction.correctionContractVersion==QStringLiteral("female-stud-receiver-antistud-bore-diameter-v1"))
             result.receivingAntiStudBoreDiameter=&correction;
-    if(orientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate)
+    if(orientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate ||
+       orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate)
         for(const auto& correction:profile.corrections)
             if(matches(correction,"CClipBarReceiver","female",
                        "female-c-clip-contact-arc-and-throat-clearance",printedOrientation) &&
