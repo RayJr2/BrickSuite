@@ -3,6 +3,7 @@
 #include "../src/services/geometry/print/PrintMeshAnalysis.h"
 #include "../src/services/geometry/print/StudReceivingAntiStudSemantic.h"
 #include "../src/services/geometry/print/StandardBarSemantic.h"
+#include "../src/services/geometry/print/CClipBarReceiverSemantic.h"
 #include "../src/services/geometry/LDrawLibraryService.h"
 #include "../src/ui/parts/PreparedMeshRenderAdapter.h"
 
@@ -96,6 +97,38 @@ int main(int argc,char**argv)
     QDir().mkpath(output);
     auto cache=std::make_shared<PrintPreparationCache>();
     LDrawPrintPreparationService service(cache);
+    for(const QString& id:{QStringLiteral("11476"),QStringLiteral("11399"),
+                          QStringLiteral("11055"),QStringLiteral("15712"),
+                          QStringLiteral("30374"),QStringLiteral("3001"),QStringLiteral("3700")}) {
+        const auto loaded=LDrawLibraryService::loadPart(args[libraryAt+1],id);
+        ok&=check(loaded.ok(),id+" C-Clip control loads");
+        if(!loaded.ok()) continue;
+        const auto clips=CClipBarReceiverSemantic::recognize(loaded);
+        const int expected=id==QStringLiteral("11476")?1:id==QStringLiteral("11399")?2:0;
+        ok&=check(clips.size()==expected,id+QStringLiteral(" certified clip6 C-Clip recognition (%1)").arg(clips.size()));
+        for(const auto& clip:clips)
+            ok&=check(clip.provenance.size()==2 &&
+                      clip.provenance.front().sourceFile==QStringLiteral("p/clip6.dat") &&
+                      clip.provenance.back().sourceFile==QStringLiteral("p/5-8cyli.dat") &&
+                      std::abs(clip.nominalDiameterMillimetres-3.2)<1e-9 &&
+                      std::abs(clip.nominalAxialExtentMillimetres-3.2)<1e-9,
+                      id+" certified contact arc and compliant clip ancestry are source-owned");
+        if(id==QStringLiteral("11476")) {
+            PrintPreparationRequest request;
+            request.partReference=id;
+            request.ldrawIdentity=id;
+            request.libraryAuthority=args[libraryAt+1];
+            request.loadResult=loaded;
+            const auto prepared=service.prepare(request);
+            int retained=0;
+            if(prepared.preparedMesh)
+                for(const auto& feature:prepared.preparedMesh->functionalFeatures)
+                    retained+=feature.family==FunctionalInterfaceFamily::CClipBarReceiver;
+            ok&=check(prepared.ready() && retained==expected,
+                      id+QStringLiteral(" nominal preparation retains %1 C-Clip contracts: %2")
+                          .arg(expected).arg(prepared.diagnostic));
+        }
+    }
     for(const QString& id:{QStringLiteral("30374"),QStringLiteral("87994"),
                           QStringLiteral("3957a"),QStringLiteral("4095"),
                           QStringLiteral("4519"),QStringLiteral("2780"),QStringLiteral("3001")}) {

@@ -10,6 +10,7 @@ QVector<FitCalibrationFamilyOption> FitCalibrationFamilyCatalog::availableFamili
         {FitCalibrationFamily::FrictionTechnicPin, QStringLiteral("Friction Technic Pin")},
         {FitCalibrationFamily::TechnicAxle, QStringLiteral("Technic Axle")},
         {FitCalibrationFamily::TechnicAxleHole, QStringLiteral("Technic Axle Hole")},
-        {FitCalibrationFamily::StandardBar, QStringLiteral("Standard Bar")}
+        {FitCalibrationFamily::StandardBar, QStringLiteral("Standard Bar")},
+        {FitCalibrationFamily::CClipBarReceiver, QStringLiteral("C-Clip / Bar Receiver")}
     };
 }

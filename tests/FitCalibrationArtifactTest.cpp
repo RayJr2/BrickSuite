@@ -2,6 +2,7 @@
 #include "../src/services/geometry/fit/StandardStudCalibrationArtifact.h"
 #include "../src/services/geometry/fit/StudReceivingCalibrationArtifact.h"
 #include "../src/services/geometry/fit/StandardBarCalibrationArtifact.h"
+#include "../src/services/geometry/fit/CClipBarReceiverCalibrationArtifact.h"
 #include "../src/services/geometry/fit/FitCalibrationFixtureLabel.h"
 #include "../src/services/geometry/fit/FitCalibrationNamingCatalog.h"
 #include "../src/services/geometry/fit/FitCalibrationArtifactLocation.h"
@@ -14,6 +15,7 @@
 #include "../src/services/geometry/LDrawLibraryService.h"
 #include "../src/services/geometry/print/LDrawPrintGeometryBuilder.h"
 #include "../src/services/geometry/print/PrintMeshAnalysis.h"
+#include <lib3mf_implicit.hpp>
 
 #include <QCoreApplication>
 #include <QDir>
@@ -358,6 +360,126 @@ bool testStandardBar(const QStringList& args)
     if(validateAt>=0&&validateAt+1<args.size()) ok&=validateSession(args[validateAt+1]);
     return ok;
 }
+bool testCClipBarReceiver(const QStringList& args)
+{
+    const auto artifact=CClipBarReceiverCalibrationArtifact::generate();
+    bool ok=require(artifact.ok,"C-Clip fixture generation: "+artifact.diagnostic);
+    if(!ok)return false;
+    ok&=require(artifact.candidates.size()==7 &&
+                std::abs(artifact.candidates[0].functionalDiameterMillimetres-3.05)<1e-9 &&
+                std::abs(artifact.candidates[3].functionalDiameterMillimetres-3.20)<1e-9 &&
+                std::abs(artifact.candidates[6].functionalDiameterMillimetres-3.35)<1e-9 &&
+                artifact.analysis.connectedComponents==1 && artifact.analysis.boundaryEdges==0 &&
+                artifact.analysis.nonManifoldEdges==0 && artifact.analysis.selfIntersections==0,
+                "C-Clip seven-candidate contact arc/throat fixture is manifold and includes nominal #4");
+    const auto repeated=CClipBarReceiverCalibrationArtifact::generate();
+    ok&=require(repeated.ok && sameMesh(repeated.mesh,artifact.mesh),"C-Clip fixture is deterministic");
+    const auto experiment=CClipBarReceiverCalibrationArtifact::observationTemplate(artifact);
+    FitCalibrationExperiment restored;
+    QString error;
+    ok&=require(FitCalibrationExperimentJson::fromJson(
+                    FitCalibrationExperimentJson::toJson(experiment),&restored,&error) &&
+                restored.featureFamily==QStringLiteral("CClipBarReceiver") &&
+                restored.regenerationPrototype.family==FunctionalInterfaceFamily::CClipBarReceiver &&
+                restored.regenerationPrototype.evidenceContract==QStringLiteral("official-ldraw-clip6-bar-receiver-v1") &&
+                restored.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
+                restored.preferredCandidateIndex==0 && restored.state!=FitEvidenceState::Verified,
+                "C-Clip managed experiment round-trips as unobserved perpendicular evidence: "+error);
+    const auto validateSession=[&](const QString& path) {
+        QFile file(path);
+        if(!require(file.open(QIODevice::ReadOnly),"Open C-Clip session: "+path))return false;
+        FitCalibrationSession decoded;
+        if(!require(FitCalibrationSessionJson::fromJson(QJsonDocument::fromJson(file.readAll()).object(),
+                    &decoded,&error),"Decode C-Clip session: "+error))return false;
+        bool valid=require(!decoded.sessionIdentity.isEmpty() && decoded.hasCoarseExperiment &&
+                           !decoded.hasFineExperiment && decoded.history.isEmpty() &&
+                           decoded.coarseExperiment.artifactIdentity==CClipBarReceiverCalibrationArtifact::artifactIdentity() &&
+                           decoded.coarseExperiment.parentArtifactIdentity.isEmpty() &&
+                           decoded.coarseExperiment.candidates.size()==7 &&
+                           decoded.coarseExperiment.preferredCandidateIndex==0 &&
+                           decoded.coarseExperiment.state!=FitEvidenceState::Verified &&
+                           decoded.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,
+                           "C-Clip session identity, lineage and unverified orientation");
+        for(int i=0;i<decoded.coarseExperiment.candidates.size();++i) {
+            const auto& candidate=decoded.coarseExperiment.candidates[i];
+            valid&=require(candidate.index==i+1 && candidate.observations.isEmpty() &&
+                           std::abs(candidate.diameterCorrectionMillimetres-(-.15+i*.05))<1e-9 &&
+                           std::abs(candidate.functionalDiameterMillimetres-(3.05+i*.05))<1e-9,
+                           QStringLiteral("C-Clip candidate %1 matches printed fixture").arg(i+1));
+        }
+        QTemporaryDir root;
+        FitCalibrationLibrary library(root.path());
+        FitCalibrationWorkspace workspace;
+        workspace.process.printerIdentity=QStringLiteral("Test printer");
+        workspace.process.materialIdentity=QStringLiteral("Test material");
+        workspace.process.profileName=QStringLiteral("Test process");
+        workspace.process.hasNozzleDiameter=true;
+        workspace.process.nozzleDiameterMillimetres=.4;
+        workspace.process.hasLayerHeight=true;
+        workspace.process.layerHeightMillimetres=.2;
+        workspace.process.dimensionalCompensationNotes=QStringLiteral("None");
+        FitCalibrationSession imported,resumed;
+        valid&=require(library.importSessionIntoWorkspace(path,&workspace,&imported,&error) &&
+                       imported.sessionIdentity==decoded.sessionIdentity &&
+                       library.loadSession(decoded.sessionIdentity,&resumed,&error) &&
+                       resumed.coarseExperiment.regenerationPrototype.family==FunctionalInterfaceFamily::CClipBarReceiver &&
+                       resumed.coarseExperiment.candidates[3].observations.isEmpty(),
+                       "C-Clip managed session imports and resumes without evidence: "+error);
+        return valid;
+    };
+    const int outputAt=args.indexOf(QStringLiteral("--c-clip-output"));
+    if(outputAt>=0 && outputAt+1<args.size()) {
+        QDir output(args[outputAt+1]);
+        ok&=require(output.mkpath(QStringLiteral(".")),"C-Clip output directory");
+        const QString fixturePath=output.filePath(FitCalibrationArtifactLocation::fixtureFileName(
+            FitCalibrationNameKey::CClipBarReceiverClearance,QStringLiteral("coarse"),1));
+        const QString sessionPath=FitCalibrationArtifactLocation::companionPath(fixturePath);
+        if(QFileInfo::exists(fixturePath)||QFileInfo::exists(sessionPath))
+            ok&=require(false,"Refusing to overwrite existing C-Clip calibration artifacts");
+        else {
+            PrintMesh labeled;
+            ok&=require(FitCalibrationFixtureLabel::recessStandalone(artifact.mesh,
+                FitCalibrationNameKey::CClipBarReceiverClearance,&labeled,nullptr,&error),"C-Clip label: "+error);
+            ok&=require(validatePreparedMesh(analyzeSource(labeled)).ok(),
+                        "labeled C-Clip fixture remains one strict manifold");
+            if(!labeled.faces.empty()) {
+                ThreeMfWriter::Options options;
+                options.objectName=artifact.artifactIdentity;
+                options.partIdentity=artifact.artifactIdentity;
+                options.modelColor=QColor("#A0A5A9");
+                ok&=require(ThreeMfWriter::write(labeled,fixturePath,options,&error),
+                            "C-Clip 3MF export: "+error);
+                if(QFileInfo::exists(fixturePath)) {
+                    Lib3MF::CWrapper wrapper;
+                    auto model=wrapper.CreateModel();
+                    model->QueryReader("3mf")->ReadFromFile(fixturePath.toStdString());
+                    auto meshes=model->GetMeshObjects();
+                    ok&=require(meshes->MoveNext() &&
+                                meshes->GetCurrentMeshObject()->GetTriangleCount()==labeled.faces.size(),
+                                "C-Clip 3MF independently reopens with the validated labeled mesh");
+                }
+            }
+            QTemporaryDir managedRoot;
+            FitCalibrationLibrary managed(managedRoot.path());
+            FitCalibrationSession session;
+            session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
+            session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;
+            session.process.orientationNotes=experiment.process.orientationNotes;
+            session.hasCoarseExperiment=true;
+            session.coarseExperiment=experiment;
+            session.coarseExperiment.process=session.process;
+            ok&=require(managed.saveSession(&session,&error) &&
+                        managed.exportSession(session.sessionIdentity,sessionPath,&error),
+                        "C-Clip managed-session export: "+error);
+            if(QFileInfo::exists(sessionPath))ok&=validateSession(sessionPath);
+            QTextStream(stdout)<<"cClipFixture="<<fixturePath<<Qt::endl
+                               <<"cClipSession="<<sessionPath<<Qt::endl;
+        }
+    }
+    const int validateAt=args.indexOf(QStringLiteral("--c-clip-validate-session"));
+    if(validateAt>=0 && validateAt+1<args.size())ok&=validateSession(args[validateAt+1]);
+    return ok;
+}
 bool testAntiStudBore(const QStringList& args)
 {
     bool ok=true;
@@ -465,5 +587,6 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;const
     ok &= testWallPocket(args);
     ok &= testAntiStudBore(args);
     ok &= testStandardBar(args);
+    ok &= testCClipBarReceiver(args);
     return ok?0:1;
 }
