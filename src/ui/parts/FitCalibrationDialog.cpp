@@ -217,7 +217,7 @@ void FitCalibrationDialog::generateFineSearch()
     if(source.featureFamily==QStringLiteral("StandardStud")){StandardStudCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.dimension=source.correctionDimension==FitCorrectionDimension::Height?StandardStudCalibrationDimension::Height:StandardStudCalibrationDimension::Diameter;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.fixedDiameterCorrectionMillimetres=source.fixedDiameterCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardStudCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StandardStudCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("StandardBar")){StandardBarCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardBarCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=StandardBarCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("CClipBarReceiver")){CClipBarReceiverCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;d.orientation=source.process.actualPrintedOrientation;const auto artifact=CClipBarReceiverCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=CClipBarReceiverCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("BallJoint")){BallJointCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;const auto artifact=BallJointCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=BallJointCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
+    else if(source.featureFamily==QStringLiteral("BallJoint")){BallJointCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;d.orientation=source.process.actualPrintedOrientation;const auto artifact=BallJointCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=BallJointCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("StudReceivingClutch")){StudReceivingCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerDiameterCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const bool wallPocket=source.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-wall-pocket-square-v1"),antiStud=source.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-antistud-bore-v1");const auto artifact=antiStud?StudReceivingCalibrationArtifact::generateAntiStudBore(source.regenerationPrototype,d):wallPocket?StudReceivingCalibrationArtifact::generateWallPocket(source.regenerationPrototype,d):StudReceivingCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StudReceivingCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("FrictionTechnicPin")){FrictionTechnicPinCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerRidgeEnvelopeCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=FrictionTechnicPinCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=FrictionTechnicPinCalibrationArtifact::observationTemplate(artifact);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("TechnicAxle")){TechnicAxleCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerTipToTipCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=TechnicAxleCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
@@ -405,24 +405,39 @@ void FitCalibrationDialog::newBallJointCalibration()
             "Resume or import a manufacturing workspace first so the new evidence inherits its manufacturing context.");
         return;
     }
+    bool accepted=false;
+    const QString choice=QInputDialog::getItem(this,"Ball Joint Calibration","Print orientation:",
+        {QStringLiteral("Perpendicular — ball stem vertical"),QStringLiteral("Parallel — ball stem horizontal")},0,false,&accepted);
+    if(!accepted)return;
+    BallJointCalibrationDefinition definition;
+    definition.orientation=choice.startsWith(QStringLiteral("Parallel"))
+        ? FitPrintedOrientation::FeatureAxisParallelToBuildPlate
+        : FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
+    const auto key=definition.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate
+        ? FitCalibrationNameKey::BallJointDiameterParallel : FitCalibrationNameKey::BallJointDiameter;
+    if(definition.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
+        definition.centerCorrectionMillimetres=-.15;
+        definition.spacingMillimetres=.15;
+    }
+    definition.artifactIdentity=definition.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate
+        ? BallJointCalibrationArtifact::parallelArtifactIdentity() : BallJointCalibrationArtifact::artifactIdentity();
     auto& dirs=SessionFileDialogDirectoryService::instance();
     QString path=QFileDialog::getSaveFileName(this,"Save Ball Joint Calibration 3MF",
-        fixtureDefault(FitCalibrationNameKey::BallJointDiameter,
-            BallJointCalibrationArtifact::artifactIdentity()),"3MF models (*.3mf)");
+        fixtureDefault(key,definition.artifactIdentity),"3MF models (*.3mf)");
     if(path.isEmpty())return;
     if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";
     dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
-    const auto artifact=BallJointCalibrationArtifact::generate();
+    const auto artifact=BallJointCalibrationArtifact::generate(definition);
     if(!artifact.ok){QMessageBox::warning(this,"Ball Joint Calibration",artifact.diagnostic);return;}
     ThreeMfWriter::Options options;
     options.objectName=artifact.artifactIdentity;
     options.partIdentity=artifact.artifactIdentity;
     options.modelColor=QColor("#A0A5A9");
     QString error;
-    if(!writeFixture(artifact.mesh,FitCalibrationNameKey::BallJointDiameter,false,path,options,&error)) {
+    if(!writeFixture(artifact.mesh,key,false,path,options,&error)) {
         QMessageBox::warning(this,"Ball Joint Calibration",error);return;
     }
-    auto experiment=BallJointCalibrationArtifact::observationTemplate(artifact);
+    auto experiment=BallJointCalibrationArtifact::observationTemplate(artifact,definition);
     FitCalibrationSession session;
     session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
     session.process=m_workspace.process;
@@ -442,5 +457,5 @@ void FitCalibrationDialog::newBallJointCalibration()
     showWorkspace(workspace,session.sessionIdentity);
     refreshLibrary();
     QMessageBox::information(this,"Ball Joint Calibration",
-        "The seven-ball fixture was added to this workspace. Print flat-base down at 100% with stems vertical. Candidate #1 is beside the notch. Test all candidates in the same genuine LEGO joint8 socket; record snap-in, articulation, retention, removal, stress and repeatability.");
+        "The seven-ball fixture was added to this workspace. Print flat-base down at 100% with stems in the selected orientation. Candidate #1 is beside the notch. Keep supports off the spherical fit surfaces. Test all candidates in the same genuine LEGO joint8 socket; record snap-in, articulation, retention, removal, stress and repeatability.");
 }

@@ -53,6 +53,9 @@ PrintMesh ballOnStem(double cx,double cy,double radius) {
 QString BallJointCalibrationArtifact::artifactIdentity() {
     return QStringLiteral("ball-joint-diameter-perpendicular-coarse-v1");
 }
+QString BallJointCalibrationArtifact::parallelArtifactIdentity() {
+    return QStringLiteral("ball-joint-diameter-parallel-coarse-v1");
+}
 FunctionalFeature BallJointCalibrationArtifact::canonicalPrototype() {
     FunctionalFeature f;
     f.stableIdentity=QStringLiteral("official-joint8ball-sphere-prototype");
@@ -75,26 +78,48 @@ FunctionalFeature BallJointCalibrationArtifact::canonicalPrototype() {
 }
 BallJointCalibrationResult BallJointCalibrationArtifact::generate(const BallJointCalibrationDefinition& input) {
     BallJointCalibrationDefinition d=input;
-    if(d.artifactIdentity.isEmpty())d.artifactIdentity=artifactIdentity();
+    const bool parallel=d.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
+    if(d.artifactIdentity.isEmpty())d.artifactIdentity=parallel?parallelArtifactIdentity():artifactIdentity();
     BallJointCalibrationResult r;
     r.artifactIdentity=d.artifactIdentity;
     r.parentArtifactIdentity=d.parentArtifactIdentity;
-    r.orientationIdentity=QStringLiteral("flat-base-ball-axis-perpendicular-v1");
+    r.orientationIdentity=parallel?QStringLiteral("flat-base-ball-axis-parallel-v1"):
+        QStringLiteral("flat-base-ball-axis-perpendicular-v1");
     r.regenerationPrototype=canonicalPrototype();
-    if(d.candidateCount<3||d.candidateCount>9||d.candidateCount%2==0||
+    if((!parallel && d.orientation!=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate)||
+       d.candidateCount<3||d.candidateCount>9||d.candidateCount%2==0||
        d.spacingMillimetres<=0||!std::isfinite(d.centerCorrectionMillimetres)) {
         r.diagnostic=QStringLiteral("The Ball Joint fixture definition is invalid.");return r;
     }
     constexpr double pitch=9.0,width=9.0;
     McutMeshBooleanService boolean;
-    PrintMesh body=box(0,pitch*d.candidateCount,0,width,0,2.0);
+    PrintMesh body=box(0,pitch*d.candidateCount,0,parallel?10.0:width,0,2.0);
     for(int i=0;i<d.candidateCount;++i) {
         const double correction=d.centerCorrectionMillimetres+(i-d.candidateCount/2)*d.spacingMillimetres;
         const double diameter=6.4+correction;
         if(diameter<5.8||diameter>7.0) {
             r.diagnostic=QStringLiteral("Ball Joint candidate is outside the fixture safety range.");return r;
         }
-        auto joined=boolean.unite(body,ballOnStem(pitch*(i+.5),width*.5,diameter*.5));
+        const double cx=pitch*(i+.5);
+        if(parallel) {
+            const auto pedestal=boolean.unite(body,box(cx-1.25,cx+1.25,7.7,9.7,1.85,5.0));
+            if(!pedestal.ok()) {
+                r.diagnostic=QStringLiteral("Ball Joint stem support %1 could not be joined: %2")
+                    .arg(i+1).arg(QString::fromStdString(pedestal.message));return r;
+            }
+            body=pedestal.mesh;
+        }
+        PrintMesh head=ballOnStem(cx,parallel?0:width*.5,diameter*.5);
+        if(parallel) {
+            // The certified spherical surface is rigidly rotated, not reshaped.
+            // A rear stem pedestal joins the base while leaving the ball free.
+            for(auto& vertex:head.vertices) {
+                const double y=vertex.y,z=vertex.z;
+                vertex.y=11.2-z;
+                vertex.z=5.4+y;
+            }
+        }
+        auto joined=boolean.unite(body,head);
         if(!joined.ok()) {
             r.diagnostic=QStringLiteral("Ball Joint candidate %1 could not be joined: %2")
                 .arg(i+1).arg(QString::fromStdString(joined.message));return r;
@@ -128,8 +153,10 @@ FitCalibrationExperiment BallJointCalibrationArtifact::observationTemplate(
     e.regenerationPrototype=r.regenerationPrototype;
     e.hasRegenerationPrototype=true;
     e.candidates=r.candidates;
-    e.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
-    e.process.orientationNotes=QStringLiteral("Print the flat base down at 100% scale with ball stems vertical. Candidate #1 is beside the notch. Test each ball in the same genuine LEGO joint8 socket, recording snap-in, articulation, retention, removal, stress and repeatability. Do not use another ball-joint class or decorative rounded cavity.");
+    e.process.actualPrintedOrientation=input.orientation;
+    e.process.orientationNotes=input.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate
+        ? QStringLiteral("Print the flat base down at 100% scale with ball stems horizontal. Candidate #1 is beside the notch. Keep slicer supports off the spherical fit surfaces. Test each ball in the same genuine LEGO joint8 socket, recording snap-in, articulation, retention, removal, stress and repeatability. Do not use another ball-joint class or decorative rounded cavity.")
+        : QStringLiteral("Print the flat base down at 100% scale with ball stems vertical. Candidate #1 is beside the notch. Test each ball in the same genuine LEGO joint8 socket, recording snap-in, articulation, retention, removal, stress and repeatability. Do not use another ball-joint class or decorative rounded cavity.");
     e.process.dimensionalCompensationNotes=QStringLiteral("Record the actual slicer dimensional compensation settings before testing.");
     return e;
 }

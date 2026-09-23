@@ -15,6 +15,7 @@
 #include <QCryptographicHash>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace PrintGeometry { namespace {
 ManufacturingMeshResult fail(ManufacturingMeshError e,const QString&m){ManufacturingMeshResult r;r.error=e;r.diagnostic=m;return r;}
@@ -44,6 +45,143 @@ const FitProfileCorrection* wallPocketCorrection(const FitProfile& profile,
 }
 bool correctionApplies(const FunctionalFeature&feature,const ManufacturingMeshCorrections&corrections){if(feature.constructionRecipe==QStringLiteral("stud-receiving-antistud-bore-v1"))return corrections.receivingAntiStudBoreDiameter&&feature.evidenceContract==corrections.receivingAntiStudBoreDiameter->semanticContractVersion;return (feature.family==FunctionalInterfaceFamily::RoundTechnicPassage&&feature.role==FunctionalInterfaceRole::Female&&corrections.femaleDiameter&&feature.evidenceContract==corrections.femaleDiameter->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::StandardStud&&feature.role==FunctionalInterfaceRole::Male&&((corrections.studDiameter&&feature.evidenceContract==corrections.studDiameter->semanticContractVersion)||(corrections.studHeight&&feature.evidenceContract==corrections.studHeight->semanticContractVersion)))||(feature.family==FunctionalInterfaceFamily::StudReceivingClutch&&feature.role==FunctionalInterfaceRole::Female&&((corrections.receivingTubeDiameter&&feature.evidenceContract==corrections.receivingTubeDiameter->semanticContractVersion)||(corrections.receivingPostDiameter&&feature.evidenceContract==corrections.receivingPostDiameter->semanticContractVersion)||(corrections.receivingWallPocketWidth&&feature.evidenceContract==corrections.receivingWallPocketWidth->semanticContractVersion)))||(feature.family==FunctionalInterfaceFamily::FrictionlessTechnicPin&&feature.role==FunctionalInterfaceRole::Male&&corrections.frictionlessPinDiameter&&feature.evidenceContract==corrections.frictionlessPinDiameter->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::FrictionTechnicPin&&feature.role==FunctionalInterfaceRole::Male&&corrections.frictionPinDiameter&&feature.evidenceContract==corrections.frictionPinDiameter->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::TechnicAxle&&feature.role==FunctionalInterfaceRole::Male&&corrections.technicAxleTipToTip&&feature.evidenceContract==corrections.technicAxleTipToTip->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::TechnicAxleHole&&feature.role==FunctionalInterfaceRole::Female&&corrections.technicAxleHoleArmWidth)||(feature.family==FunctionalInterfaceFamily::StandardBar&&feature.role==FunctionalInterfaceRole::Male&&corrections.standardBarDiameter&&feature.evidenceContract==corrections.standardBarDiameter->semanticContractVersion);}
 QString axisName(const Point&axis){return QStringLiteral("(%1, %2, %3)").arg(axis.x,0,'g',4).arg(axis.y,0,'g',4).arg(axis.z,0,'g',4);}
+Point add(Point a,Point b){return {a.x+b.x,a.y+b.y,a.z+b.z};}
+Point subtract(Point a,Point b){return {a.x-b.x,a.y-b.y,a.z-b.z};}
+Point scaled(Point a,double s){return {a.x*s,a.y*s,a.z*s};}
+double dot(Point a,Point b){return a.x*b.x+a.y*b.y+a.z*b.z;}
+double length(Point a){return std::sqrt(dot(a,a));}
+Point cross(Point a,Point b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
+Point converted(const QVector3D& p){return {p.x()*.4,p.z()*.4,-p.y()*.4};}
+Point closest(Point p,Point a,Point b,Point c){
+    const auto ab=subtract(b,a),ac=subtract(c,a),ap=subtract(p,a);
+    const double d1=dot(ab,ap),d2=dot(ac,ap);
+    if(d1<=0&&d2<=0)return a;
+    const auto bp=subtract(p,b);const double d3=dot(ab,bp),d4=dot(ac,bp);
+    if(d3>=0&&d4<=d3)return b;
+    const double vc=d1*d4-d3*d2;
+    if(vc<=0&&d1>=0&&d3<=0)return add(a,scaled(ab,d1/(d1-d3)));
+    const auto cp=subtract(p,c);const double d5=dot(ab,cp),d6=dot(ac,cp);
+    if(d6>=0&&d5<=d6)return c;
+    const double vb=d5*d2-d1*d6;
+    if(vb<=0&&d2>=0&&d6<=0)return add(a,scaled(ac,d2/(d2-d6)));
+    const double va=d3*d6-d5*d4;
+    if(va<=0&&d4-d3>=0&&d5-d6>=0){const auto bc=subtract(c,b);return add(b,scaled(bc,(d4-d3)/(d4-d3+d5-d6)));}
+    const double inv=1.0/(va+vb+vc);return add(a,add(scaled(ab,vb*inv),scaled(ac,vc*inv)));
+}
+struct SourceStud { FunctionalFeature feature; int owner=-1; };
+QVector<SourceStud> certifiedSourceStuds(const LDrawGeometry::LDrawLoadResult& source){
+    QVector<SourceStud> studs;
+    if(!source.ok()||!source.sourceModel)return studs;
+    const auto& model=*source.sourceModel;
+    for(const auto& reference:model.references){
+        if(reference.fileId<0||reference.fileId>=model.files.size()||
+           model.files[reference.fileId].relativePath.compare(QStringLiteral("p/stud.dat"),Qt::CaseInsensitive)!=0)
+            continue;
+        const auto& t=reference.accumulatedTransform;
+        const auto column=[&](int c){return Point{t[c]*.4,t[8+c]*.4,-t[4+c]*.4};};
+        const auto u=column(0),axis=scaled(column(1),-1),v=column(2);
+        if(std::abs(length(u)-.4)>1e-3||std::abs(length(axis)-.4)>1e-3||
+           std::abs(length(v)-.4)>1e-3||std::abs(dot(u,axis))>1e-3||
+           std::abs(dot(v,axis))>1e-3||std::abs(dot(u,v))>1e-3)continue;
+        int owned=0;bool certified=true;
+        for(const auto& surface:model.surfaces){
+            int ref=surface.referenceId;
+            while(ref>=0&&ref<model.references.size()&&ref!=reference.id)
+                ref=model.references[ref].parentId;
+            if(ref!=reference.id)continue;
+            ++owned;certified&=surface.certified;
+        }
+        if(!certified||owned<20)continue;
+        FunctionalFeature feature;
+        feature.family=FunctionalInterfaceFamily::StandardStud;
+        feature.role=FunctionalInterfaceRole::Male;
+        feature.materialSide=FunctionalMaterialSide::MaterialInside;
+        feature.eligibility=FunctionalEligibility::Eligible;
+        feature.confidence=SemanticConfidence::HighConfidence;
+        feature.operandAction=FunctionalOperandAction::Unite;
+        feature.frame.origin=converted(QVector3D(float(t[3]),float(t[7]),float(t[11])));
+        feature.frame.axis=scaled(axis,1.0/.4);
+        feature.frame.profileU=scaled(u,1.0/.4);
+        feature.frame.profileV=cross(feature.frame.axis,feature.frame.profileU);
+        feature.frame.mirrored=reference.mirrored;
+        feature.nominalRadiusMillimetres=2.4;
+        feature.nominalDiameterMillimetres=4.8;
+        feature.nominalAxialExtentMillimetres=1.6;
+        feature.nominalEngagementExtentMillimetres=1.6;
+        feature.radialProfile={{0,2.4},{1.6,2.4}};
+        feature.constructionRecipe=QStringLiteral("standard-solid-stud-v1");
+        feature.evidenceContract=QStringLiteral("official-ldraw-standard-stud-v1");
+        feature.provenance={{model.files[reference.fileId].relativePath,reference.id,
+                             reference.sourceLine,reference.inverted}};
+        feature.stableIdentity=QStringLiteral("source-surface-standard-stud:%1").arg(reference.id);
+        feature.governingOperandIdentity=feature.stableIdentity+QStringLiteral(":surface");
+        studs.push_back({feature,reference.id});
+    }
+    return studs;
+}
+bool adjustCertifiedStud(const LDrawGeometry::LDrawLoadResult& source,const PrintMesh& nominal,
+                         const SourceStud& stud,double diameterCorrection,double heightCorrection,
+                         PrintMesh* adjusted,QString* diagnostic){
+    if(!adjusted||!source.sourceModel||!std::isfinite(diameterCorrection)||
+       !std::isfinite(heightCorrection)||4.8+diameterCorrection<=0||1.6+heightCorrection<=0)
+        return false;
+    if(diameterCorrection==0.0&&heightCorrection==0.0){*adjusted=nominal;return true;}
+    const auto& model=*source.sourceModel;
+    struct Surface{Point a,b,c;bool owned;};
+    QVector<Surface> surfaces;surfaces.reserve(model.surfaces.size());
+    for(const auto& surface:model.surfaces){
+        if(!surface.certified||surface.triangleIndex<0||surface.triangleIndex>=source.mesh.triangles.size())
+            return false;
+        int ref=surface.referenceId;
+        while(ref>=0&&ref<model.references.size()&&ref!=stud.owner)
+            ref=model.references[ref].parentId;
+        const auto& triangle=source.mesh.triangles[surface.triangleIndex];
+        surfaces.push_back({converted(triangle.a),converted(triangle.b),converted(triangle.c),ref==stud.owner});
+    }
+    const auto& frame=stud.feature.frame;
+    QVector<std::size_t> ownedVertices;
+    double measuredRadius=0,measuredHeight=0;
+    for(std::size_t i=0;i<nominal.vertices.size();++i){
+        const auto relative=subtract(nominal.vertices[i],frame.origin);
+        const double axial=dot(relative,frame.axis);
+        const auto radial=subtract(relative,scaled(frame.axis,axial));
+        const double radius=length(radial);
+        if(axial<-.02||axial>1.72||radius>2.55)continue;
+        double ownedDistance=std::numeric_limits<double>::max();
+        double otherDistance=std::numeric_limits<double>::max();
+        for(const auto& surface:surfaces){
+            const double distance=length(subtract(nominal.vertices[i],
+                closest(nominal.vertices[i],surface.a,surface.b,surface.c)));
+            auto& nearest=surface.owned?ownedDistance:otherDistance;
+            nearest=std::min(nearest,distance);
+        }
+        if(ownedDistance>.12||ownedDistance>otherDistance+1e-10)continue;
+        ownedVertices.push_back(i);
+        if(axial>.4)measuredRadius=std::max(measuredRadius,radius);
+        measuredHeight=std::max(measuredHeight,axial);
+    }
+    if(ownedVertices.size()<24||measuredRadius<2.2||measuredHeight<1.4){
+        if(diagnostic)*diagnostic=QStringLiteral("Certified stud surface was not retained in the PreparedMesh.");
+        return false;
+    }
+    *adjusted=nominal;
+    const double radialDelta=diameterCorrection==0.0?0.0:(2.4+diameterCorrection*.5)-measuredRadius;
+    const double axialDelta=heightCorrection==0.0?0.0:(1.6+heightCorrection)-measuredHeight;
+    for(const auto index:ownedVertices){
+        auto& point=adjusted->vertices[index];
+        const auto relative=subtract(point,frame.origin);
+        const double axial=dot(relative,frame.axis);
+        const auto radial=subtract(relative,scaled(frame.axis,axial));
+        const double radius=length(radial);
+        const double baseWeight=std::clamp(axial/.16,0.0,1.0);
+        const double radialScale=radius>1e-9?radialDelta*baseWeight/measuredRadius:0.0;
+        point=add(point,add(scaled(radial,radialScale),
+                             scaled(frame.axis,axialDelta*std::clamp(axial/measuredHeight,0.0,1.0))));
+    }
+    if(diagnostic)*diagnostic=QStringLiteral("Certified stud surface adjusted to %1 mm OD and %2 mm height (%3 vertices).")
+        .arg(4.8+diameterCorrection,0,'f',3).arg(1.6+heightCorrection,0,'f',3).arg(ownedVertices.size());
+    return true;
+}
 }
 
 ManufacturingMeshService::ManufacturingMeshService(BooleanServiceFactory f,SemanticBuilderFunction b):m_factory(f?std::move(f):[]{return std::make_unique<McutMeshBooleanService>();}),m_builder(std::move(b)){}
@@ -101,6 +239,14 @@ bool ManufacturingMeshService::hasApplicableCorrection(const FitProfile&profile,
     for(const auto&feature:TechnicAxleSemantic::recognizeAxleHoles(source)){QString featureReason;const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation),&featureReason);if(correctionApplies(feature,corrections)){if(reason)*reason=QStringLiteral("Compatible Verified Technic axle-hole arm-width correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());return true;}}
     for(const auto&feature:RoundTechnicPassageSemantic::recognize(source)){QString featureReason;const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation),&featureReason);if(correctionApplies(feature,corrections)){if(reason)*reason=QStringLiteral("Compatible Verified round Technic passage correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());return true;}}
     for(const auto&feature:StudReceivingPostSemantic::recognize(source)){QString featureReason;const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation),&featureReason);if(correctionApplies(feature,corrections)){if(reason)*reason=QStringLiteral("Compatible Verified PostWallCell correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());return true;}}
+    for(const auto& stud:certifiedSourceStuds(source)){
+        const auto corrections=compatibleCorrections(profile,transformedOrientation(stud.feature,printOrientation));
+        if(correctionApplies(stud.feature,corrections)){
+            if(reason)*reason=QStringLiteral("Compatible Verified source-owned Standard Stud correction for feature %1 after Print Orientation %2.")
+                .arg(stud.feature.stableIdentity,printOrientation.summary());
+            return true;
+        }
+    }
     for(const auto& feature:CClipBarReceiverSemantic::recognize(source)) {
         const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation));
         if(corrections.cClipClearance && corrections.cClipClearance->semanticContractVersion==feature.evidenceContract) {
@@ -122,207 +268,185 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
 {
     if(!source.ok()||prepared.mesh.faces.empty()||prepared.partReference.isEmpty())return fail(ManufacturingMeshError::InvalidInput,"Source and nominal PreparedMesh are required.");
     QString reason;if(!FitCalibrationLibrary::profileCompatibility(profile,&reason))return fail(ManufacturingMeshError::IncompatibleProfile,reason);
-    const auto ballFeatures=BallJointSemantic::recognize(source);
-    if(ballFeatures.size()==1) {
-        const auto& feature=ballFeatures.front();
-        const bool retained=std::any_of(prepared.functionalFeatures.cbegin(),prepared.functionalFeatures.cend(),
+    // Localized, source-owned families share one mesh. Compose every applicable
+    // correction and reject overlapping vertex ownership rather than returning
+    // after the first family. Semantic operands are handled by the path below.
+    enum class SurfaceKind { Ball, Clip, Bar, Stud };
+    struct SurfaceFeature { FunctionalFeature feature; SurfaceKind kind; int owner=-1; };
+    QVector<SurfaceFeature> surfaceFeatures;
+    const auto retained=[&](const FunctionalFeature& feature){
+        return std::any_of(prepared.functionalFeatures.cbegin(),prepared.functionalFeatures.cend(),
             [&](const FunctionalFeature& candidate){return candidate.stableIdentity==feature.stableIdentity;});
-        if(retained) {
-            const auto orientation=transformedOrientation(feature,printOrientation);
-            const auto corrections=compatibleCorrections(profile,orientation);
-            const auto* correction=corrections.ballJointDiameter;
-            if(!correction||correction->semanticContractVersion!=feature.evidenceContract)
-                return fail(ManufacturingMeshError::MissingCorrection,
-                    QStringLiteral("Ball Joint %1 remains nominal after Print Orientation %2: its feature-axis classification is %3, but the selected profile has no matching Verified Ball Joint correction for that orientation. Rotate the model so the ball stem is perpendicular to the build plate before using the perpendicular calibration.")
-                        .arg(feature.stableIdentity,printOrientation.summary(),
-                             orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate?QStringLiteral("parallel"):
-                             orientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate?QStringLiteral("perpendicular"):QStringLiteral("unsupported")));
-            PrintMesh adjusted;
-            QString adjustmentDiagnostic;
-            if(!BallJointSemantic::adjustPrepared(source,prepared.mesh,feature,
-                    correction->valueMillimetres,&adjusted,&adjustmentDiagnostic))
-                return fail(ManufacturingMeshError::RegenerationFailure,adjustmentDiagnostic);
-            const auto analysis=analyzeSource(adjusted);
-            if(!validatePreparedMesh(analysis).ok())
-                return fail(ManufacturingMeshError::InvalidResult,
-                    QStringLiteral("The Ball Joint ManufacturingMesh failed strict validation."));
-            auto output=std::make_shared<ManufacturingMesh>();
-            output->mesh=std::move(adjusted);
-            output->analysis=analysis;
-            output->partReference=prepared.partReference;
-            output->fitProfileIdentity=profile.profileIdentity;
-            output->sourceSessionIdentity=profile.sourceSessionIdentity;
-            output->featureIdentity=feature.stableIdentity;
-            output->featureIdentities={feature.stableIdentity};
-            output->semanticContractVersion=correction->semanticContractVersion;
-            output->correctionContractVersion=correction->correctionContractVersion;
-            output->regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
-            output->booleanVersion=QStringLiteral("not-used-ball-joint-source-surface-v1");
-            output->nominalDiameterMillimetres=feature.nominalDiameterMillimetres;
-            output->diameterCorrectionMillimetres=correction->valueMillimetres;
-            output->manufacturingDiameterMillimetres=feature.nominalDiameterMillimetres+correction->valueMillimetres;
-            output->nominalPreparationIdentity=prepared.partReference+'|'+prepared.ldrawIdentity+'|'+
-                prepared.preparationProfileVersion+'|'+prepared.mcutVersion;
-            output->provenance<<QStringLiteral("Nominal PreparedMesh: %1").arg(output->nominalPreparationIdentity)
-                <<QStringLiteral("Verified Fit Profile: %1").arg(profile.profileIdentity)
-                <<QStringLiteral("Ball Joint evidence artifact: %1").arg(correction->calibrationArtifactIdentity)
-                <<QStringLiteral("Feature %1 [Part axis %2 -> build axis %3 (%4)]: certified spherical diameter %5 mm + %6 mm = %7 mm; %8")
-                    .arg(feature.stableIdentity,axisName(feature.frame.axis),
-                         axisName(printOrientation.map(feature.frame.axis)),orientationName(orientation))
-                    .arg(output->nominalDiameterMillimetres,0,'f',3)
-                    .arg(output->diameterCorrectionMillimetres,0,'f',3)
-                    .arg(output->manufacturingDiameterMillimetres,0,'f',3)
-                    .arg(adjustmentDiagnostic);
-            const QByteArray identity=(output->nominalPreparationIdentity+'|'+profile.profileIdentity+'|'+
-                profile.processFingerprint+'|'+printOrientation.summary()+'|'+feature.stableIdentity+'|'+
-                correction->correctionContractVersion+'='+QString::number(correction->valueMillimetres,'g',17)+'|'+
-                output->regeneratorAlgorithmVersion+'|'+output->booleanVersion).toUtf8();
-            output->identity=QString::fromLatin1(QCryptographicHash::hash(identity,QCryptographicHash::Sha256).toHex());
-            ManufacturingMeshResult result;
-            result.error=ManufacturingMeshError::None;
-            result.manufacturingMesh=output;
-            result.diagnostic=QStringLiteral("Verified Ball Joint profile %1 applied: %2 mm + %3 mm = %4 mm after Print Orientation %5. Source and nominal PreparedMesh were not modified.")
-                .arg(profile.name).arg(output->nominalDiameterMillimetres,0,'f',3)
-                .arg(output->diameterCorrectionMillimetres,0,'f',3)
-                .arg(output->manufacturingDiameterMillimetres,0,'f',3)
-                .arg(printOrientation.summary());
-            return result;
-        }
-    }
-    const auto clipFeatures=CClipBarReceiverSemantic::recognize(source);
-    if(clipFeatures.size()==1) {
-        const auto& feature=clipFeatures.front();
-        const bool retained=std::any_of(prepared.functionalFeatures.cbegin(),prepared.functionalFeatures.cend(),
-            [&](const FunctionalFeature& candidate){return candidate.stableIdentity==feature.stableIdentity;});
-        if(retained) {
-            const auto orientation=transformedOrientation(feature,printOrientation);
+    };
+    const auto balls=BallJointSemantic::recognize(source);
+    if(balls.size()==1&&retained(balls.front()))
+        surfaceFeatures.push_back({balls.front(),SurfaceKind::Ball,-1});
+    const auto clips=CClipBarReceiverSemantic::recognize(source);
+    if(clips.size()==1&&retained(clips.front()))
+        surfaceFeatures.push_back({clips.front(),SurfaceKind::Clip,-1});
+    const auto bars=StandardBarSemantic::recognize(source);
+    if(bars.size()==1&&retained(bars.front()))
+        surfaceFeatures.push_back({bars.front(),SurfaceKind::Bar,-1});
+    if(prepared.preparationMethod.contains(QStringLiteral("source-surface"),Qt::CaseInsensitive)||
+       !surfaceFeatures.isEmpty())
+        for(const auto& stud:certifiedSourceStuds(source))
+            surfaceFeatures.push_back({stud.feature,SurfaceKind::Stud,stud.owner});
+    if(!surfaceFeatures.isEmpty()){
+        PrintMesh adjusted=prepared.mesh;
+        std::vector<bool> moved(adjusted.vertices.size(),false);
+        QStringList featureIdentities,semanticContracts,correctionContracts,correctionIdentities,provenance,unmatched;
+        double nominalDiameter=0,diameterCorrection=0,manufacturingDiameter=0;
+        double nominalHeight=0,heightCorrection=0,manufacturingHeight=0;
+        SurfaceKind firstKind=surfaceFeatures.front().kind;
+        auto accept=[&](PrintMesh&& next)->bool{
+            if(next.faces!=adjusted.faces||next.vertices.size()!=adjusted.vertices.size())return false;
+            for(std::size_t i=0;i<next.vertices.size();++i){
+                const auto& a=adjusted.vertices[i];const auto& b=next.vertices[i];
+                const bool changed=a.x!=b.x||a.y!=b.y||a.z!=b.z;
+                if(changed&&moved[i])return false;
+            }
+            for(std::size_t i=0;i<next.vertices.size();++i){
+                const auto& a=adjusted.vertices[i];const auto& b=next.vertices[i];
+                if(a.x!=b.x||a.y!=b.y||a.z!=b.z)moved[i]=true;
+            }
+            adjusted=std::move(next);
+            return true;
+        };
+        for(const auto& item:surfaceFeatures){
+            const auto orientation=transformedOrientation(item.feature,printOrientation);
             QString correctionReason;
             const auto corrections=compatibleCorrections(profile,orientation,&correctionReason);
-            const auto* correction=corrections.cClipClearance;
-            if(!correction||correction->semanticContractVersion!=feature.evidenceContract)
-                return fail(ManufacturingMeshError::MissingCorrection,
-                    QStringLiteral("C-Clip %1 remained nominal after Print Orientation %2: %3")
-                        .arg(feature.stableIdentity,printOrientation.summary(),correctionReason));
-            PrintMesh adjusted;
+            const FitProfileCorrection* primary=nullptr;
+            const FitProfileCorrection* height=nullptr;
+            switch(item.kind){
+            case SurfaceKind::Ball: primary=corrections.ballJointDiameter;break;
+            case SurfaceKind::Clip: primary=corrections.cClipClearance;break;
+            case SurfaceKind::Bar: primary=corrections.standardBarDiameter;break;
+            case SurfaceKind::Stud: primary=corrections.studDiameter;height=corrections.studHeight;break;
+            }
+            if(primary&&primary->semanticContractVersion!=item.feature.evidenceContract)primary=nullptr;
+            if(height&&height->semanticContractVersion!=item.feature.evidenceContract)height=nullptr;
+            if(!primary&&!height){
+                unmatched<<QStringLiteral("%1 [%2] remained nominal: %3")
+                    .arg(item.feature.stableIdentity,orientationName(orientation),correctionReason);
+                continue;
+            }
+            PrintMesh next;
             QString adjustmentDiagnostic;
-            if(!CClipBarReceiverSemantic::adjustPrepared(source,prepared.mesh,feature,
-                    correction->valueMillimetres,&adjusted,&adjustmentDiagnostic))
-                return fail(ManufacturingMeshError::RegenerationFailure,adjustmentDiagnostic);
-            const auto analysis=analyzeSource(adjusted);
-            if(!validatePreparedMesh(analysis).ok())
-                return fail(ManufacturingMeshError::InvalidResult,
-                    QStringLiteral("The C-Clip ManufacturingMesh failed strict validation."));
-            auto output=std::make_shared<ManufacturingMesh>();
-            output->mesh=std::move(adjusted);
-            output->analysis=analysis;
-            output->partReference=prepared.partReference;
-            output->fitProfileIdentity=profile.profileIdentity;
-            output->sourceSessionIdentity=profile.sourceSessionIdentity;
-            output->featureIdentity=feature.stableIdentity;
-            output->featureIdentities={feature.stableIdentity};
-            output->semanticContractVersion=correction->semanticContractVersion;
-            output->correctionContractVersion=correction->correctionContractVersion;
-            output->regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
-            output->booleanVersion=QStringLiteral("not-used-c-clip-source-surface-v1");
-            output->nominalDiameterMillimetres=feature.nominalDiameterMillimetres;
-            output->diameterCorrectionMillimetres=correction->valueMillimetres;
-            output->manufacturingDiameterMillimetres=feature.nominalDiameterMillimetres+correction->valueMillimetres;
-            output->nominalPreparationIdentity=prepared.partReference+'|'+prepared.ldrawIdentity+'|'+
-                prepared.preparationProfileVersion+'|'+prepared.mcutVersion;
-            output->provenance<<QStringLiteral("Nominal PreparedMesh: %1").arg(output->nominalPreparationIdentity)
-                <<QStringLiteral("Verified Fit Profile: %1").arg(profile.profileIdentity)
-                <<QStringLiteral("C-Clip evidence artifact: %1").arg(correction->calibrationArtifactIdentity)
-                <<QStringLiteral("Feature %1 [Part axis %2 -> build axis %3 (%4)]: certified C-Clip contact diameter %5 mm + %6 mm = %7 mm; %8")
-                    .arg(feature.stableIdentity,axisName(feature.frame.axis),
-                         axisName(printOrientation.map(feature.frame.axis)),orientationName(orientation))
-                    .arg(output->nominalDiameterMillimetres,0,'f',3)
-                    .arg(output->diameterCorrectionMillimetres,0,'f',3)
-                    .arg(output->manufacturingDiameterMillimetres,0,'f',3)
-                    .arg(adjustmentDiagnostic);
-            const QByteArray identity=(output->nominalPreparationIdentity+'|'+profile.profileIdentity+'|'+
-                profile.processFingerprint+'|'+printOrientation.summary()+'|'+feature.stableIdentity+'|'+
-                correction->correctionContractVersion+'='+QString::number(correction->valueMillimetres,'g',17)+'|'+
-                output->regeneratorAlgorithmVersion+'|'+output->booleanVersion).toUtf8();
-            output->identity=QString::fromLatin1(QCryptographicHash::hash(identity,QCryptographicHash::Sha256).toHex());
-            ManufacturingMeshResult result;
-            result.error=ManufacturingMeshError::None;
-            result.manufacturingMesh=output;
-            result.diagnostic=QStringLiteral("Verified C-Clip profile %1 applied: %2 mm + %3 mm = %4 mm after Print Orientation %5. Source and nominal PreparedMesh were not modified.")
-                .arg(profile.name).arg(output->nominalDiameterMillimetres,0,'f',3)
-                .arg(output->diameterCorrectionMillimetres,0,'f',3)
-                .arg(output->manufacturingDiameterMillimetres,0,'f',3)
-                .arg(printOrientation.summary());
-            return result;
+            bool adjustedSuccessfully=false;
+            switch(item.kind){
+            case SurfaceKind::Ball:
+                adjustedSuccessfully=BallJointSemantic::adjustPrepared(source,adjusted,item.feature,
+                    primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
+            case SurfaceKind::Clip:
+                adjustedSuccessfully=CClipBarReceiverSemantic::adjustPrepared(source,adjusted,item.feature,
+                    primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
+            case SurfaceKind::Bar:
+                adjustedSuccessfully=StandardBarSemantic::adjustPrepared(source,adjusted,item.feature,
+                    primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
+            case SurfaceKind::Stud:
+                adjustedSuccessfully=adjustCertifiedStud(source,adjusted,{item.feature,item.owner},
+                    primary?primary->valueMillimetres:0.0,height?height->valueMillimetres:0.0,
+                    &next,&adjustmentDiagnostic);break;
+            }
+            if(!adjustedSuccessfully)
+                return fail(ManufacturingMeshError::RegenerationFailure,
+                    QStringLiteral("Certified source-surface correction failed for %1: %2")
+                        .arg(item.feature.stableIdentity,adjustmentDiagnostic));
+            if(!accept(std::move(next)))
+                return fail(ManufacturingMeshError::SemanticFailure,
+                    QStringLiteral("Independent certified source-surface corrections overlap at %1.")
+                        .arg(item.feature.stableIdentity));
+            if(featureIdentities.isEmpty()){
+                firstKind=item.kind;
+                nominalDiameter=item.feature.nominalDiameterMillimetres;
+                diameterCorrection=primary?primary->valueMillimetres:0.0;
+                manufacturingDiameter=nominalDiameter+diameterCorrection;
+            }
+            if(item.kind==SurfaceKind::Stud){
+                nominalHeight=1.6;
+                heightCorrection=height?height->valueMillimetres:0.0;
+                manufacturingHeight=nominalHeight+heightCorrection;
+            }
+            featureIdentities<<item.feature.stableIdentity;
+            if(primary){
+                semanticContracts<<primary->semanticContractVersion;
+                correctionContracts<<primary->correctionContractVersion;
+                correctionIdentities<<QStringLiteral("%1=%2").arg(primary->correctionContractVersion)
+                    .arg(primary->valueMillimetres,0,'g',17);
+            }
+            if(height){
+                semanticContracts<<height->semanticContractVersion;
+                correctionContracts<<height->correctionContractVersion;
+                correctionIdentities<<QStringLiteral("%1=%2").arg(height->correctionContractVersion)
+                    .arg(height->valueMillimetres,0,'g',17);
+            }
+            provenance<<QStringLiteral("%1 [%2]: %3 mm + %4 mm = %5 mm%6; %7")
+                .arg(item.feature.stableIdentity,orientationName(orientation))
+                .arg(item.feature.nominalDiameterMillimetres,0,'f',3)
+                .arg(primary?primary->valueMillimetres:0.0,0,'f',3)
+                .arg(item.feature.nominalDiameterMillimetres+(primary?primary->valueMillimetres:0.0),0,'f',3)
+                .arg(item.kind==SurfaceKind::Stud
+                    ?QStringLiteral("; height 1.600 mm + %1 mm = %2 mm")
+                        .arg(height?height->valueMillimetres:0.0,0,'f',3)
+                        .arg(1.6+(height?height->valueMillimetres:0.0),0,'f',3)
+                    :QString())
+                .arg(adjustmentDiagnostic);
         }
+        if(featureIdentities.isEmpty()){
+            if(surfaceFeatures.front().kind==SurfaceKind::Ball)
+                unmatched<<QStringLiteral("Ball Joint parallel evidence cannot substitute for perpendicular evidence; rotate the ball stem perpendicular to the build plate or supply matching Verified evidence.");
+            return fail(ManufacturingMeshError::MissingCorrection,unmatched.join(' '));
+        }
+        const auto analysis=analyzeSource(adjusted);
+        if(!validatePreparedMesh(analysis).ok())
+            return fail(ManufacturingMeshError::InvalidResult,
+                QStringLiteral("The composed source-surface ManufacturingMesh failed strict validation."));
+        semanticContracts.removeDuplicates();correctionContracts.removeDuplicates();
+        correctionIdentities.removeDuplicates();
+        auto output=std::make_shared<ManufacturingMesh>();
+        output->mesh=std::move(adjusted);
+        output->analysis=analysis;
+        output->partReference=prepared.partReference;
+        output->fitProfileIdentity=profile.profileIdentity;
+        output->sourceSessionIdentity=profile.sourceSessionIdentity;
+        output->featureIdentities=featureIdentities;
+        output->featureIdentity=featureIdentities.join('|');
+        output->semanticContractVersion=semanticContracts.join('|');
+        output->correctionContractVersion=correctionContracts.join('|');
+        output->regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
+        output->booleanVersion=featureIdentities.size()==1&&firstKind==SurfaceKind::Ball
+            ?QStringLiteral("not-used-ball-joint-source-surface-v1")
+            :featureIdentities.size()==1&&firstKind==SurfaceKind::Clip
+            ?QStringLiteral("not-used-c-clip-source-surface-v1")
+            :featureIdentities.size()==1&&firstKind==SurfaceKind::Bar
+            ?QStringLiteral("not-used-standard-bar-source-surface-v1")
+            :QStringLiteral("not-used-certified-source-surface-composition-v1");
+        output->nominalDiameterMillimetres=nominalDiameter;
+        output->diameterCorrectionMillimetres=diameterCorrection;
+        output->manufacturingDiameterMillimetres=manufacturingDiameter;
+        output->nominalHeightMillimetres=nominalHeight;
+        output->heightCorrectionMillimetres=heightCorrection;
+        output->manufacturingHeightMillimetres=manufacturingHeight;
+        output->nominalPreparationIdentity=prepared.partReference+'|'+prepared.ldrawIdentity+'|'+
+            prepared.preparationProfileVersion+'|'+prepared.mcutVersion;
+        output->provenance<<QStringLiteral("Nominal PreparedMesh: %1").arg(output->nominalPreparationIdentity)
+            <<QStringLiteral("Verified Fit Profile: %1").arg(profile.profileIdentity)
+            <<QStringLiteral("Print Orientation: %1").arg(printOrientation.summary())
+            <<provenance<<unmatched;
+        const QByteArray identity=(output->nominalPreparationIdentity+'|'+profile.profileIdentity+'|'+
+            profile.processFingerprint+'|'+printOrientation.summary()+'|'+featureIdentities.join('|')+'|'+
+            correctionIdentities.join('|')+'|'+output->regeneratorAlgorithmVersion+'|'+
+            output->booleanVersion).toUtf8();
+        output->identity=QString::fromLatin1(QCryptographicHash::hash(identity,QCryptographicHash::Sha256).toHex());
+        ManufacturingMeshResult result;
+        result.error=ManufacturingMeshError::None;
+        result.manufacturingMesh=output;
+        result.diagnostic=QStringLiteral("Verified profile %1 composed %2 certified source-surface feature(s) after Print Orientation %3. Source and nominal PreparedMesh were not modified. %4")
+            .arg(profile.name).arg(featureIdentities.size()).arg(printOrientation.summary(),provenance.join(' '));
+        return result;
     }
     auto semantic=m_builder?m_builder(source):LDrawSemanticOperandBuilder::build(source);
-    // A certified standalone bar is one closed primary body. Its source-owned
-    // cylindrical vertices can be adjusted directly, avoiding a Boolean that
-    // would needlessly change the nominal mesh for a Verified zero correction.
-    if(semantic.ok() && semantic.operands.size()==1 &&
-       semantic.operands.front().role==SemanticRole::PrimaryBody) {
-        for(const auto& feature:semantic.operands.front().functionalFeatures) {
-            if(feature.family!=FunctionalInterfaceFamily::StandardBar) continue;
-            const auto orientation=transformedOrientation(feature,printOrientation);
-            QString correctionReason;
-            const auto corrections=compatibleCorrections(profile,orientation,&correctionReason);
-            const auto* correction=corrections.standardBarDiameter;
-            if(!correction || correction->semanticContractVersion!=feature.evidenceContract)
-                return fail(ManufacturingMeshError::MissingCorrection,
-                    QStringLiteral("Standard Bar %1 remained nominal after Print Orientation %2: %3")
-                        .arg(feature.stableIdentity,printOrientation.summary(),correctionReason));
-            PrintMesh adjusted;
-            QString adjustmentDiagnostic;
-            if(!StandardBarSemantic::adjustPrepared(source,prepared.mesh,feature,
-                    correction->valueMillimetres,&adjusted,&adjustmentDiagnostic))
-                return fail(ManufacturingMeshError::RegenerationFailure,adjustmentDiagnostic);
-            const auto analysis=analyzeSource(adjusted);
-            if(!validatePreparedMesh(analysis).ok())
-                return fail(ManufacturingMeshError::InvalidResult,
-                    QStringLiteral("The Standard Bar ManufacturingMesh failed strict validation."));
-            auto output=std::make_shared<ManufacturingMesh>();
-            output->mesh=std::move(adjusted);
-            output->analysis=analysis;
-            output->partReference=prepared.partReference;
-            output->fitProfileIdentity=profile.profileIdentity;
-            output->sourceSessionIdentity=profile.sourceSessionIdentity;
-            output->featureIdentity=feature.stableIdentity;
-            output->featureIdentities={feature.stableIdentity};
-            output->semanticContractVersion=correction->semanticContractVersion;
-            output->correctionContractVersion=correction->correctionContractVersion;
-            output->regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
-            output->booleanVersion=QStringLiteral("not-used-standard-bar-source-surface-v1");
-            output->nominalDiameterMillimetres=feature.nominalDiameterMillimetres;
-            output->diameterCorrectionMillimetres=correction->valueMillimetres;
-            output->manufacturingDiameterMillimetres=feature.nominalDiameterMillimetres+correction->valueMillimetres;
-            output->nominalPreparationIdentity=prepared.partReference+'|'+prepared.ldrawIdentity+'|'+
-                prepared.preparationProfileVersion+'|'+prepared.mcutVersion;
-            output->provenance<<QStringLiteral("Nominal PreparedMesh: %1").arg(output->nominalPreparationIdentity)
-                <<QStringLiteral("Verified Fit Profile: %1").arg(profile.profileIdentity)
-                <<QStringLiteral("Standard Bar evidence artifact: %1").arg(correction->calibrationArtifactIdentity)
-                <<QStringLiteral("Feature %1 [Part axis %2 -> build axis %3 (%4)]: certified bar diameter %5 mm + %6 mm = %7 mm; %8")
-                    .arg(feature.stableIdentity,axisName(feature.frame.axis),
-                         axisName(printOrientation.map(feature.frame.axis)),orientationName(orientation))
-                    .arg(output->nominalDiameterMillimetres,0,'f',3)
-                    .arg(output->diameterCorrectionMillimetres,0,'f',3)
-                    .arg(output->manufacturingDiameterMillimetres,0,'f',3)
-                    .arg(adjustmentDiagnostic);
-            const QByteArray identity=(output->nominalPreparationIdentity+'|'+profile.profileIdentity+'|'+
-                profile.processFingerprint+'|'+printOrientation.summary()+'|'+feature.stableIdentity+'|'+
-                correction->correctionContractVersion+'='+QString::number(correction->valueMillimetres,'g',17)+'|'+
-                output->regeneratorAlgorithmVersion+'|'+output->booleanVersion).toUtf8();
-            output->identity=QString::fromLatin1(QCryptographicHash::hash(identity,QCryptographicHash::Sha256).toHex());
-            ManufacturingMeshResult result;
-            result.error=ManufacturingMeshError::None;
-            result.manufacturingMesh=output;
-            result.diagnostic=QStringLiteral("Verified Standard Bar profile %1 applied: %2 mm + %3 mm = %4 mm after Print Orientation %5. Source and nominal PreparedMesh were not modified.")
-                .arg(profile.name).arg(output->nominalDiameterMillimetres,0,'f',3)
-                .arg(output->diameterCorrectionMillimetres,0,'f',3)
-                .arg(output->manufacturingDiameterMillimetres,0,'f',3)
-                .arg(printOrientation.summary());
-            return result;
-        }
-    }
     const auto axleFeatures=TechnicAxleSemantic::recognizeAxles(source);const auto axleHoleFeatures=TechnicAxleSemantic::recognizeAxleHoles(source);const auto roundPassageFeatures=RoundTechnicPassageSemantic::recognize(source);const auto receivingPostFeatures=StudReceivingPostSemantic::recognize(source);
     if(!semantic.ok()&&(!axleFeatures.isEmpty()||!axleHoleFeatures.isEmpty()||!roundPassageFeatures.isEmpty()||!receivingPostFeatures.isEmpty())){
         auto backend=m_factory();if(!backend)return fail(ManufacturingMeshError::BooleanFailure,"No Boolean composition service is available.");PrintMesh accumulated=prepared.mesh;QStringList featureIdentities,semanticIdentities,contractIdentities,correctionIdentity,provenance;int skippedFeatures=0;double nominalDimension=0,appliedCorrection=0,manufacturingDimension=0;

@@ -652,10 +652,14 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
         session.process.actualPrintedOrientation == FitPrintedOrientation::Unknown || session.process.actualPrintedOrientation == FitPrintedOrientation::OtherUnsupported) {
         fail(error, "Verified profile promotion requires a preferred correction and complete supported process identity."); return false;
     }
-    if ((experiment.featureFamily == QStringLiteral("StandardBar") ||
-         experiment.featureFamily == QStringLiteral("BallJoint")) &&
+    if (experiment.featureFamily == QStringLiteral("StandardBar") &&
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate) {
         fail(error, "This family currently has only a perpendicular physical calibration fixture."); return false;
+    }
+    if (experiment.featureFamily == QStringLiteral("BallJoint") &&
+        session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
+        session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
+        fail(error, "Ball Joint calibration requires a supported perpendicular or parallel fixture orientation."); return false;
     }
     if (experiment.featureFamily == QStringLiteral("CClipBarReceiver") &&
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
@@ -793,7 +797,8 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.correctionContractVersion == QStringLiteral("female-c-clip-contact-arc-and-throat-clearance-v1");
         const bool ballJoint = correction.featureFamily == QStringLiteral("BallJoint")
             && correction.featureRole == QStringLiteral("male")
-            && correction.printedOrientation == QStringLiteral("feature-axis-perpendicular-to-build-plate")
+            && (correction.printedOrientation == QStringLiteral("feature-axis-perpendicular-to-build-plate")
+                || correction.printedOrientation == QStringLiteral("feature-axis-parallel-to-build-plate"))
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-joint8ball-sphere-v1")
             && correction.semantics == QStringLiteral("male-ball-joint-spherical-diameter")
             && correction.correctionContractVersion == QStringLiteral("male-ball-joint-spherical-diameter-v1");

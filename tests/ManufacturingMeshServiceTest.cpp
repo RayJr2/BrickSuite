@@ -427,12 +427,18 @@ ballEntry.regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorA
 ballEntry.calibrationArtifactIdentity=QStringLiteral("hypothetical-ball-evidence");
 ballEntry.valueMillimetres=.10;
 ballCalibrationOnly.corrections.push_back(ballEntry);
+auto ballParallelCalibrationOnly=ballCalibrationOnly;
+ballParallelCalibrationOnly.corrections.front().printedOrientation=
+    QStringLiteral("feature-axis-parallel-to-build-plate");
 ok &= check(FitCalibrationLibrary::profileCompatibility(ballCalibrationOnly) &&
             ManufacturingMeshService::compatibleCorrections(ballCalibrationOnly,
                 FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).ballJointDiameter==&ballCalibrationOnly.corrections.front() &&
             !ManufacturingMeshService::compatibleCorrections(ballCalibrationOnly,
+                FitPrintedOrientation::FeatureAxisParallelToBuildPlate).ballJointDiameter &&
+            FitCalibrationLibrary::profileCompatibility(ballParallelCalibrationOnly) &&
+            !ManufacturingMeshService::compatibleCorrections(ballParallelCalibrationOnly,
                 FitPrintedOrientation::FeatureAxisParallelToBuildPlate).ballJointDiameter,
-            "Ball Joint selection consumes only Verified perpendicular spherical-diameter evidence");
+            "parallel Ball Joint evidence is calibration-compatible but production remains perpendicular-only");
 const auto barPositive=standardBarProfile(.10);
 ok &= check(FitCalibrationLibrary::profileCompatibility(barZero) &&
             FitCalibrationLibrary::profileCompatibility(barPositive),
@@ -632,7 +638,10 @@ if(libraryAt>=0 && libraryAt+1<args.size()) {
             const auto before=prepared.mesh;
             const auto sourceBefore=clipSource.mesh.triangles;
             const QVector<PrintOrientation> orientations={nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative};
-            const FitProfile selected=haveActualClipProfile?actualClipProfile:[&]{auto p=cClipSynthetic;p.corrections.front().valueMillimetres=0;auto parallelEntry=cClipParallelSynthetic.corrections.front();parallelEntry.valueMillimetres=-.05;p.corrections.push_back(parallelEntry);return p;}();
+            FitProfile selected=haveActualClipProfile?actualClipProfile:[&]{auto p=cClipSynthetic;p.corrections.front().valueMillimetres=0;auto parallelEntry=cClipParallelSynthetic.corrections.front();parallelEntry.valueMillimetres=-.05;p.corrections.push_back(parallelEntry);return p;}();
+            selected.corrections.removeIf([](const FitProfileCorrection& entry){
+                return entry.featureFamily==QStringLiteral("StandardStud");
+            });
             int matching=-1,incompatible=-1;
             for(int i=0;i<orientations.size();++i) {
                 if(ManufacturingMeshService::transformedOrientation(clips.front(),orientations[i])==
@@ -765,6 +774,108 @@ if(libraryAt>=0 && libraryAt+1<args.size()) {
                                         objects->GetCurrentMeshObject()->GetTriangleCount()==mesh.mesh.faces.size(),
                                         "11476 parallel ManufacturingMesh 3MF reopens through lib3mf");
                             QTextStream(stdout)<<"cClipParallelManufacturing="<<path<<Qt::endl;
+                        }
+                    }
+                }
+                auto combined=selected;
+                const auto studs=studProfile();
+                const auto& studEvidence=haveActualClipProfile?actualClipProfile.corrections:studs.corrections;
+                for(const auto& entry:studEvidence)
+                    if(entry.featureFamily==QStringLiteral("StandardStud"))
+                        combined.corrections.push_back(entry);
+                const auto combinedAuto=AutoFitProfileResolver::resolve(true,part,{combined},clipSource,nominalOrientation);
+                ok &= check(combinedAuto.resolved()&&combinedAuto.profile.profileIdentity==combined.profileIdentity,
+                            "11476 Auto Fit selects the one Verified profile containing parallel C-Clip and perpendicular Stud evidence");
+                const auto composed=clipService.generate(clipSource,prepared,combined,nominalOrientation);
+                ok &= check(composed.ok(),"11476 composes parallel C-Clip and perpendicular studs: "+composed.diagnostic);
+                auto studOnly=combined;
+                studOnly.corrections.removeIf([](const FitProfileCorrection& entry){
+                    return entry.featureFamily==QStringLiteral("CClipBarReceiver");
+                });
+                const auto studResult=clipService.generate(clipSource,prepared,studOnly,nominalOrientation);
+                ok &= check(studResult.ok(),"11476 studs apply without C-Clip evidence: "+studResult.diagnostic);
+                const auto studOnlyAuto=AutoFitProfileResolver::resolve(true,part,{studOnly},clipSource,nominalOrientation);
+                ok &= check(studOnlyAuto.resolved()&&studOnlyAuto.profile.profileIdentity==studOnly.profileIdentity,
+                            "11476 Auto Fit resolves applicable studs when C-Clip evidence is absent");
+                if(composed.ok()&&studResult.ok()&&parallelResult.ok()) {
+                    const auto& mesh=*composed.manufacturingMesh;
+                    ok &= check(mesh.featureIdentities.size()==3 &&
+                                mesh.correctionContractVersion.contains(QStringLiteral("female-c-clip-contact-arc-and-throat-clearance-v1")) &&
+                                mesh.correctionContractVersion.contains(QStringLiteral("male-stud-diameter-v1")) &&
+                                mesh.correctionContractVersion.contains(QStringLiteral("male-stud-height-v1")) &&
+                                std::abs(mesh.nominalHeightMillimetres-1.6)<1e-9 &&
+                                std::abs(mesh.manufacturingHeightMillimetres-1.8)<1e-9 &&
+                                mesh.provenance.join('|').contains(QStringLiteral("5.150 mm")) &&
+                                mesh.provenance.join('|').contains(QStringLiteral("3.150 mm")),
+                                "11476 provenance records one 3.15 mm C-Clip and both 5.15 x 1.80 mm studs");
+                    int leftStud=0,rightStud=0,clipOnlyChanges=0,studOnlyChanges=0;
+                    for(std::size_t i=0;i<mesh.mesh.vertices.size();++i) {
+                        const auto& original=before.vertices[i];
+                        const auto& corrected=mesh.mesh.vertices[i];
+                        const bool moved=original.x!=corrected.x||original.y!=corrected.y||original.z!=corrected.z;
+                        if(moved&&original.z>.3&&std::abs(original.y)<2.7) {
+                            if(original.x<0&&original.x>-7)++leftStud;
+                            if(original.x>0&&original.x<7)++rightStud;
+                        }
+                        const auto& clipOnlyPoint=parallelResult.manufacturingMesh->mesh.vertices[i];
+                        const auto& studOnlyPoint=studResult.manufacturingMesh->mesh.vertices[i];
+                        if(clipOnlyPoint.x!=corrected.x||clipOnlyPoint.y!=corrected.y||clipOnlyPoint.z!=corrected.z)
+                            ++studOnlyChanges;
+                        if(studOnlyPoint.x!=corrected.x||studOnlyPoint.y!=corrected.y||studOnlyPoint.z!=corrected.z)
+                            ++clipOnlyChanges;
+                    }
+                    ok &= check(leftStud>24&&rightStud>24&&clipOnlyChanges>24&&studOnlyChanges>24&&
+                                same(prepared.mesh,before)&&sameSource(clipSource.mesh.triangles,sourceBefore)&&
+                                validatePreparedMesh(mesh.analysis).ok(),
+                                "both studs and independent C-Clip surface change in one validated mesh; Source and PreparedMesh remain nominal");
+                    for(const double centerX:{-4.0,4.0}) {
+                        double radius=0,top=0;
+                        for(const auto& point:mesh.mesh.vertices) {
+                            const double radial=std::hypot(point.x-centerX,point.y);
+                            if(radial<3.0&&point.z>.3) {
+                                radius=std::max(radius,radial);
+                                top=std::max(top,point.z);
+                            }
+                        }
+                        ok &= check(std::abs(radius*2.0-5.15)<.02&&std::abs(top-1.8)<.02,
+                                    QStringLiteral("11476 stud at X=%1 has 5.15 mm OD and 1.80 mm height in final mesh")
+                                        .arg(centerX));
+                    }
+                    const auto repeated=clipService.generate(clipSource,prepared,combined,nominalOrientation);
+                    ok &= check(repeated.ok()&&repeated.manufacturingMesh->identity==mesh.identity&&
+                                same(repeated.manufacturingMesh->mesh,mesh.mesh),
+                                "mixed 11476 ManufacturingMesh is deterministic");
+                    const auto rotated=clipService.generate(clipSource,prepared,combined,orientations[matching]);
+                    ok &= check(rotated.ok()&&rotated.manufacturingMesh->featureIdentities.size()==1&&
+                                rotated.manufacturingMesh->correctionContractVersion==
+                                    QStringLiteral("female-c-clip-contact-arc-and-throat-clearance-v1"),
+                                "rotated 11476 applies perpendicular C-Clip evidence but not parallel studs");
+                    auto verifiedZero=combined;
+                    for(auto& entry:verifiedZero.corrections) {
+                        if(entry.featureFamily==QStringLiteral("CClipBarReceiver")||
+                           entry.featureFamily==QStringLiteral("StandardStud"))entry.valueMillimetres=0;
+                        if(entry.semantics==QStringLiteral("male-stud-height"))
+                            entry.requiredDiameterCorrectionMillimetres=0;
+                    }
+                    const auto zeroComposed=clipService.generate(clipSource,prepared,verifiedZero,nominalOrientation);
+                    ok &= check(zeroComposed.ok()&&zeroComposed.manufacturingMesh->featureIdentities.size()==3&&
+                                same(zeroComposed.manufacturingMesh->mesh,before),
+                                "Verified zero C-Clip and stud corrections compose to bitwise nominal mesh");
+                    const int outputAt=args.indexOf(QStringLiteral("--c-clip-plus-studs-output"));
+                    if(outputAt>=0&&outputAt+1<args.size()) {
+                        const QString path=args[outputAt+1];
+                        QString error;
+                        ok &= check(ManufacturingMeshDiagnosticExporter::writeThreeMf(mesh,path,1.0,
+                                    QColor("#A0A5A9"),&error),"11476 mixed ManufacturingMesh 3MF export: "+error);
+                        if(QFileInfo::exists(path)) {
+                            Lib3MF::CWrapper wrapper;
+                            auto model=wrapper.CreateModel();
+                            model->QueryReader("3mf")->ReadFromFile(path.toStdString());
+                            auto objects=model->GetMeshObjects();
+                            ok &= check(objects->MoveNext()&&
+                                        objects->GetCurrentMeshObject()->GetTriangleCount()==mesh.mesh.faces.size(),
+                                        "11476 mixed ManufacturingMesh 3MF reopens through lib3mf");
+                            QTextStream(stdout)<<"cClipPlusStudsManufacturing="<<path<<Qt::endl;
                         }
                     }
                 }

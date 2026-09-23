@@ -7,6 +7,7 @@ struct BallJointCalibrationDefinition {
     QString artifactIdentity,parentArtifactIdentity;
     int candidateCount=7;
     double centerCorrectionMillimetres=0.0,spacingMillimetres=0.10;
+    FitPrintedOrientation orientation=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
 };
 struct BallJointCalibrationResult {
     QString artifactIdentity,parentArtifactIdentity,orientationIdentity,diagnostic;
@@ -19,6 +20,7 @@ struct BallJointCalibrationResult {
 class BallJointCalibrationArtifact {
 public:
     static QString artifactIdentity();
+    static QString parallelArtifactIdentity();
     static FunctionalFeature canonicalPrototype();
     static BallJointCalibrationResult generate(const BallJointCalibrationDefinition& definition={});
     static FitCalibrationExperiment observationTemplate(const BallJointCalibrationResult& result,
