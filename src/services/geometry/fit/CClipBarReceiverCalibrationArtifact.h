@@ -7,6 +7,7 @@ struct CClipBarReceiverCalibrationDefinition {
     QString artifactIdentity, parentArtifactIdentity;
     int candidateCount=7;
     double centerCorrectionMillimetres=0.0, spacingMillimetres=0.05;
+    FitPrintedOrientation orientation=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
 };
 struct CClipBarReceiverCalibrationResult {
     QString artifactIdentity,parentArtifactIdentity,orientationIdentity,diagnostic;
@@ -19,6 +20,7 @@ struct CClipBarReceiverCalibrationResult {
 class CClipBarReceiverCalibrationArtifact {
 public:
     static QString artifactIdentity();
+    static QString parallelArtifactIdentity();
     static FunctionalFeature canonicalPrototype();
     static CClipBarReceiverCalibrationResult generate(
         const CClipBarReceiverCalibrationDefinition& definition={});

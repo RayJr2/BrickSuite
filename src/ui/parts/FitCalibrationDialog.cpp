@@ -216,7 +216,7 @@ void FitCalibrationDialog::generateFineSearch()
     PrintMesh mesh;FitCalibrationExperiment verification;QString diagnostic;
     if(source.featureFamily==QStringLiteral("StandardStud")){StandardStudCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.dimension=source.correctionDimension==FitCorrectionDimension::Height?StandardStudCalibrationDimension::Height:StandardStudCalibrationDimension::Diameter;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.fixedDiameterCorrectionMillimetres=source.fixedDiameterCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardStudCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StandardStudCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("StandardBar")){StandardBarCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardBarCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=StandardBarCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("CClipBarReceiver")){CClipBarReceiverCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;const auto artifact=CClipBarReceiverCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=CClipBarReceiverCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
+    else if(source.featureFamily==QStringLiteral("CClipBarReceiver")){CClipBarReceiverCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;d.orientation=source.process.actualPrintedOrientation;const auto artifact=CClipBarReceiverCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=CClipBarReceiverCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("BallJoint")){BallJointCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;const auto artifact=BallJointCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=BallJointCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("StudReceivingClutch")){StudReceivingCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerDiameterCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const bool wallPocket=source.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-wall-pocket-square-v1"),antiStud=source.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-antistud-bore-v1");const auto artifact=antiStud?StudReceivingCalibrationArtifact::generateAntiStudBore(source.regenerationPrototype,d):wallPocket?StudReceivingCalibrationArtifact::generateWallPocket(source.regenerationPrototype,d):StudReceivingCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StudReceivingCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("FrictionTechnicPin")){FrictionTechnicPinCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerRidgeEnvelopeCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=FrictionTechnicPinCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=FrictionTechnicPinCalibrationArtifact::observationTemplate(artifact);}diagnostic=artifact.diagnostic;}
@@ -345,24 +345,37 @@ void FitCalibrationDialog::newCClipBarReceiverCalibration()
             "Resume or import a manufacturing workspace first so the new evidence inherits its manufacturing context.");
         return;
     }
+    bool accepted=false;
+    const QString choice=QInputDialog::getItem(this,"C-Clip / Bar Receiver Calibration","Print orientation:",
+        {QStringLiteral("Perpendicular — clip axis vertical"),QStringLiteral("Parallel — clip axis horizontal")},0,false,&accepted);
+    if(!accepted)return;
+    CClipBarReceiverCalibrationDefinition definition;
+    definition.orientation=choice.startsWith(QStringLiteral("Parallel"))
+        ? FitPrintedOrientation::FeatureAxisParallelToBuildPlate
+        : FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
+    const auto key=definition.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate
+        ? FitCalibrationNameKey::CClipBarReceiverClearanceParallel
+        : FitCalibrationNameKey::CClipBarReceiverClearance;
+    definition.artifactIdentity=definition.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate
+        ? CClipBarReceiverCalibrationArtifact::parallelArtifactIdentity()
+        : CClipBarReceiverCalibrationArtifact::artifactIdentity();
     auto& dirs=SessionFileDialogDirectoryService::instance();
     QString path=QFileDialog::getSaveFileName(this,"Save C-Clip / Bar Receiver Calibration 3MF",
-        fixtureDefault(FitCalibrationNameKey::CClipBarReceiverClearance,
-            CClipBarReceiverCalibrationArtifact::artifactIdentity()),"3MF models (*.3mf)");
+        fixtureDefault(key,definition.artifactIdentity),"3MF models (*.3mf)");
     if(path.isEmpty()) return;
     if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";
     dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
-    const auto artifact=CClipBarReceiverCalibrationArtifact::generate();
+    const auto artifact=CClipBarReceiverCalibrationArtifact::generate(definition);
     if(!artifact.ok) {QMessageBox::warning(this,"C-Clip / Bar Receiver Calibration",artifact.diagnostic);return;}
     ThreeMfWriter::Options options;
     options.objectName=artifact.artifactIdentity;
     options.partIdentity=artifact.artifactIdentity;
     options.modelColor=QColor("#A0A5A9");
     QString error;
-    if(!writeFixture(artifact.mesh,FitCalibrationNameKey::CClipBarReceiverClearance,false,path,options,&error)) {
+    if(!writeFixture(artifact.mesh,key,false,path,options,&error)) {
         QMessageBox::warning(this,"C-Clip / Bar Receiver Calibration",error);return;
     }
-    auto experiment=CClipBarReceiverCalibrationArtifact::observationTemplate(artifact);
+    auto experiment=CClipBarReceiverCalibrationArtifact::observationTemplate(artifact,definition);
     FitCalibrationSession session;
     session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
     session.process=m_workspace.process;
@@ -382,7 +395,7 @@ void FitCalibrationDialog::newCClipBarReceiverCalibration()
     showWorkspace(workspace,session.sessionIdentity);
     refreshLibrary();
     QMessageBox::information(this,"C-Clip / Bar Receiver Calibration",
-        "The seven-clip artifact was added to this workspace. Print flat-base down at 100%. Candidate #1 is beside the notch. Snap the same genuine 3.20 mm LEGO bar sideways through each throat; record grip, play, removal, stress and repeatability.");
+        "The seven-clip artifact was added to this workspace. Print flat-base down at 100% in the selected orientation. Candidate #1 is beside the notch. Snap the same genuine 3.20 mm LEGO bar sideways through each throat; record grip, play, removal, stress and repeatability.");
 }
 void FitCalibrationDialog::newBallJointCalibration()
 {

@@ -506,7 +506,8 @@ bool testCClipBarReceiver(const QStringList& args)
                 restored.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
                 restored.preferredCandidateIndex==0 && restored.state!=FitEvidenceState::Verified,
                 "C-Clip managed experiment round-trips as unobserved perpendicular evidence: "+error);
-    const auto validateSession=[&](const QString& path) {
+    const auto validateSession=[&](const QString& path,FitPrintedOrientation orientation,
+                                   const QString& identity) {
         QFile file(path);
         if(!require(file.open(QIODevice::ReadOnly),"Open C-Clip session: "+path))return false;
         FitCalibrationSession decoded;
@@ -514,12 +515,12 @@ bool testCClipBarReceiver(const QStringList& args)
                     &decoded,&error),"Decode C-Clip session: "+error))return false;
         bool valid=require(!decoded.sessionIdentity.isEmpty() && decoded.hasCoarseExperiment &&
                            !decoded.hasFineExperiment && decoded.history.isEmpty() &&
-                           decoded.coarseExperiment.artifactIdentity==CClipBarReceiverCalibrationArtifact::artifactIdentity() &&
+                           decoded.coarseExperiment.artifactIdentity==identity &&
                            decoded.coarseExperiment.parentArtifactIdentity.isEmpty() &&
                            decoded.coarseExperiment.candidates.size()==7 &&
                            decoded.coarseExperiment.preferredCandidateIndex==0 &&
                            decoded.coarseExperiment.state!=FitEvidenceState::Verified &&
-                           decoded.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,
+                           decoded.process.actualPrintedOrientation==orientation,
                            "C-Clip session identity, lineage and unverified orientation");
         for(int i=0;i<decoded.coarseExperiment.candidates.size();++i) {
             const auto& candidate=decoded.coarseExperiment.candidates[i];
@@ -592,13 +593,85 @@ bool testCClipBarReceiver(const QStringList& args)
             ok&=require(managed.saveSession(&session,&error) &&
                         managed.exportSession(session.sessionIdentity,sessionPath,&error),
                         "C-Clip managed-session export: "+error);
-            if(QFileInfo::exists(sessionPath))ok&=validateSession(sessionPath);
+            if(QFileInfo::exists(sessionPath))ok&=validateSession(sessionPath,
+                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,artifact.artifactIdentity);
             QTextStream(stdout)<<"cClipFixture="<<fixturePath<<Qt::endl
                                <<"cClipSession="<<sessionPath<<Qt::endl;
         }
     }
     const int validateAt=args.indexOf(QStringLiteral("--c-clip-validate-session"));
-    if(validateAt>=0 && validateAt+1<args.size())ok&=validateSession(args[validateAt+1]);
+    if(validateAt>=0 && validateAt+1<args.size())ok&=validateSession(args[validateAt+1],
+        FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,artifact.artifactIdentity);
+    CClipBarReceiverCalibrationDefinition parallelDefinition;
+    parallelDefinition.orientation=FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
+    const auto parallel=CClipBarReceiverCalibrationArtifact::generate(parallelDefinition);
+    ok&=require(parallel.ok,"parallel C-Clip fixture generation: "+parallel.diagnostic);
+    if(!parallel.ok)return false;
+    ok&=require(parallel.artifactIdentity!=artifact.artifactIdentity &&
+                parallel.candidates.size()==7 && parallel.candidates[3].functionalDiameterMillimetres==3.2 &&
+                parallel.analysis.connectedComponents==1 && parallel.analysis.boundaryEdges==0 &&
+                parallel.analysis.nonManifoldEdges==0 && parallel.analysis.selfIntersections==0,
+                "parallel C-Clip is a separate manifold seven-candidate fixture");
+    const auto parallelExperiment=CClipBarReceiverCalibrationArtifact::observationTemplate(parallel,parallelDefinition);
+    ok&=require(parallelExperiment.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate &&
+                parallelExperiment.preferredCandidateIndex==0 && parallelExperiment.state!=FitEvidenceState::Verified &&
+                FitCalibrationNamingCatalog::keyFor(parallelExperiment,parallelExperiment.process.actualPrintedOrientation)==
+                    FitCalibrationNameKey::CClipBarReceiverClearanceParallel,
+                "parallel C-Clip session has separate identity and no physical evidence");
+    const int parallelOutputAt=args.indexOf(QStringLiteral("--c-clip-parallel-output"));
+    if(parallelOutputAt>=0 && parallelOutputAt+1<args.size()) {
+        QDir output(args[parallelOutputAt+1]);
+        ok&=require(output.mkpath(QStringLiteral(".")),"parallel C-Clip output directory");
+        const QString fixturePath=output.filePath(FitCalibrationArtifactLocation::fixtureFileName(
+            FitCalibrationNameKey::CClipBarReceiverClearanceParallel,QStringLiteral("coarse"),1));
+        const QString sessionPath=FitCalibrationArtifactLocation::companionPath(fixturePath);
+        if(QFileInfo::exists(fixturePath)||QFileInfo::exists(sessionPath))
+            ok&=require(false,"Refusing to overwrite existing parallel C-Clip artifacts");
+        else {
+            PrintMesh labeled;
+            ok&=require(FitCalibrationFixtureLabel::recessStandalone(parallel.mesh,
+                FitCalibrationNameKey::CClipBarReceiverClearanceParallel,&labeled,nullptr,&error),
+                "parallel C-Clip label: "+error);
+            ok&=require(validatePreparedMesh(analyzeSource(labeled)).ok(),
+                        "labeled parallel C-Clip fixture remains strict manifold");
+            if(!labeled.faces.empty()) {
+                ThreeMfWriter::Options options;
+                options.objectName=parallel.artifactIdentity;
+                options.partIdentity=parallel.artifactIdentity;
+                options.modelColor=QColor("#A0A5A9");
+                ok&=require(ThreeMfWriter::write(labeled,fixturePath,options,&error),
+                            "parallel C-Clip 3MF export: "+error);
+                if(QFileInfo::exists(fixturePath)) {
+                    Lib3MF::CWrapper wrapper;
+                    auto model=wrapper.CreateModel();
+                    model->QueryReader("3mf")->ReadFromFile(fixturePath.toStdString());
+                    auto meshes=model->GetMeshObjects();
+                    ok&=require(meshes->MoveNext() &&
+                                meshes->GetCurrentMeshObject()->GetTriangleCount()==labeled.faces.size(),
+                                "parallel C-Clip 3MF independently reopens");
+                }
+            }
+            QTemporaryDir managedRoot;
+            FitCalibrationLibrary managed(managedRoot.path());
+            FitCalibrationSession session;
+            session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
+            session.process.actualPrintedOrientation=parallelExperiment.process.actualPrintedOrientation;
+            session.process.orientationNotes=parallelExperiment.process.orientationNotes;
+            session.hasCoarseExperiment=true;
+            session.coarseExperiment=parallelExperiment;
+            session.coarseExperiment.process=session.process;
+            ok&=require(managed.saveSession(&session,&error) &&
+                        managed.exportSession(session.sessionIdentity,sessionPath,&error),
+                        "parallel C-Clip managed-session export: "+error);
+            if(QFileInfo::exists(sessionPath))ok&=validateSession(sessionPath,
+                FitPrintedOrientation::FeatureAxisParallelToBuildPlate,parallel.artifactIdentity);
+            QTextStream(stdout)<<"cClipParallelFixture="<<fixturePath<<Qt::endl
+                               <<"cClipParallelSession="<<sessionPath<<Qt::endl;
+        }
+    }
+    const int parallelValidateAt=args.indexOf(QStringLiteral("--c-clip-parallel-validate-session"));
+    if(parallelValidateAt>=0 && parallelValidateAt+1<args.size())ok&=validateSession(args[parallelValidateAt+1],
+        FitPrintedOrientation::FeatureAxisParallelToBuildPlate,parallel.artifactIdentity);
     return ok;
 }
 bool testAntiStudBore(const QStringList& args)

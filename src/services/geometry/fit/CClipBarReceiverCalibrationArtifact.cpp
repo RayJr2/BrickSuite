@@ -49,6 +49,9 @@ PrintMesh compliantClip(double cx,double cy,double innerRadius) {
 QString CClipBarReceiverCalibrationArtifact::artifactIdentity() {
     return QStringLiteral("c-clip-bar-receiver-clearance-perpendicular-coarse-v1");
 }
+QString CClipBarReceiverCalibrationArtifact::parallelArtifactIdentity() {
+    return QStringLiteral("c-clip-bar-receiver-clearance-parallel-coarse-v1");
+}
 FunctionalFeature CClipBarReceiverCalibrationArtifact::canonicalPrototype() {
     FunctionalFeature f;
     f.stableIdentity=QStringLiteral("official-clip6-bar-receiver-prototype");
@@ -72,13 +75,16 @@ FunctionalFeature CClipBarReceiverCalibrationArtifact::canonicalPrototype() {
 CClipBarReceiverCalibrationResult CClipBarReceiverCalibrationArtifact::generate(
     const CClipBarReceiverCalibrationDefinition& input) {
     CClipBarReceiverCalibrationDefinition d=input;
-    if(d.artifactIdentity.isEmpty())d.artifactIdentity=artifactIdentity();
+    const bool parallel=d.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
+    if(d.artifactIdentity.isEmpty())d.artifactIdentity=parallel?parallelArtifactIdentity():artifactIdentity();
     CClipBarReceiverCalibrationResult r;
     r.artifactIdentity=d.artifactIdentity;
     r.parentArtifactIdentity=d.parentArtifactIdentity;
-    r.orientationIdentity=QStringLiteral("flat-base-c-clip-axis-perpendicular-v1");
+    r.orientationIdentity=parallel?QStringLiteral("flat-base-c-clip-axis-parallel-v1"):
+        QStringLiteral("flat-base-c-clip-axis-perpendicular-v1");
     r.regenerationPrototype=canonicalPrototype();
-    if(d.candidateCount<3||d.candidateCount>9||d.candidateCount%2==0||
+    if((!parallel && d.orientation!=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate)||
+       d.candidateCount<3||d.candidateCount>9||d.candidateCount%2==0||
        d.spacingMillimetres<=0||!std::isfinite(d.centerCorrectionMillimetres)) {
         r.diagnostic=QStringLiteral("The C-Clip fixture definition is invalid.");return r;
     }
@@ -92,7 +98,19 @@ CClipBarReceiverCalibrationResult CClipBarReceiverCalibrationArtifact::generate(
         if(diameter<2.8||diameter>3.6) {
             r.diagnostic=QStringLiteral("C-Clip candidate is outside the fixture safety range.");return r;
         }
-        const auto joined=boolean.unite(body,compliantClip(pitch*(i+.5),width*.5,diameter*.5));
+        PrintMesh clip=compliantClip(pitch*(i+.5),0,diameter*.5);
+        if(parallel) {
+            // Rigidly rotate the certified contact arc and throat so the clip
+            // axis is horizontal while its lower exterior joins the base.
+            for(auto& vertex:clip.vertices) {
+                const double y=vertex.y,z=vertex.z;
+                vertex.y=6.2-z;
+                vertex.z=4.4+y;
+            }
+        } else {
+            for(auto& vertex:clip.vertices)vertex.y+=width*.5;
+        }
+        const auto joined=boolean.unite(body,clip);
         if(!joined.ok()) {
             r.diagnostic=QStringLiteral("C-Clip candidate %1 could not be joined: %2")
                 .arg(i+1).arg(QString::fromStdString(joined.message));return r;
@@ -131,8 +149,10 @@ FitCalibrationExperiment CClipBarReceiverCalibrationArtifact::observationTemplat
     e.regenerationPrototype=r.regenerationPrototype;
     e.hasRegenerationPrototype=true;
     e.candidates=r.candidates;
-    e.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
-    e.process.orientationNotes=QStringLiteral("Print the flat base down at 100% scale with C-Clip axes vertical. Candidate #1 is beside the notch. Snap the same genuine 3.20 mm LEGO bar sideways through each clip throat; test insertion, seated grip, play, removal, stress and repeatability. Do not use a minifigure hand or hinge.");
+    e.process.actualPrintedOrientation=input.orientation;
+    e.process.orientationNotes=input.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate
+        ? QStringLiteral("Print the flat base down at 100% scale with C-Clip axes parallel to the build plate. Candidate #1 is beside the notch. Snap the same genuine 3.20 mm LEGO bar sideways through each clip throat; test insertion, seated grip, play, removal, stress and repeatability. Do not use a minifigure hand or hinge.")
+        : QStringLiteral("Print the flat base down at 100% scale with C-Clip axes vertical. Candidate #1 is beside the notch. Snap the same genuine 3.20 mm LEGO bar sideways through each clip throat; test insertion, seated grip, play, removal, stress and repeatability. Do not use a minifigure hand or hinge.");
     e.process.dimensionalCompensationNotes=QStringLiteral("Record the actual slicer dimensional compensation settings before testing.");
     return e;
 }

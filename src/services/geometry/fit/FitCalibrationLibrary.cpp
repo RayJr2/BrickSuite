@@ -653,10 +653,14 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
         fail(error, "Verified profile promotion requires a preferred correction and complete supported process identity."); return false;
     }
     if ((experiment.featureFamily == QStringLiteral("StandardBar") ||
-         experiment.featureFamily == QStringLiteral("CClipBarReceiver") ||
          experiment.featureFamily == QStringLiteral("BallJoint")) &&
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate) {
         fail(error, "This family currently has only a perpendicular physical calibration fixture."); return false;
+    }
+    if (experiment.featureFamily == QStringLiteral("CClipBarReceiver") &&
+        session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
+        session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
+        fail(error, "C-Clip calibration requires a supported perpendicular or parallel fixture orientation."); return false;
     }
     FitProfile profile; profile.profileIdentity = newStableIdentity();
     profile.name = name.trimmed().isEmpty() ? QStringLiteral("%1 / %2 / %3 mm / LEGO Fit").arg(session.process.printerIdentity, session.process.materialIdentity).arg(session.process.nozzleDiameterMillimetres, 0, 'f', 2) : name.trimmed();
@@ -782,7 +786,8 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
         const bool cClip = correction.featureFamily == QStringLiteral("CClipBarReceiver")
             && correction.featureRole == QStringLiteral("female")
             && (correction.printedOrientation == QStringLiteral("axis-perpendicular-to-build-plate")
-                || correction.printedOrientation == QStringLiteral("feature-axis-perpendicular-to-build-plate"))
+                || correction.printedOrientation == QStringLiteral("feature-axis-perpendicular-to-build-plate")
+                || correction.printedOrientation == QStringLiteral("feature-axis-parallel-to-build-plate"))
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-clip6-bar-receiver-v1")
             && correction.semantics == QStringLiteral("female-c-clip-contact-arc-and-throat-clearance")
             && correction.correctionContractVersion == QStringLiteral("female-c-clip-contact-arc-and-throat-clearance-v1");
