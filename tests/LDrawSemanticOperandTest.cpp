@@ -4,6 +4,7 @@
 #include "../src/services/geometry/print/StudReceivingAntiStudSemantic.h"
 #include "../src/services/geometry/print/StandardBarSemantic.h"
 #include "../src/services/geometry/print/CClipBarReceiverSemantic.h"
+#include "../src/services/geometry/print/BallJointSemantic.h"
 #include "../src/services/geometry/LDrawLibraryService.h"
 #include "../src/ui/parts/PreparedMeshRenderAdapter.h"
 
@@ -97,6 +98,38 @@ int main(int argc,char**argv)
     QDir().mkpath(output);
     auto cache=std::make_shared<PrintPreparationCache>();
     LDrawPrintPreparationService service(cache);
+    for(const QString& id:{QStringLiteral("14417"),QStringLiteral("22484"),QStringLiteral("22890"),
+                          QStringLiteral("14418"),QStringLiteral("104"),QStringLiteral("11476"),
+                          QStringLiteral("30374"),QStringLiteral("3001")}) {
+        const auto loaded=LDrawLibraryService::loadPart(args[libraryAt+1],id);
+        ok&=check(loaded.ok(),id+" Ball Joint control loads");
+        if(!loaded.ok())continue;
+        const auto balls=BallJointSemantic::recognize(loaded);
+        const bool positive=id==QStringLiteral("14417")||id==QStringLiteral("22484")||id==QStringLiteral("22890");
+        ok&=check(balls.size()==(positive?1:0),id+" conservative joint8ball recognition");
+        for(const auto& ball:balls) {
+            ok&=check(ball.role==FunctionalInterfaceRole::Male &&
+                      ball.provenance.size()==2 &&
+                      ball.provenance.front().sourceFile==QStringLiteral("p/joint8ball.dat") &&
+                      ball.provenance.back().sourceFile==QStringLiteral("p/8-8sphe.dat") &&
+                      std::abs(ball.nominalDiameterMillimetres-6.4)<1e-9 &&
+                      ball.evidenceContract==QStringLiteral("official-ldraw-joint8ball-sphere-v1"),
+                      id+" certified 6.40 mm spherical source surface is owned by joint8ball");
+        }
+        if(id==QStringLiteral("22484")) {
+            PrintPreparationRequest request;
+            request.partReference=id;
+            request.ldrawIdentity=id;
+            request.libraryAuthority=args[libraryAt+1];
+            request.loadResult=loaded;
+            const auto prepared=service.prepare(request);
+            int retained=0;
+            if(prepared.preparedMesh)for(const auto& feature:prepared.preparedMesh->functionalFeatures)
+                retained+=feature.family==FunctionalInterfaceFamily::BallJoint;
+            ok&=check(prepared.ready()&&retained==1,
+                      id+" nominal PreparedMesh retains certified Ball Joint: "+prepared.diagnostic);
+        }
+    }
     for(const QString& id:{QStringLiteral("11476"),QStringLiteral("11399"),
                           QStringLiteral("11055"),QStringLiteral("15712"),
                           QStringLiteral("30374"),QStringLiteral("3001"),QStringLiteral("3700")}) {

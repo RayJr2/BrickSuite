@@ -12,7 +12,8 @@ enum class FitCalibrationFamily {
     TechnicAxle,
     TechnicAxleHole,
     StandardBar,
-    CClipBarReceiver
+    CClipBarReceiver,
+    BallJoint
 };
 
 struct FitCalibrationFamilyOption {

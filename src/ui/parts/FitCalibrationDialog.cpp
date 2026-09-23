@@ -9,6 +9,7 @@
 #include "../../services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.h"
 #include "../../services/geometry/fit/StandardBarCalibrationArtifact.h"
 #include "../../services/geometry/fit/CClipBarReceiverCalibrationArtifact.h"
+#include "../../services/geometry/fit/BallJointCalibrationArtifact.h"
 #include "../../services/geometry/fit/FrictionTechnicPinCalibrationArtifact.h"
 #include "../../services/geometry/fit/TechnicAxleCalibrationArtifact.h"
 #include "../../services/geometry/fit/TechnicAxleHoleCalibrationArtifact.h"
@@ -67,7 +68,7 @@ auto*bottom=new QHBoxLayout;m_guidance=new QLabel(this);m_guidance->setWordWrap(
 connect(buttons,&QDialogButtonBox::rejected,this,[this]{if(m_dirty)saveSession();reject();});connect(resume,&QPushButton::clicked,this,&FitCalibrationDialog::resumeManagedSession);connect(newWorkspaceAction,&QAction::triggered,this,&FitCalibrationDialog::newWorkspace);connect(deleteWorkspaceAction,&QAction::triggered,this,&FitCalibrationDialog::deleteSelectedWorkspace);connect(load,&QPushButton::clicked,this,&FitCalibrationDialog::loadSession);connect(newCalibration,&QPushButton::clicked,this,&FitCalibrationDialog::createSelectedCalibration);connect(m_save,&QPushButton::clicked,this,[this]{saveSession();});connect(saveAs,&QPushButton::clicked,this,&FitCalibrationDialog::exportSession);connect(profile,&QPushButton::clicked,this,&FitCalibrationDialog::createFitProfile);connect(m_autoSave,&QTimer::timeout,this,[this]{if(m_dirty)saveSession();});connect(add,&QPushButton::clicked,this,&FitCalibrationDialog::addObservation);connect(preferred,&QPushButton::clicked,this,&FitCalibrationDialog::selectPreferred);connect(m_generate,&QPushButton::clicked,this,&FitCalibrationDialog::generateFineSearch);connect(m_verify,&QPushButton::clicked,this,&FitCalibrationDialog::markVerified);connect(m_tabs,&QTabWidget::currentChanged,this,[this]{refresh();});connect(m_coarseReview,qOverload<int>(&QComboBox::currentIndexChanged),this,[this]{if(!m_loading)refresh();});connect(m_features,qOverload<int>(&QComboBox::currentIndexChanged),this,&FitCalibrationDialog::selectFeature);auto processChanged=[this]{readProcess();if(!m_loading){m_dirty=true;m_savedConfirmation=false;scheduleManagedSave();}refresh();};connect(m_printer,&QLineEdit::textChanged,this,processChanged);connect(m_material,&QLineEdit::textChanged,this,processChanged);connect(m_profile,&QLineEdit::textChanged,this,processChanged);connect(m_orientationNotes,&QLineEdit::textChanged,this,processChanged);connect(m_compensationNotes,&QLineEdit::textChanged,this,processChanged);connect(m_nozzle,qOverload<double>(&QDoubleSpinBox::valueChanged),this,[processChanged](double){processChanged();});connect(m_layer,qOverload<double>(&QDoubleSpinBox::valueChanged),this,[processChanged](double){processChanged();});connect(m_orientation,qOverload<int>(&QComboBox::currentIndexChanged),this,[processChanged](int){processChanged();});refreshLibrary();refresh();}
 
 void FitCalibrationDialog::createSelectedCalibration(){createCalibration(FitCalibrationFamily(m_newFamily->currentData().toInt()));}
-void FitCalibrationDialog::createCalibration(FitCalibrationFamily family){switch(family){case FitCalibrationFamily::TechnicHole:newTechnicCalibration();break;case FitCalibrationFamily::StandardStud:newStudCalibration();break;case FitCalibrationFamily::StudReceivingClutch:newReceivingClutchCalibration();break;case FitCalibrationFamily::FrictionlessTechnicPin:newFrictionlessPinCalibration();break;case FitCalibrationFamily::FrictionTechnicPin:newFrictionPinCalibration();break;case FitCalibrationFamily::TechnicAxle:newTechnicAxleCalibration();break;case FitCalibrationFamily::TechnicAxleHole:newTechnicAxleHoleCalibration();break;case FitCalibrationFamily::StandardBar:newStandardBarCalibration();break;case FitCalibrationFamily::CClipBarReceiver:newCClipBarReceiverCalibration();break;}}
+void FitCalibrationDialog::createCalibration(FitCalibrationFamily family){switch(family){case FitCalibrationFamily::TechnicHole:newTechnicCalibration();break;case FitCalibrationFamily::StandardStud:newStudCalibration();break;case FitCalibrationFamily::StudReceivingClutch:newReceivingClutchCalibration();break;case FitCalibrationFamily::FrictionlessTechnicPin:newFrictionlessPinCalibration();break;case FitCalibrationFamily::FrictionTechnicPin:newFrictionPinCalibration();break;case FitCalibrationFamily::TechnicAxle:newTechnicAxleCalibration();break;case FitCalibrationFamily::TechnicAxleHole:newTechnicAxleHoleCalibration();break;case FitCalibrationFamily::StandardBar:newStandardBarCalibration();break;case FitCalibrationFamily::CClipBarReceiver:newCClipBarReceiverCalibration();break;case FitCalibrationFamily::BallJoint:newBallJointCalibration();break;}}
 FitCalibrationExperiment* FitCalibrationDialog::activeExperiment(){if(m_tabs->currentIndex()==0)return m_session.hasCoarseExperiment&&m_coarseReview->currentIndex()==m_coarseReview->count()-1?&m_session.coarseExperiment:nullptr;return m_session.hasFineExperiment?&m_session.fineExperiment:nullptr;}
 QTableWidget* FitCalibrationDialog::activeTable()const{return m_tabs->currentIndex()==0?m_coarseTable:m_fineTable;}
 void FitCalibrationDialog::readProcess(){if(m_loading)return;if(m_featureIndex>=0&&m_featureIndex<m_workspace.featureSessions.size())m_workspace.featureSessions[m_featureIndex]=m_session;const auto orientation=FitPrintedOrientation(m_orientation->currentData().toInt());const QString orientationNotes=m_orientationNotes->text();for(auto& feature:m_workspace.featureSessions){feature.process.printerIdentity=m_printer->text().trimmed();feature.process.materialIdentity=m_material->text().trimmed();feature.process.profileName=m_profile->text().trimmed();feature.process.hasNozzleDiameter=true;feature.process.nozzleDiameterMillimetres=m_nozzle->value();feature.process.hasLayerHeight=true;feature.process.layerHeightMillimetres=m_layer->value();feature.process.dimensionalCompensationNotes=m_compensationNotes->text();if(feature.sessionIdentity==m_session.sessionIdentity){feature.process.actualPrintedOrientation=orientation;feature.process.orientationNotes=orientationNotes;}if(feature.hasCoarseExperiment)feature.coarseExperiment.process=feature.process;if(feature.hasFineExperiment)feature.fineExperiment.process=feature.process;}if(m_featureIndex>=0&&m_featureIndex<m_workspace.featureSessions.size())m_session=m_workspace.featureSessions[m_featureIndex];if(!m_workspace.featureSessions.isEmpty()){m_workspace.process=m_workspace.featureSessions.front().process;m_workspace.process.actualPrintedOrientation=FitPrintedOrientation::Unknown;m_workspace.process.orientationNotes.clear();m_workspace.identity=FitCalibrationLibrary::manufacturingContextFingerprint(m_workspace.process);m_workspace.displayName=FitCalibrationLibrary::workspaceDisplayName(m_workspace.process);}}
@@ -216,6 +217,7 @@ void FitCalibrationDialog::generateFineSearch()
     if(source.featureFamily==QStringLiteral("StandardStud")){StandardStudCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.dimension=source.correctionDimension==FitCorrectionDimension::Height?StandardStudCalibrationDimension::Height:StandardStudCalibrationDimension::Diameter;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.fixedDiameterCorrectionMillimetres=source.fixedDiameterCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardStudCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StandardStudCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("StandardBar")){StandardBarCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardBarCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=StandardBarCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("CClipBarReceiver")){CClipBarReceiverCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;const auto artifact=CClipBarReceiverCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=CClipBarReceiverCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
+    else if(source.featureFamily==QStringLiteral("BallJoint")){BallJointCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;const auto artifact=BallJointCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=BallJointCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("StudReceivingClutch")){StudReceivingCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerDiameterCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const bool wallPocket=source.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-wall-pocket-square-v1"),antiStud=source.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-antistud-bore-v1");const auto artifact=antiStud?StudReceivingCalibrationArtifact::generateAntiStudBore(source.regenerationPrototype,d):wallPocket?StudReceivingCalibrationArtifact::generateWallPocket(source.regenerationPrototype,d):StudReceivingCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StudReceivingCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("FrictionTechnicPin")){FrictionTechnicPinCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerRidgeEnvelopeCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=FrictionTechnicPinCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=FrictionTechnicPinCalibrationArtifact::observationTemplate(artifact);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("TechnicAxle")){TechnicAxleCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerTipToTipCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=TechnicAxleCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
@@ -381,4 +383,51 @@ void FitCalibrationDialog::newCClipBarReceiverCalibration()
     refreshLibrary();
     QMessageBox::information(this,"C-Clip / Bar Receiver Calibration",
         "The seven-clip artifact was added to this workspace. Print flat-base down at 100%. Candidate #1 is beside the notch. Snap the same genuine 3.20 mm LEGO bar sideways through each throat; record grip, play, removal, stress and repeatability.");
+}
+void FitCalibrationDialog::newBallJointCalibration()
+{
+    if(m_dirty&&!saveSession())return;
+    if(m_workspace.identity.isEmpty()) {
+        QMessageBox::information(this,"Ball Joint Calibration",
+            "Resume or import a manufacturing workspace first so the new evidence inherits its manufacturing context.");
+        return;
+    }
+    auto& dirs=SessionFileDialogDirectoryService::instance();
+    QString path=QFileDialog::getSaveFileName(this,"Save Ball Joint Calibration 3MF",
+        fixtureDefault(FitCalibrationNameKey::BallJointDiameter,
+            BallJointCalibrationArtifact::artifactIdentity()),"3MF models (*.3mf)");
+    if(path.isEmpty())return;
+    if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";
+    dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
+    const auto artifact=BallJointCalibrationArtifact::generate();
+    if(!artifact.ok){QMessageBox::warning(this,"Ball Joint Calibration",artifact.diagnostic);return;}
+    ThreeMfWriter::Options options;
+    options.objectName=artifact.artifactIdentity;
+    options.partIdentity=artifact.artifactIdentity;
+    options.modelColor=QColor("#A0A5A9");
+    QString error;
+    if(!writeFixture(artifact.mesh,FitCalibrationNameKey::BallJointDiameter,false,path,options,&error)) {
+        QMessageBox::warning(this,"Ball Joint Calibration",error);return;
+    }
+    auto experiment=BallJointCalibrationArtifact::observationTemplate(artifact);
+    FitCalibrationSession session;
+    session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
+    session.process=m_workspace.process;
+    session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;
+    session.process.orientationNotes=experiment.process.orientationNotes;
+    session.hasCoarseExperiment=true;
+    session.coarseExperiment=experiment;
+    session.coarseExperiment.process=session.process;
+    if(!m_library.saveSession(&session,&error)) {
+        QMessageBox::warning(this,"Ball Joint Calibration",error);return;
+    }
+    if(!writeCompanion(m_library,session,path,&error))
+        QMessageBox::warning(this,"Calibration Artifact",
+            QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));
+    auto workspace=m_workspace;
+    workspace.featureSessions.push_back(session);
+    showWorkspace(workspace,session.sessionIdentity);
+    refreshLibrary();
+    QMessageBox::information(this,"Ball Joint Calibration",
+        "The seven-ball fixture was added to this workspace. Print flat-base down at 100% with stems vertical. Candidate #1 is beside the notch. Test all candidates in the same genuine LEGO joint8 socket; record snap-in, articulation, retention, removal, stress and repeatability.");
 }

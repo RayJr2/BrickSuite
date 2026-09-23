@@ -3,6 +3,7 @@
 #include "../src/services/geometry/fit/StudReceivingCalibrationArtifact.h"
 #include "../src/services/geometry/fit/StandardBarCalibrationArtifact.h"
 #include "../src/services/geometry/fit/CClipBarReceiverCalibrationArtifact.h"
+#include "../src/services/geometry/fit/BallJointCalibrationArtifact.h"
 #include "../src/services/geometry/fit/FitCalibrationFixtureLabel.h"
 #include "../src/services/geometry/fit/FitCalibrationNamingCatalog.h"
 #include "../src/services/geometry/fit/FitCalibrationArtifactLocation.h"
@@ -360,6 +361,126 @@ bool testStandardBar(const QStringList& args)
     if(validateAt>=0&&validateAt+1<args.size()) ok&=validateSession(args[validateAt+1]);
     return ok;
 }
+bool testBallJoint(const QStringList& args)
+{
+    const auto artifact=BallJointCalibrationArtifact::generate();
+    bool ok=require(artifact.ok,"Ball Joint fixture generation: "+artifact.diagnostic);
+    if(!ok)return false;
+    ok&=require(artifact.candidates.size()==7 &&
+                std::abs(artifact.candidates.front().functionalDiameterMillimetres-6.10)<1e-9 &&
+                std::abs(artifact.candidates[3].functionalDiameterMillimetres-6.40)<1e-9 &&
+                std::abs(artifact.candidates.back().functionalDiameterMillimetres-6.70)<1e-9 &&
+                artifact.analysis.connectedComponents==1 && artifact.analysis.boundaryEdges==0 &&
+                artifact.analysis.nonManifoldEdges==0 && artifact.analysis.selfIntersections==0,
+                "Ball Joint seven-candidate spherical fixture is manifold and includes nominal #4");
+    const auto repeated=BallJointCalibrationArtifact::generate();
+    ok&=require(repeated.ok&&sameMesh(repeated.mesh,artifact.mesh),"Ball Joint fixture is deterministic");
+    const auto experiment=BallJointCalibrationArtifact::observationTemplate(artifact);
+    FitCalibrationExperiment restored;
+    QString error;
+    ok&=require(FitCalibrationExperimentJson::fromJson(
+                    FitCalibrationExperimentJson::toJson(experiment),&restored,&error) &&
+                restored.featureFamily==QStringLiteral("BallJoint") &&
+                restored.regenerationPrototype.family==FunctionalInterfaceFamily::BallJoint &&
+                restored.regenerationPrototype.evidenceContract==QStringLiteral("official-ldraw-joint8ball-sphere-v1") &&
+                restored.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
+                restored.preferredCandidateIndex==0 && restored.state!=FitEvidenceState::Verified,
+                "Ball Joint experiment round-trips as unobserved perpendicular evidence: "+error);
+    const auto validateSession=[&](const QString& path) {
+        QFile file(path);
+        if(!require(file.open(QIODevice::ReadOnly),"Open Ball Joint session: "+path))return false;
+        FitCalibrationSession decoded;
+        if(!require(FitCalibrationSessionJson::fromJson(QJsonDocument::fromJson(file.readAll()).object(),
+                    &decoded,&error),"Decode Ball Joint session: "+error))return false;
+        bool valid=require(!decoded.sessionIdentity.isEmpty() && decoded.hasCoarseExperiment &&
+                           !decoded.hasFineExperiment && decoded.history.isEmpty() &&
+                           decoded.coarseExperiment.artifactIdentity==BallJointCalibrationArtifact::artifactIdentity() &&
+                           decoded.coarseExperiment.parentArtifactIdentity.isEmpty() &&
+                           decoded.coarseExperiment.candidates.size()==7 &&
+                           decoded.coarseExperiment.preferredCandidateIndex==0 &&
+                           decoded.coarseExperiment.state!=FitEvidenceState::Verified &&
+                           decoded.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,
+                           "Ball Joint session identity, lineage and unverified orientation");
+        for(int i=0;i<decoded.coarseExperiment.candidates.size();++i) {
+            const auto& candidate=decoded.coarseExperiment.candidates[i];
+            valid&=require(candidate.index==i+1 && candidate.observations.isEmpty() &&
+                           std::abs(candidate.diameterCorrectionMillimetres-(-.30+i*.10))<1e-9 &&
+                           std::abs(candidate.functionalDiameterMillimetres-(6.10+i*.10))<1e-9,
+                           QStringLiteral("Ball Joint candidate %1 matches printed fixture").arg(i+1));
+        }
+        QTemporaryDir root;
+        FitCalibrationLibrary library(root.path());
+        FitCalibrationWorkspace workspace;
+        workspace.process.printerIdentity=QStringLiteral("Test printer");
+        workspace.process.materialIdentity=QStringLiteral("Test material");
+        workspace.process.profileName=QStringLiteral("Test process");
+        workspace.process.hasNozzleDiameter=true;
+        workspace.process.nozzleDiameterMillimetres=.4;
+        workspace.process.hasLayerHeight=true;
+        workspace.process.layerHeightMillimetres=.2;
+        workspace.process.dimensionalCompensationNotes=QStringLiteral("None");
+        FitCalibrationSession imported,resumed;
+        valid&=require(library.importSessionIntoWorkspace(path,&workspace,&imported,&error) &&
+                       imported.sessionIdentity==decoded.sessionIdentity &&
+                       library.loadSession(decoded.sessionIdentity,&resumed,&error) &&
+                       resumed.coarseExperiment.regenerationPrototype.family==FunctionalInterfaceFamily::BallJoint &&
+                       resumed.coarseExperiment.candidates[3].observations.isEmpty(),
+                       "Ball Joint managed session imports and resumes without evidence: "+error);
+        return valid;
+    };
+    const int outputAt=args.indexOf(QStringLiteral("--ball-joint-output"));
+    if(outputAt>=0&&outputAt+1<args.size()) {
+        QDir output(args[outputAt+1]);
+        ok&=require(output.mkpath(QStringLiteral(".")),"Ball Joint output directory");
+        const QString fixturePath=output.filePath(FitCalibrationArtifactLocation::fixtureFileName(
+            FitCalibrationNameKey::BallJointDiameter,QStringLiteral("coarse"),1));
+        const QString sessionPath=FitCalibrationArtifactLocation::companionPath(fixturePath);
+        if(QFileInfo::exists(fixturePath)||QFileInfo::exists(sessionPath))
+            ok&=require(false,"Refusing to overwrite existing Ball Joint calibration artifacts");
+        else {
+            PrintMesh labeled;
+            ok&=require(FitCalibrationFixtureLabel::recessStandalone(artifact.mesh,
+                FitCalibrationNameKey::BallJointDiameter,&labeled,nullptr,&error),"Ball Joint label: "+error);
+            ok&=require(validatePreparedMesh(analyzeSource(labeled)).ok(),
+                        "labeled Ball Joint fixture remains one strict manifold");
+            if(!labeled.faces.empty()) {
+                ThreeMfWriter::Options options;
+                options.objectName=artifact.artifactIdentity;
+                options.partIdentity=artifact.artifactIdentity;
+                options.modelColor=QColor("#A0A5A9");
+                ok&=require(ThreeMfWriter::write(labeled,fixturePath,options,&error),
+                            "Ball Joint 3MF export: "+error);
+                if(QFileInfo::exists(fixturePath)) {
+                    Lib3MF::CWrapper wrapper;
+                    auto model=wrapper.CreateModel();
+                    model->QueryReader("3mf")->ReadFromFile(fixturePath.toStdString());
+                    auto meshes=model->GetMeshObjects();
+                    ok&=require(meshes->MoveNext() &&
+                                meshes->GetCurrentMeshObject()->GetTriangleCount()==labeled.faces.size(),
+                                "Ball Joint 3MF independently reopens with the labeled fixture mesh");
+                }
+            }
+            QTemporaryDir managedRoot;
+            FitCalibrationLibrary managed(managedRoot.path());
+            FitCalibrationSession session;
+            session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
+            session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;
+            session.process.orientationNotes=experiment.process.orientationNotes;
+            session.hasCoarseExperiment=true;
+            session.coarseExperiment=experiment;
+            session.coarseExperiment.process=session.process;
+            ok&=require(managed.saveSession(&session,&error) &&
+                        managed.exportSession(session.sessionIdentity,sessionPath,&error),
+                        "Ball Joint managed-session export: "+error);
+            if(QFileInfo::exists(sessionPath))ok&=validateSession(sessionPath);
+            QTextStream(stdout)<<"ballJointFixture="<<fixturePath<<Qt::endl
+                               <<"ballJointSession="<<sessionPath<<Qt::endl;
+        }
+    }
+    const int validateAt=args.indexOf(QStringLiteral("--ball-joint-validate-session"));
+    if(validateAt>=0&&validateAt+1<args.size())ok&=validateSession(args[validateAt+1]);
+    return ok;
+}
 bool testCClipBarReceiver(const QStringList& args)
 {
     const auto artifact=CClipBarReceiverCalibrationArtifact::generate();
@@ -588,5 +709,6 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;const
     ok &= testAntiStudBore(args);
     ok &= testStandardBar(args);
     ok &= testCClipBarReceiver(args);
+    ok &= testBallJoint(args);
     return ok?0:1;
 }

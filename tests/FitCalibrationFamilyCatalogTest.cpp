@@ -17,7 +17,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication application(argc, argv);
     const auto options = FitCalibrationFamilyCatalog::availableFamilies();
-    bool ok = require(options.size() == 9, "all implemented calibration families are selectable");
+    bool ok = require(options.size() == 10, "all implemented calibration families are selectable");
 
     const QVector<FitCalibrationFamily> expectedFamilies = {
         FitCalibrationFamily::TechnicHole,
@@ -28,7 +28,8 @@ int main(int argc, char** argv)
         FitCalibrationFamily::TechnicAxle,
         FitCalibrationFamily::TechnicAxleHole,
         FitCalibrationFamily::StandardBar,
-        FitCalibrationFamily::CClipBarReceiver
+        FitCalibrationFamily::CClipBarReceiver,
+        FitCalibrationFamily::BallJoint
     };
     const QStringList expectedLabels = {
         QStringLiteral("Technic Hole"),
@@ -39,7 +40,8 @@ int main(int argc, char** argv)
         QStringLiteral("Technic Axle"),
         QStringLiteral("Technic Axle Hole"),
         QStringLiteral("Standard Bar"),
-        QStringLiteral("C-Clip / Bar Receiver")
+        QStringLiteral("C-Clip / Bar Receiver"),
+        QStringLiteral("Ball Joint")
     };
     QSet<int> uniqueFamilies;
     for (qsizetype i = 0; i < options.size(); ++i) {

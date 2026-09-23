@@ -11,6 +11,7 @@ QVector<FitCalibrationFamilyOption> FitCalibrationFamilyCatalog::availableFamili
         {FitCalibrationFamily::TechnicAxle, QStringLiteral("Technic Axle")},
         {FitCalibrationFamily::TechnicAxleHole, QStringLiteral("Technic Axle Hole")},
         {FitCalibrationFamily::StandardBar, QStringLiteral("Standard Bar")},
-        {FitCalibrationFamily::CClipBarReceiver, QStringLiteral("C-Clip / Bar Receiver")}
+        {FitCalibrationFamily::CClipBarReceiver, QStringLiteral("C-Clip / Bar Receiver")},
+        {FitCalibrationFamily::BallJoint, QStringLiteral("Ball Joint")}
     };
 }

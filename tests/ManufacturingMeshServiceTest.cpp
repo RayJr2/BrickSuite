@@ -405,6 +405,23 @@ ok &= check(FitCalibrationLibrary::profileCompatibility(cClipSynthetic) &&
             !ManufacturingMeshService::compatibleCorrections(cClipSynthetic,
                 FitPrintedOrientation::FeatureAxisParallelToBuildPlate).cClipClearance,
             "C-Clip production selector consumes only Verified perpendicular contact/throat evidence");
+auto ballCalibrationOnly=profile();
+ballCalibrationOnly.corrections.clear();
+FitProfileCorrection ballEntry;
+ballEntry.featureFamily=QStringLiteral("BallJoint");
+ballEntry.featureRole=QStringLiteral("male");
+ballEntry.printedOrientation=QStringLiteral("feature-axis-perpendicular-to-build-plate");
+ballEntry.semantics=QStringLiteral("male-ball-joint-spherical-diameter");
+ballEntry.correctionContractVersion=QStringLiteral("male-ball-joint-spherical-diameter-v1");
+ballEntry.semanticContractVersion=QStringLiteral("official-ldraw-joint8ball-sphere-v1");
+ballEntry.regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
+ballEntry.calibrationArtifactIdentity=QStringLiteral("hypothetical-ball-evidence");
+ballEntry.valueMillimetres=.10;
+ballCalibrationOnly.corrections.push_back(ballEntry);
+ok &= check(FitCalibrationLibrary::profileCompatibility(ballCalibrationOnly) &&
+            !ManufacturingMeshService::compatibleCorrections(ballCalibrationOnly,
+                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).any(),
+            "Ball Joint evidence contract is preserved but production correction stays disabled");
 const auto barPositive=standardBarProfile(.10);
 ok &= check(FitCalibrationLibrary::profileCompatibility(barZero) &&
             FitCalibrationLibrary::profileCompatibility(barPositive),

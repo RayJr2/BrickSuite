@@ -9,7 +9,7 @@ namespace PrintGeometry {
 enum class FitCalibrationNameKey {
     RoundPassagePerpendicular, RoundPassageParallel, StudOd, StudHeight,
     ClutchTubeWall, ClutchPostWall, ClutchWallPocketBrick, ClutchWallPocketPlate, ClutchAntiStudBore, FrictionlessPin, FrictionPin,
-    AxleTip, AxleHoleArmWidth, LegacyAxleHoleTip, BarDiameter, CClipBarReceiverClearance
+    AxleTip, AxleHoleArmWidth, LegacyAxleHoleTip, BarDiameter, CClipBarReceiverClearance, BallJointDiameter
 };
 
 struct FitCalibrationName {
@@ -21,7 +21,7 @@ struct FitCalibrationName {
 
 class FitCalibrationNamingCatalog {
 public:
-    static constexpr std::array<FitCalibrationName, 16> entries() {
+    static constexpr std::array<FitCalibrationName, 17> entries() {
         return {{{FitCalibrationNameKey::RoundPassagePerpendicular, "Technic Hole — Round Passage — Perpendicular", "TH-R-PERP", "technic-hole-round-perpendicular"},
                  {FitCalibrationNameKey::RoundPassageParallel, "Technic Hole — Round Passage — Parallel", "TH-R-PAR", "technic-hole-round-parallel"},
                  {FitCalibrationNameKey::StudOd, "Standard Stud — OD — Perpendicular", "STUD-OD-PERP", "standard-stud-od-perpendicular"},
@@ -37,7 +37,8 @@ public:
                  {FitCalibrationNameKey::AxleHoleArmWidth, "Technic Axle Hole — Arm Width — Perpendicular", "AXLEHOLE-AW-PERP", "technic-axle-hole-arm-width-perpendicular"},
                  {FitCalibrationNameKey::LegacyAxleHoleTip, "Technic Axle Hole — Tip Clearance — Perpendicular (legacy)", "AXLEHOLE-TIP-LEG", "technic-axle-hole-tip-clearance-perpendicular-legacy"},
                  {FitCalibrationNameKey::BarDiameter, "Standard Bar — Diameter — Perpendicular", "BAR-OD-PERP", "standard-bar-diameter-perpendicular"},
-                 {FitCalibrationNameKey::CClipBarReceiverClearance, "C-Clip / Bar Receiver — Clearance — Perpendicular", "CLIP-BAR-PERP", "c-clip-bar-receiver-clearance-perpendicular"}}};
+                 {FitCalibrationNameKey::CClipBarReceiverClearance, "C-Clip / Bar Receiver — Clearance — Perpendicular", "CLIP-BAR-PERP", "c-clip-bar-receiver-clearance-perpendicular"},
+                 {FitCalibrationNameKey::BallJointDiameter, "Ball Joint — Diameter — Perpendicular", "BALL-OD-PERP", "ball-joint-diameter-perpendicular"}}};
     }
     static FitCalibrationName forKey(FitCalibrationNameKey key) {
         for (const auto& item : entries()) if (item.key == key) return item;
@@ -70,6 +71,7 @@ public:
         if (experiment.featureFamily == QStringLiteral("FrictionlessTechnicPin")) return FitCalibrationNameKey::FrictionlessPin;
         if (experiment.featureFamily == QStringLiteral("StandardBar")) return FitCalibrationNameKey::BarDiameter;
         if (experiment.featureFamily == QStringLiteral("CClipBarReceiver")) return FitCalibrationNameKey::CClipBarReceiverClearance;
+        if (experiment.featureFamily == QStringLiteral("BallJoint")) return FitCalibrationNameKey::BallJointDiameter;
         if (experiment.featureFamily == QStringLiteral("FrictionTechnicPin")) return FitCalibrationNameKey::FrictionPin;
         if (experiment.featureFamily == QStringLiteral("TechnicAxle")) return FitCalibrationNameKey::AxleTip;
         if (experiment.featureFamily == QStringLiteral("TechnicAxleHole"))
@@ -87,7 +89,8 @@ public:
             experiment.featureFamily != QStringLiteral("TechnicAxle") &&
             experiment.featureFamily != QStringLiteral("TechnicAxleHole") &&
             experiment.featureFamily != QStringLiteral("StandardBar") &&
-            experiment.featureFamily != QStringLiteral("CClipBarReceiver"))
+            experiment.featureFamily != QStringLiteral("CClipBarReceiver") &&
+            experiment.featureFamily != QStringLiteral("BallJoint"))
             return QStringLiteral("Unknown Calibration Feature — Orientation Unknown");
         const auto name = forKey(keyFor(experiment, orientation));
         QString result = QString::fromUtf8(name.canonical);
