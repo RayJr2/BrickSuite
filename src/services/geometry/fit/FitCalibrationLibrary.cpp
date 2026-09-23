@@ -1,4 +1,5 @@
 #include "FitCalibrationLibrary.h"
+#include "FitCalibrationNamingCatalog.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -256,7 +257,7 @@ QString FitCalibrationLibrary::workspacesDirectory() const { return QDir(m_root)
 QString FitCalibrationLibrary::newStableIdentity() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 QString FitCalibrationLibrary::currentSemanticContractVersion() { return "official-ldraw-peghole-pair-v1"; }
 QString FitCalibrationLibrary::currentRegeneratorAlgorithmVersion() { return "functional-operand-regenerator-v1"; }
-QString FitCalibrationLibrary::sessionDisplayName(const FitCalibrationSession&session){const FitCalibrationExperiment*experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(!experiment)return QStringLiteral("Empty calibration session");QString feature;if(experiment->featureFamily==QStringLiteral("StandardStud")){feature=QStringLiteral("Standard Stud");feature+=experiment->correctionDimension==FitCorrectionDimension::Height?QStringLiteral(" Height"):QStringLiteral(" OD");}else if(experiment->featureFamily==QStringLiteral("StudReceivingClutch"))feature=experiment->hasRegenerationPrototype&&experiment->regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-post-wall-cell-v1")?QStringLiteral("Stud Receiving Clutch — PostWallCell Post OD"):QStringLiteral("Stud Receiving Clutch — TubeWallCell OD");else if(experiment->featureFamily==QStringLiteral("FrictionlessTechnicPin"))feature=QStringLiteral("Frictionless Technic Pin — Envelope OD");else if(experiment->featureFamily==QStringLiteral("FrictionTechnicPin"))feature=QStringLiteral("Friction Technic Pin — Ridge Envelope OD");else if(experiment->featureFamily==QStringLiteral("TechnicAxle"))feature=QStringLiteral("Technic Axle — Tip-to-Tip Envelope");else if(experiment->featureFamily==QStringLiteral("TechnicAxleHole"))feature=experiment->hasRegenerationPrototype&&experiment->regenerationPrototype.constructionRecipe==QStringLiteral("technic-axle-hole-arm-width-clearance-v2")?QStringLiteral("Technic Axle Hole — Arm Width Clearance"):QStringLiteral("Technic Axle Hole — Tip-to-Tip Clearance");else feature=QStringLiteral("Round Technic Passage");const QString orientation=session.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate?QStringLiteral(" — Parallel"):session.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate?QStringLiteral(" — Perpendicular"):QString();QString stage;if(experiment->state==FitEvidenceState::Verified)stage=QStringLiteral("Verified");else if(experiment->artifactIdentity.contains(QStringLiteral("direct-verification")))stage=QStringLiteral("Verification");else if(experiment->artifactIdentity.contains(QStringLiteral("extension")))stage=QStringLiteral("Extended Search");else if(!experiment->parentArtifactIdentity.isEmpty())stage=QStringLiteral("Fine Search / Verification");else stage=QStringLiteral("Coarse Search");QString process;if(!session.process.printerIdentity.isEmpty()||!session.process.materialIdentity.isEmpty()){process=QStringLiteral(" — %1 / %2").arg(session.process.printerIdentity.isEmpty()?QStringLiteral("Unknown printer"):session.process.printerIdentity,session.process.materialIdentity.isEmpty()?QStringLiteral("Unknown material"):session.process.materialIdentity);}return QStringLiteral("%1%2 — %3%4").arg(feature,orientation,stage,process);}
+QString FitCalibrationLibrary::sessionDisplayName(const FitCalibrationSession& session) { const FitCalibrationExperiment* experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(!experiment)return QStringLiteral("Empty calibration session");const QString feature=FitCalibrationNamingCatalog::canonical(*experiment,session.process.actualPrintedOrientation);QString stage;if(experiment->state==FitEvidenceState::Verified)stage=QStringLiteral("Verified");else if(experiment->artifactIdentity.contains(QStringLiteral("direct-verification")))stage=QStringLiteral("Verification");else if(experiment->artifactIdentity.contains(QStringLiteral("extension")))stage=QStringLiteral("Extended Search");else if(!experiment->parentArtifactIdentity.isEmpty())stage=QStringLiteral("Fine Search / Verification");else stage=QStringLiteral("Coarse Search");QString process;if(!session.process.printerIdentity.isEmpty()||!session.process.materialIdentity.isEmpty()){process=QStringLiteral(" — %1 / %2").arg(session.process.printerIdentity.isEmpty()?QStringLiteral("Unknown printer"):session.process.printerIdentity,session.process.materialIdentity.isEmpty()?QStringLiteral("Unknown material"):session.process.materialIdentity);}return QStringLiteral("%1 — %2%3").arg(feature,stage,process);}
 FitCalibrationSession FitCalibrationLibrary::continuationSession(const FitCalibrationSession& parent,
     const FitCalibrationExperiment& source, FitCalibrationExperiment child)
 {
@@ -287,32 +288,7 @@ FitCalibrationSession FitCalibrationLibrary::continuationSession(const FitCalibr
 QString FitCalibrationLibrary::featureDisplayName(const FitCalibrationExperiment& experiment,
                                                   FitPrintedOrientation orientation)
 {
-    QString name;
-    if (experiment.featureFamily == QStringLiteral("StandardStud"))
-        name = experiment.correctionDimension == FitCorrectionDimension::Height
-            ? QStringLiteral("Stud Height") : QStringLiteral("Stud OD");
-    else if (experiment.featureFamily == QStringLiteral("StudReceivingClutch"))
-        name = experiment.hasRegenerationPrototype &&
-            experiment.regenerationPrototype.constructionRecipe == QStringLiteral("stud-receiving-post-wall-cell-v1")
-            ? QStringLiteral("Receiving Clutch — PostWallCell")
-            : QStringLiteral("Receiving Clutch — TubeWallCell");
-    else if (experiment.featureFamily == QStringLiteral("FrictionlessTechnicPin"))
-        name = QStringLiteral("Frictionless Technic Pin");
-    else if (experiment.featureFamily == QStringLiteral("FrictionTechnicPin"))
-        name = QStringLiteral("Friction Technic Pin");
-    else if (experiment.featureFamily == QStringLiteral("TechnicAxle"))
-        name = QStringLiteral("Technic Axle");
-    else if (experiment.featureFamily == QStringLiteral("TechnicAxleHole"))
-        name = experiment.hasRegenerationPrototype &&
-            experiment.regenerationPrototype.constructionRecipe == QStringLiteral("technic-axle-hole-arm-width-clearance-v2")
-            ? QStringLiteral("Technic Axle Hole — Arm Width")
-            : QStringLiteral("Technic Axle Hole — Tip Clearance");
-    else name = QStringLiteral("Technic Hole");
-    if (orientation == FitPrintedOrientation::FeatureAxisParallelToBuildPlate)
-        name += QStringLiteral(" — Parallel");
-    else if (orientation == FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate)
-        name += QStringLiteral(" — Perpendicular");
-    return name;
+    return FitCalibrationNamingCatalog::canonical(experiment, orientation);
 }
 QString FitCalibrationLibrary::processFingerprint(const FitCalibrationProcess& process) {
     return manufacturingContextFingerprint(process);

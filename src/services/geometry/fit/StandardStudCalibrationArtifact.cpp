@@ -2,6 +2,7 @@
 #include "FitCalibrationPackage.h"
 #include "FitCalibrationFixtureLabel.h"
 #include "FitCalibrationLibrary.h"
+#include "FitCalibrationNamingCatalog.h"
 
 #include "../print/McutMeshBooleanService.h"
 #include "../print/PrintMeshAnalysis.h"
@@ -49,14 +50,17 @@ StandardStudCalibrationArtifactResult StandardStudCalibrationArtifact::generate(
     PrintMesh body=keyedBase(definition.candidateCount);McutMeshBooleanService booleans;
     for(int i=0;i<series.size();++i){const double varied=series[i].correctionMillimetres;MaleStudDimensionalCorrection correction;correction.diameterMillimetres=definition.dimension==StandardStudCalibrationDimension::Diameter?varied:definition.fixedDiameterCorrectionMillimetres;correction.heightMillimetres=definition.dimension==StandardStudCalibrationDimension::Height?varied:0.0;FunctionalFeature candidate=prototype;candidate.stableIdentity=series[i].identity;candidate.frame.origin={8.0+12.0*i,5.0,3.0};candidate.frame.axis={0,0,1};candidate.frame.profileU={1,0,0};candidate.frame.profileV={0,1,0};const auto regenerated=FunctionalOperandRegenerator::regenerateStud(candidate,correction);if(!regenerated.ok()){result.diagnostic=QStringLiteral("Stud candidate %1 could not be regenerated: %2").arg(i+1).arg(regenerated.diagnostic);return result;}const auto united=booleans.unite(body,regenerated.mesh);if(!united.ok()){result.diagnostic=QStringLiteral("Stud candidate %1 could not be joined to the calibration base.").arg(i+1);return result;}body=united.mesh;FitCalibrationCandidate record;record.index=series[i].index;record.diameterCorrectionMillimetres=correction.diameterMillimetres;record.functionalDiameterMillimetres=regenerated.resultingGoverningRadiusMillimetres*2.0;record.heightCorrectionMillimetres=correction.heightMillimetres;record.functionalHeightMillimetres=regenerated.resultingAxialExtentMillimetres;result.candidates.push_back(record);}
     result.mesh=std::move(body);result.analysis=analyzeSource(result.mesh);const auto validation=validatePreparedMesh(result.analysis);if(!validation.ok()){result.diagnostic=QStringLiteral("The stud calibration artifact failed validation: %1").arg(QString::fromStdString(validation.message));return result;}
-    if (definition.dimension == StandardStudCalibrationDimension::Diameter &&
-        definition.artifactIdentity == diameterArtifactIdentity()) {
+    if (definition.artifactIdentity == diameterArtifactIdentity() ||
+        definition.artifactIdentity == heightArtifactIdentity()) {
         const auto experiment = observationTemplate(result, definition);
         PrintMesh labeled;
         if (!FitCalibrationFixtureLabel::recess(result.mesh,
             FitCalibrationLibrary::featureDisplayName(experiment,
                 FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate),
-            QStringLiteral("Stud OD"), {6, 86, .5, 4.5}, &labeled, nullptr, &result.diagnostic))
+            QString::fromLatin1(FitCalibrationNamingCatalog::forKey(
+                definition.dimension == StandardStudCalibrationDimension::Height
+                    ? FitCalibrationNameKey::StudHeight : FitCalibrationNameKey::StudOd).abbreviated),
+            {6, 86, .5, 4.5}, &labeled, nullptr, &result.diagnostic))
             return result;
         result.mesh = std::move(labeled);
         result.analysis = analyzeSource(result.mesh);

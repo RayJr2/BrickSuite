@@ -1,4 +1,5 @@
 #include "FitCalibrationFixtureLabel.h"
+#include "FitCalibrationNamingCatalog.h"
 
 #include "../print/McutMeshBooleanService.h"
 #include "../print/PrintMeshAnalysis.h"
@@ -178,6 +179,18 @@ bool FitCalibrationFixtureLabel::recess(const PrintMesh& source, const QString& 
     if (appliedLabel) *appliedLabel = text;
     if (error) error->clear();
     return true;
+}
+
+bool FitCalibrationFixtureLabel::recessStandalone(const PrintMesh& source, FitCalibrationNameKey key,
+    PrintMesh* labeled, QString* appliedLabel, QString* error)
+{
+    const auto bounds = analyzeSource(source).bounds;
+    FitFixtureLabelRegion region{6, bounds.maximum.x - 6, .5, 4.5};
+    if (key == FitCalibrationNameKey::ClutchTubeWall) region = {6, bounds.maximum.x - 6, 3, 8};
+    else if (key == FitCalibrationNameKey::ClutchPostWall) region = {6, bounds.maximum.x - 6, 1, 5};
+    const auto name = FitCalibrationNamingCatalog::forKey(key);
+    return recess(source, QString::fromUtf8(name.canonical), QString::fromLatin1(name.abbreviated),
+                  region, labeled, appliedLabel, error);
 }
 
 } // namespace PrintGeometry

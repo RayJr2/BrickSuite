@@ -4,6 +4,7 @@
 #include <QString>
 
 namespace PrintGeometry {
+enum class FitCalibrationNameKey;
 
 struct FitFixtureLabelRegion {
     double minimumX = 0;
@@ -20,6 +21,10 @@ public:
                        const QString& shortLabel, const FitFixtureLabelRegion& region,
                        PrintMesh* labeled, QString* appliedLabel,
                        QString* error = nullptr);
+    // Uses certified underside strips; it does not alter candidate or marker geometry.
+    static bool recessStandalone(const PrintMesh& source, FitCalibrationNameKey key,
+                                 PrintMesh* labeled, QString* appliedLabel,
+                                 QString* error = nullptr);
 };
 
 } // namespace PrintGeometry

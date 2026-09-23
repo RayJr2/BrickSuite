@@ -1,9 +1,15 @@
 #include "../src/services/geometry/fit/FitCalibrationPackage.h"
+#include "../src/services/geometry/fit/FitCalibrationNamingCatalog.h"
 #include "../src/services/geometry/fit/FitCalibrationFixtureLabel.h"
 #include "../src/services/geometry/fit/FitCalibrationLibrary.h"
 #include "../src/services/geometry/fit/StandardStudCalibrationArtifact.h"
 #include "../src/services/geometry/fit/StudReceivingCalibrationArtifact.h"
 #include "../src/services/geometry/fit/TechnicAxleHoleCalibrationArtifact.h"
+#include "../src/services/geometry/fit/RoundTechnicCalibrationArtifact.h"
+#include "../src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.h"
+#include "../src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.h"
+#include "../src/services/geometry/fit/TechnicAxleCalibrationArtifact.h"
+#include "../src/services/geometry/fit/FitCalibrationArtifactLocation.h"
 #include "../src/services/geometry/ThreeMfWriter.h"
 #include "../src/services/geometry/print/PrintMeshAnalysis.h"
 
@@ -77,16 +83,57 @@ int main(int argc, char** argv)
     ok &= require(postAgain.ok && sameMesh(post.mesh, postAgain.mesh) &&
                   post.analysis.triangles == postAgain.analysis.triangles,
                   "PostWallCell adapter leaves standalone mesh and topology deterministic");
+    const auto checkStandaloneLabel = [&](const PrintMesh& source, FitCalibrationNameKey key, const QString& family) {
+        PrintMesh labeled; QString applied;
+        const auto before = analyzeSource(source);
+        const bool cut = FitCalibrationFixtureLabel::recessStandalone(source, key, &labeled, &applied, &error);
+        ok &= require(cut, family + " protected underside label: " + error);
+        if (cut) {
+            const auto after = analyzeSource(labeled);
+            ok &= require(applied == QString::fromLatin1(FitCalibrationNamingCatalog::forKey(key).abbreviated) &&
+                          validatePreparedMesh(after).ok() && after.absoluteVolume < before.absoluteVolume &&
+                          std::abs(after.bounds.maximum.x-before.bounds.maximum.x)<.001 &&
+                          std::abs(after.bounds.maximum.y-before.bounds.maximum.y)<.001 &&
+                          std::abs(after.bounds.maximum.z-before.bounds.maximum.z)<.001,
+                          family + " label uses catalog fallback without changing fixture bounds");
+        }
+    };
+    if (post.ok) checkStandaloneLabel(post.mesh, FitCalibrationNameKey::ClutchPostWall, "Post Wall Cell");
+    const auto tube = StudReceivingCalibrationArtifact::generate();
+    if (tube.ok) checkStandaloneLabel(tube.mesh, FitCalibrationNameKey::ClutchTubeWall, "Tube Wall Cell");
+    const auto round = RoundTechnicCalibrationArtifact::generate(RoundTechnicCalibrationArtifact::canonicalPrototype());
+    if (round.ok) checkStandaloneLabel(round.mesh, FitCalibrationNameKey::RoundPassagePerpendicular, "Round Passage");
+    const auto parallel = RoundTechnicCalibrationArtifact::generate(
+        RoundTechnicCalibrationArtifact::canonicalPrototype(), RoundTechnicCalibrationArtifact::parallelCoarseDefinition());
+    if (parallel.ok) checkStandaloneLabel(parallel.mesh, FitCalibrationNameKey::RoundPassageParallel, "Parallel Round Passage");
+    const auto frictionless = FrictionlessTechnicPinCalibrationArtifact::generate();
+    if (frictionless.ok) checkStandaloneLabel(frictionless.mesh, FitCalibrationNameKey::FrictionlessPin, "Frictionless Pin");
+    const auto friction = FrictionTechnicPinCalibrationArtifact::generate();
+    if (friction.ok) checkStandaloneLabel(friction.mesh, FitCalibrationNameKey::FrictionPin, "Friction Pin");
+    const auto axle = TechnicAxleCalibrationArtifact::generate();
+    if (axle.ok) checkStandaloneLabel(axle.mesh, FitCalibrationNameKey::AxleTip, "Technic Axle");
+    const auto axleHole = TechnicAxleHoleArmWidthCalibrationArtifact::generate();
+    if (axleHole.ok) checkStandaloneLabel(axleHole.mesh, FitCalibrationNameKey::AxleHoleArmWidth, "Axle Hole Arm Width");
+    ok &= require(tube.ok && round.ok && parallel.ok && frictionless.ok && friction.ok && axle.ok && axleHole.ok,
+                  "all standalone calibration fixtures generate for physical-label coverage");
     PrintMesh engravedStud;
     QString appliedStudLabel;
     ok &= require(FitCalibrationFixtureLabel::recess(stud.mesh,
-        QStringLiteral("Stud OD — Perpendicular"), QStringLiteral("Stud OD"),
+        QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::StudOd).canonical),
+        QString::fromLatin1(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::StudOd).abbreviated),
         {6, 86, .5, 4.5}, &engravedStud, &appliedStudLabel, &error),
         "recessed Stud OD underside label: " + error);
-    ok &= require(!engravedStud.faces.empty() && appliedStudLabel.contains("STUD OD") &&
+    ok &= require(!engravedStud.faces.empty() && appliedStudLabel == "STUD-OD-PERP" &&
                   analyzeSource(engravedStud).absoluteVolume < stud.analysis.absoluteVolume &&
                   std::abs(analyzeSource(engravedStud).bounds.maximum.z-stud.analysis.bounds.maximum.z)<1e-6,
                   "recessed label leaves stud functional height unchanged");
+    PrintMesh fullNameStud;
+    QString appliedFullName;
+    ok &= require(FitCalibrationFixtureLabel::recess(stud.mesh, QStringLiteral("STUD"),
+                  QStringLiteral("ALT"), {6, 86, .5, 4.5}, &fullNameStud, &appliedFullName, &error) &&
+                  appliedFullName == QStringLiteral("STUD") &&
+                  validatePreparedMesh(analyzeSource(fullNameStud)).ok(),
+                  "full label is used when it fits instead of the abbreviation");
     auto newStudDefinition = studDefinition;
     newStudDefinition.artifactIdentity = StandardStudCalibrationArtifact::diameterArtifactIdentity();
     const auto newStud = StandardStudCalibrationArtifact::generate(
@@ -240,12 +287,14 @@ int main(int argc, char** argv)
         ok &= require(pilot.zones[1].artifactIdentity.endsWith("pilot-v2") &&
                       pilot.zones[3].semanticContract == "official-ldraw-axlehole-arm-width-clearance-v2",
                       "versioned TubeWall marker and active axle-hole v2 evidence");
-        ok &= require(pilot.zones[0].featureDisplayName == "Stud OD — Perpendicular" &&
-                      pilot.zones[0].physicalLabel == "STUD OD - PERPENDICULAR" &&
-                      pilot.zones[1].featureDisplayName.contains("TubeWallCell") &&
-                      pilot.zones[1].physicalLabel == "CLUTCH TUBEWALL" &&
-                      pilot.zones[2].physicalLabel == "CLUTCH POSTWALL" &&
-                      pilot.zones[3].physicalLabel == "AXLE HOLE ARM WIDTH",
+        ok &= require(pilot.zones[0].featureDisplayName == "Standard Stud — OD — Perpendicular" &&
+                      pilot.zones[0].physicalLabel == "STUD-OD-PERP" &&
+                      pilot.zones[1].featureDisplayName == "Stud Receiving Clutch — Tube Wall Cell — Perpendicular" &&
+                      pilot.zones[1].physicalLabel == "CLUTCH-TW-PERP" &&
+                      pilot.zones[2].featureDisplayName == "Stud Receiving Clutch — Post Wall Cell — Perpendicular" &&
+                      pilot.zones[2].physicalLabel == "CLUTCH-PW-PERP" &&
+                      pilot.zones[3].featureDisplayName == "Technic Axle Hole — Arm Width — Perpendicular" &&
+                      pilot.zones[3].physicalLabel == "AXLEHOLE-AW-PERP",
                       "physical underside labels derive from feature presentation with safe recorded fallbacks");
         for (int i = 0; i < 4; ++i) {
             ok &= require(FitCalibrationPackage::validateZone(pilot.zones[i], &error),

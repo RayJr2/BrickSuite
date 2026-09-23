@@ -1,4 +1,5 @@
 #include "FitCalibrationPackage.h"
+#include "FitCalibrationNamingCatalog.h"
 
 #include "FitCalibrationLibrary.h"
 #include "FitCalibrationFixtureLabel.h"
@@ -506,7 +507,7 @@ bool FitCalibrationPackage::generateFourZonePilot(const FitCalibrationProcess& p
     if (!FitCalibrationFixtureLabel::recess(stud.mesh,
         FitCalibrationLibrary::featureDisplayName(studExperiment,
             FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate),
-        QStringLiteral("Stud OD"), {6, 86, .5, 4.5}, &studLabeled, &studLabel, error)) return false;
+        QString::fromLatin1(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::StudOd).abbreviated), {6, 86, .5, 4.5}, &studLabeled, &studLabel, error)) return false;
     add(standardStudOdZone(studLabeled, analyzeSource(studLabeled).bounds, studExperiment,
         result.identity+QStringLiteral(":stud-od"), context, member), studExperiment, studLabel, 0);
 
@@ -518,7 +519,7 @@ bool FitCalibrationPackage::generateFourZonePilot(const FitCalibrationProcess& p
     if (!FitCalibrationFixtureLabel::recess(tube.mesh,
         FitCalibrationLibrary::featureDisplayName(tubeExperiment,
             FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate),
-        QStringLiteral("Clutch TubeWall"), {6, 120, 3, 8}, &tubeLabeled, &tubeLabel, error)) return false;
+        QString::fromLatin1(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::ClutchTubeWall).abbreviated), {6, 120, 3, 8}, &tubeLabeled, &tubeLabel, error)) return false;
     add(tubeWallCellZone(tubeLabeled, analyzeSource(tubeLabeled).bounds, tubeExperiment,
         result.identity+QStringLiteral(":tube-wall"), context, member), tubeExperiment, tubeLabel, 26);
 
@@ -533,7 +534,7 @@ bool FitCalibrationPackage::generateFourZonePilot(const FitCalibrationProcess& p
     if (!FitCalibrationFixtureLabel::recess(post.mesh,
         FitCalibrationLibrary::featureDisplayName(postExperiment,
             FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate),
-        QStringLiteral("Clutch PostWall"), {6, 120, 1, 5}, &postLabeled, &postLabel, error)) return false;
+        QString::fromLatin1(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::ClutchPostWall).abbreviated), {6, 120, 1, 5}, &postLabeled, &postLabel, error)) return false;
     add(postWallCellZone(postLabeled, analyzeSource(postLabeled).bounds, postExperiment,
         result.identity+QStringLiteral(":post-wall"), context, member), postExperiment, postLabel, 58);
 
@@ -554,7 +555,7 @@ bool FitCalibrationPackage::generateFourZonePilot(const FitCalibrationProcess& p
     if (!FitCalibrationFixtureLabel::recess(axle.mesh,
         FitCalibrationLibrary::featureDisplayName(axleExperiment,
             FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate),
-        QStringLiteral("Axle Hole Arm Width"), {6, 106, .5, 4.5},
+        QString::fromLatin1(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::AxleHoleArmWidth).abbreviated), {6, 106, .5, 4.5},
         &axleLabeled, &axleLabel, error)) return false;
     add(axleHoleArmWidthZone(axleLabeled, analyzeSource(axleLabeled).bounds, axleExperiment,
         result.identity+QStringLiteral(":axle-hole-arm-width"), context, member), axleExperiment, axleLabel, 82);
