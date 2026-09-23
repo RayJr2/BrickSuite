@@ -9,6 +9,7 @@
 #include "StandardBarSemantic.h"
 #include "CClipBarReceiverSemantic.h"
 #include "BallJointSemantic.h"
+#include "StandardStudSourceSemantic.h"
 #include "FunctionalOperandRegenerator.h"
 #include "McutMeshBooleanService.h"
 #include "PrintMeshAnalysis.h"
@@ -68,65 +69,15 @@ Point closest(Point p,Point a,Point b,Point c){
     if(va<=0&&d4-d3>=0&&d5-d6>=0){const auto bc=subtract(c,b);return add(b,scaled(bc,(d4-d3)/(d4-d3+d5-d6)));}
     const double inv=1.0/(va+vb+vc);return add(a,add(scaled(ab,vb*inv),scaled(ac,vc*inv)));
 }
-struct SourceStud { FunctionalFeature feature; int owner=-1; };
-QVector<SourceStud> certifiedSourceStuds(const LDrawGeometry::LDrawLoadResult& source){
-    QVector<SourceStud> studs;
-    if(!source.ok()||!source.sourceModel)return studs;
-    const auto& model=*source.sourceModel;
-    for(const auto& reference:model.references){
-        if(reference.fileId<0||reference.fileId>=model.files.size()||
-           model.files[reference.fileId].relativePath.compare(QStringLiteral("p/stud.dat"),Qt::CaseInsensitive)!=0)
-            continue;
-        const auto& t=reference.accumulatedTransform;
-        const auto column=[&](int c){return Point{t[c]*.4,t[8+c]*.4,-t[4+c]*.4};};
-        const auto u=column(0),axis=scaled(column(1),-1),v=column(2);
-        if(std::abs(length(u)-.4)>1e-3||std::abs(length(axis)-.4)>1e-3||
-           std::abs(length(v)-.4)>1e-3||std::abs(dot(u,axis))>1e-3||
-           std::abs(dot(v,axis))>1e-3||std::abs(dot(u,v))>1e-3)continue;
-        int owned=0;bool certified=true;
-        for(const auto& surface:model.surfaces){
-            int ref=surface.referenceId;
-            while(ref>=0&&ref<model.references.size()&&ref!=reference.id)
-                ref=model.references[ref].parentId;
-            if(ref!=reference.id)continue;
-            ++owned;certified&=surface.certified;
-        }
-        if(!certified||owned<20)continue;
-        FunctionalFeature feature;
-        feature.family=FunctionalInterfaceFamily::StandardStud;
-        feature.role=FunctionalInterfaceRole::Male;
-        feature.materialSide=FunctionalMaterialSide::MaterialInside;
-        feature.eligibility=FunctionalEligibility::Eligible;
-        feature.confidence=SemanticConfidence::HighConfidence;
-        feature.operandAction=FunctionalOperandAction::Unite;
-        feature.frame.origin=converted(QVector3D(float(t[3]),float(t[7]),float(t[11])));
-        feature.frame.axis=scaled(axis,1.0/.4);
-        feature.frame.profileU=scaled(u,1.0/.4);
-        feature.frame.profileV=cross(feature.frame.axis,feature.frame.profileU);
-        feature.frame.mirrored=reference.mirrored;
-        feature.nominalRadiusMillimetres=2.4;
-        feature.nominalDiameterMillimetres=4.8;
-        feature.nominalAxialExtentMillimetres=1.6;
-        feature.nominalEngagementExtentMillimetres=1.6;
-        feature.radialProfile={{0,2.4},{1.6,2.4}};
-        feature.constructionRecipe=QStringLiteral("standard-solid-stud-v1");
-        feature.evidenceContract=QStringLiteral("official-ldraw-standard-stud-v1");
-        feature.provenance={{model.files[reference.fileId].relativePath,reference.id,
-                             reference.sourceLine,reference.inverted}};
-        feature.stableIdentity=QStringLiteral("source-surface-standard-stud:%1").arg(reference.id);
-        feature.governingOperandIdentity=feature.stableIdentity+QStringLiteral(":surface");
-        studs.push_back({feature,reference.id});
-    }
-    return studs;
-}
 bool adjustCertifiedStud(const LDrawGeometry::LDrawLoadResult& source,const PrintMesh& nominal,
-                         const SourceStud& stud,double diameterCorrection,double heightCorrection,
+                         const CertifiedSourceStud& stud,double diameterCorrection,double heightCorrection,
                          PrintMesh* adjusted,QString* diagnostic){
     if(!adjusted||!source.sourceModel||!std::isfinite(diameterCorrection)||
        !std::isfinite(heightCorrection)||4.8+diameterCorrection<=0||1.6+heightCorrection<=0)
         return false;
     if(diameterCorrection==0.0&&heightCorrection==0.0){*adjusted=nominal;return true;}
     const auto& model=*source.sourceModel;
+    const bool open=stud.feature.constructionRecipe==QStringLiteral("standard-open-stud-v1");
     struct Surface{Point a,b,c;bool owned;};
     QVector<Surface> surfaces;surfaces.reserve(model.surfaces.size());
     for(const auto& surface:model.surfaces){
@@ -174,7 +125,10 @@ bool adjustCertifiedStud(const LDrawGeometry::LDrawLoadResult& source,const Prin
         const auto radial=subtract(relative,scaled(frame.axis,axial));
         const double radius=length(radial);
         const double baseWeight=std::clamp(axial/.16,0.0,1.0);
-        const double radialScale=radius>1e-9?radialDelta*baseWeight/measuredRadius:0.0;
+        // The open stud's inner 3.20 mm bore is not an OD fit surface. Move
+        // its upper rim axially with the stud height, but never radially.
+        const double exteriorWeight=open?std::clamp((radius-1.6)/.8,0.0,1.0):1.0;
+        const double radialScale=radius>1e-9?radialDelta*baseWeight*exteriorWeight/measuredRadius:0.0;
         point=add(point,add(scaled(radial,radialScale),
                              scaled(frame.axis,axialDelta*std::clamp(axial/measuredHeight,0.0,1.0))));
     }
@@ -201,7 +155,8 @@ ManufacturingMeshCorrections ManufacturingMeshService::compatibleCorrections(con
                        "female-c-clip-contact-arc-and-throat-clearance",printedOrientation) &&
                correction.correctionContractVersion==QStringLiteral("female-c-clip-contact-arc-and-throat-clearance-v1"))
                 result.cClipClearance=&correction;
-    if(orientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate)
+    if(orientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate ||
+       orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate)
         for(const auto& correction:profile.corrections)
             if(matches(correction,"BallJoint","male","male-ball-joint-spherical-diameter",printedOrientation) &&
                correction.correctionContractVersion==QStringLiteral("male-ball-joint-spherical-diameter-v1"))
@@ -290,7 +245,8 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
     if(prepared.preparationMethod.contains(QStringLiteral("source-surface"),Qt::CaseInsensitive)||
        !surfaceFeatures.isEmpty())
         for(const auto& stud:certifiedSourceStuds(source))
-            surfaceFeatures.push_back({stud.feature,SurfaceKind::Stud,stud.owner});
+            if(stud.feature.constructionRecipe!=QStringLiteral("standard-open-stud-v1")||retained(stud.feature))
+                surfaceFeatures.push_back({stud.feature,SurfaceKind::Stud,stud.owner});
     if(!surfaceFeatures.isEmpty()){
         PrintMesh adjusted=prepared.mesh;
         std::vector<bool> moved(adjusted.vertices.size(),false);
@@ -395,7 +351,7 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
         }
         if(featureIdentities.isEmpty()){
             if(surfaceFeatures.front().kind==SurfaceKind::Ball)
-                unmatched<<QStringLiteral("Ball Joint parallel evidence cannot substitute for perpendicular evidence; rotate the ball stem perpendicular to the build plate or supply matching Verified evidence.");
+                unmatched<<QStringLiteral("Ball Joint requires Verified evidence matching its actual print orientation; parallel and perpendicular evidence do not substitute for each other.");
             return fail(ManufacturingMeshError::MissingCorrection,unmatched.join(' '));
         }
         const auto analysis=analyzeSource(adjusted);

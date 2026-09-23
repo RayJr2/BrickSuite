@@ -1,6 +1,7 @@
 #include "LDrawPrintPreparationService.h"
 #include "CClipBarReceiverSemantic.h"
 #include "BallJointSemantic.h"
+#include "StandardStudSourceSemantic.h"
 #include "LDrawPrintGeometryBuilder.h"
 #include "McutMeshBooleanService.h"
 #include "PrintMeshAnalysis.h"
@@ -95,6 +96,8 @@ PrintPreparationResult solidifiedResult(const PrintPreparationRequest&request,co
     PrintPreparationResult result;result.sourceAnalysis=sourceAnalysis;result.finalAnalysis=solidified.analysis;result.preparationProfileIdentity=request.profile.identity;result.dimensionalFidelity.sourceDimensions=dimensions(sourceAnalysis.bounds);result.dimensionalFidelity.preparedDimensions=dimensions(solidified.analysis.bounds);result.dimensionalFidelity.absoluteDimensionDifference={std::abs(result.dimensionalFidelity.sourceDimensions.x-result.dimensionalFidelity.preparedDimensions.x),std::abs(result.dimensionalFidelity.sourceDimensions.y-result.dimensionalFidelity.preparedDimensions.y),std::abs(result.dimensionalFidelity.sourceDimensions.z-result.dimensionalFidelity.preparedDimensions.z)};result.dimensionalFidelity.maximumBoundsDeviationMillimetres=maximumBoundsDeviation(sourceAnalysis.bounds,solidified.analysis.bounds);result.dimensionalFidelity.allowedBoundsDeviationMillimetres=request.profile.maximumExternalBoundsDeviationMillimetres;
     if(result.dimensionalFidelity.maximumBoundsDeviationMillimetres>request.profile.maximumExternalBoundsDeviationMillimetres)return failure(PrintPreparationError::DimensionalFidelityFailed,sourceAnalysis,request.profile.identity,"Solidified source exceeded the external-bounds preservation limit.");
     auto prepared=std::make_shared<PreparedMesh>();prepared->mesh=std::move(solidified.mesh);prepared->millimetreBounds=solidified.analysis.bounds;prepared->sourceAnalysis=sourceAnalysis;prepared->finalAnalysis=solidified.analysis;prepared->componentCount=solidified.analysis.connectedComponents;prepared->partReference=request.partReference;prepared->ldrawIdentity=request.ldrawIdentity;prepared->dependencyFingerprint=request.loadResult.dependencyFingerprint;prepared->preparationProfileVersion=request.profile.identity+QStringLiteral("+source-surface-solidifier-v1");prepared->preparationMethod=QStringLiteral("Certified authoritative LDraw source-surface volumetric solidification");prepared->sourceTriangleCount=sourceAnalysis.triangles;prepared->preparedTriangleCount=solidified.analysis.triangles;prepared->elapsedMilliseconds=elapsed;prepared->dimensionalFidelity=result.dimensionalFidelity;prepared->warnings<<QStringLiteral("Source-surface solidification used a %1 mm sampling pitch; inspect fine functional details before printing.").arg(solidified.samplingPitchMillimetres,0,'f',3);prepared->timings=partialTimings;prepared->timings.totalMilliseconds=elapsed;prepared->functionalFeatures=CClipBarReceiverSemantic::recognize(request.loadResult);prepared->functionalFeatures+=BallJointSemantic::recognize(request.loadResult);
+    for(const auto& stud:certifiedSourceStuds(request.loadResult))
+        prepared->functionalFeatures.push_back(stud.feature);
     result.state=PrintPreparationState::Ready;result.error=PrintPreparationError::None;result.preparedMesh=prepared;result.timings=prepared->timings;result.warnings=prepared->warnings;result.diagnostic=solidified.diagnostic+QStringLiteral(" Independently validated as one closed printable solid.");return result;
 }
 }
@@ -146,6 +149,11 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
             const bool retained=std::any_of(prepared->functionalFeatures.cbegin(),prepared->functionalFeatures.cend(),
                 [&](const FunctionalFeature& feature){return feature.stableIdentity==ball.stableIdentity;});
             if(!retained)prepared->functionalFeatures.push_back(ball);
+        }
+        for(const auto& stud:certifiedSourceStuds(request.loadResult)) {
+            const bool retained=std::any_of(prepared->functionalFeatures.cbegin(),prepared->functionalFeatures.cend(),
+                [&](const FunctionalFeature& feature){return feature.stableIdentity==stud.feature.stableIdentity;});
+            if(!retained)prepared->functionalFeatures.push_back(stud.feature);
         }
         prepared->partReference=request.partReference;prepared->ldrawIdentity=request.ldrawIdentity;
         prepared->dependencyFingerprint=request.loadResult.dependencyFingerprint;
