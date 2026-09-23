@@ -259,6 +259,25 @@ bool closePlanarLoops(Component c,PrintMesh*out,int*added)
     normalize(&c.mesh);
     *added=count;*out=std::move(c.mesh);return true;
 }
+bool closeBodyToBallStem(Component c,int bodyLoop,PrintMesh*out,int*added)
+{
+    if(c.loops.size()!=2||bodyLoop<0||bodyLoop>1||
+       !planar(c.mesh,c.loops[0])||!planar(c.mesh,c.loops[1]))return false;
+    const auto near=c.loops[bodyLoop],far=c.loops[1-bodyLoop];
+    const Point a=center(c.mesh,near),b=center(c.mesh,far);
+    const Point outward=sub(a,b);const double extent=length(outward);
+    if(near.size()!=far.size()||near.size()<8||extent<ContactMm)return false;
+    const Point intoBody{outward.x/extent,outward.y/extent,outward.z/extent};
+    const auto shifted=shiftedLoop(&c.mesh,near,intoBody);
+    for(const auto&loop:{shifted,far}){
+        const auto mid=std::uint32_t(c.mesh.vertices.size());c.mesh.vertices.push_back(center(c.mesh,loop));
+        for(std::size_t i=0;i<loop.size();++i)
+            c.mesh.faces.push_back({loop[(i+1)%loop.size()],loop[i],mid});
+    }
+    normalize(&c.mesh);
+    if(!validateBooleanOperand(analyzeSource(c.mesh)).ok())return false;
+    *added=int(near.size()*3+far.size());*out=std::move(c.mesh);return true;
+}
 }
 
 LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDrawGeometry::LDrawLoadResult&loaded,const std::function<bool()>&cancellationRequested)
@@ -298,9 +317,59 @@ LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDr
     const auto standardBars=StandardBarSemantic::recognize(effective);
     const auto cClips=CClipBarReceiverSemantic::recognize(effective);
     const auto ballJoints=BallJointSemantic::recognize(effective);
+    const auto ownedBy=[&](const Component&g,int ancestor){
+        if(ancestor<0||g.sourceTriangles.isEmpty())return false;
+        for(int triangle:g.sourceTriangles){
+            int ref=effective.sourceModel->surfaces[triangle].referenceId;
+            while(ref>=0&&ref<effective.sourceModel->references.size()&&ref!=ancestor)
+                ref=effective.sourceModel->references[ref].parentId;
+            if(ref!=ancestor)return false;
+        }
+        return true;
+    };
+    QHash<int,int> ballStemBodyLoop,ballStemHead;
+    QSet<int> ballHeadGroups;
+    for(const auto& ball:ballJoints){
+        if(ball.provenance.size()!=2)continue;
+        const int joint=ball.provenance[0].referenceId,sphere=ball.provenance[1].referenceId;
+        int head=-1;
+        for(int i=0;i<int(groups.size());++i)
+            if(i!=body&&groups[i].loops.empty()&&ownedBy(groups[i],sphere)&&
+               validateBooleanOperand(analyzeSource(groups[i].mesh)).ok()){
+                if(head>=0){head=-1;break;}head=i;
+            }
+        if(head<0)continue;
+        int stem=-1,near=-1;
+        for(int i=0;i<int(groups.size());++i){
+            const auto&g=groups[i];
+            if(i==body||g.loops.size()!=2||!ownedBy(g,joint)||ownedBy(g,sphere)||
+               !planar(g.mesh,g.loops[0])||!planar(g.mesh,g.loops[1])||
+               g.loops[0].size()!=g.loops[1].size()||g.loops[0].size()<8)continue;
+            const Point a=center(g.mesh,g.loops[0]),b=center(g.mesh,g.loops[1]);
+            const Point delta=sub(b,a);const double span=length(delta);
+            if(span<ContactMm||length(cross(delta,ball.frame.axis))>ContactMm*span)continue;
+            const bool contacts[2]={inBounds(bodyBounds,a,ContactMm),inBounds(bodyBounds,b,ContactMm)};
+            if(contacts[0]==contacts[1])continue;
+            const int candidateNear=contacts[0]?0:1,far=1-candidateNear;
+            bool circular=true,embedded=true;
+            for(int li=0;li<2;++li){const auto c=center(g.mesh,g.loops[li]);
+                for(const auto vertex:g.loops[li]){
+                    const auto p=g.mesh.vertices[vertex];const auto radial=sub(p,c);
+                    circular&=std::abs(length(radial)-1.6)<=ContactMm&&
+                        std::abs(dot(radial,ball.frame.axis))<=PlanarityMm;
+                    if(li==far)embedded&=length(sub(p,ball.frame.origin))<ball.nominalRadiusMillimetres-ContactMm;
+                }
+            }
+            if(!circular||!embedded)continue;
+            if(stem>=0){stem=-1;break;}
+            stem=i;near=candidateNear;
+        }
+        if(stem>=0){ballStemBodyLoop.insert(stem,near);ballStemHead.insert(stem,head);ballHeadGroups.insert(head);}
+    }
     QSet<int> bodyTriangles;
     for(int triangle:groups[body].sourceTriangles)bodyTriangles.insert(triangle);
     QVector<int>order;order<<body;if(passage>=0)order<<passage;for(int loopCount:{1,2})for(int i=0;i<int(groups.size());++i)if(i!=body&&i!=passage&&int(groups[i].loops.size())==loopCount)order<<i;
+    for(int i=0;i<int(groups.size());++i)if(ballHeadGroups.contains(i))order<<i;
     for(int index:order){if(cancellationRequested&&cancellationRequested()){r.status=Status::Cancelled;r.diagnostics<<"Semantic preparation was cancelled between operands.";return r;}const auto&g=groups[index];SemanticOperand op;op.sourceMesh=g.mesh;op.confidence=SemanticConfidence::HighConfidence;QStringList files;if(!certified(g,&files)){r.status=Status::UncertifiedGeometry;r.diagnostics<<QString("Group %1 is uncertified or not official.").arg(index);return r;}op.sourceFiles=files;
         if(index==body){op.role=SemanticRole::PrimaryBody;op.feature=SemanticFeature::BodyOrCavity;op.closedMesh=g.mesh;normalize(&op.closedMesh);op.analysis=analyzeSource(op.closedMesh);
             for(const auto& pocket:wallPockets){const int pocketReference=pocket.provenance.front().referenceId;int owned=0,total=0;for(const auto&surface:effective.sourceModel->surfaces){int ref=surface.referenceId;while(ref>=0&&ref<effective.sourceModel->references.size()&&ref!=pocketReference)ref=effective.sourceModel->references[ref].parentId;if(ref==pocketReference){++total;if(bodyTriangles.contains(surface.triangleIndex))++owned;}}if(total>=10&&owned==total){op.functionalFeatures.push_back(pocket);r.diagnostics<<QStringLiteral("Certified WallPocket inner wall and floor surfaces retained in primary body for feature %1.").arg(pocket.stableIdentity);}}
@@ -309,10 +378,13 @@ LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDr
             for(const auto& clip:cClips){const int owner=clip.provenance.front().referenceId;int owned=0,total=0;for(const auto& surface:effective.sourceModel->surfaces){int ref=surface.referenceId;while(ref>=0&&ref<effective.sourceModel->references.size()&&ref!=owner)ref=effective.sourceModel->references[ref].parentId;if(ref==owner){++total;if(bodyTriangles.contains(surface.triangleIndex))++owned;}}if(total>=80&&owned==total){op.functionalFeatures.push_back(clip);r.diagnostics<<QStringLiteral("Certified C-Clip contact arc, throat and compliant arms retained in primary body for feature %1.").arg(clip.stableIdentity);}}
             }
         else if(index==passage){op.role=SemanticRole::SubtractivePassage;op.feature=SemanticFeature::RoundThroughPassage;op.closedMesh=g.mesh;normalize(&op.closedMesh);op.analysis=analyzeSource(op.closedMesh);op.functionalFeatures.push_back(passageFeature);}
-        else {bool contacts=true;for(const auto&loop:g.loops)contacts=contacts&&inBounds(bodyBounds,center(g.mesh,loop),ContactMm);if(!contacts){r.status=Status::AmbiguousBoundary;r.diagnostics<<QString("Group %1 does not contact the body at its boundary.").arg(index);return r;}
+        else if(ballHeadGroups.contains(index)){op.role=SemanticRole::AdditiveAttachment;op.feature=SemanticFeature::BodyOrCavity;op.compositionPriority=2;op.closedMesh=g.mesh;normalize(&op.closedMesh);op.analysis=analyzeSource(op.closedMesh);r.diagnostics<<QStringLiteral("Certified closed Ball Joint head retained as an additive operand for group %1.").arg(index);}
+        else if(ballStemBodyLoop.contains(index)){op.role=SemanticRole::AdditiveAttachment;op.feature=SemanticFeature::BodyOrCavity;op.compositionPriority=1;if(!closeBodyToBallStem(g,ballStemBodyLoop.value(index),&op.closedMesh,&op.closureTriangles)){r.status=Status::OperandClosureFailed;r.diagnostics<<QStringLiteral("Certified body-to-ball stem closure failed for group %1.").arg(index);return r;}op.analysis=analyzeSource(op.closedMesh);r.diagnostics<<QStringLiteral("Certified Ball Joint stem bridges the body and closed head (groups %1 and %2).").arg(index).arg(ballStemHead.value(index));}
+        else {bool contacts=true;for(const auto&loop:g.loops)contacts=contacts&&inBounds(bodyBounds,center(g.mesh,loop),ContactMm);if(!contacts){r.status=Status::AmbiguousBoundary;const auto bounds=analyzeSource(g.mesh).bounds;QStringList centers;for(const auto&loop:g.loops){const auto p=center(g.mesh,loop);centers<<QStringLiteral("(%1,%2,%3)").arg(p.x,0,'g',5).arg(p.y,0,'g',5).arg(p.z,0,'g',5);}r.diagnostics<<QString("Group %1 does not contact the body at its boundary (files: %2; boundary centers: %3; group bounds: [%4,%5,%6]–[%7,%8,%9]; body bounds: [%10,%11,%12]–[%13,%14,%15]).").arg(index).arg(files.join(',')).arg(centers.join(',')).arg(bounds.minimum.x).arg(bounds.minimum.y).arg(bounds.minimum.z).arg(bounds.maximum.x).arg(bounds.maximum.y).arg(bounds.maximum.z).arg(bodyBounds.minimum.x).arg(bodyBounds.minimum.y).arg(bodyBounds.minimum.z).arg(bodyBounds.maximum.x).arg(bodyBounds.maximum.y).arg(bodyBounds.maximum.z);return r;}
             if(g.loops.size()==1){op.role=SemanticRole::AdditiveAttachment;op.feature=SemanticFeature::Stud;if(!closeSingle(g,&op.closedMesh,&op.closureTriangles,passage>=0)){r.status=Status::OperandClosureFailed;r.diagnostics<<QString("Single-loop closure failed for group %1.").arg(index);return r;}const auto studReference=reviewedStandardStudReference(g,*effective.sourceModel);if(studReference.reference>=0){op.functionalFeatures.push_back(standardStudFeature(studReference,*effective.sourceModel,g));r.diagnostics<<QString("Official standard solid stud recognized for group %1.").arg(index);}}
             else if(g.loops.size()==2){op.role=SemanticRole::HollowAdditiveAttachment;op.feature=SemanticFeature::Tube;if(!closeAnnularBoundary(g,&op.closedMesh,&op.closureTriangles)){r.status=Status::OperandClosureFailed;r.diagnostics<<QString("Nested-loop annular closure failed for group %1.").arg(index);return r;}const int receivingReference=reviewedReceivingTubeReference(g,*effective.sourceModel);if(receivingReference>=0&&hasReceivingWallContext(receivingReference,*effective.sourceModel,bodyBounds)){op.functionalFeatures.push_back(receivingTubeFeature(receivingReference,*effective.sourceModel,g));r.diagnostics<<QString("Official stud4 receiving tube recognized in surrounding body-wall context for group %1.").arg(index);}else{const auto studReference=reviewedStandardStudReference(g,*effective.sourceModel);if(studReference.reference>=0&&studReference.open){op.feature=SemanticFeature::Stud;op.functionalFeatures.push_back(standardStudFeature(studReference,*effective.sourceModel,g));r.diagnostics<<QString("Official standard open stud recognized for group %1; its inner bore remains protected.").arg(index);}}}
             else {r.status=Status::UnsupportedBoundaryTopology;r.diagnostics<<QString("Group %1 has %2 boundary loops.").arg(index).arg(g.loops.size());return r;}op.analysis=analyzeSource(op.closedMesh);}
+        op.sourceTriangleIndices=g.sourceTriangles;
         QSet<int> operandTriangles;for(int triangle:g.sourceTriangles)operandTriangles.insert(triangle);
         for(const auto& ball:ballJoints){const int owner=ball.provenance.front().referenceId;int owned=0,total=0;for(const auto& surface:effective.sourceModel->surfaces){int ref=surface.referenceId;while(ref>=0&&ref<effective.sourceModel->references.size()&&ref!=owner)ref=effective.sourceModel->references[ref].parentId;if(ref==owner){++total;if(operandTriangles.contains(surface.triangleIndex))++owned;}}if(total>=80&&owned==total){op.functionalFeatures.push_back(ball);r.diagnostics<<QStringLiteral("Certified Ball Joint spherical head retained in one nominal operand for feature %1; production correction is not enabled.").arg(ball.stableIdentity);}}
         const auto operandValidation=validateBooleanOperand(op.analysis);if(!operandValidation.ok()){r.status=Status::OperandValidationFailed;r.diagnostics<<QString("The %1 operand failed Boolean-operand validation: %2 (boundaryEdges=%3, components=%4, nonManifoldVertices=%5, selfIntersections=%6).").arg(roleName(op.role),QString::fromStdString(operandValidation.message)).arg(op.analysis.boundaryEdges).arg(op.analysis.connectedComponents).arg(op.analysis.nonManifoldVertices).arg(op.analysis.selfIntersections);return r;}r.closureTriangles+=op.closureTriangles;r.operands.push_back(std::move(op));}

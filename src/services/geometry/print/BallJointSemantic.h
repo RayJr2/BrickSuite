@@ -7,5 +7,8 @@ namespace PrintGeometry {
 class BallJointSemantic {
 public:
     static QVector<FunctionalFeature> recognize(const LDrawGeometry::LDrawLoadResult& source);
+    static bool adjustPrepared(const LDrawGeometry::LDrawLoadResult& source,
+                               const PrintMesh& nominal, const FunctionalFeature& ball,
+                               double correction, PrintMesh* adjusted, QString* diagnostic = nullptr);
 };
 }

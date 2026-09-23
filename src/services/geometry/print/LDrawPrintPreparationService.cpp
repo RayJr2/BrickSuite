@@ -14,6 +14,68 @@ Point dimensions(const MeshBounds&b){return b.valid?Point{b.maximum.x-b.minimum.
 int roleOrder(SemanticRole r){return r==SemanticRole::PrimaryBody?0:r==SemanticRole::SubtractivePassage?1:r==SemanticRole::AdditiveAttachment?2:3;}
 QString identity(const SemanticOperand&o){return o.sourceFiles.join('|');}
 bool exceedsMeshLimits(const PrintMesh&mesh,const LDrawPrintPreparationProfile&profile){return mesh.vertices.size()>profile.maximumVertices||mesh.faces.size()>profile.maximumFaces;}
+bool composeCertifiedBallAssembly(const LDrawGeometry::LDrawLoadResult&loadResult,QVector<SemanticOperand>*operands,QString*diagnostic)
+{
+    const auto body=std::find_if(operands->cbegin(),operands->cend(),[](const auto&o){return o.role==SemanticRole::PrimaryBody;});
+    const auto stem=std::find_if(operands->cbegin(),operands->cend(),[](const auto&o){return o.compositionPriority==1;});
+    const auto head=std::find_if(operands->cbegin(),operands->cend(),[](const auto&o){return o.compositionPriority==2;});
+    if(stem==operands->cend()&&head==operands->cend())return true;
+    if(body==operands->cend()||stem==operands->cend()||head==operands->cend()){*diagnostic="Certified ball assembly is incomplete.";return false;}
+    if(std::count_if(operands->cbegin(),operands->cend(),[](const auto&o){return o.compositionPriority==1;})!=1||
+       std::count_if(operands->cbegin(),operands->cend(),[](const auto&o){return o.compositionPriority==2;})!=1){
+        *diagnostic="Certified ball assembly has ambiguous stem or head ownership.";return false;
+    }
+    const auto balls=BallJointSemantic::recognize(loadResult);
+    if(balls.size()!=1||balls.front().provenance.isEmpty()||!loadResult.sourceModel){*diagnostic="Certified ball ownership is ambiguous.";return false;}
+    auto isolated=loadResult;
+    isolated.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>(*loadResult.sourceModel);
+    isolated.mesh.triangles.clear();isolated.sourceModel->surfaces.clear();
+    QVector<int> triangles=stem->sourceTriangleIndices+head->sourceTriangleIndices;
+    std::sort(triangles.begin(),triangles.end());
+    if(std::adjacent_find(triangles.cbegin(),triangles.cend())!=triangles.cend()){
+        *diagnostic="Certified ball assembly has overlapping source-group ownership.";return false;
+    }
+    for(int triangle:triangles){
+        if(triangle<0||triangle>=loadResult.mesh.triangles.size()||triangle>=loadResult.sourceModel->surfaces.size()){
+            *diagnostic="Certified ball assembly contains an invalid source-surface index.";return false;
+        }
+        auto copy=loadResult.sourceModel->surfaces[triangle];copy.triangleIndex=isolated.mesh.triangles.size();
+        isolated.mesh.triangles.push_back(loadResult.mesh.triangles[triangle]);
+        isolated.sourceModel->surfaces.push_back(copy);
+    }
+    if(isolated.mesh.triangles.isEmpty()){*diagnostic="Certified ball assembly has no owned source surfaces.";return false;}
+    const auto&ball=balls.front();
+    const auto axial=[&](const QVector3D&p){return (double(p.x())*.4-ball.frame.origin.x)*ball.frame.axis.x+
+        (double(p.z())*.4-ball.frame.origin.y)*ball.frame.axis.y+
+        (-double(p.y())*.4-ball.frame.origin.z)*ball.frame.axis.z;};
+    double attachmentEnd=-1e100;
+    for(int triangle:stem->sourceTriangleIndices){
+        const auto&t=loadResult.mesh.triangles[triangle];
+        attachmentEnd=std::max({attachmentEnd,axial(t.a),axial(t.b),axial(t.c)});
+    }
+    if(!std::isfinite(attachmentEnd)){*diagnostic="Certified ball stem has no body-facing boundary.";return false;}
+    // Move only the stem's body-facing open ring into the already certified
+    // body. This creates actual volumetric overlap instead of relying on a
+    // coincident interface; the authoritative source is never modified.
+    const double intrusion=.12;
+    for(int triangle:stem->sourceTriangleIndices){
+        auto& t=isolated.mesh.triangles[std::lower_bound(triangles.cbegin(),triangles.cend(),triangle)-triangles.cbegin()];
+        for(auto*point:{&t.a,&t.b,&t.c})if(std::abs(axial(*point)-attachmentEnd)<.02)
+            *point+=QVector3D(float(intrusion*ball.frame.axis.x/.4),float(-intrusion*ball.frame.axis.z/.4),float(intrusion*ball.frame.axis.y/.4));
+    }
+    auto solidified=SourceSurfaceSolidifier::solidify(isolated);
+    if(!solidified.successful||!validateBooleanOperand(solidified.analysis).ok()){
+        *diagnostic="Certified ball assembly solidification failed: "+solidified.diagnostic;return false;
+    }
+    SemanticOperand assembly=*stem;
+    assembly.closedMesh=std::move(solidified.mesh);assembly.analysis=solidified.analysis;
+    assembly.sourceFiles=stem->sourceFiles+head->sourceFiles;
+    assembly.sourceTriangleIndices=std::move(triangles);
+    const int headIndex=int(head-operands->cbegin()),stemIndex=int(stem-operands->cbegin());
+    (*operands)[stemIndex]=std::move(assembly);
+    operands->removeAt(headIndex);
+    return true;
+}
 PrintPreparationResult cancelled(const MeshAnalysisResult&a,const QString&profile,const PrintPreparationTimings&t){PrintPreparationResult r;r.state=PrintPreparationState::Cancelled;r.error=PrintPreparationError::Cancelled;r.sourceAnalysis=a;r.preparationProfileIdentity=profile;r.timings=t;r.diagnostic="Print preparation was cancelled.";return r;}
 PrintPreparationResult failure(PrintPreparationError e,const MeshAnalysisResult&a,const QString&profile,const QString&message){PrintPreparationResult r;r.error=e;r.sourceAnalysis=a;r.preparationProfileIdentity=profile;r.diagnostic=message;if(e==PrintPreparationError::UnsupportedSemantics)r.state=PrintPreparationState::Unsupported;else if(e==PrintPreparationError::AmbiguousSemantics)r.state=PrintPreparationState::Ambiguous;else r.state=PrintPreparationState::Failed;return r;}
 PrintPreparationError mapSemanticError(LDrawSemanticOperandBuilder::Status s){using S=LDrawSemanticOperandBuilder::Status;switch(s){case S::AmbiguousBoundary:return PrintPreparationError::AmbiguousSemantics;case S::UnsupportedLibrarySource:case S::UnsupportedBoundaryTopology:return PrintPreparationError::UnsupportedSemantics;case S::OperandClosureFailed:return PrintPreparationError::OperandClosureFailed;case S::OperandValidationFailed:case S::UncertifiedGeometry:return PrintPreparationError::OperandValidationFailed;case S::ResourceLimitExceeded:return PrintPreparationError::ResourceLimitExceeded;case S::Cancelled:return PrintPreparationError::Cancelled;case S::Ready:return PrintPreparationError::None;}return PrintPreparationError::BackendFailure;}
@@ -55,11 +117,16 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
         if(semantic.status==LDrawSemanticOperandBuilder::Status::Cancelled)return cancelled(sourceAnalysis,request.profile.identity,timings);
         if(!sourceAnalysis.finite||!sourceAnalysis.indicesValid||sourceAnalysis.resourceLimitExceeded)return failure(sourceAnalysis.resourceLimitExceeded?PrintPreparationError::ResourceLimitExceeded:PrintPreparationError::InvalidSource,sourceAnalysis,request.profile.identity,"Source geometry is unsafe for semantic preparation.");
         if(!semantic.ok()){
-            if(!m_semanticBuilder&&supportsBoundedSourceSolidification(request.loadResult,sourceAnalysis)){phase.restart();auto solidified=SourceSurfaceSolidifier::solidify(request.loadResult);timings.semanticConstructionMilliseconds+=phase.elapsed();if(solidified.successful){auto result=solidifiedResult(request,sourceAnalysis,std::move(solidified),timings,total.elapsed());if(result.ready())m_cache->insert(key,result.preparedMesh);return result;}}
-            auto error=mapSemanticError(semantic.status);return failure(error,sourceAnalysis,request.profile.identity,semantic.diagnostics.join(' '));}
+            QString solidifierDiagnostic;
+            if(!m_semanticBuilder&&supportsBoundedSourceSolidification(request.loadResult,sourceAnalysis)){phase.restart();auto solidified=SourceSurfaceSolidifier::solidify(request.loadResult);timings.semanticConstructionMilliseconds+=phase.elapsed();if(solidified.successful){auto result=solidifiedResult(request,sourceAnalysis,std::move(solidified),timings,total.elapsed());if(result.ready())m_cache->insert(key,result.preparedMesh);return result;solidifierDiagnostic=result.diagnostic;}else solidifierDiagnostic=solidified.diagnostic;}
+            auto error=mapSemanticError(semantic.status);return failure(error,sourceAnalysis,request.profile.identity,semantic.diagnostics.join(' ')+(solidifierDiagnostic.isEmpty()?QString():QStringLiteral(" Bounded source-surface solidification: ")+solidifierDiagnostic));}
         if(std::size_t(semantic.operands.size())>request.profile.maximumOperands)return failure(PrintPreparationError::ResourceLimitExceeded,sourceAnalysis,request.profile.identity,"Semantic operand limit exceeded.");
         if(std::any_of(semantic.operands.cbegin(),semantic.operands.cend(),[](const auto&operand){return operand.confidence!=SemanticConfidence::HighConfidence;}))return failure(PrintPreparationError::AmbiguousSemantics,sourceAnalysis,request.profile.identity,"Automatic preparation requires HighConfidence semantic operands.");
-        QVector<SemanticOperand> operands=semantic.operands;std::stable_sort(operands.begin(),operands.end(),[](const auto&a,const auto&b){const auto ar=roleOrder(a.role),br=roleOrder(b.role);if(ar!=br)return ar<br;return identity(a)<identity(b);});
+        QVector<SemanticOperand> operands=semantic.operands;
+        QString assemblyDiagnostic;
+        if(!composeCertifiedBallAssembly(request.loadResult,&operands,&assemblyDiagnostic))
+            return failure(PrintPreparationError::OperandClosureFailed,sourceAnalysis,request.profile.identity,assemblyDiagnostic);
+        std::stable_sort(operands.begin(),operands.end(),[](const auto&a,const auto&b){const auto ar=roleOrder(a.role),br=roleOrder(b.role);if(ar!=br)return ar<br;if(a.compositionPriority!=b.compositionPriority)return a.compositionPriority<b.compositionPriority;return identity(a)<identity(b);});
         const auto primaryCount=std::count_if(operands.cbegin(),operands.cend(),[](const auto&o){return o.role==SemanticRole::PrimaryBody;});if(primaryCount!=1)return failure(PrintPreparationError::AmbiguousSemantics,sourceAnalysis,request.profile.identity,"Exactly one primary body/cavity operand is required.");
         if(progress)progress({PrintPreparationPhase::OperandValidation,0,int(operands.size())});
         phase.restart();for(int i=0;i<operands.size();++i){if(cancellation&&cancellation->isCancelled())return cancelled(sourceAnalysis,request.profile.identity,timings);if(exceedsMeshLimits(operands[i].closedMesh,request.profile))return failure(PrintPreparationError::ResourceLimitExceeded,sourceAnalysis,request.profile.identity,QString("Semantic operand %1 exceeds mesh resource limits.").arg(i));const auto valid=validateBooleanOperand(operands[i].analysis);if(!valid.ok())return failure(PrintPreparationError::OperandValidationFailed,sourceAnalysis,request.profile.identity,QString("Semantic operand %1 is invalid: %2").arg(i).arg(QString::fromStdString(valid.message)));}timings.operandValidationMilliseconds=phase.elapsed();

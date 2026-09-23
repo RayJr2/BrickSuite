@@ -129,6 +129,37 @@ int main(int argc,char**argv)
             ok&=check(prepared.ready()&&retained==1,
                       id+" nominal PreparedMesh retains certified Ball Joint: "+prepared.diagnostic);
         }
+        if(id==QStringLiteral("22890")) {
+            const auto semantic=LDrawSemanticOperandBuilder::build(loaded);
+            ok&=check(semantic.ok()&&semantic.operands.size()==6,
+                      id+" certified body-to-ball topology recognized: "+semantic.diagnostics.join(' '));
+            PrintPreparationRequest request;request.partReference=id;request.ldrawIdentity=id;
+            request.libraryAuthority=args[libraryAt+1];request.loadResult=loaded;
+            if(semantic.ok()){
+                auto incomplete=semantic;
+                incomplete.operands.removeLast();
+                LDrawPrintPreparationService missingHead({}, {}, [incomplete](const auto&){return incomplete;});
+                const auto rejected=missingHead.prepare(request);
+                ok&=check(!rejected.ready()&&rejected.error==PrintPreparationError::OperandClosureFailed,
+                          id+" missing certified head is not silently discarded");
+            }
+            const auto prepared=service.prepare(request);
+            ok&=check(prepared.ready(),id+" certified body-to-ball bridge prepares: "+prepared.diagnostic);
+            if(prepared.ready()){
+                ok&=check(prepared.finalAnalysis.connectedComponents==1&&prepared.finalAnalysis.boundaryEdges==0,
+                          id+" prepared bridge is one closed component");
+                const auto repeated=LDrawPrintPreparationService{}.prepare(request);
+                bool deterministic=repeated.ready();
+                if(deterministic){
+                    const auto&a=prepared.preparedMesh->mesh,&b=repeated.preparedMesh->mesh;
+                    deterministic=a.faces==b.faces&&a.vertices.size()==b.vertices.size();
+                    for(std::size_t i=0;deterministic&&i<a.vertices.size();++i)
+                        deterministic=a.vertices[i].x==b.vertices[i].x&&a.vertices[i].y==b.vertices[i].y&&a.vertices[i].z==b.vertices[i].z;
+                }
+                ok&=check(deterministic,
+                          id+" preparation is deterministic without relying on cache");
+            }
+        }
     }
     for(const QString& id:{QStringLiteral("11476"),QStringLiteral("11399"),
                           QStringLiteral("11055"),QStringLiteral("15712"),

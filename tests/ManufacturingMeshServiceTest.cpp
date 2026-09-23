@@ -12,6 +12,7 @@
 #include "../src/services/geometry/print/StudReceivingAntiStudSemantic.h"
 #include "../src/services/geometry/print/StandardBarSemantic.h"
 #include "../src/services/geometry/print/CClipBarReceiverSemantic.h"
+#include "../src/services/geometry/print/BallJointSemantic.h"
 #include "../src/services/geometry/print/LDrawPrintPreparationService.h"
 #include "../src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h"
 #include "../src/services/geometry/LDrawLibraryService.h"
@@ -419,9 +420,11 @@ ballEntry.calibrationArtifactIdentity=QStringLiteral("hypothetical-ball-evidence
 ballEntry.valueMillimetres=.10;
 ballCalibrationOnly.corrections.push_back(ballEntry);
 ok &= check(FitCalibrationLibrary::profileCompatibility(ballCalibrationOnly) &&
+            ManufacturingMeshService::compatibleCorrections(ballCalibrationOnly,
+                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).ballJointDiameter==&ballCalibrationOnly.corrections.front() &&
             !ManufacturingMeshService::compatibleCorrections(ballCalibrationOnly,
-                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).any(),
-            "Ball Joint evidence contract is preserved but production correction stays disabled");
+                FitPrintedOrientation::FeatureAxisParallelToBuildPlate).ballJointDiameter,
+            "Ball Joint selection consumes only Verified perpendicular spherical-diameter evidence");
 const auto barPositive=standardBarProfile(.10);
 ok &= check(FitCalibrationLibrary::profileCompatibility(barZero) &&
             FitCalibrationLibrary::profileCompatibility(barPositive),
@@ -724,6 +727,167 @@ if(libraryAt>=0 && libraryAt+1<args.size()) {
                             "missing C-Clip evidence remains nominal even when other families are Verified");
             }
         }
+    }
+}
+const int ballProfileAt=args.indexOf(QStringLiteral("--ball-profile"));
+FitProfile actualBallProfile;
+bool haveActualBallProfile=false;
+if(ballProfileAt>=0 && ballProfileAt+1<args.size()) {
+    QFile file(args[ballProfileAt+1]);
+    ok &= check(file.open(QIODevice::ReadOnly),"actual managed Ball Joint profile opens read-only");
+    if(file.isOpen()) {
+        QString error;
+        const auto document=QJsonDocument::fromJson(file.readAll());
+        haveActualBallProfile=document.isObject() &&
+            FitProfileJson::fromJson(document.object(),&actualBallProfile,&error);
+        ok &= check(haveActualBallProfile,"actual managed Ball Joint profile parses: "+error);
+    }
+}
+if(libraryAt>=0 && libraryAt+1<args.size()) {
+    const auto selected=haveActualBallProfile?actualBallProfile:ballCalibrationOnly;
+    for(const QString& part:{QStringLiteral("14417"),QStringLiteral("22484"),QStringLiteral("22890")}) {
+        const auto ballSource=LDrawLibraryService::loadPart(args[libraryAt+1],part);
+        ok &= check(ballSource.ok(),part+" real Ball Joint source loads");
+        if(!ballSource.ok())continue;
+        const auto balls=BallJointSemantic::recognize(ballSource);
+        ok &= check(balls.size()==1,part+" has one certified Ball Joint sphere");
+        if(balls.size()!=1)continue;
+        PrintPreparationRequest request;
+        request.partReference=part;
+        request.ldrawIdentity=QStringLiteral("parts/%1.dat").arg(part);
+        request.libraryAuthority=args[libraryAt+1];
+        request.loadResult=ballSource;
+        LDrawPrintPreparationService preparation;
+        const auto preparedResult=preparation.prepare(request);
+        const auto& sourceAnalysis=preparedResult.sourceAnalysis;
+        ok &= check(preparedResult.ready(),part+" reaches nominal PreparedMesh: "+preparedResult.diagnostic+
+            QStringLiteral(" [triangles=%1 components=%2 boundaries=%3 dimensions=%4,%5,%6]")
+                .arg(sourceAnalysis.triangles).arg(sourceAnalysis.connectedComponents).arg(sourceAnalysis.boundaryEdges)
+                .arg(sourceAnalysis.bounds.maximum.x-sourceAnalysis.bounds.minimum.x)
+                .arg(sourceAnalysis.bounds.maximum.y-sourceAnalysis.bounds.minimum.y)
+                .arg(sourceAnalysis.bounds.maximum.z-sourceAnalysis.bounds.minimum.z));
+        if(!preparedResult.ready())continue;
+        const auto& prepared=*preparedResult.preparedMesh;
+        const auto before=prepared.mesh;
+        const auto sourceBefore=ballSource.mesh.triangles;
+        ok &= check(ManufacturingMeshService::transformedOrientation(balls.front(),nominalOrientation)==
+                    FitPrintedOrientation::FeatureAxisParallelToBuildPlate,
+                    part+" nominal Ball Joint axis is parallel, not covered by perpendicular evidence");
+        if(haveActualBallProfile){
+            const auto nominalResolution=AutoFitProfileResolver::resolve(true,part,{selected},ballSource,nominalOrientation);
+            ok &= check(nominalResolution.resolved()||nominalResolution.state==AutoFitResolutionState::NoCompatibleProfile,
+                        part+" runtime-style Auto Fit identifies actual feature applicability");
+            const auto nominal=ManufacturingMeshService().generate(ballSource,prepared,selected,nominalOrientation);
+            ok &= check(nominal.error==ManufacturingMeshError::MissingCorrection&&
+                        nominal.diagnostic.contains(QStringLiteral("parallel"))&&
+                        nominal.diagnostic.contains(QStringLiteral("perpendicular"))&&
+                        !nominal.diagnostic.contains(QStringLiteral("Nominal: Compatible")),
+                        part+" nominal orientation does not silently apply perpendicular Ball Joint evidence: "+nominal.diagnostic);
+        }
+        const QVector<PrintOrientation> orientations={nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative};
+        int matching=-1,incompatible=-1;
+        for(int i=0;i<orientations.size();++i) {
+            if(ManufacturingMeshService::transformedOrientation(balls.front(),orientations[i])==
+               FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate)matching=i;
+            else incompatible=i;
+        }
+        ok &= check(matching>=0 && incompatible>=0,part+" has supported and unsupported print orientations");
+        if(matching<0||incompatible<0)continue;
+        ManufacturingMeshService ballService;
+        const auto autoFit=AutoFitProfileResolver::resolve(true,part,{selected},ballSource,orientations[matching]);
+        ok &= check(autoFit.resolved()&&autoFit.profile.profileIdentity==selected.profileIdentity,
+                    part+" Auto Fit selects the Verified Ball Joint profile");
+        if(haveActualBallProfile) {
+            const FitCalibrationLibrary library(QDir::cleanPath(
+                QFileInfo(args[ballProfileAt+1]).absolutePath()+QStringLiteral("/..")));
+            const auto managed=AutoFitProfileResolver::resolveManaged(true,part,library,ballSource,orientations[matching]);
+            ok &= check(managed.resolved()&&managed.profile.profileIdentity==selected.profileIdentity,
+                        part+" managed Auto Fit selects Ray's existing Verified profile");
+        }
+        const auto produced=ballService.generate(ballSource,prepared,selected,orientations[matching]);
+        ok &= check(produced.ok(),part+" Ball Joint ManufacturingMesh succeeds: "+produced.diagnostic);
+        if(produced.ok()) {
+            const auto& mesh=*produced.manufacturingMesh;
+            const auto* correction=ManufacturingMeshService::compatibleCorrections(selected,
+                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).ballJointDiameter;
+            ok &= check(correction&&mesh.fitProfileIdentity==selected.profileIdentity&&
+                        std::abs(mesh.manufacturingDiameterMillimetres-(6.4+correction->valueMillimetres))<1e-9&&
+                        same(prepared.mesh,before)&&sameSource(ballSource.mesh.triangles,sourceBefore),
+                        part+" uses selected profile while Source and Prepared remain unchanged");
+            const auto repeated=ballService.generate(ballSource,prepared,selected,orientations[matching]);
+            ok &= check(repeated.ok()&&repeated.manufacturingMesh->identity==mesh.identity&&
+                        same(repeated.manufacturingMesh->mesh,mesh.mesh),part+" Ball Joint output is deterministic");
+            int moved=0;
+            bool reachesSelectedSphereRadius=false;
+            bool stemAndAttachmentPreserved=true;
+            for(size_t i=0;i<before.vertices.size();++i)
+                if(before.vertices[i].x!=mesh.mesh.vertices[i].x||
+                   before.vertices[i].y!=mesh.mesh.vertices[i].y||
+                   before.vertices[i].z!=mesh.mesh.vertices[i].z) {
+                    ++moved;
+                    const auto& center=balls.front().frame.origin;
+                    const auto& original=before.vertices[i];
+                    const double originalRadius=std::sqrt((original.x-center.x)*(original.x-center.x)+
+                        (original.y-center.y)*(original.y-center.y)+
+                        (original.z-center.z)*(original.z-center.z));
+                    stemAndAttachmentPreserved &= originalRadius<3.25;
+                    const auto& changed=mesh.mesh.vertices[i];
+                    const double radius=std::sqrt((changed.x-center.x)*(changed.x-center.x)+
+                        (changed.y-center.y)*(changed.y-center.y)+
+                        (changed.z-center.z)*(changed.z-center.z));
+                    reachesSelectedSphereRadius|=std::abs(radius-mesh.manufacturingDiameterMillimetres*.5)<0.015;
+                   }
+            ok &= check(moved>=32&&stemAndAttachmentPreserved&&mesh.mesh.faces==before.faces,
+                        part+" only the spherical envelope changes without replacing Prepared topology or distant stem/attachment vertices");
+            ok &= check(reachesSelectedSphereRadius,part+" corrected spherical fit belt reaches the profile-selected radius");
+            if(part==QStringLiteral("14417")||part==QStringLiteral("22890")) {
+                const int outputAt=args.indexOf(QStringLiteral("--ball-output"));
+                if(outputAt>=0&&outputAt+1<args.size()) {
+                    QDir output(args[outputAt+1]);
+                    ok &= check(output.mkpath(QStringLiteral(".")),"Ball Joint proof directory exists");
+                    const QString path=output.filePath(part+QStringLiteral("-ball-joint-manufacturing.3mf"));
+                    QString error;
+                    ok &= check(ManufacturingMeshDiagnosticExporter::writeThreeMf(mesh,path,1.0,
+                                QColor("#A0A5A9"),&error),"Ball Joint 3MF export: "+error);
+                    if(QFileInfo::exists(path)) {
+                        Lib3MF::CWrapper wrapper;
+                        auto model=wrapper.CreateModel();
+                        model->QueryReader("3mf")->ReadFromFile(path.toStdString());
+                        auto objects=model->GetMeshObjects();
+                        ok &= check(objects->MoveNext()&&
+                                    objects->GetCurrentMeshObject()->GetTriangleCount()==mesh.mesh.faces.size(),
+                                    "Ball Joint ManufacturingMesh 3MF reopens through lib3mf");
+                        QTextStream(stdout)<<"ballManufacturing="<<path<<" correction="
+                            <<mesh.diameterCorrectionMillimetres<<" diameter="
+                            <<mesh.manufacturingDiameterMillimetres<<Qt::endl;
+                    }
+                }
+            }
+        }
+        auto zeroProfile=ballCalibrationOnly;
+        zeroProfile.corrections.front().valueMillimetres=0.0;
+        const auto zero=ballService.generate(ballSource,prepared,zeroProfile,orientations[matching]);
+        ok &= check(zero.ok()&&same(zero.manufacturingMesh->mesh,before),
+                    part+" Verified-zero Ball Joint profile is nominal-equivalent");
+        const auto synthetic=ballService.generate(ballSource,prepared,ballCalibrationOnly,orientations[matching]);
+        ok &= check(synthetic.ok()&&std::abs(synthetic.manufacturingMesh->manufacturingDiameterMillimetres-6.5)<1e-9&&
+                    same(prepared.mesh,before)&&sameSource(ballSource.mesh.triangles,sourceBefore),
+                    part+" synthetic +0.10 mm sphere correction leaves Source and Prepared nominal");
+        const auto unsupported=ballService.generate(ballSource,prepared,selected,orientations[incompatible]);
+        ok &= check(!ManufacturingMeshService::compatibleCorrections(selected,
+                        ManufacturingMeshService::transformedOrientation(balls.front(),orientations[incompatible])).ballJointDiameter&&
+                    unsupported.error==ManufacturingMeshError::MissingCorrection,
+                    part+" unsupported orientation remains nominal: "+unsupported.diagnostic);
+        auto unverified=selected;
+        unverified.verificationState=FitEvidenceState::Draft;
+        ok &= check(!ManufacturingMeshService::hasApplicableCorrection(unverified,ballSource,orientations[matching])&&
+                    AutoFitProfileResolver::resolve(true,part,{unverified},ballSource,orientations[matching]).state==AutoFitResolutionState::NoCompatibleProfile,
+                    part+" unverified Ball Joint evidence remains nominal");
+        auto missing=ballCalibrationOnly;
+        missing.corrections.removeIf([](const FitProfileCorrection& correction){return correction.featureFamily==QStringLiteral("BallJoint");});
+        ok &= check(!ManufacturingMeshService::hasApplicableCorrection(missing,ballSource,orientations[matching])&&
+                    AutoFitProfileResolver::resolve(true,part,{missing},ballSource,orientations[matching]).state==AutoFitResolutionState::NoCompatibleProfile,
+                    part+" missing Ball Joint correction remains nominal");
     }
 }
 return ok?0:1;}
