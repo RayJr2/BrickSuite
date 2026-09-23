@@ -11,6 +11,7 @@
 #include "../src/services/geometry/print/StudReceivingWallPocketSemantic.h"
 #include "../src/services/geometry/print/StudReceivingAntiStudSemantic.h"
 #include "../src/services/geometry/print/StandardBarSemantic.h"
+#include "../src/services/geometry/print/CClipBarReceiverSemantic.h"
 #include "../src/services/geometry/print/LDrawPrintPreparationService.h"
 #include "../src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h"
 #include "../src/services/geometry/LDrawLibraryService.h"
@@ -397,11 +398,13 @@ if (libraryAt >= 0 && libraryAt+1 < args.size()) {
     }
 }
 const auto barZero=standardBarProfile(0.0);
-const auto cClipCalibrationOnly=hypotheticalCClipProfile();
-ok &= check(FitCalibrationLibrary::profileCompatibility(cClipCalibrationOnly) &&
-            !ManufacturingMeshService::compatibleCorrections(cClipCalibrationOnly,
-                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).any(),
-            "C-Clip calibration contract can be stored but has no production correction selector");
+const auto cClipSynthetic=hypotheticalCClipProfile();
+ok &= check(FitCalibrationLibrary::profileCompatibility(cClipSynthetic) &&
+            ManufacturingMeshService::compatibleCorrections(cClipSynthetic,
+                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).cClipClearance==&cClipSynthetic.corrections.front() &&
+            !ManufacturingMeshService::compatibleCorrections(cClipSynthetic,
+                FitPrintedOrientation::FeatureAxisParallelToBuildPlate).cClipClearance,
+            "C-Clip production selector consumes only Verified perpendicular contact/throat evidence");
 const auto barPositive=standardBarProfile(.10);
 ok &= check(FitCalibrationLibrary::profileCompatibility(barZero) &&
             FitCalibrationLibrary::profileCompatibility(barPositive),
@@ -556,6 +559,154 @@ if(libraryAt>=0 && libraryAt+1<args.size()) {
         ok &= check(!ManufacturingMeshService::hasApplicableCorrection(profile(),barSource,nominalOrientation) &&
                     AutoFitProfileResolver::resolve(true,part,{profile()},barSource,nominalOrientation).state==AutoFitResolutionState::NoCompatibleProfile,
                     part+" missing Standard Bar evidence leaves the part nominal");
+    }
+}
+const int clipProfileAt=args.indexOf(QStringLiteral("--c-clip-profile"));
+FitProfile actualClipProfile;
+bool haveActualClipProfile=false;
+if(clipProfileAt>=0 && clipProfileAt+1<args.size()) {
+    QFile file(args[clipProfileAt+1]);
+    ok &= check(file.open(QIODevice::ReadOnly),"actual managed C-Clip profile opens read-only");
+    if(file.isOpen()) {
+        QString error;
+        const auto document=QJsonDocument::fromJson(file.readAll());
+        haveActualClipProfile=document.isObject() &&
+            FitProfileJson::fromJson(document.object(),&actualClipProfile,&error);
+        ok &= check(haveActualClipProfile,"actual managed C-Clip profile parses: "+error);
+        if(haveActualClipProfile) {
+            const auto* correction=ManufacturingMeshService::compatibleCorrections(actualClipProfile,
+                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).cClipClearance;
+            ok &= check(correction && std::abs(correction->valueMillimetres)<1e-9,
+                        "actual physically Verified C-Clip correction is selected from managed profile data");
+        }
+    }
+}
+if(libraryAt>=0 && libraryAt+1<args.size()) {
+    const QString part=QStringLiteral("11476");
+    const auto clipSource=LDrawLibraryService::loadPart(args[libraryAt+1],part);
+    ok &= check(clipSource.ok(),"11476 real C-Clip source loads");
+    if(clipSource.ok()) {
+        const auto clips=CClipBarReceiverSemantic::recognize(clipSource);
+        ok &= check(clips.size()==1,"11476 has one certified clip6 contact/throat contract");
+        PrintPreparationRequest request;
+        request.partReference=part;
+        request.ldrawIdentity=QStringLiteral("parts/11476.dat");
+        request.libraryAuthority=args[libraryAt+1];
+        request.loadResult=clipSource;
+        LDrawPrintPreparationService preparation;
+        const auto preparedResult=preparation.prepare(request);
+        ok &= check(preparedResult.ready(),"11476 reaches nominal PreparedMesh: "+preparedResult.diagnostic);
+        if(preparedResult.ready() && clips.size()==1) {
+            const auto& prepared=*preparedResult.preparedMesh;
+            const auto before=prepared.mesh;
+            const auto sourceBefore=clipSource.mesh.triangles;
+            const QVector<PrintOrientation> orientations={nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative};
+            const FitProfile selected=haveActualClipProfile?actualClipProfile:[&]{auto p=cClipSynthetic;p.corrections.front().valueMillimetres=0;return p;}();
+            int matching=-1,incompatible=-1;
+            for(int i=0;i<orientations.size();++i) {
+                if(ManufacturingMeshService::hasApplicableCorrection(selected,clipSource,orientations[i]))matching=i;
+                else incompatible=i;
+            }
+            ok &= check(matching>=0 && incompatible>=0,
+                        "11476 has a compatible perpendicular and an incompatible Print Orientation");
+            if(matching>=0 && incompatible>=0) {
+                ManufacturingMeshService clipService;
+                const auto autoFit=AutoFitProfileResolver::resolve(true,part,{selected},clipSource,orientations[matching]);
+                ok &= check(autoFit.resolved() && autoFit.profile.profileIdentity==selected.profileIdentity,
+                            "11476 Auto Fit resolves the Verified C-Clip profile");
+                if(haveActualClipProfile) {
+                    const FitCalibrationLibrary library(QDir::cleanPath(
+                        QFileInfo(args[clipProfileAt+1]).absolutePath()+QStringLiteral("/..")));
+                    const auto managed=AutoFitProfileResolver::resolveManaged(true,part,library,clipSource,orientations[matching]);
+                    ok &= check(managed.resolved() && managed.profile.profileIdentity==selected.profileIdentity,
+                                "11476 managed-library Auto Fit resolves Ray's Verified C-Clip profile");
+                }
+                const auto zero=clipService.generate(clipSource,prepared,selected,orientations[matching]);
+                ok &= check(zero.ok(),"11476 Verified-zero ManufacturingMesh succeeds: "+zero.diagnostic);
+                if(zero.ok()) {
+                    const auto& mesh=*zero.manufacturingMesh;
+                    ok &= check(mesh.fitProfileIdentity==selected.profileIdentity &&
+                                mesh.correctionContractVersion==QStringLiteral("female-c-clip-contact-arc-and-throat-clearance-v1") &&
+                                std::abs(mesh.diameterCorrectionMillimetres)<1e-9 &&
+                                std::abs(mesh.manufacturingDiameterMillimetres-3.2)<1e-9 &&
+                                same(mesh.mesh,before) && same(prepared.mesh,before) &&
+                                sameSource(clipSource.mesh.triangles,sourceBefore),
+                                "11476 diagnostics prove selected profile and nominal-equivalent 3.20 mm geometry");
+                    const auto repeated=clipService.generate(clipSource,prepared,selected,orientations[matching]);
+                    ok &= check(repeated.ok() && repeated.manufacturingMesh->identity==mesh.identity &&
+                                same(repeated.manufacturingMesh->mesh,mesh.mesh),
+                                "11476 ManufacturingMesh identity and geometry are deterministic");
+                    const int outputAt=args.indexOf(QStringLiteral("--c-clip-output"));
+                    if(outputAt>=0 && outputAt+1<args.size()) {
+                        QDir output(args[outputAt+1]);
+                        ok &= check(output.mkpath(QStringLiteral(".")),"C-Clip proof directory exists");
+                        const QString path=output.filePath(QStringLiteral("11476-c-clip-manufacturing.3mf"));
+                        QString error;
+                        ok &= check(ManufacturingMeshDiagnosticExporter::writeThreeMf(mesh,path,1.0,
+                                    QColor("#A0A5A9"),&error),"11476 ManufacturingMesh 3MF export: "+error);
+                        if(QFileInfo::exists(path)) {
+                            Lib3MF::CWrapper wrapper;
+                            auto model=wrapper.CreateModel();
+                            model->QueryReader("3mf")->ReadFromFile(path.toStdString());
+                            auto objects=model->GetMeshObjects();
+                            ok &= check(objects->MoveNext() &&
+                                        objects->GetCurrentMeshObject()->GetTriangleCount()==mesh.mesh.faces.size(),
+                                        "11476 ManufacturingMesh 3MF reopens through lib3mf");
+                            QTextStream(stdout)<<"cClipManufacturing="<<path<<Qt::endl;
+                        }
+                    }
+                }
+                const auto nonzero=clipService.generate(clipSource,prepared,cClipSynthetic,orientations[matching]);
+                ok &= check(nonzero.ok(),"11476 synthetic nonzero C-Clip correction passes strict validation: "+nonzero.diagnostic);
+                if(nonzero.ok()) {
+                    const auto& corrected=nonzero.manufacturingMesh->mesh;
+                    int moved=0,contact=0,throat=0;
+                    bool contactExpanded=true,throatExpanded=true;
+                    double maximumMovedRadius=0;
+                    for(size_t i=0;i<corrected.vertices.size();++i) {
+                        const auto& a=before.vertices[i];const auto& b=corrected.vertices[i];
+                        if(a.x==b.x && a.y==b.y && a.z==b.z)continue;
+                        ++moved;
+                        const auto relative=Point{a.x-clips.front().frame.origin.x,
+                            a.y-clips.front().frame.origin.y,a.z-clips.front().frame.origin.z};
+                        const auto& axis=clips.front().frame.axis;
+                        const double along=relative.x*axis.x+relative.y*axis.y+relative.z*axis.z;
+                        const double radius=std::sqrt((relative.x-along*axis.x)*(relative.x-along*axis.x)+
+                            (relative.y-along*axis.y)*(relative.y-along*axis.y)+
+                            (relative.z-along*axis.z)*(relative.z-along*axis.z));
+                        maximumMovedRadius=std::max(maximumMovedRadius,radius);
+                        const auto changed=Point{b.x-clips.front().frame.origin.x,
+                            b.y-clips.front().frame.origin.y,b.z-clips.front().frame.origin.z};
+                        const double changedAlong=changed.x*axis.x+changed.y*axis.y+changed.z*axis.z;
+                        const double changedRadius=std::sqrt((changed.x-changedAlong*axis.x)*(changed.x-changedAlong*axis.x)+
+                            (changed.y-changedAlong*axis.y)*(changed.y-changedAlong*axis.y)+
+                            (changed.z-changedAlong*axis.z)*(changed.z-changedAlong*axis.z));
+                        if(radius<=1.6) {++contact;contactExpanded &= std::abs(changedRadius-radius-.05)<1e-6;}
+                        else {++throat;throatExpanded &= changedRadius>radius && changedRadius-radius<.05;}
+                    }
+                    ok &= check(moved>24 && contact>0 && throat>0 && contactExpanded && throatExpanded && maximumMovedRadius<2.05 &&
+                                corrected.faces==before.faces && same(prepared.mesh,before) &&
+                                sameSource(clipSource.mesh.triangles,sourceBefore) &&
+                                std::abs(nonzero.manufacturingMesh->manufacturingDiameterMillimetres-3.3)<1e-9,
+                                "synthetic correction moves certified contact/throat only, preserving outer arms, unrelated geometry, Source and PreparedMesh");
+                }
+                ok &= check(!ManufacturingMeshService::hasApplicableCorrection(selected,clipSource,orientations[incompatible]) &&
+                            clipService.generate(clipSource,prepared,selected,orientations[incompatible]).error==ManufacturingMeshError::MissingCorrection &&
+                            AutoFitProfileResolver::resolve(true,part,{selected},clipSource,orientations[incompatible]).state==AutoFitResolutionState::NoCompatibleProfile,
+                            "unsupported C-Clip orientation remains nominal");
+                auto unverified=selected;unverified.verificationState=FitEvidenceState::Draft;
+                ok &= check(!ManufacturingMeshService::hasApplicableCorrection(unverified,clipSource,orientations[matching]) &&
+                            clipService.generate(clipSource,prepared,unverified,orientations[matching]).error==ManufacturingMeshError::IncompatibleProfile &&
+                            AutoFitProfileResolver::resolve(true,part,{unverified},clipSource,orientations[matching]).state==AutoFitResolutionState::NoCompatibleProfile,
+                            "unverified C-Clip evidence remains nominal");
+                auto missing=selected;missing.corrections.removeIf([](const FitProfileCorrection& correction){
+                    return correction.featureFamily==QStringLiteral("CClipBarReceiver");});
+                ok &= check(!ManufacturingMeshService::hasApplicableCorrection(missing,clipSource,orientations[matching]) &&
+                            clipService.generate(clipSource,prepared,missing,orientations[matching]).error==ManufacturingMeshError::MissingCorrection &&
+                            AutoFitProfileResolver::resolve(true,part,{missing},clipSource,orientations[matching]).state==AutoFitResolutionState::NoCompatibleProfile,
+                            "missing C-Clip evidence remains nominal even when other families are Verified");
+            }
+        }
     }
 }
 return ok?0:1;}

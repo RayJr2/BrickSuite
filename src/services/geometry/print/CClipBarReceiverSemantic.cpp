@@ -1,7 +1,9 @@
 #include "CClipBarReceiverSemantic.h"
 
 #include <QCryptographicHash>
+#include "PrintMeshAnalysis.h"
 #include <cmath>
+#include <limits>
 
 namespace PrintGeometry { namespace {
 constexpr double MmPerLdu=.4;
@@ -10,7 +12,27 @@ Point origin(const std::array<double,12>& t) { return {t[3]*MmPerLdu,t[11]*MmPer
 double dot(Point a,Point b) { return a.x*b.x+a.y*b.y+a.z*b.z; }
 double length(Point a) { return std::sqrt(dot(a,a)); }
 Point scaled(Point a,double s) { return {a.x*s,a.y*s,a.z*s}; }
+Point add(Point a,Point b) { return {a.x+b.x,a.y+b.y,a.z+b.z}; }
+Point subtract(Point a,Point b) { return {a.x-b.x,a.y-b.y,a.z-b.z}; }
 Point cross(Point a,Point b) { return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z}; }
+Point converted(const QVector3D& p) { return {p.x()*.4,p.z()*.4,-p.y()*.4}; }
+double distanceSquared(Point a,Point b) { const auto d=subtract(a,b); return dot(d,d); }
+Point closest(Point p,Point a,Point b,Point c) {
+    const auto ab=subtract(b,a),ac=subtract(c,a),ap=subtract(p,a);
+    const double d1=dot(ab,ap),d2=dot(ac,ap);
+    if(d1<=0&&d2<=0)return a;
+    const auto bp=subtract(p,b);const double d3=dot(ab,bp),d4=dot(ac,bp);
+    if(d3>=0&&d4<=d3)return b;
+    const double vc=d1*d4-d3*d2;
+    if(vc<=0&&d1>=0&&d3<=0)return add(a,scaled(ab,d1/(d1-d3)));
+    const auto cp=subtract(p,c);const double d5=dot(ab,cp),d6=dot(ac,cp);
+    if(d6>=0&&d5<=d6)return c;
+    const double vb=d5*d2-d1*d6;
+    if(vb<=0&&d2>=0&&d6<=0)return add(a,scaled(ac,d2/(d2-d6)));
+    const double va=d3*d6-d5*d4;
+    if(va<=0&&d4-d3>=0&&d5-d6>=0){const auto bc=subtract(c,b);return add(b,scaled(bc,(d4-d3)/(d4-d3+d5-d6)));}
+    const double inv=1.0/(va+vb+vc);return add(a,add(scaled(ab,vb*inv),scaled(ac,vc*inv)));
+}
 QString leaf(const LDrawGeometry::LDrawSourceModel& model,const LDrawGeometry::ReferenceRecord& ref) {
     return model.files[ref.fileId].relativePath.section('/',-1).toLower();
 }
@@ -82,5 +104,81 @@ QVector<FunctionalFeature> CClipBarReceiverSemantic::recognize(const LDrawGeomet
         result.push_back(feature);
     }
     return result;
+}
+
+bool CClipBarReceiverSemantic::adjustPrepared(const LDrawGeometry::LDrawLoadResult& source,
+    const PrintMesh& nominal,const FunctionalFeature& clip,double correction,
+    PrintMesh* adjusted,QString* diagnostic) {
+    if(!adjusted||!source.ok()||!source.sourceModel||nominal.faces.empty()||
+       clip.family!=FunctionalInterfaceFamily::CClipBarReceiver||
+       clip.constructionRecipe!=QStringLiteral("c-clip-compliant-receiver-v1")||
+       clip.evidenceContract!=QStringLiteral("official-ldraw-clip6-bar-receiver-v1")||
+       clip.provenance.size()!=2||!std::isfinite(correction)||std::abs(correction)>0.5||
+       clip.nominalRadiusMillimetres+correction*.5<=0) {
+        if(diagnostic)*diagnostic=QStringLiteral("The C-Clip correction or certified source contract is invalid.");
+        return false;
+    }
+    const auto& model=*source.sourceModel;
+    const int owner=clip.provenance.front().referenceId;
+    if(owner<0||owner>=model.references.size()||
+       model.files[model.references[owner].fileId].relativePath.toLower()!=QStringLiteral("p/clip6.dat")) {
+        if(diagnostic)*diagnostic=QStringLiteral("The certified clip6 source owner is missing.");
+        return false;
+    }
+    // Zero is a real Verified result. Preserve every nominal vertex and face bit-for-bit.
+    if(correction==0.0) {
+        *adjusted=nominal;
+        if(diagnostic)*diagnostic=QStringLiteral("Verified zero C-Clip correction retained the nominal PreparedMesh exactly.");
+        return true;
+    }
+    struct Surface {Point a,b,c;bool owned=false;};
+    QVector<Surface> surfaces;
+    surfaces.reserve(model.surfaces.size());
+    for(const auto& surface:model.surfaces) {
+        if(!surface.certified||surface.triangleIndex<0||surface.triangleIndex>=source.mesh.triangles.size()) {
+            if(diagnostic)*diagnostic=QStringLiteral("The C-Clip source surface provenance is incomplete.");
+            return false;
+        }
+        int ref=surface.referenceId;
+        while(ref>=0&&ref<model.references.size()&&ref!=owner)ref=model.references[ref].parentId;
+        const auto& t=source.mesh.triangles[surface.triangleIndex];
+        surfaces.push_back({converted(t.a),converted(t.b),converted(t.c),ref==owner});
+    }
+    PrintMesh result=nominal;
+    int moved=0;
+    const double inner=clip.nominalRadiusMillimetres;
+    // The certified inner arc and its adjacent throat lips control the snap
+    // clearance. Fade to zero before the 2.7 mm outer arm envelope; never
+    // move a vertex whose nearest authoritative surface is not clip-owned.
+    constexpr double throatLimit=2.05;
+    constexpr double ownershipTolerance=0.12;
+    for(auto& point:result.vertices) {
+        const auto relative=subtract(point,clip.frame.origin);
+        const double axial=dot(relative,clip.frame.axis);
+        const auto radial=subtract(relative,scaled(clip.frame.axis,axial));
+        const double radius=length(radial);
+        if(axial<-0.05||axial>clip.nominalAxialExtentMillimetres+0.05||
+           radius<1.35||radius>=throatLimit)continue;
+        double ownedDistance=std::numeric_limits<double>::max();
+        double otherDistance=std::numeric_limits<double>::max();
+        for(const auto& surface:surfaces) {
+            const double d=distanceSquared(point,closest(point,surface.a,surface.b,surface.c));
+            auto& nearest=surface.owned?ownedDistance:otherDistance;
+            nearest=std::min(nearest,d);
+        }
+        if(ownedDistance>ownershipTolerance*ownershipTolerance||
+           ownedDistance>otherDistance+1e-10)continue;
+        const double weight=radius<=inner?1.0:(throatLimit-radius)/(throatLimit-inner);
+        point=add(point,scaled(radial,correction*weight/(2.0*radius)));
+        ++moved;
+    }
+    const auto analysis=analyzeSource(result);
+    if(moved<24||!validatePreparedMesh(analysis).ok()) {
+        if(diagnostic)*diagnostic=QStringLiteral("The source-owned C-Clip contact/throat correction failed strict topology validation.");
+        return false;
+    }
+    *adjusted=std::move(result);
+    if(diagnostic)*diagnostic=QStringLiteral("Certified clip6 inner contact arc and adjoining throat adjusted; outer arms and unrelated source surfaces retained (%1 vertices moved).").arg(moved);
+    return true;
 }
 } // namespace PrintGeometry

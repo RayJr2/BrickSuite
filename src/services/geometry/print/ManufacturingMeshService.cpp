@@ -7,6 +7,7 @@
 #include "StudReceivingWallPocketSemantic.h"
 #include "StudReceivingAntiStudSemantic.h"
 #include "StandardBarSemantic.h"
+#include "CClipBarReceiverSemantic.h"
 #include "FunctionalOperandRegenerator.h"
 #include "McutMeshBooleanService.h"
 #include "PrintMeshAnalysis.h"
@@ -54,13 +55,19 @@ ManufacturingMeshCorrections ManufacturingMeshService::compatibleCorrections(con
         if(matches(correction,"StudReceivingClutch","female","female-stud-receiver-antistud-bore-diameter",printedOrientation) &&
            correction.correctionContractVersion==QStringLiteral("female-stud-receiver-antistud-bore-diameter-v1"))
             result.receivingAntiStudBoreDiameter=&correction;
+    if(orientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate)
+        for(const auto& correction:profile.corrections)
+            if(matches(correction,"CClipBarReceiver","female",
+                       "female-c-clip-contact-arc-and-throat-clearance",printedOrientation) &&
+               correction.correctionContractVersion==QStringLiteral("female-c-clip-contact-arc-and-throat-clearance-v1"))
+                result.cClipClearance=&correction;
     if(heightCandidate){if(!heightCandidate->hasRequiredDiameterCorrection)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction does not record its required Stud OD context and was not applied.");else if(!result.studDiameter)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction requires its matching Verified Stud OD correction and was not applied.");else if(std::abs(result.studDiameter->valueMillimetres-heightCandidate->requiredDiameterCorrectionMillimetres)>1e-9)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction was measured with a different Stud OD correction and was not applied.");else result.studHeight=heightCandidate;}
     if(reason)*reason=result.any()?(result.studHeightDiagnostic.isEmpty()?QStringLiteral("Compatible"):result.studHeightDiagnostic):(result.studHeightDiagnostic.isEmpty()?QStringLiteral("The selected profile has no compatible verified functional correction for this print orientation."):result.studHeightDiagnostic);return result;
 }
 
 const FitProfileCorrection* ManufacturingMeshService::compatibleCorrection(const FitProfile&profile,FitPrintedOrientation orientation,QString*reason)
 {
-    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.receivingAntiStudBoreDiameter,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth,corrections.standardBarDiameter})if(candidate)return candidate;return nullptr;
+    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.receivingAntiStudBoreDiameter,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth,corrections.standardBarDiameter,corrections.cClipClearance})if(candidate)return candidate;return nullptr;
 }
 
 FitPrintedOrientation ManufacturingMeshService::transformedOrientation(const FunctionalFeature&feature,const PrintOrientation&printOrientation)
@@ -74,7 +81,7 @@ FitPrintedOrientation ManufacturingMeshService::transformedOrientation(const Fun
 bool ManufacturingMeshService::hasApplicableCorrection(const FitProfile&profile,const LDrawSemanticOperandBuilder::Result&semantic,const PrintOrientation&printOrientation,QString*reason)
 {
     if(!semantic.ok()){if(reason)*reason=semantic.diagnostics.join(' ');return false;}
-    for(const auto&operand:semantic.operands)for(const auto&feature:operand.functionalFeatures){QString featureReason;const auto orientation=transformedOrientation(feature,printOrientation);const auto corrections=compatibleCorrections(profile,orientation,&featureReason);if(correctionApplies(feature,corrections)||wallPocketCorrection(profile,feature,orientation)){if(reason)*reason=QStringLiteral("Compatible correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());return true;}}
+    for(const auto&operand:semantic.operands)for(const auto&feature:operand.functionalFeatures){QString featureReason;const auto orientation=transformedOrientation(feature,printOrientation);const auto corrections=compatibleCorrections(profile,orientation,&featureReason);if(correctionApplies(feature,corrections)||wallPocketCorrection(profile,feature,orientation)||(feature.family==FunctionalInterfaceFamily::CClipBarReceiver&&corrections.cClipClearance&&feature.evidenceContract==corrections.cClipClearance->semanticContractVersion)){if(reason)*reason=QStringLiteral("Compatible correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());return true;}}
     if(reason)*reason=QStringLiteral("No recognized functional operand has a compatible Verified correction after Print Orientation %1.").arg(printOrientation.summary());return false;
 }
 
@@ -87,6 +94,13 @@ bool ManufacturingMeshService::hasApplicableCorrection(const FitProfile&profile,
     for(const auto&feature:TechnicAxleSemantic::recognizeAxleHoles(source)){QString featureReason;const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation),&featureReason);if(correctionApplies(feature,corrections)){if(reason)*reason=QStringLiteral("Compatible Verified Technic axle-hole arm-width correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());return true;}}
     for(const auto&feature:RoundTechnicPassageSemantic::recognize(source)){QString featureReason;const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation),&featureReason);if(correctionApplies(feature,corrections)){if(reason)*reason=QStringLiteral("Compatible Verified round Technic passage correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());return true;}}
     for(const auto&feature:StudReceivingPostSemantic::recognize(source)){QString featureReason;const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation),&featureReason);if(correctionApplies(feature,corrections)){if(reason)*reason=QStringLiteral("Compatible Verified PostWallCell correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());return true;}}
+    for(const auto& feature:CClipBarReceiverSemantic::recognize(source)) {
+        const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation));
+        if(corrections.cClipClearance && corrections.cClipClearance->semanticContractVersion==feature.evidenceContract) {
+            if(reason)*reason=QStringLiteral("Compatible Verified C-Clip contact/throat correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());
+            return true;
+        }
+    }
     if(reason)*reason=semanticReason;return false;
 }
 
@@ -94,6 +108,72 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
 {
     if(!source.ok()||prepared.mesh.faces.empty()||prepared.partReference.isEmpty())return fail(ManufacturingMeshError::InvalidInput,"Source and nominal PreparedMesh are required.");
     QString reason;if(!FitCalibrationLibrary::profileCompatibility(profile,&reason))return fail(ManufacturingMeshError::IncompatibleProfile,reason);
+    const auto clipFeatures=CClipBarReceiverSemantic::recognize(source);
+    if(clipFeatures.size()==1) {
+        const auto& feature=clipFeatures.front();
+        const bool retained=std::any_of(prepared.functionalFeatures.cbegin(),prepared.functionalFeatures.cend(),
+            [&](const FunctionalFeature& candidate){return candidate.stableIdentity==feature.stableIdentity;});
+        if(retained) {
+            const auto orientation=transformedOrientation(feature,printOrientation);
+            QString correctionReason;
+            const auto corrections=compatibleCorrections(profile,orientation,&correctionReason);
+            const auto* correction=corrections.cClipClearance;
+            if(!correction||correction->semanticContractVersion!=feature.evidenceContract)
+                return fail(ManufacturingMeshError::MissingCorrection,
+                    QStringLiteral("C-Clip %1 remained nominal after Print Orientation %2: %3")
+                        .arg(feature.stableIdentity,printOrientation.summary(),correctionReason));
+            PrintMesh adjusted;
+            QString adjustmentDiagnostic;
+            if(!CClipBarReceiverSemantic::adjustPrepared(source,prepared.mesh,feature,
+                    correction->valueMillimetres,&adjusted,&adjustmentDiagnostic))
+                return fail(ManufacturingMeshError::RegenerationFailure,adjustmentDiagnostic);
+            const auto analysis=analyzeSource(adjusted);
+            if(!validatePreparedMesh(analysis).ok())
+                return fail(ManufacturingMeshError::InvalidResult,
+                    QStringLiteral("The C-Clip ManufacturingMesh failed strict validation."));
+            auto output=std::make_shared<ManufacturingMesh>();
+            output->mesh=std::move(adjusted);
+            output->analysis=analysis;
+            output->partReference=prepared.partReference;
+            output->fitProfileIdentity=profile.profileIdentity;
+            output->sourceSessionIdentity=profile.sourceSessionIdentity;
+            output->featureIdentity=feature.stableIdentity;
+            output->featureIdentities={feature.stableIdentity};
+            output->semanticContractVersion=correction->semanticContractVersion;
+            output->correctionContractVersion=correction->correctionContractVersion;
+            output->regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
+            output->booleanVersion=QStringLiteral("not-used-c-clip-source-surface-v1");
+            output->nominalDiameterMillimetres=feature.nominalDiameterMillimetres;
+            output->diameterCorrectionMillimetres=correction->valueMillimetres;
+            output->manufacturingDiameterMillimetres=feature.nominalDiameterMillimetres+correction->valueMillimetres;
+            output->nominalPreparationIdentity=prepared.partReference+'|'+prepared.ldrawIdentity+'|'+
+                prepared.preparationProfileVersion+'|'+prepared.mcutVersion;
+            output->provenance<<QStringLiteral("Nominal PreparedMesh: %1").arg(output->nominalPreparationIdentity)
+                <<QStringLiteral("Verified Fit Profile: %1").arg(profile.profileIdentity)
+                <<QStringLiteral("C-Clip evidence artifact: %1").arg(correction->calibrationArtifactIdentity)
+                <<QStringLiteral("Feature %1 [Part axis %2 -> build axis %3 (%4)]: certified C-Clip contact diameter %5 mm + %6 mm = %7 mm; %8")
+                    .arg(feature.stableIdentity,axisName(feature.frame.axis),
+                         axisName(printOrientation.map(feature.frame.axis)),orientationName(orientation))
+                    .arg(output->nominalDiameterMillimetres,0,'f',3)
+                    .arg(output->diameterCorrectionMillimetres,0,'f',3)
+                    .arg(output->manufacturingDiameterMillimetres,0,'f',3)
+                    .arg(adjustmentDiagnostic);
+            const QByteArray identity=(output->nominalPreparationIdentity+'|'+profile.profileIdentity+'|'+
+                profile.processFingerprint+'|'+printOrientation.summary()+'|'+feature.stableIdentity+'|'+
+                correction->correctionContractVersion+'='+QString::number(correction->valueMillimetres,'g',17)+'|'+
+                output->regeneratorAlgorithmVersion+'|'+output->booleanVersion).toUtf8();
+            output->identity=QString::fromLatin1(QCryptographicHash::hash(identity,QCryptographicHash::Sha256).toHex());
+            ManufacturingMeshResult result;
+            result.error=ManufacturingMeshError::None;
+            result.manufacturingMesh=output;
+            result.diagnostic=QStringLiteral("Verified C-Clip profile %1 applied: %2 mm + %3 mm = %4 mm after Print Orientation %5. Source and nominal PreparedMesh were not modified.")
+                .arg(profile.name).arg(output->nominalDiameterMillimetres,0,'f',3)
+                .arg(output->diameterCorrectionMillimetres,0,'f',3)
+                .arg(output->manufacturingDiameterMillimetres,0,'f',3)
+                .arg(printOrientation.summary());
+            return result;
+        }
+    }
     auto semantic=m_builder?m_builder(source):LDrawSemanticOperandBuilder::build(source);
     // A certified standalone bar is one closed primary body. Its source-owned
     // cylindrical vertices can be adjusted directly, avoiding a Boolean that
