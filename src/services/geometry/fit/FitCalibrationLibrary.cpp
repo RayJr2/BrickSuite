@@ -98,6 +98,9 @@ const FitCalibrationExperiment* verifiedExperiment(const FitCalibrationSession& 
 bool sameFeature(const FitCalibrationSession& left, const FitCalibrationSession& right) {
     const auto* a = representativeExperiment(left); const auto* b = representativeExperiment(right);
     return a && b && a->featureFamily == b->featureFamily && a->featureRole == b->featureRole && a->correctionDimension == b->correctionDimension
+        && (a->featureFamily != QStringLiteral("StudReceivingClutch") ||
+            (a->hasRegenerationPrototype && b->hasRegenerationPrototype &&
+             a->regenerationPrototype.evidenceContract == b->regenerationPrototype.evidenceContract))
         && left.process.actualPrintedOrientation == right.process.actualPrintedOrientation;
 }
 bool mergeImportedHistory(FitCalibrationSession* existing, const FitCalibrationSession& incoming)
@@ -504,6 +507,10 @@ QVector<FitCalibrationExperiment> FitCalibrationLibrary::coarseReviewHistory(
             if (experiment.featureFamily == representative->featureFamily &&
                 experiment.featureRole == representative->featureRole &&
                 experiment.correctionDimension == representative->correctionDimension &&
+                (experiment.featureFamily != QStringLiteral("StudReceivingClutch") ||
+                 (experiment.hasRegenerationPrototype && representative->hasRegenerationPrototype &&
+                  experiment.regenerationPrototype.evidenceContract ==
+                      representative->regenerationPrototype.evidenceContract)) &&
                 !experiment.artifactIdentity.isEmpty()) {
                 const auto existing = std::find_if(available.begin(), available.end(), [&](const auto& stage) {
                     return stage.artifactIdentity == experiment.artifactIdentity;
@@ -662,12 +669,16 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
             correction.requiredDiameterCorrectionMillimetres = experiment.fixedDiameterCorrectionMillimetres;
         }
     } else if (experiment.featureFamily == QStringLiteral("StudReceivingClutch")) {
+        const bool wallPocket = experiment.hasRegenerationPrototype
+            && experiment.regenerationPrototype.constructionRecipe == QStringLiteral("stud-receiving-wall-pocket-square-v1");
         const bool postWall = experiment.hasRegenerationPrototype
             && experiment.regenerationPrototype.constructionRecipe == QStringLiteral("stud-receiving-post-wall-cell-v1");
-        correction.semantics = postWall ? QStringLiteral("female-stud-receiver-post-od")
-                                        : QStringLiteral("female-stud-receiver-tube-od");
-        correction.correctionContractVersion = postWall ? QStringLiteral("female-stud-receiver-post-od-v1")
-                                                        : QStringLiteral("female-stud-receiver-tube-od-v1");
+        correction.semantics = wallPocket ? QStringLiteral("female-stud-receiver-wall-pocket-opening-width")
+            : postWall ? QStringLiteral("female-stud-receiver-post-od")
+                       : QStringLiteral("female-stud-receiver-tube-od");
+        correction.correctionContractVersion = wallPocket ? QStringLiteral("female-stud-receiver-wall-pocket-opening-width-v1")
+            : postWall ? QStringLiteral("female-stud-receiver-post-od-v1")
+                       : QStringLiteral("female-stud-receiver-tube-od-v1");
     } else if (experiment.featureFamily == QStringLiteral("FrictionlessTechnicPin")) {
         correction.semantics = QStringLiteral("male-frictionless-technic-pin-envelope-diameter");
         correction.correctionContractVersion = QStringLiteral("male-frictionless-technic-pin-envelope-diameter-v1");
@@ -696,7 +707,7 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
     if (!profile.verifiedUtc.isValid()) profile.verifiedUtc = QDateTime::currentDateTimeUtc();
     profile.corrections.push_back(correction); *output = profile; return true;
 }
-bool FitCalibrationLibrary::mergeVerifiedSession(const FitCalibrationSession&session,FitProfile*profile,QString*error){if(!profile){fail(error,"There is no Fit Profile to update.");return false;}FitProfile addition;if(!promoteVerifiedSession(session,profile->name,&addition,error))return false;if(manufacturingContextFingerprint(profile->process)!=manufacturingContextFingerprint(addition.process)){fail(error,"The verified calibration uses a different manufacturing process.");return false;}profile->processFingerprint=manufacturingContextFingerprint(profile->process);const auto&incoming=addition.corrections.front();const auto sameContract=[&](const FitProfileCorrection&existing){return existing.featureFamily==incoming.featureFamily&&existing.featureRole==incoming.featureRole&&existing.printedOrientation==incoming.printedOrientation&&existing.semantics==incoming.semantics&&existing.correctionContractVersion==incoming.correctionContractVersion;};auto existing=std::find_if(profile->corrections.begin(),profile->corrections.end(),sameContract);if(existing==profile->corrections.end())profile->corrections.push_back(incoming);else *existing=incoming;if(!profile->verifiedUtc.isValid()||addition.verifiedUtc>profile->verifiedUtc)profile->verifiedUtc=addition.verifiedUtc;return true;}
+bool FitCalibrationLibrary::mergeVerifiedSession(const FitCalibrationSession&session,FitProfile*profile,QString*error){if(!profile){fail(error,"There is no Fit Profile to update.");return false;}FitProfile addition;if(!promoteVerifiedSession(session,profile->name,&addition,error))return false;if(manufacturingContextFingerprint(profile->process)!=manufacturingContextFingerprint(addition.process)){fail(error,"The verified calibration uses a different manufacturing process.");return false;}profile->processFingerprint=manufacturingContextFingerprint(profile->process);const auto&incoming=addition.corrections.front();const auto sameContract=[&](const FitProfileCorrection&existing){return existing.featureFamily==incoming.featureFamily&&existing.featureRole==incoming.featureRole&&existing.printedOrientation==incoming.printedOrientation&&existing.semantics==incoming.semantics&&existing.correctionContractVersion==incoming.correctionContractVersion&&existing.semanticContractVersion==incoming.semanticContractVersion;};auto existing=std::find_if(profile->corrections.begin(),profile->corrections.end(),sameContract);if(existing==profile->corrections.end())profile->corrections.push_back(incoming);else *existing=incoming;if(!profile->verifiedUtc.isValid()||addition.verifiedUtc>profile->verifiedUtc)profile->verifiedUtc=addition.verifiedUtc;return true;}
 bool FitCalibrationLibrary::saveVerifiedWorkspaceProfile(const FitCalibrationWorkspace&workspace,const QString&profileName,FitProfile*output,QString*error){QVector<FitProfile>matching;for(const auto&summary:profiles()){FitProfile candidate;if(loadProfile(summary.identity,&candidate,nullptr)&&manufacturingContextFingerprint(candidate.process)==workspace.identity)matching.push_back(candidate);}if(matching.size()>1){fail(error,"More than one Fit Profile already uses this manufacturing context. BrickSuite will not guess which profile to update.");return false;}QVector<FitCalibrationSession>verified;for(const auto&session:workspace.featureSessions)if(verifiedExperiment(session))verified.push_back(session);if(verified.isEmpty()){fail(error,"This manufacturing workspace has no Verified calibration evidence.");return false;}FitProfile profile;if(matching.isEmpty()){if(!promoteVerifiedSession(verified.front(),profileName,&profile,error))return false;}else{profile=matching.front();if(!profileName.trimmed().isEmpty())profile.name=profileName.trimmed();}for(const auto&session:verified)if(!mergeVerifiedSession(session,&profile,error))return false;if(!saveProfile(&profile,error))return false;if(output)*output=profile;return true;}
 bool FitCalibrationLibrary::saveProfile(FitProfile* profile, QString* error) {
     if (!profile || profile->corrections.isEmpty() || profile->sourceSessionIdentity.isEmpty()) { fail(error, "The Fit Profile is incomplete."); return false; }
@@ -729,7 +740,11 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
                  && correction.correctionContractVersion == QStringLiteral("female-stud-receiver-tube-od-v1"))
                 || (correction.semanticContractVersion == QStringLiteral("official-ldraw-stud3-post-wall-cell-v1")
                     && correction.semantics == QStringLiteral("female-stud-receiver-post-od")
-                    && correction.correctionContractVersion == QStringLiteral("female-stud-receiver-post-od-v1")));
+                    && correction.correctionContractVersion == QStringLiteral("female-stud-receiver-post-od-v1"))
+                || ((correction.semanticContractVersion == QStringLiteral("official-ldraw-box5-wall-pocket-plate-v1")
+                     || correction.semanticContractVersion == QStringLiteral("official-ldraw-box5-wall-pocket-brick-v1"))
+                    && correction.semantics == QStringLiteral("female-stud-receiver-wall-pocket-opening-width")
+                    && correction.correctionContractVersion == QStringLiteral("female-stud-receiver-wall-pocket-opening-width-v1")));
         const bool frictionlessPin = correction.featureFamily == QStringLiteral("FrictionlessTechnicPin")
             && correction.featureRole == QStringLiteral("male")
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-connect-frictionless-pin-v1")

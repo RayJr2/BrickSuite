@@ -7,10 +7,14 @@
 #include "../src/services/geometry/print/FunctionalOperandRegenerator.h"
 #include "../src/services/geometry/print/PrintMeshAnalysis.h"
 #include "../src/services/geometry/print/SourceSurfaceSolidifier.h"
+#include "../src/services/geometry/print/McutMeshBooleanService.h"
+#include "../src/services/geometry/print/StudReceivingWallPocketSemantic.h"
 #include "../src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h"
 #include "../src/services/geometry/LDrawLibraryService.h"
+#include "../src/services/geometry/ThreeMfWriter.h"
 #include <lib3mf_implicit.hpp>
 #include <QCoreApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -39,6 +43,28 @@ LDrawSemanticOperandBuilder::Result postWallSemantic(){LDrawSemanticOperandBuild
 LDrawSemanticOperandBuilder::Result allFamiliesSemantic(){auto r=semantic();r.operands.push_back(studSemantic().operands.back());r.operands.push_back(receiverSemantic().operands.back());return r;}
 bool same(const PrintMesh&a,const PrintMesh&b){if(a.faces!=b.faces||a.vertices.size()!=b.vertices.size())return false;for(std::size_t i=0;i<a.vertices.size();++i)if(a.vertices[i].x!=b.vertices[i].x||a.vertices[i].y!=b.vertices[i].y||a.vertices[i].z!=b.vertices[i].z)return false;return true;}
 double minimumRadialDistance(const PrintMesh&mesh){double result=1e100;for(const auto&vertex:mesh.vertices)result=std::min(result,std::hypot(vertex.x,vertex.y));return result;}
+PreparedMesh wallPocketPrepared(const LDrawGeometry::LDrawLoadResult& source, const QString& part)
+{
+    PreparedMesh prepared;
+    const auto semantic = LDrawSemanticOperandBuilder::build(source);
+    if (!semantic.ok() || semantic.operands.isEmpty()) return prepared;
+    McutMeshBooleanService booleanService;
+    PrintMesh accumulated = semantic.operands.front().closedMesh;
+    for (int i = 1; i < semantic.operands.size(); ++i) {
+        const auto& operand = semantic.operands[i];
+        const auto result = operand.role == SemanticRole::SubtractivePassage
+            ? booleanService.subtract(accumulated, operand.closedMesh)
+            : booleanService.unite(accumulated, operand.closedMesh);
+        if (!result.ok()) return prepared;
+        accumulated = result.mesh;
+    }
+    prepared.mesh = std::move(accumulated);
+    prepared.partReference = part;
+    prepared.ldrawIdentity = QStringLiteral("parts/%1.dat").arg(part);
+    prepared.preparationProfileVersion = QStringLiteral("wall-pocket-test-v1");
+    prepared.mcutVersion = booleanService.versionIdentity();
+    return prepared;
+}
 }
 int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;LDrawGeometry::LDrawLoadResult source;source.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>();PreparedMesh nominal;nominal.mesh=box();nominal.partReference="3700";nominal.ldrawIdentity="parts/3700.dat";nominal.preparationProfileVersion="profile-v1";nominal.mcutVersion="mcut-v1";const qsizetype sourceTriangleCount=source.mesh.triangles.size();const auto preparedBefore=nominal.mesh;ManufacturingMeshService service([]{return std::make_unique<ProofBoolean>();},[](const auto&){return semantic();});
 auto p=profile();QString selectionReason;const auto*selectedCorrection=ManufacturingMeshService::compatibleCorrection(p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,&selectionReason);ok&=check(selectedCorrection&&std::abs(selectedCorrection->valueMillimetres-.2)<1e-9,"explicit per-export profile selection resolves the profile correction");ok&=check(!ManufacturingMeshService::compatibleCorrection(p,FitPrintedOrientation::FeatureAxisParallelToBuildPlate),"incompatible orientation cannot be selected for compensated export");const auto result=service.generate(source,nominal,p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(result.ok(),"compatible Verified profile produces ManufacturingMesh");if(result.ok()){const auto&m=*result.manufacturingMesh;ok&=check(std::abs(m.nominalDiameterMillimetres-4.8)<1e-9&&std::abs(m.diameterCorrectionMillimetres-.2)<1e-9&&std::abs(m.manufacturingDiameterMillimetres-5.0)<1e-9,"profile diameter correction enters semantic regeneration");ok&=check(!same(m.mesh,nominal.mesh)&&same(nominal.mesh,preparedBefore)&&source.mesh.triangles.size()==sourceTriangleCount,"Source and Prepared remain unchanged while ManufacturingMesh is distinct");ok&=check(m.fitProfileIdentity==p.profileIdentity&&m.sourceSessionIdentity==p.sourceSessionIdentity&&!m.identity.isEmpty(),"manufacturing provenance links profile and evidence");QTextStream(stdout)<<"Part 3700 proof: profile="<<m.fitProfileIdentity<<" nominalDiameter="<<m.nominalDiameterMillimetres<<" correction="<<m.diameterCorrectionMillimetres<<" manufacturingDiameter="<<m.manufacturingDiameterMillimetres<<" manufacturingIdentity="<<m.identity<<Qt::endl;const auto passage=analyzeSource(ProofBoolean::lastPassage);ok&=check(std::abs((passage.bounds.maximum.x-passage.bounds.minimum.x)-6.0)<1e-9,"protected entrance geometry remains nominal");const auto repeated=service.generate(source,nominal,p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(repeated.ok()&&repeated.manufacturingMesh->identity==m.identity&&same(repeated.manufacturingMesh->mesh,m.mesh),"generation deterministic");auto changed=profile(.1);changed.profileIdentity="other-profile";const auto other=service.generate(source,nominal,changed,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(other.ok()&&other.manufacturingMesh->identity!=m.identity&&std::abs(other.manufacturingMesh->manufacturingDiameterMillimetres-4.9)<1e-9,"correction and identity come from selected profile");QTemporaryDir output;const QString exportPath=output.filePath("manufacturing.3mf");QString exportError;ok&=check(ManufacturingMeshDiagnosticExporter::writeThreeMf(m,exportPath,1.0,QColor("#0055BF"),&exportError),QStringLiteral("diagnostic ManufacturingMesh export: %1").arg(exportError));if(QFileInfo::exists(exportPath)){Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();model->QueryReader("3mf")->ReadFromFile(exportPath.toStdString());auto meshes=model->GetMeshObjects();ok&=check(meshes->MoveNext(),"diagnostic 3MF contains a mesh");if(meshes->GetCurrentMeshObject()){const auto exported=meshes->GetCurrentMeshObject();ok&=check(exported->GetTriangleCount()==m.mesh.faces.size(),"diagnostic export contains ManufacturingMesh triangle data");ok&=check(std::abs(exported->GetVertex(1).m_Coordinates[0]-m.mesh.vertices[1].x)<1e-6&&std::abs(exported->GetVertex(1).m_Coordinates[0]-nominal.mesh.vertices[1].x)>1e-6,"diagnostic export uses ManufacturingMesh rather than nominal Prepared Mesh");}}}
@@ -69,5 +95,109 @@ if(libraryAt>=0&&libraryAt+1<args.size()){const auto frictionPin=LDrawLibrarySer
 auto futureFrictionProfile=profile();futureFrictionProfile.profileIdentity="verified-friction-pin-profile";futureFrictionProfile.sourceSessionIdentity="verified-friction-pin-session";futureFrictionProfile.corrections.clear();FitProfileCorrection futureFriction;futureFriction.featureFamily="FrictionTechnicPin";futureFriction.featureRole="male";futureFriction.printedOrientation="feature-axis-perpendicular-to-build-plate";futureFriction.valueMillimetres=.05;futureFriction.semantics="male-friction-technic-pin-ridge-envelope-diameter";futureFriction.correctionContractVersion="male-friction-technic-pin-ridge-envelope-diameter-v1";futureFriction.semanticContractVersion="official-ldraw-confric5-friction-pin-v1";futureFriction.regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();futureFriction.calibrationArtifactIdentity="friction-pin-verification";futureFrictionProfile.corrections.push_back(futureFriction);QString futureReason;const auto productionFrictionCorrections=ManufacturingMeshService::compatibleCorrections(futureFrictionProfile,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,&futureReason);ok&=check(FitCalibrationLibrary::profileCompatibility(futureFrictionProfile,&futureReason)&&productionFrictionCorrections.frictionPinDiameter==&futureFrictionProfile.corrections.front()&&productionFrictionCorrections.any(),"Verified friction-pin profile data enters production correction selection");ok&=check(!ManufacturingMeshService::compatibleCorrections(futureFrictionProfile,FitPrintedOrientation::FeatureAxisParallelToBuildPlate).any(),"friction-pin correction remains orientation-specific");
 auto futureAxleProfile=profile();futureAxleProfile.profileIdentity="future-technic-axle-profile";futureAxleProfile.corrections.clear();FitProfileCorrection futureAxle;futureAxle.featureFamily="TechnicAxle";futureAxle.featureRole="male";futureAxle.printedOrientation="feature-axis-perpendicular-to-build-plate";futureAxle.valueMillimetres=.05;futureAxle.semantics="male-technic-axle-tip-to-tip-envelope";futureAxle.correctionContractVersion="male-technic-axle-tip-to-tip-envelope-v1";futureAxle.semanticContractVersion="official-ldraw-axle-cross-profile-v1";futureAxle.regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();futureAxle.calibrationArtifactIdentity="future-physical-verification";futureAxleProfile.corrections.push_back(futureAxle);ok&=check(FitCalibrationLibrary::profileCompatibility(futureAxleProfile,&futureReason)&&ManufacturingMeshService::compatibleCorrections(futureAxleProfile,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).technicAxleTipToTip,"Verified axle evidence is production-selectable and remains profile-driven");
 if(libraryAt>=0&&libraryAt+1<args.size()){const auto frictionSource=LDrawLibraryService::loadPart(args[libraryAt+1],QStringLiteral("2780"));ok&=check(frictionSource.ok(),"2780 real friction-pin source loads for production proof");if(frictionSource.ok()){auto solidified=SourceSurfaceSolidifier::solidify(frictionSource);if(!solidified.successful){const auto features=FrictionTechnicPinSemantic::recognize(frictionSource);if(!features.isEmpty()){auto core=features.front();core.nominalRadiusMillimetres=2.5;core.nominalDiameterMillimetres=5.0;core.nominalAxialExtentMillimetres=16.0;core.radialProfile={{-8.0,2.4},{-7.2,2.4},{-6.8,2.5},{-1.2,2.5},{-0.8,2.4},{0.8,2.4},{1.2,2.5},{6.4,2.5},{7.2,2.4},{8.0,2.4}};const auto reconstructed=FunctionalOperandRegenerator::regenerateFrictionPin(core,{});if(reconstructed.ok()){solidified.mesh=reconstructed.mesh;solidified.analysis=reconstructed.analysis;solidified.successful=true;solidified.diagnostic=QStringLiteral("Authoritative confric5 nominal operand reconstructed for the 2780 production seam.");}}}ok&=check(solidified.successful,"2780 geometry-faithful PreparedMesh is available: "+solidified.diagnostic);if(solidified.successful){PreparedMesh frictionPrepared;frictionPrepared.mesh=solidified.mesh;frictionPrepared.millimetreBounds=solidified.analysis.bounds;frictionPrepared.sourceAnalysis=solidified.analysis;frictionPrepared.finalAnalysis=solidified.analysis;frictionPrepared.partReference="2780";frictionPrepared.ldrawIdentity="parts/2780.dat";frictionPrepared.dependencyFingerprint=frictionSource.dependencyFingerprint;frictionPrepared.preparationProfileVersion="source-surface-solidifier-v1";frictionPrepared.mcutVersion="not-used";frictionPrepared.preparationMethod="authoritative-source-surface-solidification";frictionPrepared.sourceTriangleCount=frictionSource.mesh.triangles.size();frictionPrepared.preparedTriangleCount=frictionPrepared.mesh.faces.size();const auto sourceTrianglesBefore=frictionSource.mesh.triangles.size();const auto preparedBeforeFriction=frictionPrepared.mesh;const QVector<PrintOrientation>orientations={nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative};int matching=-1,incompatible=-1;for(int i=0;i<orientations.size();++i){if(ManufacturingMeshService::hasApplicableCorrection(futureFrictionProfile,frictionSource,orientations[i]))matching=i;else incompatible=i;}ok&=check(matching>=0&&incompatible>=0,"2780 has both a matching perpendicular and an incompatible Print Orientation");if(matching>=0){ManufacturingMeshService frictionService;const auto frictionResult=frictionService.generate(frictionSource,frictionPrepared,futureFrictionProfile,orientations[matching]);ok&=check(frictionResult.ok(),"2780 reaches profile-driven ManufacturingMesh: "+frictionResult.diagnostic);if(frictionResult.ok()){const auto&m=*frictionResult.manufacturingMesh;ok&=check(std::abs(m.nominalDiameterMillimetres-5.0)<1e-9&&std::abs(m.diameterCorrectionMillimetres-.05)<1e-9&&std::abs(m.manufacturingDiameterMillimetres-5.05)<1e-9,"2780 derives 5.050 mm friction-ridge envelope from profile data");ok&=check(m.featureIdentities.size()==2&&same(frictionPrepared.mesh,preparedBeforeFriction)&&frictionSource.mesh.triangles.size()==sourceTrianglesBefore,"both 2780 confric5 ends are corrected while Source and PreparedMesh remain immutable");const QString proof=m.provenance.join('|');ok&=check(proof.contains("4.800 mm compliant core")&&proof.contains("3.200 mm bore")&&proof.contains("slots, axial transitions, entrance geometry, and engagement length"),"2780 provenance records all protected friction-pin geometry");const auto repeated=frictionService.generate(frictionSource,frictionPrepared,futureFrictionProfile,orientations[matching]);ok&=check(repeated.ok()&&repeated.manufacturingMesh->identity==m.identity&&same(repeated.manufacturingMesh->mesh,m.mesh),"2780 ManufacturingMesh and provenance identity are deterministic");const auto autoFit=AutoFitProfileResolver::resolve(true,"2780",{futureFrictionProfile},frictionSource,orientations[matching]);ok&=check(autoFit.resolved()&&autoFit.profile.profileIdentity==futureFrictionProfile.profileIdentity,"2780 Auto Fit resolves the same Verified profile path");const auto autoFitOff=AutoFitProfileResolver::resolve(false,"2780",{futureFrictionProfile},frictionSource,orientations[matching]);ok&=check(autoFitOff.state==AutoFitResolutionState::Disabled&&same(frictionPrepared.mesh,preparedBeforeFriction),"2780 Auto Fit disabled remains nominal");QTemporaryDir output;const QString exportPath=output.filePath("2780-friction-pin-manufacturing.3mf");QString exportError;ok&=check(ManufacturingMeshDiagnosticExporter::writeThreeMf(m,exportPath,1.0,QColor("#A0A5A9"),&exportError),"explicit 2780 ManufacturingMesh export: "+exportError);if(QFileInfo::exists(exportPath)){Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();model->QueryReader("3mf")->ReadFromFile(exportPath.toStdString());auto meshes=model->GetMeshObjects();ok&=check(meshes->MoveNext()&&meshes->GetCurrentMeshObject()->GetTriangleCount()==m.mesh.faces.size(),"explicit 2780 export contains compensated ManufacturingMesh geometry");}}if(incompatible>=0){const auto mismatch=ManufacturingMeshService().generate(frictionSource,frictionPrepared,futureFrictionProfile,orientations[incompatible]);ok&=check(mismatch.error==ManufacturingMeshError::MissingCorrection&&!ManufacturingMeshService::hasApplicableCorrection(futureFrictionProfile,frictionSource,orientations[incompatible]),"2780 orientation mismatch stays nominal without guessing");}}}}
+}
+if (libraryAt >= 0 && libraryAt+1 < args.size()) {
+    for (const QString& part : {QStringLiteral("3005"), QStringLiteral("3024")}) {
+        const auto pocketSource = LDrawLibraryService::loadPart(args[libraryAt+1], part);
+        const auto pockets = StudReceivingWallPocketSemantic::recognize(pocketSource);
+        ok &= check(pocketSource.ok() && pockets.size() == 1, part + " has one production WallPocket identity");
+        if (pockets.size() != 1) continue;
+        auto pocketProfile = profile();
+        pocketProfile.profileIdentity = QStringLiteral("hypothetical-wall-pocket-profile-") + part;
+        pocketProfile.corrections.clear();
+        FitProfileCorrection correction;
+        correction.featureFamily = "StudReceivingClutch";
+        correction.featureRole = "female";
+        correction.printedOrientation = "feature-axis-perpendicular-to-build-plate";
+        correction.valueMillimetres = .10; // Synthetic contract test, not physical calibration evidence.
+        correction.semantics = "female-stud-receiver-wall-pocket-opening-width";
+        correction.correctionContractVersion = correction.semantics + "-v1";
+        correction.semanticContractVersion = pockets.front().evidenceContract;
+        correction.regeneratorAlgorithmVersion = FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
+        correction.calibrationArtifactIdentity = "synthetic-test-only";
+        auto otherDepth = correction;
+        otherDepth.semanticContractVersion = part==QStringLiteral("3005")
+            ? QStringLiteral("official-ldraw-box5-wall-pocket-plate-v1")
+            : QStringLiteral("official-ldraw-box5-wall-pocket-brick-v1");
+        otherDepth.valueMillimetres = .20;
+        // On brick-depth, put the shared shallow entry first to prove exact evidence wins regardless of order.
+        if (part == QStringLiteral("3005")) pocketProfile.corrections.push_back(otherDepth);
+        pocketProfile.corrections.push_back(correction);
+        if (part != QStringLiteral("3005")) pocketProfile.corrections.push_back(otherDepth);
+        ok &= check(FitCalibrationLibrary::profileCompatibility(pocketProfile), part + " synthetic contract is compatible");
+        const auto preparedPocket = wallPocketPrepared(pocketSource, part);
+        ok &= check(!preparedPocket.mesh.faces.empty(), part + " nominal body composes for ManufacturingMesh");
+        if (preparedPocket.mesh.faces.empty()) continue;
+        const auto before = preparedPocket.mesh;
+        auto sharedOpeningProfile = pocketProfile;
+        sharedOpeningProfile.profileIdentity = QStringLiteral("verified-shallow-wall-pocket-opening");
+        sharedOpeningProfile.corrections.clear();
+        auto sharedOpening = correction;
+        sharedOpening.semanticContractVersion = QStringLiteral("official-ldraw-box5-wall-pocket-plate-v1");
+        sharedOpening.valueMillimetres = 0.0;
+        sharedOpeningProfile.corrections.push_back(sharedOpening);
+        const int proofAt = args.indexOf(QStringLiteral("--wall-pocket-output"));
+        if (proofAt >= 0 && proofAt+1 < args.size()) {
+            QDir output(args[proofAt+1]);
+            ok &= check(output.mkpath(QStringLiteral(".")),"WallPocket real-part proof directory");
+            const QString path = output.filePath(QStringLiteral("BrickSuite-%1-wall-pocket-nominal-prepared.3mf").arg(part));
+            ThreeMfWriter::Options options;
+            options.objectName = QStringLiteral("%1 nominal PreparedMesh — no Verified WallPocket correction").arg(part);
+            options.partIdentity = part;
+            options.modelColor = QColor("#0055BF");
+            QString error;
+            ok &= check(ThreeMfWriter::write(preparedPocket.mesh,path,options,&error),
+                        part + " nominal real-part proof export: " + error);
+            QTextStream(stdout) << "wallPocketPart" << part << '=' << path << Qt::endl;
+        }
+        QVector<PrintOrientation> orientations = {nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative};
+        int matching = -1, other = -1;
+        for (int i = 0; i < orientations.size(); ++i)
+            if (ManufacturingMeshService::hasApplicableCorrection(pocketProfile,pocketSource,orientations[i])) matching = i;
+            else other = i;
+        ok &= check(matching >= 0 && other >= 0, part + " orientation-aware profile applicability");
+        if (matching < 0) continue;
+        ManufacturingMeshService realService;
+        ok &= check(ManufacturingMeshService::hasApplicableCorrection(sharedOpeningProfile,pocketSource,orientations[matching]),
+                    part + " resolves the single shallow Verified opening calibration");
+        const auto sharedResult = realService.generate(pocketSource,preparedPocket,sharedOpeningProfile,orientations[matching]);
+        ok &= check(sharedResult.ok(),part + " single shallow calibration produces ManufacturingMesh: " + sharedResult.diagnostic);
+        if (sharedResult.ok()) {
+            const auto& sharedMesh = *sharedResult.manufacturingMesh;
+            ok &= check(std::abs(sharedMesh.nominalDiameterMillimetres-4.8)<1e-9 &&
+                        std::abs(sharedMesh.diameterCorrectionMillimetres)<1e-9 &&
+                        std::abs(sharedMesh.manufacturingDiameterMillimetres-4.8)<1e-9 &&
+                        same(sharedMesh.mesh,before) && same(preparedPocket.mesh,before),
+                        part + " Verified zero correction retains nominal geometry and PreparedMesh");
+            ok &= check(sharedMesh.semanticContractVersion == QStringLiteral("official-ldraw-box5-wall-pocket-plate-v1") &&
+                        (part != QStringLiteral("3005") || sharedMesh.provenance.join('|').contains("Shared shallow WallPocket opening calibration")),
+                        part + " diagnostics identify the selected shallow calibration entry");
+            const auto sharedRepeat = realService.generate(pocketSource,preparedPocket,sharedOpeningProfile,orientations[matching]);
+            ok &= check(sharedRepeat.ok() && sharedRepeat.manufacturingMesh->identity == sharedMesh.identity &&
+                        same(sharedRepeat.manufacturingMesh->mesh,sharedMesh.mesh),
+                        part + " shared-opening ManufacturingMesh is deterministic");
+            ok &= check(AutoFitProfileResolver::resolve(true,part,{sharedOpeningProfile},pocketSource,orientations[matching]).resolved(),
+                        part + " Auto Fit selects the single shallow calibration");
+        }
+        const auto generated = realService.generate(pocketSource,preparedPocket,pocketProfile,orientations[matching]);
+        ok &= check(generated.ok(), part + " corrected ManufacturingMesh: " + generated.diagnostic);
+        if (generated.ok()) {
+            const auto& mesh = *generated.manufacturingMesh;
+            ok &= check(std::abs(mesh.nominalDiameterMillimetres-4.8)<1e-9 &&
+                        std::abs(mesh.manufacturingDiameterMillimetres-4.9)<1e-9 &&
+                        mesh.semanticContractVersion == pockets.front().evidenceContract &&
+                        !same(mesh.mesh,before) && same(preparedPocket.mesh,before),
+                        part + " corrects only derived WallPocket and preserves nominal PreparedMesh");
+            const auto repeated = realService.generate(pocketSource,preparedPocket,pocketProfile,orientations[matching]);
+            ok &= check(repeated.ok() && repeated.manufacturingMesh->identity == mesh.identity &&
+                        same(repeated.manufacturingMesh->mesh,mesh.mesh), part + " output is deterministic");
+            const auto automatic = AutoFitProfileResolver::resolve(true,part,{pocketProfile},pocketSource,orientations[matching]);
+            ok &= check(automatic.resolved(), part + " Auto Fit uses the same verified-profile selector");
+        }
+        if (other >= 0) ok &= check(realService.generate(pocketSource,preparedPocket,pocketProfile,orientations[other]).error == ManufacturingMeshError::MissingCorrection,
+                                     part + " incompatible orientation remains nominal");
+        ok &= check(AutoFitProfileResolver::resolve(true,part,{},pocketSource,orientations[matching]).state == AutoFitResolutionState::NoCompatibleProfile,
+                    part + " remains nominal without Verified calibration");
+    }
 }
 return ok?0:1;}

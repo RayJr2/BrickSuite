@@ -8,7 +8,7 @@ namespace PrintGeometry {
 
 enum class FitCalibrationNameKey {
     RoundPassagePerpendicular, RoundPassageParallel, StudOd, StudHeight,
-    ClutchTubeWall, ClutchPostWall, FrictionlessPin, FrictionPin,
+    ClutchTubeWall, ClutchPostWall, ClutchWallPocketBrick, ClutchWallPocketPlate, FrictionlessPin, FrictionPin,
     AxleTip, AxleHoleArmWidth, LegacyAxleHoleTip
 };
 
@@ -21,13 +21,15 @@ struct FitCalibrationName {
 
 class FitCalibrationNamingCatalog {
 public:
-    static constexpr std::array<FitCalibrationName, 11> entries() {
+    static constexpr std::array<FitCalibrationName, 13> entries() {
         return {{{FitCalibrationNameKey::RoundPassagePerpendicular, "Technic Hole — Round Passage — Perpendicular", "TH-R-PERP", "technic-hole-round-perpendicular"},
                  {FitCalibrationNameKey::RoundPassageParallel, "Technic Hole — Round Passage — Parallel", "TH-R-PAR", "technic-hole-round-parallel"},
                  {FitCalibrationNameKey::StudOd, "Standard Stud — OD — Perpendicular", "STUD-OD-PERP", "standard-stud-od-perpendicular"},
                  {FitCalibrationNameKey::StudHeight, "Standard Stud — Height — Perpendicular", "STUD-HT-PERP", "standard-stud-height-perpendicular"},
                  {FitCalibrationNameKey::ClutchTubeWall, "Stud Receiving Clutch — Tube Wall Cell — Perpendicular", "CLUTCH-TW-PERP", "stud-clutch-tube-wall-perpendicular"},
                  {FitCalibrationNameKey::ClutchPostWall, "Stud Receiving Clutch — Post Wall Cell — Perpendicular", "CLUTCH-PW-PERP", "stud-clutch-post-wall-perpendicular"},
+                 {FitCalibrationNameKey::ClutchWallPocketBrick, "Stud Receiving Clutch — Wall Pocket Brick Depth — Perpendicular", "CLUTCH-WPB-PERP", "stud-clutch-wall-pocket-brick-perpendicular"},
+                 {FitCalibrationNameKey::ClutchWallPocketPlate, "Stud Receiving Clutch — Wall Pocket Plate Depth — Perpendicular", "CLUTCH-WPP-PERP", "stud-clutch-wall-pocket-plate-perpendicular"},
                  {FitCalibrationNameKey::FrictionlessPin, "Technic Pin — Frictionless Envelope — Perpendicular", "PIN-FL-PERP", "technic-pin-frictionless-perpendicular"},
                  {FitCalibrationNameKey::FrictionPin, "Technic Pin — Friction Ridge Envelope — Perpendicular", "PIN-FR-PERP", "technic-pin-friction-ridge-perpendicular"},
                  {FitCalibrationNameKey::AxleTip, "Technic Axle — Tip-to-Tip Envelope — Perpendicular", "AXLE-TIP-PERP", "technic-axle-tip-envelope-perpendicular"},
@@ -49,10 +51,16 @@ public:
         if (experiment.featureFamily == QStringLiteral("StandardStud"))
             return experiment.correctionDimension == FitCorrectionDimension::Height
                 ? FitCalibrationNameKey::StudHeight : FitCalibrationNameKey::StudOd;
-        if (experiment.featureFamily == QStringLiteral("StudReceivingClutch"))
+        if (experiment.featureFamily == QStringLiteral("StudReceivingClutch")) {
+            if ((experiment.hasRegenerationPrototype && experiment.regenerationPrototype.constructionRecipe == QStringLiteral("stud-receiving-wall-pocket-square-v1")) ||
+                experiment.artifactIdentity.contains(QStringLiteral("wall-pocket")))
+                return (experiment.hasRegenerationPrototype && experiment.regenerationPrototype.evidenceContract == QStringLiteral("official-ldraw-box5-wall-pocket-brick-v1")) ||
+                    experiment.artifactIdentity.contains(QStringLiteral("wall-pocket-brick"))
+                    ? FitCalibrationNameKey::ClutchWallPocketBrick : FitCalibrationNameKey::ClutchWallPocketPlate;
             return (experiment.hasRegenerationPrototype && experiment.regenerationPrototype.constructionRecipe == QStringLiteral("stud-receiving-post-wall-cell-v1")) ||
                     experiment.artifactIdentity.contains(QStringLiteral("post-wall-cell"))
                 ? FitCalibrationNameKey::ClutchPostWall : FitCalibrationNameKey::ClutchTubeWall;
+        }
         if (experiment.featureFamily == QStringLiteral("FrictionlessTechnicPin")) return FitCalibrationNameKey::FrictionlessPin;
         if (experiment.featureFamily == QStringLiteral("FrictionTechnicPin")) return FitCalibrationNameKey::FrictionPin;
         if (experiment.featureFamily == QStringLiteral("TechnicAxle")) return FitCalibrationNameKey::AxleTip;

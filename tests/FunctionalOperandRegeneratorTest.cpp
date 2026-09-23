@@ -3,6 +3,7 @@
 #include "../src/services/geometry/print/FrictionTechnicPinSemantic.h"
 #include "../src/services/geometry/print/TechnicAxleSemantic.h"
 #include "../src/services/geometry/print/StudReceivingPostSemantic.h"
+#include "../src/services/geometry/print/StudReceivingWallPocketSemantic.h"
 #include "../src/services/geometry/print/LDrawPrintGeometryBuilder.h"
 #include "../src/services/geometry/print/McutMeshBooleanService.h"
 #include "../src/services/geometry/print/PrintMeshAnalysis.h"
@@ -100,6 +101,80 @@ int main(int argc,char**argv)
     auto armWidthPrototype=TechnicAxleSemantic::canonicalAxleHolePrototype();armWidthPrototype.constructionRecipe="technic-axle-hole-arm-width-clearance-v2";armWidthPrototype.evidenceContract="official-ldraw-axlehole-arm-width-clearance-v2";const auto armNominal=FunctionalOperandRegenerator::regenerateTechnicAxleHoleArmWidth(armWidthPrototype,{0,.30}),armWider=FunctionalOperandRegenerator::regenerateTechnicAxleHoleArmWidth(armWidthPrototype,{.30,.30});ok&=check(armNominal.ok()&&armWider.ok(),"corrected female axle-hole arm-width profiles regenerate");ok&=check(std::abs(armNominal.mesh.vertices[2].x-.8)<1e-12&&std::abs(armWider.mesh.vertices[2].x-.95)<1e-12,"arm-width correction changes the full opening width from 1.60 to 1.90 mm");ok&=check(std::abs(armNominal.resultingGoverningRadiusMillimetres-2.55)<1e-12&&std::abs(armWider.resultingGoverningRadiusMillimetres-2.55)<1e-12&&std::abs(armWider.resultingAxialExtentMillimetres-8.0)<1e-12,"corrected arm-width model holds 5.10 mm tip-to-tip and 8.0 mm engagement fixed");ok&=check(armWider.analysis.boundaryEdges==0&&armWider.analysis.nonManifoldEdges==0&&armWider.analysis.selfIntersections==0,"corrected axle-hole profile remains a valid closed subtractive operand");
 
     const auto args=app.arguments();const int libraryAt=args.indexOf("--ldraw");if(libraryAt<0||libraryAt+1>=args.size())return ok?0:1;
+    for (const QString& part : {QStringLiteral("3005"), QStringLiteral("3024")}) {
+        const auto source = LDrawLibraryService::loadPart(args[libraryAt+1], part);
+        const auto pockets = StudReceivingWallPocketSemantic::recognize(source);
+        ok &= check(source.ok() && pockets.size() == 1 &&
+                    std::abs(pockets.front().nominalDiameterMillimetres-4.8) < 1e-9 &&
+                    pockets.front().constructionRecipe == QStringLiteral("stud-receiving-wall-pocket-square-v1"),
+                    part + QStringLiteral(" recognizes one certified square WallPocket (loaded=%1, count=%2)")
+                        .arg(source.ok()).arg(pockets.size()));
+        if (pockets.size() == 1)
+            ok &= check(std::abs(pockets.front().nominalAxialExtentMillimetres-
+                      (part == QStringLiteral("3005") ? 8.0 : 1.6)) < 1e-9,
+                      part + " retains its source pocket depth");
+        if (pockets.size() == 1) {
+            const auto semanticPocket = LDrawSemanticOperandBuilder::build(source);
+            ok &= check(semanticPocket.ok(), part + " has a valid semantic preparation plan");
+            if (semanticPocket.ok()) {
+                int retained = 0;
+                for (const auto& operand : semanticPocket.operands)
+                    if (operand.role == SemanticRole::PrimaryBody)
+                        for (const auto& feature : operand.functionalFeatures)
+                            retained += feature.stableIdentity == pockets.front().stableIdentity;
+                ok &= check(retained == 1, part + " retains exactly one source-owned WallPocket in its body operand");
+                for (const auto& operand : semanticPocket.operands) if (operand.role == SemanticRole::PrimaryBody) {
+                    PrintMesh adjustedBody; QString diagnostic;
+                    ok &= check(StudReceivingWallPocketSemantic::adjustPrepared(operand.closedMesh,
+                                    pockets.front(), .10, &adjustedBody, &diagnostic),
+                                part + " adjusts the source-owned primary-body wall surfaces: " + diagnostic);
+                }
+                const auto composed = compose(semanticPocket.operands);
+                ok &= check(composed.ok, part + " nominal operands compose");
+                if (composed.ok) {
+                    for (double correction : {.10, -.10}) {
+                        PrintMesh adjusted; QString diagnostic;
+                        const bool changed = StudReceivingWallPocketSemantic::adjustPrepared(
+                            composed.mesh, pockets.front(), correction, &adjusted, &diagnostic);
+                        ok &= check(changed, part + " WallPocket opening changes safely: " + diagnostic);
+                        if (changed) {
+                            bool protectedSurfaceUnchanged = true;
+                            int movedVertices = 0;
+                            for (int i = 0; i < composed.mesh.vertices.size(); ++i) {
+                                const auto& a = composed.mesh.vertices[i];
+                                const auto& b = adjusted.vertices[i];
+                                const Point delta{a.x-pockets.front().frame.origin.x,
+                                                  a.y-pockets.front().frame.origin.y,
+                                                  a.z-pockets.front().frame.origin.z};
+                                const auto dot = [](const Point& x, const Point& y) {
+                                    return x.x*y.x+x.y*y.y+x.z*y.z;
+                                };
+                                const double axial = dot(delta,pockets.front().frame.axis);
+                                const double u = dot(delta,pockets.front().frame.profileU);
+                                const double v = dot(delta,pockets.front().frame.profileV);
+                                const bool moved = std::abs(a.x-b.x)+std::abs(a.y-b.y)+std::abs(a.z-b.z)>1e-9;
+                                if (moved) {
+                                    ++movedVertices;
+                                    protectedSurfaceUnchanged &= axial >= -1e-4 &&
+                                        axial <= pockets.front().nominalAxialExtentMillimetres+1e-4 &&
+                                        (std::abs(std::abs(u)-2.4)<1e-4 || std::abs(std::abs(v)-2.4)<1e-4);
+                                }
+                            }
+                            ok &= check(movedVertices >= 8 && protectedSurfaceUnchanged &&
+                                        adjusted.faces == composed.mesh.faces,
+                                        part + " changes only certified inner-wall vertices, not pocket floor, shell, exterior or topology");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for (const QString& part : {QStringLiteral("3004"), QStringLiteral("3023b"),
+                                QStringLiteral("3001"), QStringLiteral("6141")}) {
+        const auto source = LDrawLibraryService::loadPart(args[libraryAt+1], part);
+        ok &= check(source.ok() && StudReceivingWallPocketSemantic::recognize(source).isEmpty(),
+                    part + " is not misclassified as WallPocket");
+    }
     for(const QString&part:{QStringLiteral("3004"),QStringLiteral("3010"),QStringLiteral("3023b"),QStringLiteral("3710"),QStringLiteral("3666")}){const auto representative=LDrawLibraryService::loadPart(args[libraryAt+1],part);ok&=check(representative.ok()&&!StudReceivingPostSemantic::recognize(representative).isEmpty(),part+" recognizes authoritative stud3 PostWallCell structure");}
     const QString library=args[libraryAt+1];const auto realAxle=LDrawLibraryService::loadPart(library,"3705");ok&=check(realAxle.ok()&&!TechnicAxleSemantic::recognizeAxles(realAxle).isEmpty(),"real 3705 recognizes official ordinary axle/axle-perimeter ancestry");for(const QString&part:{QStringLiteral("11478"),QStringLiteral("10095")}){const auto realHole=LDrawLibraryService::loadPart(library,part);ok&=check(realHole.ok()&&!TechnicAxleSemantic::recognizeAxleHoles(realHole).isEmpty(),part+" recognizes ordinary axle-hole ancestry");}for(const QString&part:{QStringLiteral("32123a"),QStringLiteral("24122")}){const auto specialized=LDrawLibraryService::loadPart(library,part);ok&=check(specialized.ok()&&TechnicAxleSemantic::recognizeAxleHoles(specialized).isEmpty(),part+" reduced or semi-reduced axle-hole variant is excluded");}for(const QString&part:{QStringLiteral("3673"),QStringLiteral("4274")}){const auto loadedPin=LDrawLibraryService::loadPart(library,part);const auto pins=FrictionlessTechnicPinSemantic::recognize(loadedPin);ok&=check(loadedPin.ok()&&!pins.isEmpty(),part+" recognizes authoritative p/connect.dat frictionless-pin ancestry");if(!pins.isEmpty()){const auto nominalPin=FunctionalOperandRegenerator::regenerateFrictionlessPin(pins.front(),{}),largerPin=FunctionalOperandRegenerator::regenerateFrictionlessPin(pins.front(),{.2});ok&=check(nominalPin.ok()&&largerPin.ok()&&std::abs(nominalPin.resultingGoverningRadiusMillimetres-3.2)<1e-9&&std::abs(largerPin.resultingGoverningRadiusMillimetres-3.3)<1e-9,"profile data changes the 6.40 mm envelope diameter only");ok&=check(std::abs(largerPin.resultingAxialExtentMillimetres-7.2)<1e-9&&largerPin.analysis.boundaryEdges==0&&largerPin.analysis.connectedComponents==1,"pin engagement length, bore, slot, and closed topology remain protected");}}const auto frictionPin=LDrawLibraryService::loadPart(library,"2780");const auto frictionFeatures=FrictionTechnicPinSemantic::recognize(frictionPin);ok&=check(frictionPin.ok()&&FrictionlessTechnicPinSemantic::recognize(frictionPin).isEmpty()&&frictionFeatures.size()==2,"authoritative confric5 ancestry is friction-only and both 2780 ends are recognized");if(!frictionFeatures.isEmpty()){const auto nominal=FunctionalOperandRegenerator::regenerateFrictionPin(frictionFeatures.front(),{}),larger=FunctionalOperandRegenerator::regenerateFrictionPin(frictionFeatures.front(),{.10});ok&=check(nominal.ok()&&larger.ok()&&std::abs(nominal.resultingGoverningRadiusMillimetres-2.5)<1e-9&&std::abs(larger.resultingGoverningRadiusMillimetres-2.55)<1e-9,"friction-pin regeneration varies only the 5.00 mm ridge envelope");ok&=check(larger.analysis.boundaryEdges==0&&larger.analysis.nonManifoldEdges==0&&larger.analysis.selfIntersections==0&&std::abs(larger.resultingAxialExtentMillimetres-8.0)<1e-9,"friction-pin core, bore, compliance gap, transitions, engagement length, and closed topology remain protected");}for(const QString&part:{QStringLiteral("3001"),QStringLiteral("3003"),QStringLiteral("3020"),QStringLiteral("3795")}){const auto representative=LDrawLibraryService::loadPart(library,part);ok&=check(representative.ok(),part+" TubeWallCell representative loads");if(representative.ok()){const auto prepared=LDrawSemanticOperandBuilder::build(representative);int receivers=0;for(const auto&operand:prepared.operands)for(const auto&candidate:operand.functionalFeatures)receivers+=candidate.family==FunctionalInterfaceFamily::StudReceivingClutch;ok&=check(prepared.ok()&&receivers>0,part+" recognizes official stud4 TubeWallCell receiving geometry");}}
     const auto unrelated=LDrawLibraryService::loadPart(library,"6141");if(unrelated.ok()){const auto prepared=LDrawSemanticOperandBuilder::build(unrelated);int receivers=0;for(const auto&operand:prepared.operands)for(const auto&candidate:operand.functionalFeatures)receivers+=candidate.family==FunctionalInterfaceFamily::StudReceivingClutch;ok&=check(receivers==0,"unrelated open-stud geometry is not recognized as TubeWallCell");}

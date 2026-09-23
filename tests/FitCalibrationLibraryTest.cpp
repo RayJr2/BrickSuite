@@ -65,7 +65,9 @@ int main(int argc, char** argv) {
                       !slugs.contains(slug), "canonical names, label abbreviations, and new-file slugs are unique");
         canonicalNames.insert(canonical); abbreviations.insert(abbreviated); slugs.insert(slug);
     }
-    ok &= require(canonicalNames.size() == 11 &&
+    ok &= require(canonicalNames.size() == 13 &&
+                  QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::ClutchWallPocketBrick).canonical)
+                      .contains(QStringLiteral("Wall Pocket")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::LegacyAxleHoleTip).canonical) ==
                       QStringLiteral("Technic Axle Hole — Tip Clearance — Perpendicular (legacy)"),
                   "all current features and obsolete axle-hole evidence have explicit names");
@@ -423,6 +425,53 @@ int main(int argc, char** argv) {
     FitCalibrationLibrary dependencyRecoveryLibrary(QDir(temporary.path()).filePath("dependency-recovery"));ok&=require(dependencyRecoveryLibrary.saveSession(&dependentHeightSession,&error),"managed Stud Height evidence saved for legacy profile recovery");auto legacyStoredProfile=dependentHeightProfile;legacyStoredProfile.corrections.front().hasRequiredDiameterCorrection=false;legacyStoredProfile.corrections.front().requiredDiameterCorrectionMillimetres=0;ok&=require(dependencyRecoveryLibrary.saveProfile(&legacyStoredProfile,&error),"legacy dependency-less profile fixture saved");FitProfile recoveredDependentHeight;ok&=require(dependencyRecoveryLibrary.loadProfile(legacyStoredProfile.profileIdentity,&recoveredDependentHeight,&error)&&recoveredDependentHeight.corrections.front().hasRequiredDiameterCorrection&&std::abs(recoveredDependentHeight.corrections.front().requiredDiameterCorrectionMillimetres-.35)<1e-9,"existing managed profile recovers Stud Height dependency from its matching evidence artifact without rewriting source data");
     auto receiverSession=studSession;receiverSession.sessionIdentity="verified-tube-wall-cell-session";receiverSession.fineExperiment.featureFamily="StudReceivingClutch";receiverSession.fineExperiment.featureRole="female";receiverSession.fineExperiment.correctionDimension=FitCorrectionDimension::Diameter;receiverSession.fineExperiment.regenerationPrototype.family=FunctionalInterfaceFamily::StudReceivingClutch;receiverSession.fineExperiment.regenerationPrototype.role=FunctionalInterfaceRole::Female;receiverSession.fineExperiment.regenerationPrototype.materialSide=FunctionalMaterialSide::MaterialInside;receiverSession.fineExperiment.regenerationPrototype.evidenceContract="official-ldraw-stud4-tube-wall-cell-v1";receiverSession.fineExperiment.regenerationPrototype.constructionRecipe="stud-receiving-tube-wall-cell-v1";FitProfile receiverProfile;ok&=require(FitCalibrationLibrary::promoteVerifiedSession(receiverSession,"Future TubeWallCell profile",&receiverProfile,&error),"Verified TubeWallCell evidence can be retained independently: "+error);ok&=require(receiverProfile.corrections.size()==1&&receiverProfile.corrections.front().semantics=="female-stud-receiver-tube-od"&&receiverProfile.corrections.front().correctionContractVersion=="female-stud-receiver-tube-od-v1"&&FitCalibrationLibrary::profileCompatibility(receiverProfile,&error),"future TubeWallCell correction round-trips as an independent compatible Fit Profile contract");
     ok&=require(FitCalibrationLibrary::sessionDisplayName(receiverSession).contains("Stud Receiving Clutch")&&FitCalibrationLibrary::sessionDisplayName(receiverSession).contains("Tube Wall Cell"),"managed workspace presents TubeWallCell as a distinct feature calibration");
+    auto wallPocketSession = receiverSession;
+    wallPocketSession.sessionIdentity = "synthetic-wall-pocket-session";
+    wallPocketSession.fineExperiment.artifactIdentity = "wall-pocket-plate-verification-test";
+    wallPocketSession.fineExperiment.regenerationPrototype.constructionRecipe = "stud-receiving-wall-pocket-square-v1";
+    wallPocketSession.fineExperiment.regenerationPrototype.evidenceContract = "official-ldraw-box5-wall-pocket-plate-v1";
+    wallPocketSession.fineExperiment.regenerationPrototype.materialSide = FunctionalMaterialSide::EmptyInsideMaterialOutside;
+    wallPocketSession.fineExperiment.regenerationPrototype.operandAction = FunctionalOperandAction::Subtract;
+    FitProfile wallPocketProfile;
+    ok &= require(FitCalibrationLibrary::promoteVerifiedSession(wallPocketSession,"Synthetic WallPocket profile",&wallPocketProfile,&error) &&
+                  wallPocketProfile.corrections.size()==1 &&
+                  wallPocketProfile.corrections.front().semantics=="female-stud-receiver-wall-pocket-opening-width" &&
+                  FitCalibrationLibrary::profileCompatibility(wallPocketProfile,&error),
+                  "WallPocket evidence promotes through a distinct Verified profile contract: "+error);
+    ok &= require(FitCalibrationLibrary::sessionDisplayName(wallPocketSession).contains("Wall Pocket"),
+                  "managed workspace names WallPocket separately from TubeWallCell and PostWallCell");
+    auto platePocketSession = wallPocketSession;
+    platePocketSession.sessionIdentity = "synthetic-plate-wall-pocket-session";
+    platePocketSession.fineExperiment.artifactIdentity = "wall-pocket-plate-verification-test";
+    platePocketSession.fineExperiment.regenerationPrototype.evidenceContract =
+        "official-ldraw-box5-wall-pocket-plate-v1";
+    auto brickPocketSession = wallPocketSession;
+    brickPocketSession.sessionIdentity = "synthetic-brick-wall-pocket-session";
+    brickPocketSession.fineExperiment.artifactIdentity = "wall-pocket-brick-verification-test";
+    brickPocketSession.fineExperiment.regenerationPrototype.evidenceContract =
+        "official-ldraw-box5-wall-pocket-brick-v1";
+    FitProfile depthProfile = wallPocketProfile;
+    depthProfile.corrections.front().semanticContractVersion =
+        "official-ldraw-box5-wall-pocket-brick-v1";
+    ok &= require(FitCalibrationLibrary::mergeVerifiedSession(platePocketSession,&depthProfile,&error) &&
+                  depthProfile.corrections.size()==2 &&
+                  depthProfile.corrections[0].semanticContractVersion != depthProfile.corrections[1].semanticContractVersion &&
+                  FitCalibrationLibrary::profileCompatibility(depthProfile,&error),
+                  "brick and plate WallPocket evidence remain separate corrections in one managed profile: "+error);
+    FitCalibrationLibrary depthLibrary(QDir(temporary.path()).filePath("wall-pocket-depth-workspace"));
+    ok &= require(depthLibrary.saveSession(&brickPocketSession,&error) &&
+                  depthLibrary.saveSession(&platePocketSession,&error),
+                  "both depth-specific WallPocket sessions persist independently: "+error);
+    bool bothDepthsVisible = false;
+    for (const auto& workspace : depthLibrary.workspaces())
+        if (workspace.featureSessions.size()==2) bothDepthsVisible = true;
+    ok &= require(bothDepthsVisible,
+                  "managed workspace keeps brick-depth and plate-depth WallPocket evidence visible separately");
+    bool mixedDepthHistory = false;
+    for (const auto& stage : depthLibrary.coarseReviewHistory(brickPocketSession))
+        mixedDepthHistory |= stage.artifactIdentity == platePocketSession.fineExperiment.artifactIdentity;
+    ok &= require(!mixedDepthHistory,
+                  "brick-depth review history does not borrow plate-depth physical evidence");
     auto postSession=receiverSession;postSession.sessionIdentity="verified-post-wall-cell-session";postSession.fineExperiment.artifactIdentity="stud-receiving-clutch-post-wall-cell-verification-v2";postSession.fineExperiment.regenerationPrototype.nominalRadiusMillimetres=1.6;postSession.fineExperiment.regenerationPrototype.nominalDiameterMillimetres=3.2;postSession.fineExperiment.regenerationPrototype.protectedInnerRadiusMillimetres=0;postSession.fineExperiment.regenerationPrototype.evidenceContract="official-ldraw-stud3-post-wall-cell-v1";postSession.fineExperiment.regenerationPrototype.constructionRecipe="stud-receiving-post-wall-cell-v1";FitProfile postProfile;ok&=require(FitCalibrationLibrary::promoteVerifiedSession(postSession,"Future PostWallCell profile",&postProfile,&error),"Verified PostWallCell evidence can be retained as its own correction contract: "+error);ok&=require(postProfile.corrections.size()==1&&postProfile.corrections.front().semantics=="female-stud-receiver-post-od"&&postProfile.corrections.front().correctionContractVersion=="female-stud-receiver-post-od-v1"&&FitCalibrationLibrary::profileCompatibility(postProfile,&error),"PostWallCell correction round-trips independently from TubeWallCell");ok&=require(FitCalibrationLibrary::sessionDisplayName(postSession).contains("Post Wall Cell"),"managed workspace identifies PostWallCell as a distinct receiving-clutch variant");
     auto unverifiedPost=postSession;unverifiedPost.fineExperiment.state=FitEvidenceState::Draft;FitProfile unavailablePost;ok&=require(!FitCalibrationLibrary::promoteVerifiedSession(unverifiedPost,"Unverified PostWallCell",&unavailablePost,&error)&&unavailablePost.corrections.isEmpty(),"unverified PostWallCell evidence remains unavailable to Fit Profile and ManufacturingMesh selection");
     auto pinSession=studSession;pinSession.sessionIdentity="verified-frictionless-pin-session";pinSession.fineExperiment.featureFamily="FrictionlessTechnicPin";pinSession.fineExperiment.featureRole="male";pinSession.fineExperiment.correctionDimension=FitCorrectionDimension::Diameter;pinSession.fineExperiment.regenerationPrototype.family=FunctionalInterfaceFamily::FrictionlessTechnicPin;pinSession.fineExperiment.regenerationPrototype.role=FunctionalInterfaceRole::Male;pinSession.fineExperiment.regenerationPrototype.evidenceContract="official-ldraw-connect-frictionless-pin-v1";pinSession.fineExperiment.regenerationPrototype.constructionRecipe="frictionless-technic-pin-connect-v1";FitProfile pinProfile;ok&=require(FitCalibrationLibrary::promoteVerifiedSession(pinSession,"Future frictionless pin profile",&pinProfile,&error)&&pinProfile.corrections.front().semantics=="male-frictionless-technic-pin-envelope-diameter"&&FitCalibrationLibrary::profileCompatibility(pinProfile,&error),"future Verified frictionless-pin evidence retains an independent compatible Fit Profile contract");
