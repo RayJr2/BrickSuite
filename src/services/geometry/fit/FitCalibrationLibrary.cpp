@@ -766,7 +766,8 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.correctionContractVersion == QStringLiteral("male-frictionless-technic-pin-envelope-diameter-v1");
         const bool standardBar = correction.featureFamily == QStringLiteral("StandardBar")
             && correction.featureRole == QStringLiteral("male")
-            && correction.printedOrientation == QStringLiteral("axis-perpendicular-to-build-plate")
+            && (correction.printedOrientation == QStringLiteral("axis-perpendicular-to-build-plate")
+                || correction.printedOrientation == QStringLiteral("feature-axis-perpendicular-to-build-plate"))
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-capped-standard-bar-v1")
             && correction.semantics == QStringLiteral("male-standard-bar-diameter")
             && correction.correctionContractVersion == QStringLiteral("male-standard-bar-diameter-v1");

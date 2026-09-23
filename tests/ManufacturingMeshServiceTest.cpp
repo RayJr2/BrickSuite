@@ -10,13 +10,17 @@
 #include "../src/services/geometry/print/McutMeshBooleanService.h"
 #include "../src/services/geometry/print/StudReceivingWallPocketSemantic.h"
 #include "../src/services/geometry/print/StudReceivingAntiStudSemantic.h"
+#include "../src/services/geometry/print/StandardBarSemantic.h"
+#include "../src/services/geometry/print/LDrawPrintPreparationService.h"
 #include "../src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h"
 #include "../src/services/geometry/LDrawLibraryService.h"
 #include "../src/services/geometry/ThreeMfWriter.h"
 #include <lib3mf_implicit.hpp>
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <cmath>
@@ -43,6 +47,7 @@ LDrawSemanticOperandBuilder::Result receiverSemantic(){LDrawSemanticOperandBuild
 LDrawSemanticOperandBuilder::Result postWallSemantic(){LDrawSemanticOperandBuilder::Result r;r.status=LDrawSemanticOperandBuilder::Status::Ready;SemanticOperand body;body.role=SemanticRole::PrimaryBody;body.closedMesh=box();body.analysis=analyzeSource(body.closedMesh);body.sourceFiles={"walls-and-body"};SemanticOperand post;post.role=SemanticRole::AdditiveAttachment;post.closedMesh=FunctionalOperandRegenerator::regenerateReceivingPost(postWallFeature(),{}).mesh;post.analysis=analyzeSource(post.closedMesh);post.functionalFeatures.push_back(postWallFeature());post.sourceFiles={"stud3"};r.operands={body,post};return r;}
 LDrawSemanticOperandBuilder::Result allFamiliesSemantic(){auto r=semantic();r.operands.push_back(studSemantic().operands.back());r.operands.push_back(receiverSemantic().operands.back());return r;}
 bool same(const PrintMesh&a,const PrintMesh&b){if(a.faces!=b.faces||a.vertices.size()!=b.vertices.size())return false;for(std::size_t i=0;i<a.vertices.size();++i)if(a.vertices[i].x!=b.vertices[i].x||a.vertices[i].y!=b.vertices[i].y||a.vertices[i].z!=b.vertices[i].z)return false;return true;}
+bool sameSource(const QVector<LDrawGeometry::Triangle>& a,const QVector<LDrawGeometry::Triangle>& b){if(a.size()!=b.size())return false;for(qsizetype i=0;i<a.size();++i)if(a[i].a!=b[i].a||a[i].b!=b[i].b||a[i].c!=b[i].c)return false;return true;}
 double minimumRadialDistance(const PrintMesh&mesh){double result=1e100;for(const auto&vertex:mesh.vertices)result=std::min(result,std::hypot(vertex.x,vertex.y));return result;}
 PreparedMesh wallPocketPrepared(const LDrawGeometry::LDrawLoadResult& source, const QString& part)
 {
@@ -65,6 +70,24 @@ PreparedMesh wallPocketPrepared(const LDrawGeometry::LDrawLoadResult& source, co
     prepared.preparationProfileVersion = QStringLiteral("wall-pocket-test-v1");
     prepared.mcutVersion = booleanService.versionIdentity();
     return prepared;
+}
+FitProfile standardBarProfile(double correction)
+{
+    auto result = profile();
+    result.profileIdentity = QStringLiteral("synthetic-standard-bar-profile");
+    result.corrections.clear();
+    FitProfileCorrection entry;
+    entry.featureFamily = QStringLiteral("StandardBar");
+    entry.featureRole = QStringLiteral("male");
+    entry.printedOrientation = QStringLiteral("axis-perpendicular-to-build-plate");
+    entry.semantics = QStringLiteral("male-standard-bar-diameter");
+    entry.correctionContractVersion = QStringLiteral("male-standard-bar-diameter-v1");
+    entry.semanticContractVersion = QStringLiteral("official-ldraw-capped-standard-bar-v1");
+    entry.regeneratorAlgorithmVersion = FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
+    entry.calibrationArtifactIdentity = QStringLiteral("synthetic-standard-bar-evidence");
+    entry.valueMillimetres = correction;
+    result.corrections.push_back(entry);
+    return result;
 }
 }
 int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;LDrawGeometry::LDrawLoadResult source;source.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>();PreparedMesh nominal;nominal.mesh=box();nominal.partReference="3700";nominal.ldrawIdentity="parts/3700.dat";nominal.preparationProfileVersion="profile-v1";nominal.mcutVersion="mcut-v1";const qsizetype sourceTriangleCount=source.mesh.triangles.size();const auto preparedBefore=nominal.mesh;ManufacturingMeshService service([]{return std::make_unique<ProofBoolean>();},[](const auto&){return semantic();});
@@ -353,6 +376,163 @@ if (libraryAt >= 0 && libraryAt+1 < args.size()) {
                                      part + " incompatible orientation remains nominal");
         ok &= check(AutoFitProfileResolver::resolve(true,part,{},pocketSource,orientations[matching]).state == AutoFitResolutionState::NoCompatibleProfile,
                     part + " remains nominal without Verified calibration");
+    }
+}
+const auto barZero=standardBarProfile(0.0);
+const auto barPositive=standardBarProfile(.10);
+ok &= check(FitCalibrationLibrary::profileCompatibility(barZero) &&
+            FitCalibrationLibrary::profileCompatibility(barPositive),
+            "Standard Bar zero and synthetic nonzero Verified profiles satisfy the production contract");
+ok &= check(ManufacturingMeshService::compatibleCorrection(barZero,
+            FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate) == &barZero.corrections.front(),
+            "Standard Bar selection consumes the Verified profile entry, including a zero correction");
+ok &= check(ManufacturingMeshService::compatibleCorrection(barZero,
+            FitPrintedOrientation::FeatureAxisParallelToBuildPlate) == nullptr,
+            "Standard Bar profile does not apply to unsupported parallel orientation");
+auto barFeatureSpelling=barZero;
+barFeatureSpelling.corrections.front().printedOrientation=QStringLiteral("feature-axis-perpendicular-to-build-plate");
+ok &= check(FitCalibrationLibrary::profileCompatibility(barFeatureSpelling) &&
+            ManufacturingMeshService::compatibleCorrections(barFeatureSpelling,
+                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).standardBarDiameter &&
+            !ManufacturingMeshService::compatibleCorrections(barFeatureSpelling,
+                FitPrintedOrientation::FeatureAxisParallelToBuildPlate).standardBarDiameter,
+            "managed Standard Bar orientation spelling resolves only perpendicular evidence");
+const int barProfileAt=args.indexOf(QStringLiteral("--standard-bar-profile"));
+FitProfile actualBarProfile;
+bool haveActualBarProfile=false;
+if(barProfileAt>=0 && barProfileAt+1<args.size()) {
+    QFile file(args[barProfileAt+1]);
+    ok &= check(file.open(QIODevice::ReadOnly),"actual managed Standard Bar profile opens read-only");
+    if(file.isOpen()) {
+        const auto document=QJsonDocument::fromJson(file.readAll());
+        QString error;
+        haveActualBarProfile=document.isObject() &&
+            FitProfileJson::fromJson(document.object(),&actualBarProfile,&error);
+        ok &= check(haveActualBarProfile,"actual managed Standard Bar profile parses: "+error);
+        if(haveActualBarProfile) {
+            const auto* selected=ManufacturingMeshService::compatibleCorrections(actualBarProfile,
+                FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate).standardBarDiameter;
+            ok &= check(actualBarProfile.verificationState==FitEvidenceState::Verified && selected &&
+                selected->featureFamily==QStringLiteral("StandardBar") &&
+                std::abs(selected->valueMillimetres)<1e-9,
+                "actual physically Verified Standard Bar correction is selected from managed profile data");
+        }
+    }
+}
+if(libraryAt>=0 && libraryAt+1<args.size()) {
+    for(const QString& part:{QStringLiteral("30374"),QStringLiteral("87994")}) {
+        const auto barSource=LDrawLibraryService::loadPart(args[libraryAt+1],part);
+        ok &= check(barSource.ok(),part+" real Standard Bar source loads");
+        if(!barSource.ok()) continue;
+        const auto bars=StandardBarSemantic::recognize(barSource);
+        ok &= check(bars.size()==1 && std::abs(bars.front().nominalDiameterMillimetres-3.2)<1e-9,
+                    part+" has one certified 3.20 mm Standard Bar surface");
+        if(bars.size()!=1) continue;
+        PrintPreparationRequest request;
+        request.partReference=part;
+        request.ldrawIdentity=QStringLiteral("parts/%1.dat").arg(part);
+        request.libraryAuthority=args[libraryAt+1];
+        request.loadResult=barSource;
+        LDrawPrintPreparationService preparation;
+        const auto preparedResult=preparation.prepare(request);
+        ok &= check(preparedResult.ready(),part+" reaches Ready nominal PreparedMesh: "+preparedResult.diagnostic);
+        if(!preparedResult.ready()) continue;
+        const auto& prepared=*preparedResult.preparedMesh;
+        const auto before=prepared.mesh;
+        const auto sourceBefore=barSource.mesh.triangles;
+        ManufacturingMeshService barService;
+        const FitProfile& selectedProfile=haveActualBarProfile?actualBarProfile:barZero;
+        ok &= check(ManufacturingMeshService::hasApplicableCorrection(selectedProfile,barSource,nominalOrientation),
+                    part+" explicit ManufacturingMesh selector sees the Verified perpendicular profile");
+        const auto automatic=AutoFitProfileResolver::resolve(true,part,{selectedProfile},barSource,nominalOrientation);
+        ok &= check(automatic.resolved() && automatic.profile.profileIdentity==selectedProfile.profileIdentity,
+                    part+" Auto Fit resolves the same Verified profile");
+        if(haveActualBarProfile) {
+            const auto root=QDir::cleanPath(QFileInfo(args[barProfileAt+1]).absolutePath()+QStringLiteral("/.."));
+            const FitCalibrationLibrary library(root);
+            const auto managed=AutoFitProfileResolver::resolveManaged(true,part,library,barSource,nominalOrientation);
+            ok &= check(managed.resolved() && managed.profile.profileIdentity==selectedProfile.profileIdentity,
+                        part+" production managed-library Auto Fit selects the actual Verified profile");
+        }
+        const auto generated=barService.generate(barSource,prepared,selectedProfile,nominalOrientation);
+        ok &= check(generated.ok(),part+" profile-driven ManufacturingMesh succeeds: "+generated.diagnostic);
+        if(generated.ok()) {
+            const auto& mesh=*generated.manufacturingMesh;
+            ok &= check(mesh.fitProfileIdentity==selectedProfile.profileIdentity &&
+                        mesh.correctionContractVersion==QStringLiteral("male-standard-bar-diameter-v1") &&
+                        std::abs(mesh.nominalDiameterMillimetres-3.2)<1e-9 &&
+                        std::abs(mesh.diameterCorrectionMillimetres)<1e-9 &&
+                        std::abs(mesh.manufacturingDiameterMillimetres-3.2)<1e-9,
+                        part+" diagnostics prove selected profile and physical 0.00 mm result");
+            ok &= check(same(mesh.mesh,before) && same(prepared.mesh,before) &&
+                        sameSource(barSource.mesh.triangles,sourceBefore),
+                        part+" Verified zero correction preserves ManufacturingMesh, PreparedMesh and Source exactly");
+            const auto repeated=barService.generate(barSource,prepared,selectedProfile,nominalOrientation);
+            ok &= check(repeated.ok() && repeated.manufacturingMesh->identity==mesh.identity &&
+                        same(repeated.manufacturingMesh->mesh,mesh.mesh),
+                        part+" ManufacturingMesh geometry and identity are deterministic");
+            const int outputAt=args.indexOf(QStringLiteral("--standard-bar-output"));
+            if(outputAt>=0 && outputAt+1<args.size()) {
+                QDir output(args[outputAt+1]);
+                ok &= check(output.mkpath(QStringLiteral(".")),"Standard Bar proof directory exists");
+                const QString path=output.filePath(part+QStringLiteral("-standard-bar-manufacturing.3mf"));
+                QString exportError;
+                ok &= check(ManufacturingMeshDiagnosticExporter::writeThreeMf(mesh,path,1.0,
+                            QColor("#A0A5A9"),&exportError),part+" ManufacturingMesh 3MF export: "+exportError);
+                if(QFileInfo::exists(path)) {
+                    Lib3MF::CWrapper wrapper;
+                    auto model=wrapper.CreateModel();
+                    model->QueryReader("3mf")->ReadFromFile(path.toStdString());
+                    auto objects=model->GetMeshObjects();
+                    ok &= check(objects->MoveNext() &&
+                                objects->GetCurrentMeshObject()->GetTriangleCount()==mesh.mesh.faces.size(),
+                                part+" exported 3MF reopens with the expected mesh");
+                    QTextStream(stdout)<<"standardBarManufacturing="<<path<<Qt::endl;
+                }
+            }
+            QTextStream(stdout)<<"standardBarProfile="<<selectedProfile.name
+                               <<" part="<<part<<" correction="<<mesh.diameterCorrectionMillimetres
+                               <<" diameter="<<mesh.manufacturingDiameterMillimetres<<Qt::endl;
+        }
+        const auto nonzero=barService.generate(barSource,prepared,barPositive,nominalOrientation);
+        ok &= check(nonzero.ok(),part+" synthetic nonzero Standard Bar correction passes strict validation: "+nonzero.diagnostic);
+        if(nonzero.ok()) {
+            const auto& corrected=nonzero.manufacturingMesh->mesh;
+            double nominalMaximumRadius=0,correctedMaximumRadius=0;
+            for(qsizetype i=0;i<corrected.vertices.size();++i) {
+                const auto radialDistance=[&](const Point& point) {
+                    const auto& frame=bars.front().frame;
+                    const Point relative{point.x-frame.origin.x,point.y-frame.origin.y,point.z-frame.origin.z};
+                    const double axial=relative.x*frame.axis.x+relative.y*frame.axis.y+relative.z*frame.axis.z;
+                    return std::sqrt((relative.x-axial*frame.axis.x)*(relative.x-axial*frame.axis.x)+
+                                     (relative.y-axial*frame.axis.y)*(relative.y-axial*frame.axis.y)+
+                                     (relative.z-axial*frame.axis.z)*(relative.z-axial*frame.axis.z));
+                };
+                nominalMaximumRadius=std::max(nominalMaximumRadius,radialDistance(before.vertices[i]));
+                correctedMaximumRadius=std::max(correctedMaximumRadius,radialDistance(corrected.vertices[i]));
+            }
+            ok &= check(std::abs(nonzero.manufacturingMesh->manufacturingDiameterMillimetres-3.3)<1e-9 &&
+                        !same(nonzero.manufacturingMesh->mesh,before) &&
+                        corrected.faces==before.faces &&
+                        std::abs(nominalMaximumRadius-1.6)<1e-4 &&
+                        std::abs(correctedMaximumRadius-1.65)<1e-4 &&
+                        maximumBoundsDeviation(nonzero.manufacturingMesh->analysis.bounds,
+                            prepared.finalAnalysis.bounds)<=.051 &&
+                        same(prepared.mesh,before) && sameSource(barSource.mesh.triangles,sourceBefore),
+                        part+QStringLiteral(" synthetic correction adjusts certified radius only, retaining topology, length, Source and PreparedMesh (r=%1/%2, bounds deviation=%3)")
+                            .arg(nominalMaximumRadius,0,'g',8).arg(correctedMaximumRadius,0,'g',8)
+                            .arg(maximumBoundsDeviation(nonzero.manufacturingMesh->analysis.bounds,
+                                prepared.finalAnalysis.bounds),0,'g',8));
+        }
+        PrintOrientation parallel;
+        parallel.rotate(PrintOrientation::Rotation::XPositive);
+        ok &= check(!ManufacturingMeshService::hasApplicableCorrection(selectedProfile,barSource,parallel) &&
+                    barService.generate(barSource,prepared,selectedProfile,parallel).error==ManufacturingMeshError::MissingCorrection &&
+                    AutoFitProfileResolver::resolve(true,part,{selectedProfile},barSource,parallel).state==AutoFitResolutionState::NoCompatibleProfile,
+                    part+" unsupported parallel orientation remains nominal and unselected");
+        ok &= check(!ManufacturingMeshService::hasApplicableCorrection(profile(),barSource,nominalOrientation) &&
+                    AutoFitProfileResolver::resolve(true,part,{profile()},barSource,nominalOrientation).state==AutoFitResolutionState::NoCompatibleProfile,
+                    part+" missing Standard Bar evidence leaves the part nominal");
     }
 }
 return ok?0:1;}

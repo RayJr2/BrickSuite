@@ -7,5 +7,8 @@ namespace PrintGeometry {
 class StandardBarSemantic {
 public:
     static QVector<FunctionalFeature> recognize(const LDrawGeometry::LDrawLoadResult& source);
+    static bool adjustPrepared(const LDrawGeometry::LDrawLoadResult& source,
+                               const PrintMesh& nominal,const FunctionalFeature& bar,
+                               double correction,PrintMesh* adjusted,QString* diagnostic=nullptr);
 };
 }

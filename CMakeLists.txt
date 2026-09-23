@@ -818,6 +818,8 @@ if(BUILD_TESTING)
         src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
         src/services/geometry/print/ManufacturingMesh.h
         src/services/geometry/print/ManufacturingMeshService.cpp src/services/geometry/print/ManufacturingMeshService.h
+        src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h
+        src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
         src/services/geometry/print/FrictionlessTechnicPinSemantic.cpp src/services/geometry/print/FrictionlessTechnicPinSemantic.h
         src/services/geometry/print/FrictionTechnicPinSemantic.cpp src/services/geometry/print/FrictionTechnicPinSemantic.h
         src/services/geometry/print/TechnicAxleSemantic.cpp src/services/geometry/print/TechnicAxleSemantic.h

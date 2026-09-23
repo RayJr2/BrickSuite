@@ -1,7 +1,9 @@
 #include "StandardBarSemantic.h"
+#include "PrintMeshAnalysis.h"
 
 #include <QCryptographicHash>
 #include <QRegularExpression>
+#include <QSet>
 #include <cmath>
 
 namespace PrintGeometry { namespace {
@@ -15,6 +17,11 @@ Point scaled(Point a,double s) { return {a.x*s,a.y*s,a.z*s}; }
 double dot(Point a,Point b) { return a.x*b.x+a.y*b.y+a.z*b.z; }
 double length(Point a) { return std::sqrt(dot(a,a)); }
 Point cross(Point a,Point b) { return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z}; }
+Point converted(const QVector3D& p) { return {double(p.x())*MmPerLdu,double(p.z())*MmPerLdu,-double(p.y())*MmPerLdu}; }
+QString vertexKey(Point p) {
+    return QStringLiteral("%1|%2|%3").arg(std::llround(p.x*10000.0))
+        .arg(std::llround(p.y*10000.0)).arg(std::llround(p.z*10000.0));
+}
 bool close(Point a,Point b) { return length(subtract(a,b))<Tolerance; }
 QString primitive(const LDrawGeometry::LDrawSourceModel& model,const LDrawGeometry::ReferenceRecord& ref) {
     return model.files[ref.fileId].relativePath.section('/',-1).toLower();
@@ -103,5 +110,71 @@ QVector<FunctionalFeature> StandardBarSemantic::recognize(const LDrawGeometry::L
         QCryptographicHash::hash(identity,QCryptographicHash::Sha256).toHex());
     feature.governingOperandIdentity=feature.stableIdentity+QStringLiteral(":body-cylinder");
     return {feature};
+}
+bool StandardBarSemantic::adjustPrepared(const LDrawGeometry::LDrawLoadResult& source,
+    const PrintMesh& nominal,const FunctionalFeature& bar,double correction,
+    PrintMesh* adjusted,QString* diagnostic) {
+    if(!adjusted || !source.ok() || !source.sourceModel || nominal.faces.empty() ||
+       bar.family!=FunctionalInterfaceFamily::StandardBar ||
+       bar.constructionRecipe!=QStringLiteral("standard-bar-simple-cylinder-v1") ||
+       bar.evidenceContract!=QStringLiteral("official-ldraw-capped-standard-bar-v1") ||
+       bar.provenance.size()!=1 || !std::isfinite(correction) || std::abs(correction)>0.5 ||
+       bar.nominalRadiusMillimetres+correction*.5<=0) {
+        if(diagnostic) *diagnostic=QStringLiteral("The Standard Bar correction or source contract is invalid.");
+        return false;
+    }
+    const auto& model=*source.sourceModel;
+    const int owner=bar.provenance.front().referenceId;
+    if(owner<0 || owner>=model.references.size() ||
+       primitive(model,model.references[owner])!=QStringLiteral("4-4cyli.dat")) {
+        if(diagnostic) *diagnostic=QStringLiteral("The certified Standard Bar cylindrical owner is missing.");
+        return false;
+    }
+    QSet<QString> owned;
+    int certifiedTriangles=0;
+    for(const auto& surface:model.surfaces) {
+        if(surface.referenceId!=owner) continue;
+        if(!surface.certified || surface.triangleIndex<0 ||
+           surface.triangleIndex>=source.mesh.triangles.size()) {
+            if(diagnostic) *diagnostic=QStringLiteral("The Standard Bar cylindrical source surface is not certified.");
+            return false;
+        }
+        const auto& triangle=source.mesh.triangles[surface.triangleIndex];
+        for(const auto& vertex:{triangle.a,triangle.b,triangle.c})
+            owned.insert(vertexKey(converted(vertex)));
+        ++certifiedTriangles;
+    }
+    if(certifiedTriangles<32 || owned.size()<32) {
+        if(diagnostic) *diagnostic=QStringLiteral("The certified Standard Bar cylindrical source surface is incomplete.");
+        return false;
+    }
+    // A Verified zero correction is still an applied profile result, but must not
+    // perturb the nominal PreparedMesh's vertices, topology or identity inputs.
+    if(correction==0.0) {
+        *adjusted=nominal;
+        if(diagnostic) *diagnostic=QStringLiteral("Verified zero Standard Bar correction retained the nominal PreparedMesh exactly.");
+        return true;
+    }
+    PrintMesh result=nominal;
+    int moved=0;
+    for(auto& point:result.vertices) {
+        if(!owned.contains(vertexKey(point))) continue;
+        const auto relative=subtract(point,bar.frame.origin);
+        const double axial=dot(relative,bar.frame.axis);
+        const auto radial=subtract(relative,scaled(bar.frame.axis,axial));
+        const double radius=length(radial);
+        if(axial<-Tolerance || axial>bar.nominalAxialExtentMillimetres+Tolerance ||
+           std::abs(radius-bar.nominalRadiusMillimetres)>Tolerance) continue;
+        point=add(point,scaled(radial,correction/(2.0*radius)));
+        ++moved;
+    }
+    const auto analysis=analyzeSource(result);
+    if(moved<32 || !validatePreparedMesh(analysis).ok()) {
+        if(diagnostic) *diagnostic=QStringLiteral("The source-owned Standard Bar diameter correction failed topology validation.");
+        return false;
+    }
+    *adjusted=std::move(result);
+    if(diagnostic) *diagnostic=QStringLiteral("Certified Standard Bar cylindrical wall adjusted; bar length and end planes retained.");
+    return true;
 }
 } // namespace PrintGeometry
