@@ -10,7 +10,8 @@ enum class FitCalibrationFamily {
     FrictionlessTechnicPin,
     FrictionTechnicPin,
     TechnicAxle,
-    TechnicAxleHole
+    TechnicAxleHole,
+    StandardBar
 };
 
 struct FitCalibrationFamilyOption {

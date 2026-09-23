@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
                       !slugs.contains(slug), "canonical names, label abbreviations, and new-file slugs are unique");
         canonicalNames.insert(canonical); abbreviations.insert(abbreviated); slugs.insert(slug);
     }
-    ok &= require(canonicalNames.size() == 14 &&
+    ok &= require(canonicalNames.size() == 15 &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::ClutchAntiStudBore).canonical)
                       .contains(QStringLiteral("Anti-Stud Bore")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::ClutchWallPocketBrick).canonical)

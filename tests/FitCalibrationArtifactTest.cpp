@@ -1,6 +1,7 @@
 #include "../src/services/geometry/fit/RoundTechnicCalibrationArtifact.h"
 #include "../src/services/geometry/fit/StandardStudCalibrationArtifact.h"
 #include "../src/services/geometry/fit/StudReceivingCalibrationArtifact.h"
+#include "../src/services/geometry/fit/StandardBarCalibrationArtifact.h"
 #include "../src/services/geometry/fit/FitCalibrationFixtureLabel.h"
 #include "../src/services/geometry/fit/FitCalibrationNamingCatalog.h"
 #include "../src/services/geometry/fit/FitCalibrationArtifactLocation.h"
@@ -244,6 +245,119 @@ bool validateAntiStudBoreSession(const QString& path)
                 "Resume managed AntiStudBore session: "+error);
     return ok;
 }
+bool testStandardBar(const QStringList& args)
+{
+    const auto artifact=StandardBarCalibrationArtifact::generate();
+    bool ok=require(artifact.ok,"Standard Bar fixture generation: "+artifact.diagnostic);
+    if(!ok) return false;
+    ok&=require(artifact.candidates.size()==7 &&
+                std::abs(artifact.candidates[0].functionalDiameterMillimetres-3.05)<1e-9 &&
+                std::abs(artifact.candidates[3].functionalDiameterMillimetres-3.2)<1e-9 &&
+                std::abs(artifact.candidates[6].functionalDiameterMillimetres-3.35)<1e-9,
+                "Standard Bar seven candidates agree with 3.05-3.35 mm fixture");
+    ok&=require(artifact.analysis.connectedComponents==1 && artifact.analysis.boundaryEdges==0 &&
+                artifact.analysis.nonManifoldEdges==0 && artifact.analysis.selfIntersections==0,
+                "Standard Bar fixture is manifold");
+    const auto repeated=StandardBarCalibrationArtifact::generate();
+    ok&=require(repeated.ok&&sameMesh(repeated.mesh,artifact.mesh),"Standard Bar fixture is deterministic");
+    const auto experiment=StandardBarCalibrationArtifact::observationTemplate(artifact);
+    FitCalibrationExperiment restored;
+    QString error;
+    ok&=require(FitCalibrationExperimentJson::fromJson(FitCalibrationExperimentJson::toJson(experiment),&restored,&error) &&
+                restored.featureFamily==QStringLiteral("StandardBar") &&
+                restored.regenerationPrototype.family==FunctionalInterfaceFamily::StandardBar &&
+                restored.regenerationPrototype.evidenceContract==QStringLiteral("official-ldraw-capped-standard-bar-v1") &&
+                restored.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
+                restored.preferredCandidateIndex==0 && restored.state!=FitEvidenceState::Verified,
+                "Standard Bar managed schema retains contract, orientation, and unverified state: "+error);
+    const auto validateSession=[&](const QString& path) {
+        QFile file(path);
+        if(!require(file.open(QIODevice::ReadOnly),"Open Standard Bar session: "+path)) return false;
+        FitCalibrationSession decoded;
+        if(!require(FitCalibrationSessionJson::fromJson(QJsonDocument::fromJson(file.readAll()).object(),&decoded,&error),
+                    "Decode Standard Bar managed session: "+error)) return false;
+        bool valid=require(!decoded.sessionIdentity.isEmpty() && decoded.hasCoarseExperiment &&
+                           !decoded.hasFineExperiment && decoded.history.isEmpty() &&
+                           decoded.coarseExperiment.parentArtifactIdentity.isEmpty() &&
+                           decoded.coarseExperiment.artifactIdentity==StandardBarCalibrationArtifact::artifactIdentity() &&
+                           decoded.coarseExperiment.regenerationPrototype.family==FunctionalInterfaceFamily::StandardBar &&
+                           decoded.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
+                           decoded.coarseExperiment.candidates.size()==7 &&
+                           decoded.coarseExperiment.preferredCandidateIndex==0 &&
+                           decoded.coarseExperiment.state!=FitEvidenceState::Verified,
+                           "Standard Bar session identity, lineage, orientation and unverified stage");
+        for(int i=0;i<decoded.coarseExperiment.candidates.size();++i) {
+            const auto& candidate=decoded.coarseExperiment.candidates[i];
+            valid&=require(candidate.index==i+1 && candidate.observations.isEmpty() &&
+                           std::abs(candidate.diameterCorrectionMillimetres-(-.15+i*.05))<1e-9 &&
+                           std::abs(candidate.functionalDiameterMillimetres-(3.05+i*.05))<1e-9,
+                           QStringLiteral("Standard Bar candidate %1 matches physical fixture").arg(i+1));
+        }
+        QTemporaryDir root;
+        FitCalibrationLibrary library(root.path());
+        FitCalibrationWorkspace workspace;
+        workspace.process.printerIdentity=QStringLiteral("Test printer");
+        workspace.process.materialIdentity=QStringLiteral("Test material");
+        workspace.process.profileName=QStringLiteral("Test process");
+        workspace.process.hasNozzleDiameter=true;
+        workspace.process.nozzleDiameterMillimetres=.4;
+        workspace.process.hasLayerHeight=true;
+        workspace.process.layerHeightMillimetres=.2;
+        workspace.process.dimensionalCompensationNotes=QStringLiteral("None");
+        FitCalibrationSession imported;
+        valid&=require(library.importSessionIntoWorkspace(path,&workspace,&imported,&error) &&
+                       imported.sessionIdentity==decoded.sessionIdentity &&
+                       imported.coarseExperiment.candidates[3].observations.isEmpty(),
+                       "Import Standard Bar session into selected workspace: "+error);
+        FitCalibrationSession resumed;
+        valid&=require(library.loadSession(decoded.sessionIdentity,&resumed,&error) &&
+                       resumed.coarseExperiment.regenerationPrototype.family==FunctionalInterfaceFamily::StandardBar &&
+                       resumed.coarseExperiment.state!=FitEvidenceState::Verified,
+                       "Resume managed Standard Bar session: "+error);
+        return valid;
+    };
+    const int outputAt=args.indexOf(QStringLiteral("--standard-bar-output"));
+    if(outputAt>=0 && outputAt+1<args.size()) {
+        QDir output(args[outputAt+1]);
+        ok&=require(output.mkpath(QStringLiteral(".")),"Standard Bar output directory");
+        const QString fixturePath=output.filePath(FitCalibrationArtifactLocation::fixtureFileName(
+            FitCalibrationNameKey::BarDiameter,QStringLiteral("coarse"),1));
+        const QString sessionPath=FitCalibrationArtifactLocation::companionPath(fixturePath);
+        if(QFileInfo::exists(fixturePath)||QFileInfo::exists(sessionPath))
+            ok&=require(false,"Refusing to overwrite existing Standard Bar calibration artifact");
+        else {
+            PrintMesh labeled;
+            ok&=require(FitCalibrationFixtureLabel::recessStandalone(artifact.mesh,
+                FitCalibrationNameKey::BarDiameter,&labeled,nullptr,&error),"Standard Bar label: "+error);
+            if(!labeled.faces.empty()) {
+                ThreeMfWriter::Options options;
+                options.objectName=artifact.artifactIdentity;
+                options.partIdentity=artifact.artifactIdentity;
+                options.modelColor=QColor("#A0A5A9");
+                ok&=require(ThreeMfWriter::write(labeled,fixturePath,options,&error),
+                            "Standard Bar 3MF export: "+error);
+            }
+            QTemporaryDir managedRoot;
+            FitCalibrationLibrary managed(managedRoot.path());
+            FitCalibrationSession session;
+            session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
+            session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;
+            session.process.orientationNotes=experiment.process.orientationNotes;
+            session.hasCoarseExperiment=true;
+            session.coarseExperiment=experiment;
+            session.coarseExperiment.process=session.process;
+            ok&=require(managed.saveSession(&session,&error) &&
+                        managed.exportSession(session.sessionIdentity,sessionPath,&error),
+                        "Standard Bar managed-session export: "+error);
+            if(QFileInfo::exists(sessionPath)) ok&=validateSession(sessionPath);
+            QTextStream(stdout)<<"standardBarFixture="<<fixturePath<<Qt::endl
+                               <<"standardBarSession="<<sessionPath<<Qt::endl;
+        }
+    }
+    const int validateAt=args.indexOf(QStringLiteral("--standard-bar-validate-session"));
+    if(validateAt>=0&&validateAt+1<args.size()) ok&=validateSession(args[validateAt+1]);
+    return ok;
+}
 bool testAntiStudBore(const QStringList& args)
 {
     bool ok=true;
@@ -350,5 +464,6 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;const
     const auto axleHoleArmWidth=TechnicAxleHoleArmWidthCalibrationArtifact::generate();ok&=require(axleHoleArmWidth.ok&&axleHoleArmWidth.candidates.size()==7,"corrected axle-hole arm-width artifact: "+axleHoleArmWidth.diagnostic);if(axleHoleArmWidth.ok){for(int i=0;i<7;++i)ok&=require(std::abs(axleHoleArmWidth.candidates[i].functionalDiameterMillimetres-(1.60+.10*i))<1e-9,"axle-hole arm opening candidates span 1.60 through 2.20 mm");ok&=require(axleHoleArmWidth.analysis.connectedComponents==1&&axleHoleArmWidth.analysis.boundaryEdges==0&&axleHoleArmWidth.analysis.nonManifoldEdges==0&&axleHoleArmWidth.analysis.selfIntersections==0,"corrected arm-width artifact is a validated printable mesh");const auto repeated=TechnicAxleHoleArmWidthCalibrationArtifact::generate();ok&=require(repeated.ok&&sameMesh(repeated.mesh,axleHoleArmWidth.mesh),"corrected arm-width artifact generation is deterministic");const auto experiment=TechnicAxleHoleArmWidthCalibrationArtifact::observationTemplate(axleHoleArmWidth);ok&=require(experiment.parentArtifactIdentity=="technic-axle-hole-tip-clearance-perpendicular-coarse-extension-v2"&&experiment.fixedDiameterCorrectionMillimetres==.30&&experiment.regenerationPrototype.constructionRecipe=="technic-axle-hole-arm-width-clearance-v2"&&experiment.candidates.front().observations.isEmpty(),"new semantic contract retains old tip-to-tip lineage, fixes 5.10 mm tip clearance, and begins with fresh evidence");const int at=args.indexOf("--axle-hole-arm-width-output");if(at>=0&&at+1<args.size()){QDir output(args[at+1]);ok&=require(output.mkpath("."),"arm-width output directory");const QString model=output.filePath("BrickSuite-technic-axle-hole-arm-width-perpendicular-coarse-v2.3mf"),sessionPath=output.filePath("BrickSuite-technic-axle-hole-arm-width-perpendicular-coarse-v2-session.json");ThreeMfWriter::Options options;options.objectName=experiment.artifactIdentity;options.partIdentity=experiment.artifactIdentity;options.modelColor=QColor("#A0A5A9");ok&=require(ThreeMfWriter::write(axleHoleArmWidth.mesh,model,options,&error),"arm-width 3MF export: "+error);FitCalibrationSession corrected;corrected.sessionIdentity="phase6e-axle-hole-arm-width";corrected.process.printerIdentity="Bambu H2D";corrected.process.materialIdentity="PETG";corrected.process.profileName="0.20mm Standard @BBL H2D";corrected.process.hasNozzleDiameter=true;corrected.process.nozzleDiameterMillimetres=.4;corrected.process.hasLayerHeight=true;corrected.process.layerHeightMillimetres=.2;corrected.process.dimensionalCompensationNotes="None / Bambu Studio defaults";corrected.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;corrected.hasCoarseExperiment=true;corrected.coarseExperiment=experiment;corrected.coarseExperiment.process=corrected.process;QSaveFile file(sessionPath);ok&=require(file.open(QIODevice::WriteOnly)&&file.write(QJsonDocument(FitCalibrationSessionJson::toJson(corrected)).toJson(QJsonDocument::Indented))>0&&file.commit(),"arm-width session export");const auto b=axleHoleArmWidth.analysis.bounds;QTextStream(stdout)<<"axleHoleArmWidthArtifact="<<model<<Qt::endl<<"axleHoleArmWidthSession="<<sessionPath<<Qt::endl<<"axleHoleArmWidthDimensions="<<(b.maximum.x-b.minimum.x)<<'x'<<(b.maximum.y-b.minimum.y)<<'x'<<(b.maximum.z-b.minimum.z)<<" mm"<<Qt::endl;}}
     ok &= testWallPocket(args);
     ok &= testAntiStudBore(args);
+    ok &= testStandardBar(args);
     return ok?0:1;
 }

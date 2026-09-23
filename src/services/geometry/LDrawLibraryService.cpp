@@ -207,6 +207,7 @@ struct Loader {
             QStringList v=line.split(QRegularExpression("\\s+")); bool typeOk=false; int type=v.value(0).toInt(&typeOk);
             if (!typeOk || type<0 || type>5) { fail(ErrorCode::MalformedSource,"Malformed LDraw line type.",relative,lineNo); break; }
             if (type==0) {
+                if (lineNo==1) result.sourceModel->files[fileId].description=line.mid(2).trimmed();
                 const QString upper=line.toUpper();
                 if(upper.startsWith("0 !LDRAW_ORG ")) {
                     const QString kind=v.value(2).toUpper();

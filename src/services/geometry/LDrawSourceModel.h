@@ -14,6 +14,7 @@ struct SourceFileRecord {
     int id = -1;
     QString relativePath;
     SourceClassification classification = SourceClassification::Unknown;
+    QString description;
 };
 
 struct ReferenceRecord {

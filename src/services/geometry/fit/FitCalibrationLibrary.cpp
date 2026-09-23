@@ -652,6 +652,10 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
         session.process.actualPrintedOrientation == FitPrintedOrientation::Unknown || session.process.actualPrintedOrientation == FitPrintedOrientation::OtherUnsupported) {
         fail(error, "Verified profile promotion requires a preferred correction and complete supported process identity."); return false;
     }
+    if (experiment.featureFamily == QStringLiteral("StandardBar") &&
+        session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate) {
+        fail(error, "Standard Bar currently has only a perpendicular physical calibration fixture."); return false;
+    }
     FitProfile profile; profile.profileIdentity = newStableIdentity();
     profile.name = name.trimmed().isEmpty() ? QStringLiteral("%1 / %2 / %3 mm / LEGO Fit").arg(session.process.printerIdentity, session.process.materialIdentity).arg(session.process.nozzleDiameterMillimetres, 0, 'f', 2) : name.trimmed();
     profile.process = session.process; profile.processFingerprint = processFingerprint(session.process);
@@ -683,6 +687,9 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
             : wallPocket ? QStringLiteral("female-stud-receiver-wall-pocket-opening-width-v1")
             : postWall ? QStringLiteral("female-stud-receiver-post-od-v1")
                        : QStringLiteral("female-stud-receiver-tube-od-v1");
+    } else if (experiment.featureFamily == QStringLiteral("StandardBar")) {
+        correction.semantics = QStringLiteral("male-standard-bar-diameter");
+        correction.correctionContractVersion = QStringLiteral("male-standard-bar-diameter-v1");
     } else if (experiment.featureFamily == QStringLiteral("FrictionlessTechnicPin")) {
         correction.semantics = QStringLiteral("male-frictionless-technic-pin-envelope-diameter");
         correction.correctionContractVersion = QStringLiteral("male-frictionless-technic-pin-envelope-diameter-v1");
@@ -757,6 +764,12 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-connect-frictionless-pin-v1")
             && correction.semantics == QStringLiteral("male-frictionless-technic-pin-envelope-diameter")
             && correction.correctionContractVersion == QStringLiteral("male-frictionless-technic-pin-envelope-diameter-v1");
+        const bool standardBar = correction.featureFamily == QStringLiteral("StandardBar")
+            && correction.featureRole == QStringLiteral("male")
+            && correction.printedOrientation == QStringLiteral("axis-perpendicular-to-build-plate")
+            && correction.semanticContractVersion == QStringLiteral("official-ldraw-capped-standard-bar-v1")
+            && correction.semantics == QStringLiteral("male-standard-bar-diameter")
+            && correction.correctionContractVersion == QStringLiteral("male-standard-bar-diameter-v1");
         const bool frictionPin = correction.featureFamily == QStringLiteral("FrictionTechnicPin")
             && correction.featureRole == QStringLiteral("male")
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-confric5-friction-pin-v1")
@@ -777,7 +790,7 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-axlehole-arm-width-clearance-v2")
             && correction.semantics == QStringLiteral("female-technic-axle-hole-arm-width-clearance")
             && correction.correctionContractVersion == QStringLiteral("female-technic-axle-hole-arm-width-clearance-v2");
-        if (!roundPassage && !standardStud && !receivingClutch && !frictionlessPin && !frictionPin && !technicAxle && !technicAxleHole && !technicAxleHoleArmWidth) { fail(reason, "The functional semantic or correction interpretation contract has changed."); return false; }
+        if (!roundPassage && !standardStud && !receivingClutch && !standardBar && !frictionlessPin && !frictionPin && !technicAxle && !technicAxleHole && !technicAxleHoleArmWidth) { fail(reason, "The functional semantic or correction interpretation contract has changed."); return false; }
         if (correction.regeneratorAlgorithmVersion != currentRegeneratorAlgorithmVersion()) { fail(reason, "The functional regenerator version has changed."); return false; }
         if (correction.printedOrientation == "unknown" || correction.printedOrientation == "other-unsupported") { fail(reason, "The calibrated print orientation is unsupported."); return false; }
     }

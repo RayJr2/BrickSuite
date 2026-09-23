@@ -2,6 +2,7 @@
 #include "../src/services/geometry/print/PreparedObjProofWriter.h"
 #include "../src/services/geometry/print/PrintMeshAnalysis.h"
 #include "../src/services/geometry/print/StudReceivingAntiStudSemantic.h"
+#include "../src/services/geometry/print/StandardBarSemantic.h"
 #include "../src/services/geometry/LDrawLibraryService.h"
 #include "../src/ui/parts/PreparedMeshRenderAdapter.h"
 
@@ -95,6 +96,40 @@ int main(int argc,char**argv)
     QDir().mkpath(output);
     auto cache=std::make_shared<PrintPreparationCache>();
     LDrawPrintPreparationService service(cache);
+    for(const QString& id:{QStringLiteral("30374"),QStringLiteral("87994"),
+                          QStringLiteral("3957a"),QStringLiteral("4095"),
+                          QStringLiteral("4519"),QStringLiteral("2780"),QStringLiteral("3001")}) {
+        const auto loaded=LDrawLibraryService::loadPart(args[libraryAt+1],id);
+        ok&=check(loaded.ok(),id+" Standard Bar control loads");
+        if(!loaded.ok()) continue;
+        const auto features=StandardBarSemantic::recognize(loaded);
+        const bool expected=id==QStringLiteral("30374")||id==QStringLiteral("87994");
+        ok&=check(features.size()==(expected?1:0),id+QStringLiteral(" conservative Standard Bar recognition (refs=%1, title=%2)")
+                  .arg(loaded.sourceModel->references.size())
+                  .arg(loaded.sourceModel->files[loaded.sourceModel->references.front().fileId].description));
+        if(!expected || features.isEmpty()) continue;
+        const auto semantic=LDrawSemanticOperandBuilder::build(loaded);
+        int retained=0;
+        for(const auto& operand:semantic.operands) for(const auto& feature:operand.functionalFeatures)
+            retained+=feature.family==FunctionalInterfaceFamily::StandardBar;
+        ok&=check(semantic.ok()&&retained==1&&
+                  std::abs(features.front().nominalDiameterMillimetres-3.2)<1e-9&&
+                  std::abs(features.front().nominalAxialExtentMillimetres-(id==QStringLiteral("30374")?32.0:24.0))<1e-6&&
+                  std::abs(featureNorm(features.front().frame.axis)-1.0)<1e-9&&
+                  features.front().role==FunctionalInterfaceRole::Male&&
+                  features.front().provenance.size()==1,
+                  id+" source-owned 3.20 mm male bar survives semantic preparation");
+        PrintPreparationRequest request;
+        request.partReference=id;
+        request.ldrawIdentity=id;
+        request.libraryAuthority=args[libraryAt+1];
+        request.loadResult=loaded;
+        const auto prepared=service.prepare(request);
+        ok&=check(prepared.ready()&&prepared.preparedMesh&&
+                  prepared.preparedMesh->functionalFeatures.size()==1&&
+                  prepared.preparedMesh->functionalFeatures.front().family==FunctionalInterfaceFamily::StandardBar,
+                  id+" nominal PreparedMesh retains Standard Bar identity");
+    }
     for(const QString&id:{QStringLiteral("3003"),QStringLiteral("3001"),QStringLiteral("3622"),QStringLiteral("3700"),QStringLiteral("11477"),QStringLiteral("3673"),QStringLiteral("4274"),QStringLiteral("2780"),QStringLiteral("32064a"),QStringLiteral("3037"),QStringLiteral("6553"),QStringLiteral("11262")}){
         auto loaded=LDrawLibraryService::loadPart(args[libraryAt+1],id);
         ok&=check(loaded.ok(),id+" load");

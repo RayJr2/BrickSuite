@@ -447,6 +447,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/print/StudReceivingPostSemantic.cpp src/services/geometry/print/StudReceivingPostSemantic.h
     src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingWallPocketSemantic.h
     src/services/geometry/print/StudReceivingAntiStudSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.h
+    src/services/geometry/print/StandardBarSemantic.cpp src/services/geometry/print/StandardBarSemantic.h
     src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
     src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
     src/services/geometry/fit/FitCalibrationPackage.cpp src/services/geometry/fit/FitCalibrationPackage.h
@@ -454,6 +455,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/fit/RoundTechnicCalibrationArtifact.cpp src/services/geometry/fit/RoundTechnicCalibrationArtifact.h
     src/services/geometry/fit/StandardStudCalibrationArtifact.cpp src/services/geometry/fit/StandardStudCalibrationArtifact.h
     src/services/geometry/fit/StudReceivingCalibrationArtifact.cpp src/services/geometry/fit/StudReceivingCalibrationArtifact.h
+    src/services/geometry/fit/StandardBarCalibrationArtifact.cpp src/services/geometry/fit/StandardBarCalibrationArtifact.h
     src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.h
     src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.h
     src/services/geometry/fit/TechnicAxleCalibrationArtifact.cpp src/services/geometry/fit/TechnicAxleCalibrationArtifact.h
@@ -725,7 +727,7 @@ if(BUILD_TESTING)
         src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
         src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
         src/services/geometry/print/PreparedObjProofWriter.cpp src/services/geometry/print/PreparedObjProofWriter.h)
-    target_sources(LDrawSemanticOperandTest PRIVATE src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.cpp)
+    target_sources(LDrawSemanticOperandTest PRIVATE src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.cpp src/services/geometry/print/StandardBarSemantic.cpp)
     target_link_libraries(LDrawSemanticOperandTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
     bricksuite_stage_mcut_runtime(LDrawSemanticOperandTest)
     add_test(NAME LDrawSemanticOperand COMMAND LDrawSemanticOperandTest)
@@ -748,6 +750,7 @@ if(BUILD_TESTING)
         src/services/geometry/print/StudReceivingPostSemantic.cpp src/services/geometry/print/StudReceivingPostSemantic.h
         src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingWallPocketSemantic.h
         src/services/geometry/print/StudReceivingAntiStudSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.h)
+    target_sources(FunctionalOperandRegeneratorTest PRIVATE src/services/geometry/print/StandardBarSemantic.cpp)
 
     target_link_libraries(FunctionalOperandRegeneratorTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
     bricksuite_stage_mcut_runtime(FunctionalOperandRegeneratorTest)
@@ -765,6 +768,7 @@ if(BUILD_TESTING)
         src/services/geometry/fit/RoundTechnicCalibrationArtifact.cpp src/services/geometry/fit/RoundTechnicCalibrationArtifact.h
         src/services/geometry/fit/StandardStudCalibrationArtifact.cpp src/services/geometry/fit/StandardStudCalibrationArtifact.h
         src/services/geometry/fit/StudReceivingCalibrationArtifact.cpp src/services/geometry/fit/StudReceivingCalibrationArtifact.h
+        src/services/geometry/fit/StandardBarCalibrationArtifact.cpp src/services/geometry/fit/StandardBarCalibrationArtifact.h
         src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.h
         src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.cpp src/services/geometry/fit/FrictionTechnicPinCalibrationArtifact.h
         src/services/geometry/fit/TechnicAxleCalibrationArtifact.cpp src/services/geometry/fit/TechnicAxleCalibrationArtifact.h
@@ -779,7 +783,7 @@ if(BUILD_TESTING)
         src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
         src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
         src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h)
-    target_sources(FitCalibrationArtifactTest PRIVATE src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.cpp)
+    target_sources(FitCalibrationArtifactTest PRIVATE src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.cpp src/services/geometry/print/StandardBarSemantic.cpp)
     target_link_libraries(FitCalibrationArtifactTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
     bricksuite_stage_mcut_runtime(FitCalibrationArtifactTest)
     add_test(NAME FitCalibrationArtifact COMMAND FitCalibrationArtifactTest)
@@ -828,7 +832,7 @@ if(BUILD_TESTING)
         src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h
         src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
         src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h)
-    target_sources(ManufacturingMeshServiceTest PRIVATE src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.cpp)
+    target_sources(ManufacturingMeshServiceTest PRIVATE src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.cpp src/services/geometry/print/StandardBarSemantic.cpp)
     target_link_libraries(ManufacturingMeshServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
     bricksuite_stage_mcut_runtime(ManufacturingMeshServiceTest)
     add_test(NAME ManufacturingMeshService COMMAND ManufacturingMeshServiceTest)
@@ -847,7 +851,7 @@ if(BUILD_TESTING)
         src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
         src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h
         src/services/geometry/print/SourceSurfaceSolidifier.cpp src/services/geometry/print/SourceSurfaceSolidifier.h)
-    target_sources(LDrawPrintPreparationServiceTest PRIVATE src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.cpp)
+    target_sources(LDrawPrintPreparationServiceTest PRIVATE src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.cpp src/services/geometry/print/StandardBarSemantic.cpp)
     target_link_libraries(LDrawPrintPreparationServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
     bricksuite_stage_mcut_runtime(LDrawPrintPreparationServiceTest)
     add_test(NAME LDrawPrintPreparationService COMMAND LDrawPrintPreparationServiceTest)
@@ -882,7 +886,7 @@ if(BUILD_TESTING)
         src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
         src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h
         src/services/geometry/print/SourceSurfaceSolidifier.cpp src/services/geometry/print/SourceSurfaceSolidifier.h)
-    target_sources(PrintPreparationCoordinatorTest PRIVATE src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.cpp)
+    target_sources(PrintPreparationCoordinatorTest PRIVATE src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.cpp src/services/geometry/print/StandardBarSemantic.cpp)
     target_link_libraries(PrintPreparationCoordinatorTest PRIVATE Qt6::Core Qt6::Gui Qt6::Concurrent BrickSuite::Mcut)
     bricksuite_stage_mcut_runtime(PrintPreparationCoordinatorTest)
     add_test(NAME PrintPreparationCoordinator COMMAND PrintPreparationCoordinatorTest)
