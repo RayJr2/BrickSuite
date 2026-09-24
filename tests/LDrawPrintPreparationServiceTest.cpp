@@ -56,7 +56,7 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;auto 
             }),part+QStringLiteral(" retains certified click hinge identity after preparation"));
     }
  }
- if(libraryAt>=0&&libraryAt+1<arguments.size())for(const QString& part:{QStringLiteral("30027b")}) {
+ if(libraryAt>=0&&libraryAt+1<arguments.size())for(const QString& part:{QStringLiteral("30027b"),QStringLiteral("4488")}) {
     PrintPreparationRequest wheelRequest;
     wheelRequest.partReference=part;
     wheelRequest.ldrawIdentity=QStringLiteral("parts/")+part+QStringLiteral(".dat");
@@ -72,6 +72,18 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;auto 
                     feature.role==(part==QStringLiteral("4488")?FunctionalInterfaceRole::Male:
                         FunctionalInterfaceRole::Female);
             }),part+QStringLiteral(" retains certified wheel interface after preparation"));
+    if(part==QStringLiteral("4488")&&prepared.ready())
+        ok&=check(prepared.preparedMesh->preparationMethod.contains(QStringLiteral("source-surface"),Qt::CaseInsensitive)&&
+                  prepared.diagnostic.contains(QStringLiteral("ray axis 1")),
+                  "real 4488 uses validated orthogonal source-surface solidification");
+    if(part==QStringLiteral("4488")){
+        auto uncertified=wheelRequest;
+        uncertified.loadResult.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>(
+            *wheelRequest.loadResult.sourceModel);
+        uncertified.loadResult.sourceModel->surfaces.front().certified=false;
+        ok&=check(!LDrawPrintPreparationService().prepare(uncertified).ready(),
+                  "orthogonal wheel-pin preparation rejects uncertified source topology");
+    }
  }
  QVector<PrintPreparationProgress> progress;auto progressResult=service.prepare(request(),nullptr,[&progress](const auto&p){progress.push_back(p);});ok&=check(progressResult.ready()&&progress.size()>=5,"typed progress delivered");ok&=check(progress.front().phase==PrintPreparationPhase::SourceAnalysis&&progress.back().phase==PrintPreparationPhase::FinalValidation,"progress phase ordering");cache->clear();state->calls=0;
  const auto original=request();const auto originalPoint=original.loadResult.mesh.triangles.front().a;auto first=service.prepare(original);ok&=check(first.ready()&&!first.cacheHit,"ready synthetic preparation");ok&=check(state->calls==1&&first.operations.size()==1,"deterministic incremental union");ok&=check(first.preparedMesh->partReference=="test"&&first.preparedMesh->preparationProfileVersion==LDrawPrintPreparationProfile::Version,"prepared provenance");ok&=check(original.loadResult.mesh.triangles.front().a==originalPoint,"authoritative source remains immutable");auto second=service.prepare(original);ok&=check(second.ready()&&second.cacheHit&&state->calls==1,"cache hit avoids Boolean work");ok&=check(second.operations.size()==first.operations.size()&&second.dimensionalFidelity.maximumBoundsDeviationMillimetres==first.dimensionalFidelity.maximumBoundsDeviationMillimetres,"cache hit preserves Ready metadata");

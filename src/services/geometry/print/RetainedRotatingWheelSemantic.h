@@ -8,5 +8,8 @@ class RetainedRotatingWheelSemantic {
 public:
     // First contract: wpin2a/wpin male and wpinhol2 female only.
     static QVector<FunctionalFeature> recognize(const LDrawGeometry::LDrawLoadResult& source);
+    static bool adjustPrepared(const LDrawGeometry::LDrawLoadResult& source,
+        const PrintMesh& nominal,const FunctionalFeature& bearing,double correction,
+        PrintMesh* adjusted,QString* diagnostic=nullptr);
 };
 }

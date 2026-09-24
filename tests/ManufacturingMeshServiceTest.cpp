@@ -17,6 +17,7 @@
 #include "../src/services/geometry/print/PinBarrelHingeSemantic.h"
 #include "../src/services/geometry/print/InterleavedFingerHingeSemantic.h"
 #include "../src/services/geometry/print/ClickHingeSemantic.h"
+#include "../src/services/geometry/print/RetainedRotatingWheelSemantic.h"
 #include "../src/services/geometry/print/StandardStudSourceSemantic.h"
 #include "../src/services/geometry/print/LDrawPrintPreparationService.h"
 #include "../src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h"
@@ -1750,6 +1751,157 @@ if(libraryAt>=0&&libraryAt+1<args.size()) {
             !ManufacturingMeshService::hasApplicableCorrection(socketOnly,freeSource,nominalOrientation),
             part+" free-moving or unrelated socket is excluded from production");
         }
+    }
+}
+if(libraryAt>=0&&libraryAt+1<args.size()) {
+    const auto wheelSource=LDrawLibraryService::loadPart(args[libraryAt+1],QStringLiteral("30027b"));
+    ok &= check(wheelSource.ok(),"real 30027b wheel source loads");
+    if(wheelSource.ok()) {
+        const auto bearings=RetainedRotatingWheelSemantic::recognize(wheelSource);
+        ok &= check(bearings.size()==1&&bearings.front().role==FunctionalInterfaceRole::Female,
+                    "real notched wheel bearing is certified");
+        PrintPreparationRequest request;
+        request.partReference=QStringLiteral("30027b");
+        request.ldrawIdentity=QStringLiteral("parts/30027b.dat");
+        request.libraryAuthority=args[libraryAt+1];
+        request.loadResult=wheelSource;
+        const auto preparedResult=LDrawPrintPreparationService().prepare(request);
+        ok &= check(preparedResult.ready(),"real notched wheel prepares: "+preparedResult.diagnostic);
+        if(preparedResult.ready()&&bearings.size()==1) {
+            const auto& prepared=*preparedResult.preparedMesh;
+            auto wheelProfile=profile();wheelProfile.corrections.clear();
+            FitProfileCorrection correction;
+            correction.featureFamily=QStringLiteral("RetainedRotatingWheel");
+            correction.featureRole=QStringLiteral("female");
+            correction.printedOrientation=QStringLiteral("feature-axis-perpendicular-to-build-plate");
+            correction.semanticContractVersion=bearings.front().evidenceContract;
+            correction.semantics=QStringLiteral("female-retained-wheel-bearing-and-notch-clearance");
+            correction.correctionContractVersion=QStringLiteral("female-retained-wheel-bearing-and-notch-clearance-v1");
+            correction.valueMillimetres=.1;
+            wheelProfile.corrections.push_back(correction);
+            const int wheelProfileAt=args.indexOf(QStringLiteral("--wheel-profile"));
+            if(wheelProfileAt>=0&&wheelProfileAt+1<args.size()){
+                QFile file(args[wheelProfileAt+1]);
+                ok &= check(file.open(QIODevice::ReadOnly),"managed wheel Fit Profile opens read-only");
+                if(file.isOpen()){
+                    QString error;
+                    const auto document=QJsonDocument::fromJson(file.readAll());
+                    FitProfile actual;
+                    const bool parsed=document.isObject()&&FitProfileJson::fromJson(document.object(),&actual,&error);
+                    ok &= check(parsed,"managed wheel Fit Profile parses: "+error);
+                    if(parsed)wheelProfile=actual;
+                }
+            }
+            ok &= check(FitCalibrationLibrary::profileCompatibility(wheelProfile),
+                        "Verified wheel bearing correction is profile-compatible");
+            const QVector<PrintOrientation> orientations={nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative};
+            const auto matching=std::find_if(orientations.cbegin(),orientations.cend(),[&](const PrintOrientation& orientation){
+                return ManufacturingMeshService::transformedOrientation(bearings.front(),orientation)==
+                    FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
+            });
+            ok &= check(matching!=orientations.cend(),"wheel bearing has a perpendicular print orientation");
+            if(matching!=orientations.cend()) {
+                const auto before=prepared.mesh;const auto sourceBefore=wheelSource.mesh.triangles;
+                const auto autoFit=AutoFitProfileResolver::resolve(true,QStringLiteral("30027b"),
+                    {wheelProfile},wheelSource,*matching);
+                ok &= check(autoFit.resolved(),"Auto Fit selects Verified retained-wheel profile");
+                if(wheelProfileAt>=0&&wheelProfileAt+1<args.size()){
+                    const FitCalibrationLibrary library(QDir::cleanPath(
+                        QFileInfo(args[wheelProfileAt+1]).absolutePath()+QStringLiteral("/..")));
+                    const auto managed=AutoFitProfileResolver::resolveManaged(true,QStringLiteral("30027b"),
+                        library,wheelSource,*matching);
+                    ok &= check(managed.resolved()&&managed.profile.profileIdentity==wheelProfile.profileIdentity,
+                                "managed Auto Fit resolves Ray's Verified wheel profile");
+                }
+                const auto production=ManufacturingMeshService().generate(wheelSource,prepared,wheelProfile,*matching);
+                ok &= check(production.ok(),"real wheel ManufacturingMesh: "+production.diagnostic);
+                if(production.ok()) {
+                    const auto& mesh=*production.manufacturingMesh;
+                    ok &= check(std::abs(mesh.nominalDiameterMillimetres-3.2)<1e-9&&
+                                std::abs(mesh.diameterCorrectionMillimetres-.1)<1e-9&&
+                                std::abs(mesh.manufacturingDiameterMillimetres-3.3)<1e-9&&
+                                !same(mesh.mesh,before)&&same(prepared.mesh,before)&&
+                                sameSource(wheelSource.mesh.triangles,sourceBefore),
+                                "profile-driven 3.30 mm bearing preserves Source and PreparedMesh");
+                    int bearingMoved=0,entryMoved=0,exteriorMoved=0;
+                    const auto& frame=bearings.front().frame;
+                    for(std::size_t i=0;i<before.vertices.size();++i){
+                        const auto& a=before.vertices[i];const auto& b=mesh.mesh.vertices[i];
+                        if(a.x==b.x&&a.y==b.y&&a.z==b.z)continue;
+                        const double dx=a.x-frame.origin.x,dy=a.y-frame.origin.y,dz=a.z-frame.origin.z;
+                        const double axial=dx*frame.axis.x+dy*frame.axis.y+dz*frame.axis.z;
+                        const double radius=std::sqrt(std::max(0.0,dx*dx+dy*dy+dz*dz-axial*axial));
+                        if(radius<=1.8)++bearingMoved;
+                        else if(radius<2.4)++entryMoved;
+                        else ++exteriorMoved;
+                    }
+                    ok &= check(bearingMoved>=16&&entryMoved>=8&&exteriorMoved==0,
+                                "coupled bearing and notched entry move while wheel exterior stays nominal");
+                    const auto repeated=ManufacturingMeshService().generate(wheelSource,prepared,wheelProfile,*matching);
+                    ok &= check(repeated.ok()&&repeated.manufacturingMesh->identity==mesh.identity&&
+                                same(repeated.manufacturingMesh->mesh,mesh.mesh),
+                                "wheel ManufacturingMesh is deterministic");
+                    auto alternate=wheelProfile;
+                    alternate.profileIdentity=QStringLiteral("wheel-alternate-verified-profile");
+                    for(auto& entry:alternate.corrections)
+                        if(entry.featureFamily==QStringLiteral("RetainedRotatingWheel"))
+                            entry.valueMillimetres=.05;
+                    const auto varied=ManufacturingMeshService().generate(wheelSource,prepared,alternate,*matching);
+                    ok &= check(varied.ok()&&
+                                std::abs(varied.manufacturingMesh->manufacturingDiameterMillimetres-3.25)<1e-9&&
+                                varied.manufacturingMesh->identity!=mesh.identity,
+                                "wheel result follows the selected Verified profile value, not a family constant");
+                    const int outputAt=args.indexOf(QStringLiteral("--wheel-output"));
+                    if(outputAt>=0&&outputAt+1<args.size()){
+                        const QString path=QDir(args[outputAt+1]).filePath(
+                            QStringLiteral("30027b-retained-wheel-perpendicular-manufacturing.3mf"));
+                        QString error;
+                        ok &= check(ManufacturingMeshDiagnosticExporter::writeThreeMf(mesh,path,1.0,
+                            QColor("#A0A5A9"),&error),"wheel ManufacturingMesh 3MF export: "+error);
+                        if(QFileInfo::exists(path)){
+                            Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();
+                            model->QueryReader("3mf")->ReadFromFile(path.toStdString());
+                            auto objects=model->GetMeshObjects();
+                            ok &= check(objects->MoveNext()&&objects->GetCurrentMeshObject()->GetTriangleCount()==
+                                mesh.mesh.faces.size(),"wheel proof 3MF reopens");
+                        }
+                        QTextStream(stdout)<<"wheelProfile="<<wheelProfile.profileIdentity
+                            <<" correction="<<mesh.diameterCorrectionMillimetres
+                            <<" diameter="<<mesh.manufacturingDiameterMillimetres
+                            <<" diagnostic="<<production.diagnostic<<" path="<<path<<Qt::endl;
+                    }
+                }
+                auto draft=wheelProfile;draft.verificationState=FitEvidenceState::Draft;
+                ok &= check(!ManufacturingMeshService::hasApplicableCorrection(draft,wheelSource,*matching),
+                            "unverified wheel profile remains nominal");
+                auto missing=wheelProfile;missing.corrections.clear();
+                ok &= check(!ManufacturingMeshService::hasApplicableCorrection(missing,wheelSource,*matching),
+                            "missing wheel correction remains nominal");
+                for(const auto& orientation:orientations)
+                    if(ManufacturingMeshService::transformedOrientation(bearings.front(),orientation)==
+                       FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
+                        ok &= check(!ManufacturingMeshService::hasApplicableCorrection(wheelProfile,wheelSource,orientation),
+                                    "perpendicular evidence does not apply to parallel wheel bearing");
+                        break;
+                    }
+            }
+        }
+    }
+    const auto holder=LDrawLibraryService::loadPart(args[libraryAt+1],QStringLiteral("4488"));
+    if(holder.ok()){
+        auto femaleOnly=profile();femaleOnly.corrections.clear();
+        FitProfileCorrection correction;
+        correction.featureFamily=QStringLiteral("RetainedRotatingWheel");
+        correction.featureRole=QStringLiteral("female");
+        correction.printedOrientation=QStringLiteral("feature-axis-perpendicular-to-build-plate");
+        correction.semanticContractVersion=QStringLiteral("official-ldraw-wpin2a-wpinhol2-retained-rotation-v1");
+        correction.semantics=QStringLiteral("female-retained-wheel-bearing-and-notch-clearance");
+        correction.correctionContractVersion=QStringLiteral("female-retained-wheel-bearing-and-notch-clearance-v1");
+        correction.valueMillimetres=.1;
+        femaleOnly.corrections.push_back(correction);
+        ok &= check(RetainedRotatingWheelSemantic::recognize(holder).size()==1&&
+                    !ManufacturingMeshService::hasApplicableCorrection(femaleOnly,holder,nominalOrientation),
+                    "female wheel correction never changes the certified male reference");
     }
 }
 return ok?0:1;}

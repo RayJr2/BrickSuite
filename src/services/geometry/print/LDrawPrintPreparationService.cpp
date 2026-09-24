@@ -103,6 +103,9 @@ bool supportsBoundedSourceSolidification(const LDrawGeometry::LDrawLoadResult&lo
     if(source.triangles<=1600&&wheels.size()==1&&
        wheels.front().role==FunctionalInterfaceRole::Female)
         return sorted[0]<=12.0&&sorted[1]<=12.0&&sorted[2]<=12.0;
+    if(source.triangles<=1600&&wheels.size()==1&&
+       wheels.front().role==FunctionalInterfaceRole::Male)
+        return sorted[0]<=16.0&&sorted[1]<=16.0&&sorted[2]<=24.0;
     if(source.boundaryEdges<32)return false;
     if(sorted[0]<=6.5&&sorted[1]<=6.5&&sorted[2]<=20.0)return true;
     // A single certified C-Clip on a small integrated part can be solidified
@@ -154,6 +157,15 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
                         SourceSurfaceSolidifier::RayAxis::Y);
                     if(alternative.successful)solidified=std::move(alternative);
                     else solidifierDiagnostic=solidified.diagnostic+QStringLiteral(" Orthogonal ray: ")+alternative.diagnostic;
+                }
+                if(!solidified.successful){
+                    const auto wheels=RetainedRotatingWheelSemantic::recognize(request.loadResult);
+                    if(wheels.size()==1&&wheels.front().role==FunctionalInterfaceRole::Male){
+                        auto alternative=SourceSurfaceSolidifier::solidify(request.loadResult,.15,
+                            SourceSurfaceSolidifier::RayAxis::Y);
+                        if(alternative.successful)solidified=std::move(alternative);
+                        else solidifierDiagnostic=solidified.diagnostic+QStringLiteral(" Orthogonal ray: ")+alternative.diagnostic;
+                    }
                 }
                 timings.semanticConstructionMilliseconds+=phase.elapsed();if(solidified.successful){auto result=solidifiedResult(request,sourceAnalysis,std::move(solidified),timings,total.elapsed());if(result.ready())m_cache->insert(key,result.preparedMesh);return result;solidifierDiagnostic=result.diagnostic;}else if(solidifierDiagnostic.isEmpty())solidifierDiagnostic=solidified.diagnostic;}
             auto error=mapSemanticError(semantic.status);return failure(error,sourceAnalysis,request.profile.identity,semantic.diagnostics.join(' ')+(solidifierDiagnostic.isEmpty()?QString():QStringLiteral(" Bounded source-surface solidification: ")+solidifierDiagnostic));}
