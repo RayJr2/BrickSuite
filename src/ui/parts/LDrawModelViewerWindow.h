@@ -16,6 +16,7 @@ class QColor;
 class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
+class QProgressBar;
 class LDrawViewportWidget;
 class PrintPreparationCoordinator;
 namespace PrintGeometry { struct FitProfile; }
@@ -85,6 +86,7 @@ private:
     QPushButton* m_resetView=nullptr;
     QPushButton* m_export=nullptr;
     QPushButton* m_prepare=nullptr;
+    QProgressBar* m_prepareBusy=nullptr;
     QPushButton* m_manufacturingProof=nullptr;
     QCheckBox* m_showMeshIssues=nullptr;
     PrintPreparationCoordinator* m_coordinator=nullptr;
