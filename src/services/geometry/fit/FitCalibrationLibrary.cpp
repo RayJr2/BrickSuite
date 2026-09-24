@@ -661,6 +661,10 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
         fail(error, "Ball Joint calibration requires a supported perpendicular or parallel fixture orientation."); return false;
     }
+    if (experiment.featureFamily == QStringLiteral("BallSocket") &&
+        session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
+        fail(error, "The certified Ball Socket fixture currently supports only the parallel print orientation."); return false;
+    }
     if (experiment.featureFamily == QStringLiteral("CClipBarReceiver") &&
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
@@ -706,6 +710,9 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
     } else if (experiment.featureFamily == QStringLiteral("BallJoint")) {
         correction.semantics = QStringLiteral("male-ball-joint-spherical-diameter");
         correction.correctionContractVersion = QStringLiteral("male-ball-joint-spherical-diameter-v1");
+    } else if (experiment.featureFamily == QStringLiteral("BallSocket")) {
+        correction.semantics = QStringLiteral("female-ball-socket-contact-and-throat-clearance");
+        correction.correctionContractVersion = QStringLiteral("female-ball-socket-contact-and-throat-clearance-v1");
     } else if (experiment.featureFamily == QStringLiteral("FrictionlessTechnicPin")) {
         correction.semantics = QStringLiteral("male-frictionless-technic-pin-envelope-diameter");
         correction.correctionContractVersion = QStringLiteral("male-frictionless-technic-pin-envelope-diameter-v1");

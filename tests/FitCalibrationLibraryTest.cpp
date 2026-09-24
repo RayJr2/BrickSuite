@@ -65,11 +65,13 @@ int main(int argc, char** argv) {
                       !slugs.contains(slug), "canonical names, label abbreviations, and new-file slugs are unique");
         canonicalNames.insert(canonical); abbreviations.insert(abbreviated); slugs.insert(slug);
     }
-    ok &= require(canonicalNames.size() == 19 &&
+    ok &= require(canonicalNames.size() == 20 &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::BallJointDiameter).canonical)
                       .contains(QStringLiteral("Ball Joint")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::BallJointDiameterParallel).canonical)
                       .contains(QStringLiteral("Parallel")) &&
+                  QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::BallSocketContactThroatParallel).canonical)
+                      .contains(QStringLiteral("Ball Socket")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::CClipBarReceiverClearance).canonical)
                       .contains(QStringLiteral("C-Clip / Bar Receiver")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::CClipBarReceiverClearanceParallel).canonical)

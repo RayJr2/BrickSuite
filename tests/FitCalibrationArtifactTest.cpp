@@ -4,6 +4,8 @@
 #include "../src/services/geometry/fit/StandardBarCalibrationArtifact.h"
 #include "../src/services/geometry/fit/CClipBarReceiverCalibrationArtifact.h"
 #include "../src/services/geometry/fit/BallJointCalibrationArtifact.h"
+#include "../src/services/geometry/fit/BallSocketCalibrationArtifact.h"
+#include "../src/services/geometry/print/BallSocketSemantic.h"
 #include "../src/services/geometry/fit/FitCalibrationFixtureLabel.h"
 #include "../src/services/geometry/fit/FitCalibrationNamingCatalog.h"
 #include "../src/services/geometry/fit/FitCalibrationArtifactLocation.h"
@@ -862,5 +864,161 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;const
     ok &= testStandardBar(args);
     ok &= testCClipBarReceiver(args);
     ok &= testBallJoint(args);
+    const int socketRootAt=args.indexOf("--ball-socket-ldraw");
+    if(socketRootAt>=0&&socketRootAt+1<args.size()) {
+        const auto source=LDrawLibraryService::loadPart(args[socketRootAt+1],"14418");
+        ok&=require(source.ok(),"Ball Socket source carrier loads");
+        if(source.ok()) {
+            const auto socket=BallSocketCalibrationArtifact::generate(source);
+            ok&=require(socket.ok,"source-faithful Ball Socket candidates: "+socket.diagnostic);
+            if(socket.ok) {
+                ok&=require(socket.candidateMeshes.size()==7&&socket.candidates.size()==7,
+                    "seven certified Ball Socket candidate meshes and matching evidence rows");
+                const auto bounds=analyzeSource(socket.candidateMeshes.front()).bounds;
+                QTextStream(stdout)<<"ballSocketBounds="<<bounds.minimum.x<<','<<bounds.minimum.y<<','<<bounds.minimum.z
+                    <<" to "<<bounds.maximum.x<<','<<bounds.maximum.y<<','<<bounds.maximum.z
+                    <<" vertices="<<socket.candidateMeshes.front().vertices.size()<<Qt::endl;
+                const auto semanticSocket=BallSocketSemantic::recognize(source).front();
+                const auto orientPoint=[](Point p){return Point{p.x,-p.z,p.y+4.0};};
+                const auto orientVector=[](Point p){return Point{p.x,-p.z,p.y};};
+                const auto plus=[](Point a,Point b){return Point{a.x+b.x,a.y+b.y,a.z+b.z};};
+                const auto minus=[](Point a,Point b){return Point{a.x-b.x,a.y-b.y,a.z-b.z};};
+                const auto times=[](Point p,double t){return Point{p.x*t,p.y*t,p.z*t};};
+                const auto dot=[](Point a,Point b){return a.x*b.x+a.y*b.y+a.z*b.z;};
+                const auto cross=[](Point a,Point b){return Point{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};};
+                const auto firstHit=[&](const PrintMesh& mesh,Point start,Point direction){
+                    double nearest=1e100;
+                    for(const auto& face:mesh.faces) {
+                        const auto& a=mesh.vertices[face[0]];
+                        const auto e1=minus(mesh.vertices[face[1]],a),e2=minus(mesh.vertices[face[2]],a);
+                        const auto h=cross(direction,e2);
+                        const double det=dot(e1,h);
+                        if(std::abs(det)<1e-10)continue;
+                        const double inv=1.0/det;
+                        const auto s=minus(start,a);
+                        const double u=inv*dot(s,h);
+                        if(u<0||u>1)continue;
+                        const auto q=cross(s,e1);
+                        const double v=inv*dot(direction,q);
+                        if(v<0||u+v>1)continue;
+                        const double t=inv*dot(e2,q);
+                        if(t>.01)nearest=std::min(nearest,t);
+                    }
+                    return nearest;
+                };
+                constexpr int numeralMasks[7]={0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07};
+                const Point numeralProbes[7]={{-5.90,2.72,10},{-5.325,2.17,10},
+                    {-5.325,1.05,10},{-5.90,.62,10},{-6.475,1.05,10},
+                    {-6.475,2.17,10},{-5.90,1.65,10}};
+                bool allNumbersMatch=true;
+                for(int candidateIndex=0;candidateIndex<7;++candidateIndex)
+                    for(int segment=0;segment<7;++segment) {
+                        const double hit=firstHit(socket.candidateMeshes[candidateIndex],
+                            numeralProbes[segment],Point{0,0,-1});
+                        const bool raised=hit<1.55;
+                        allNumbersMatch&=raised==bool(numeralMasks[candidateIndex]&(1<<segment))&&hit<1.85;
+                    }
+                ok&=require(allNumbersMatch,
+                    "all seven exterior embossed numerals are distinct, legible seven-segment patterns");
+                const Point center=orientPoint(semanticSocket.frame.origin);
+                const Point axis=orientVector(semanticSocket.frame.axis);
+                const Point transverse=orientVector(semanticSocket.frame.profileU);
+                const double contactLow=firstHit(socket.candidateMeshes.front(),center,transverse);
+                const double contactHigh=firstHit(socket.candidateMeshes.back(),center,transverse);
+                const double mouthLow=firstHit(socket.candidateMeshes.front(),plus(center,times(axis,1.2)),transverse);
+                const double mouthHigh=firstHit(socket.candidateMeshes.back(),plus(center,times(axis,1.2)),transverse);
+                QTextStream(stdout)<<"ballSocketContact="<<contactLow<<".."<<contactHigh
+                    <<" mouth="<<mouthLow<<".."<<mouthHigh<<Qt::endl;
+                const Point second=orientVector(semanticSocket.frame.profileV);
+                ok&=require(contactHigh-contactLow>.20&&contactHigh-contactLow<.40&&
+                    mouthHigh-mouthLow>.12&&mouthHigh-mouthLow<.30&&
+                    firstHit(socket.candidateMeshes[3],center,second)>1e50,
+                    "printed source-owned spherical contact and open retaining mouth both vary without closing the compliant gap");
+                ok&=require(std::abs(socket.candidates.front().diameterCorrectionMillimetres+.30)<1e-9&&
+                    std::abs(socket.candidates[3].diameterCorrectionMillimetres)<1e-9&&
+                    std::abs(socket.candidates.back().diameterCorrectionMillimetres-.30)<1e-9&&
+                    std::abs(socket.candidates[3].functionalDiameterMillimetres-6.4)<1e-9&&
+                    center.z>3.9&&bounds.minimum.z>=0,
+                    "seven candidate offsets include nominal #4 and stand the socket clear of the print bed");
+                const int outputAt=args.indexOf("--ball-socket-output");
+                if(outputAt>=0&&outputAt+1<args.size()) {
+                    QDir output(args[outputAt+1]);
+                    ok&=require(output.mkpath("."),"Ball Socket artifact output directory");
+                    QVector<ThreeMfWriter::NamedMesh> zones;
+                    for(int i=0;i<socket.candidateMeshes.size();++i)
+                        zones.push_back({QStringLiteral("Candidate %1 — %2 mm contact / throat offset")
+                            .arg(i+1).arg(socket.candidates[i].diameterCorrectionMillimetres,0,'f',2),
+                            socket.candidateMeshes[i],{8.0+24.0*(i%4),1.6+8.0*(i/4),0.0}});
+                    ThreeMfWriter::Options options;
+                    options.objectName=socket.artifactIdentity;
+                    options.partIdentity=socket.artifactIdentity;
+                    options.modelColor=QColor("#A0A5A9");
+                    QString error;
+                    const QString modelPath=output.filePath("BrickSuite-ball-socket-friction-contact-throat-parallel-coarse-v1.3mf");
+                    ok&=require(ThreeMfWriter::writeCollection(zones,modelPath,options,&error),
+                        "Ball Socket 3MF collection export: "+error);
+                    FitCalibrationSession session;
+                    session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
+                    session.process.printerIdentity="Bambu H2D";
+                    session.process.materialIdentity="PETG";
+                    session.process.profileName="0.20mm Standard @BBL H2D";
+                    session.process.hasNozzleDiameter=true;
+                    session.process.nozzleDiameterMillimetres=.4;
+                    session.process.hasLayerHeight=true;
+                    session.process.layerHeightMillimetres=.2;
+                    session.process.dimensionalCompensationNotes="None / Bambu Studio defaults";
+                    session.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
+                    session.hasCoarseExperiment=true;
+                    session.coarseExperiment=BallSocketCalibrationArtifact::observationTemplate(socket);
+                    session.process.orientationNotes=session.coarseExperiment.process.orientationNotes;
+                    session.coarseExperiment.process=session.process;
+                    const QString sessionPath=output.filePath("BrickSuite-ball-socket-friction-contact-throat-parallel-coarse-v1-session.json");
+                    QSaveFile file(sessionPath);
+                    ok&=require(file.open(QIODevice::WriteOnly)&&
+                        file.write(QJsonDocument(FitCalibrationSessionJson::toJson(session)).toJson(QJsonDocument::Indented))>0&&
+                        file.commit(),"Ball Socket managed session export");
+                    QFile reload(sessionPath);
+                    FitCalibrationSession decoded,imported,resumed;
+                    bool fresh=reload.open(QIODevice::ReadOnly)&&
+                        FitCalibrationSessionJson::fromJson(QJsonDocument::fromJson(reload.readAll()).object(),&decoded,&error)&&
+                        !decoded.sessionIdentity.isEmpty()&&decoded.hasCoarseExperiment&&!decoded.hasFineExperiment&&
+                        decoded.coarseExperiment.featureFamily==QStringLiteral("BallSocket")&&
+                        decoded.coarseExperiment.regenerationPrototype.family==FunctionalInterfaceFamily::BallSocket&&
+                        decoded.coarseExperiment.regenerationPrototype.evidenceContract==QStringLiteral("official-ldraw-joint8socket-friction-v1")&&
+                        decoded.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&
+                        decoded.coarseExperiment.candidates.size()==socket.candidates.size()&&
+                        decoded.coarseExperiment.preferredCandidateIndex==0&&
+                        decoded.coarseExperiment.state!=FitEvidenceState::Verified;
+                    if(fresh)for(int i=0;i<socket.candidates.size();++i)
+                        fresh&=decoded.coarseExperiment.candidates[i].observations.isEmpty()&&
+                            decoded.coarseExperiment.candidates[i].index==i+1&&
+                            std::abs(decoded.coarseExperiment.candidates[i].diameterCorrectionMillimetres-
+                                     socket.candidates[i].diameterCorrectionMillimetres)<1e-9;
+                    ok&=require(fresh,"Ball Socket session reload retains exact unobserved candidates and contract: "+error);
+                    QTemporaryDir managedRoot;
+                    FitCalibrationLibrary managed(managedRoot.path());
+                    FitCalibrationWorkspace selected;
+                    selected.process=session.process;
+                    ok&=require(fresh&&managed.importSessionIntoWorkspace(sessionPath,&selected,&imported,&error)&&
+                        managed.loadSession(imported.sessionIdentity,&resumed,&error)&&
+                        resumed.coarseExperiment.candidates.size()==7&&
+                        resumed.coarseExperiment.candidates[3].observations.isEmpty(),
+                        "Ball Socket managed session imports and resumes: "+error);
+                    try {
+                        Lib3MF::CWrapper wrapper;
+                        auto reopened=wrapper.CreateModel();
+                        reopened->QueryReader("3mf")->ReadFromFile(modelPath.toStdString());
+                        ok&=require(reopened->GetMeshObjects()->Count()==7,
+                            "Ball Socket 3MF reopens with seven printable candidate objects");
+                    } catch(const std::exception& exception) {
+                        ok&=require(false,QStringLiteral("Ball Socket 3MF reopening failed: %1")
+                            .arg(QString::fromUtf8(exception.what())));
+                    }
+                    QTextStream(stdout)<<"ballSocketArtifact="<<modelPath<<Qt::endl
+                        <<"ballSocketSession="<<sessionPath<<Qt::endl;
+                }
+            }
+        }
+    }
     return ok?0:1;
 }
