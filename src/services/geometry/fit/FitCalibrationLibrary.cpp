@@ -809,6 +809,12 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-joint8ball-sphere-v1")
             && correction.semantics == QStringLiteral("male-ball-joint-spherical-diameter")
             && correction.correctionContractVersion == QStringLiteral("male-ball-joint-spherical-diameter-v1");
+        const bool ballSocket = correction.featureFamily == QStringLiteral("BallSocket")
+            && correction.featureRole == QStringLiteral("female")
+            && correction.printedOrientation == QStringLiteral("feature-axis-parallel-to-build-plate")
+            && correction.semanticContractVersion == QStringLiteral("official-ldraw-joint8socket-friction-v1")
+            && correction.semantics == QStringLiteral("female-ball-socket-contact-and-throat-clearance")
+            && correction.correctionContractVersion == QStringLiteral("female-ball-socket-contact-and-throat-clearance-v1");
         const bool frictionPin = correction.featureFamily == QStringLiteral("FrictionTechnicPin")
             && correction.featureRole == QStringLiteral("male")
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-confric5-friction-pin-v1")
@@ -829,7 +835,7 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-axlehole-arm-width-clearance-v2")
             && correction.semantics == QStringLiteral("female-technic-axle-hole-arm-width-clearance")
             && correction.correctionContractVersion == QStringLiteral("female-technic-axle-hole-arm-width-clearance-v2");
-        if (!roundPassage && !standardStud && !receivingClutch && !standardBar && !cClip && !ballJoint && !frictionlessPin && !frictionPin && !technicAxle && !technicAxleHole && !technicAxleHoleArmWidth) { fail(reason, "The functional semantic or correction interpretation contract has changed."); return false; }
+        if (!roundPassage && !standardStud && !receivingClutch && !standardBar && !cClip && !ballJoint && !ballSocket && !frictionlessPin && !frictionPin && !technicAxle && !technicAxleHole && !technicAxleHoleArmWidth) { fail(reason, "The functional semantic or correction interpretation contract has changed."); return false; }
         if (correction.regeneratorAlgorithmVersion != currentRegeneratorAlgorithmVersion()) { fail(reason, "The functional regenerator version has changed."); return false; }
         if (correction.printedOrientation == "unknown" || correction.printedOrientation == "other-unsupported") { fail(reason, "The calibrated print orientation is unsupported."); return false; }
     }

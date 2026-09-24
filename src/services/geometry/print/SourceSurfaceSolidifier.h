@@ -22,9 +22,11 @@ struct SourceSurfaceSolidificationResult {
 class SourceSurfaceSolidifier
 {
 public:
+    enum class RayAxis { X, Y, Z };
     static SourceSurfaceSolidificationResult solidify(
         const LDrawGeometry::LDrawLoadResult& source,
-        double samplingPitchMillimetres = 0.15);
+        double samplingPitchMillimetres = 0.15,
+        RayAxis rayAxis = RayAxis::X);
 };
 
 } // namespace PrintGeometry

@@ -9,6 +9,7 @@
 #include "StandardBarSemantic.h"
 #include "CClipBarReceiverSemantic.h"
 #include "BallJointSemantic.h"
+#include "BallSocketSemantic.h"
 #include "StandardStudSourceSemantic.h"
 #include "FunctionalOperandRegenerator.h"
 #include "McutMeshBooleanService.h"
@@ -161,13 +162,19 @@ ManufacturingMeshCorrections ManufacturingMeshService::compatibleCorrections(con
             if(matches(correction,"BallJoint","male","male-ball-joint-spherical-diameter",printedOrientation) &&
                correction.correctionContractVersion==QStringLiteral("male-ball-joint-spherical-diameter-v1"))
                 result.ballJointDiameter=&correction;
+    if(orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate)
+        for(const auto& correction:profile.corrections)
+            if(matches(correction,"BallSocket","female",
+                       "female-ball-socket-contact-and-throat-clearance",printedOrientation) &&
+               correction.correctionContractVersion==QStringLiteral("female-ball-socket-contact-and-throat-clearance-v1"))
+                result.ballSocketClearance=&correction;
     if(heightCandidate){if(!heightCandidate->hasRequiredDiameterCorrection)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction does not record its required Stud OD context and was not applied.");else if(!result.studDiameter)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction requires its matching Verified Stud OD correction and was not applied.");else if(std::abs(result.studDiameter->valueMillimetres-heightCandidate->requiredDiameterCorrectionMillimetres)>1e-9)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction was measured with a different Stud OD correction and was not applied.");else result.studHeight=heightCandidate;}
     if(reason)*reason=result.any()?(result.studHeightDiagnostic.isEmpty()?QStringLiteral("Compatible"):result.studHeightDiagnostic):(result.studHeightDiagnostic.isEmpty()?QStringLiteral("The selected profile has no compatible verified functional correction for this print orientation."):result.studHeightDiagnostic);return result;
 }
 
 const FitProfileCorrection* ManufacturingMeshService::compatibleCorrection(const FitProfile&profile,FitPrintedOrientation orientation,QString*reason)
 {
-    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.receivingAntiStudBoreDiameter,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth,corrections.standardBarDiameter,corrections.cClipClearance,corrections.ballJointDiameter})if(candidate)return candidate;return nullptr;
+    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.receivingAntiStudBoreDiameter,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth,corrections.standardBarDiameter,corrections.cClipClearance,corrections.ballJointDiameter,corrections.ballSocketClearance})if(candidate)return candidate;return nullptr;
 }
 
 FitPrintedOrientation ManufacturingMeshService::transformedOrientation(const FunctionalFeature&feature,const PrintOrientation&printOrientation)
@@ -181,7 +188,7 @@ FitPrintedOrientation ManufacturingMeshService::transformedOrientation(const Fun
 bool ManufacturingMeshService::hasApplicableCorrection(const FitProfile&profile,const LDrawSemanticOperandBuilder::Result&semantic,const PrintOrientation&printOrientation,QString*reason)
 {
     if(!semantic.ok()){if(reason)*reason=semantic.diagnostics.join(' ');return false;}
-    for(const auto&operand:semantic.operands)for(const auto&feature:operand.functionalFeatures){QString featureReason;const auto orientation=transformedOrientation(feature,printOrientation);const auto corrections=compatibleCorrections(profile,orientation,&featureReason);if(correctionApplies(feature,corrections)||wallPocketCorrection(profile,feature,orientation)||(feature.family==FunctionalInterfaceFamily::CClipBarReceiver&&corrections.cClipClearance&&feature.evidenceContract==corrections.cClipClearance->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::BallJoint&&corrections.ballJointDiameter&&feature.evidenceContract==corrections.ballJointDiameter->semanticContractVersion)){if(reason)*reason=QStringLiteral("Compatible correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());return true;}}
+    for(const auto&operand:semantic.operands)for(const auto&feature:operand.functionalFeatures){QString featureReason;const auto orientation=transformedOrientation(feature,printOrientation);const auto corrections=compatibleCorrections(profile,orientation,&featureReason);if(correctionApplies(feature,corrections)||wallPocketCorrection(profile,feature,orientation)||(feature.family==FunctionalInterfaceFamily::CClipBarReceiver&&corrections.cClipClearance&&feature.evidenceContract==corrections.cClipClearance->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::BallJoint&&corrections.ballJointDiameter&&feature.evidenceContract==corrections.ballJointDiameter->semanticContractVersion)||(feature.family==FunctionalInterfaceFamily::BallSocket&&corrections.ballSocketClearance&&feature.evidenceContract==corrections.ballSocketClearance->semanticContractVersion)){if(reason)*reason=QStringLiteral("Compatible correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());return true;}}
     if(reason)*reason=QStringLiteral("No recognized functional operand has a compatible Verified correction after Print Orientation %1.").arg(printOrientation.summary());return false;
 }
 
@@ -216,6 +223,13 @@ bool ManufacturingMeshService::hasApplicableCorrection(const FitProfile&profile,
             return true;
         }
     }
+    for(const auto& feature:BallSocketSemantic::recognize(source)) {
+        const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation));
+        if(corrections.ballSocketClearance && corrections.ballSocketClearance->semanticContractVersion==feature.evidenceContract) {
+            if(reason)*reason=QStringLiteral("Compatible Verified Ball Socket contact/throat correction for feature %1 after Print Orientation %2.").arg(feature.stableIdentity,printOrientation.summary());
+            return true;
+        }
+    }
     if(reason)*reason=semanticReason;return false;
 }
 
@@ -226,7 +240,7 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
     // Localized, source-owned families share one mesh. Compose every applicable
     // correction and reject overlapping vertex ownership rather than returning
     // after the first family. Semantic operands are handled by the path below.
-    enum class SurfaceKind { Ball, Clip, Bar, Stud };
+    enum class SurfaceKind { Ball, Socket, Clip, Bar, Stud };
     struct SurfaceFeature { FunctionalFeature feature; SurfaceKind kind; int owner=-1; };
     QVector<SurfaceFeature> surfaceFeatures;
     const auto retained=[&](const FunctionalFeature& feature){
@@ -236,6 +250,9 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
     const auto balls=BallJointSemantic::recognize(source);
     if(balls.size()==1&&retained(balls.front()))
         surfaceFeatures.push_back({balls.front(),SurfaceKind::Ball,-1});
+    const auto sockets=BallSocketSemantic::recognize(source);
+    if(sockets.size()==1&&retained(sockets.front()))
+        surfaceFeatures.push_back({sockets.front(),SurfaceKind::Socket,-1});
     const auto clips=CClipBarReceiverSemantic::recognize(source);
     if(clips.size()==1&&retained(clips.front()))
         surfaceFeatures.push_back({clips.front(),SurfaceKind::Clip,-1});
@@ -276,6 +293,7 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
             const FitProfileCorrection* height=nullptr;
             switch(item.kind){
             case SurfaceKind::Ball: primary=corrections.ballJointDiameter;break;
+            case SurfaceKind::Socket: primary=corrections.ballSocketClearance;break;
             case SurfaceKind::Clip: primary=corrections.cClipClearance;break;
             case SurfaceKind::Bar: primary=corrections.standardBarDiameter;break;
             case SurfaceKind::Stud: primary=corrections.studDiameter;height=corrections.studHeight;break;
@@ -293,6 +311,9 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
             switch(item.kind){
             case SurfaceKind::Ball:
                 adjustedSuccessfully=BallJointSemantic::adjustPrepared(source,adjusted,item.feature,
+                    primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
+            case SurfaceKind::Socket:
+                adjustedSuccessfully=BallSocketSemantic::adjustPrepared(source,adjusted,item.feature,
                     primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
             case SurfaceKind::Clip:
                 adjustedSuccessfully=CClipBarReceiverSemantic::adjustPrepared(source,adjusted,item.feature,
@@ -373,6 +394,8 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
         output->regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
         output->booleanVersion=featureIdentities.size()==1&&firstKind==SurfaceKind::Ball
             ?QStringLiteral("not-used-ball-joint-source-surface-v1")
+            :featureIdentities.size()==1&&firstKind==SurfaceKind::Socket
+            ?QStringLiteral("not-used-ball-socket-source-surface-v1")
             :featureIdentities.size()==1&&firstKind==SurfaceKind::Clip
             ?QStringLiteral("not-used-c-clip-source-surface-v1")
             :featureIdentities.size()==1&&firstKind==SurfaceKind::Bar

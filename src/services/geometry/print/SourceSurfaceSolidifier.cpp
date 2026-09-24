@@ -22,6 +22,8 @@ struct GridEdge {
 };
 
 Point converted(const QVector3D&p){return {0.4*double(p.x()),0.4*double(p.z()),-0.4*double(p.y())};}
+Point rayCoordinates(const Point&p,int axis){return axis==1?Point{p.y,p.z,p.x}:axis==2?Point{p.z,p.x,p.y}:p;}
+Point modelCoordinates(const Point&p,int axis){return axis==1?Point{p.z,p.x,p.y}:axis==2?Point{p.y,p.z,p.x}:p;}
 Point subtract(const Point&a,const Point&b){return {a.x-b.x,a.y-b.y,a.z-b.z};}
 Point cross(const Point&a,const Point&b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
 double dot(const Point&a,const Point&b){return a.x*b.x+a.y*b.y+a.z*b.z;}
@@ -69,15 +71,16 @@ void orientConsistently(PrintMesh*mesh)
 } // namespace
 
 SourceSurfaceSolidificationResult SourceSurfaceSolidifier::solidify(
-    const LDrawGeometry::LDrawLoadResult&source,double pitch)
+    const LDrawGeometry::LDrawLoadResult&source,double pitch,RayAxis rayAxis)
 {
     SourceSurfaceSolidificationResult result;result.samplingPitchMillimetres=pitch;
-    if(!source.ok()||!source.sourceModel||source.sourceModel->surfaces.size()!=source.mesh.triangles.size()||pitch<0.025||pitch>0.25){result.diagnostic=QStringLiteral("Complete authoritative triangle provenance and a supported sampling pitch are required.");return result;}
+    const int axis=int(rayAxis);
+    if(!source.ok()||!source.sourceModel||source.sourceModel->surfaces.size()!=source.mesh.triangles.size()||pitch<0.025||pitch>0.25||axis<0||axis>2){result.diagnostic=QStringLiteral("Complete authoritative triangle provenance, a supported sampling pitch and a valid ray axis are required.");return result;}
     for(const auto&surface:source.sourceModel->surfaces){if(!surface.certified||!surface.clipping||surface.fileId<0||surface.fileId>=source.sourceModel->files.size()||source.sourceModel->files[surface.fileId].classification==LDrawGeometry::SourceClassification::Unknown){result.diagnostic=QStringLiteral("Source-surface solidification accepts only certified clipping geometry from classified LDraw files.");return result;}}
 
     struct Triangle {Point a,b,c,normal;};std::vector<Triangle>triangles;triangles.reserve(source.mesh.triangles.size());MeshBounds sourceBounds;
     auto include=[&](const Point&p){if(!sourceBounds.valid){sourceBounds.minimum=sourceBounds.maximum=p;sourceBounds.valid=true;}else{sourceBounds.minimum.x=std::min(sourceBounds.minimum.x,p.x);sourceBounds.minimum.y=std::min(sourceBounds.minimum.y,p.y);sourceBounds.minimum.z=std::min(sourceBounds.minimum.z,p.z);sourceBounds.maximum.x=std::max(sourceBounds.maximum.x,p.x);sourceBounds.maximum.y=std::max(sourceBounds.maximum.y,p.y);sourceBounds.maximum.z=std::max(sourceBounds.maximum.z,p.z);}};
-    for(const auto&t:source.mesh.triangles){Triangle convertedTriangle{converted(t.a),converted(t.b),converted(t.c),{}};convertedTriangle.normal=cross(subtract(convertedTriangle.b,convertedTriangle.a),subtract(convertedTriangle.c,convertedTriangle.a));if(dot(convertedTriangle.normal,convertedTriangle.normal)<1e-20)continue;include(convertedTriangle.a);include(convertedTriangle.b);include(convertedTriangle.c);triangles.push_back(convertedTriangle);}
+    for(const auto&t:source.mesh.triangles){Triangle convertedTriangle{rayCoordinates(converted(t.a),axis),rayCoordinates(converted(t.b),axis),rayCoordinates(converted(t.c),axis),{}};convertedTriangle.normal=cross(subtract(convertedTriangle.b,convertedTriangle.a),subtract(convertedTriangle.c,convertedTriangle.a));if(dot(convertedTriangle.normal,convertedTriangle.normal)<1e-20)continue;include(convertedTriangle.a);include(convertedTriangle.b);include(convertedTriangle.c);triangles.push_back(convertedTriangle);}
     if(triangles.empty()||!sourceBounds.valid){result.diagnostic=QStringLiteral("The authoritative triangle soup is empty.");return result;}
     const auto extent=[](double low,double high,double step){return int(std::ceil((high-low)/step))+5;};
     const Point origin{sourceBounds.minimum.x-2.0*pitch,sourceBounds.minimum.y-2.0*pitch,sourceBounds.minimum.z-2.0*pitch};
@@ -102,7 +105,14 @@ SourceSurfaceSolidificationResult SourceSurfaceSolidifier::solidify(
     constexpr std::array<double,6>projectionFractions={0.95,0.80,0.60,0.40,0.20,0.0};const Point sourceExtent{subtract(sourceBounds.maximum,sourceBounds.minimum)};QString lastValidationError=QStringLiteral("no projection candidate was valid");
     for(const double projectionFraction:projectionFractions){PrintMesh candidate=mesh;double afterDistance=0.0;std::size_t projectedVertices=0;for(std::size_t i=0;i<candidate.vertices.size();++i){const auto&projection=projections[i];if(projection.eligible){candidate.vertices[i]=add(candidate.vertices[i],multiply(subtract(projection.nearest,candidate.vertices[i]),projectionFraction));if(projectionFraction>0.0)++projectedVertices;afterDistance+=(1.0-projectionFraction)*projection.distance;}else afterDistance+=projection.distance;}orientConsistently(&candidate);
         const auto raw=analyzeSource(candidate);if(!raw.bounds.valid){lastValidationError=QStringLiteral("invalid bounds");continue;}const Point rawExtent{subtract(raw.bounds.maximum,raw.bounds.minimum)};if(rawExtent.x<=0||rawExtent.y<=0||rawExtent.z<=0){lastValidationError=QStringLiteral("dimensionally degenerate bounds");continue;}for(auto&p:candidate.vertices){p.x=sourceBounds.minimum.x+(p.x-raw.bounds.minimum.x)*sourceExtent.x/rawExtent.x;p.y=sourceBounds.minimum.y+(p.y-raw.bounds.minimum.y)*sourceExtent.y/rawExtent.y;p.z=sourceBounds.minimum.z+(p.z-raw.bounds.minimum.z)*sourceExtent.z/rawExtent.z;}orientConsistently(&candidate);const auto analysis=analyzeSource(candidate);const auto validation=validateBooleanOperand(analysis);if(!validation.ok()){lastValidationError=QString::fromStdString(validation.message);continue;}
-        result.mesh=std::move(candidate);result.analysis=analysis;result.surfaceProjectionFraction=projectionFraction;result.projectedVertices=projectedVertices;result.meanSurfaceDeviationAfterProjectionMillimetres=afterDistance/double(mesh.vertices.size());result.successful=true;result.diagnostic=QStringLiteral("Certified source surfaces solidified on a %1 mm deterministic occupancy grid; %2 vertices projected by %3% toward authoritative surfaces (%4 mm mean deviation before, %5 mm after).").arg(pitch,0,'f',3).arg(result.projectedVertices).arg(100.0*projectionFraction,0,'f',0).arg(result.meanSurfaceDeviationBeforeProjectionMillimetres,0,'f',4).arg(result.meanSurfaceDeviationAfterProjectionMillimetres,0,'f',4);return result;}
+        for(auto& point:candidate.vertices)point=modelCoordinates(point,axis);
+        const auto restoredAnalysis=analyzeSource(candidate);
+        const auto restoredValidation=validateBooleanOperand(restoredAnalysis);
+        if(!restoredValidation.ok()){
+            lastValidationError=QString::fromStdString(restoredValidation.message);
+            continue;
+        }
+        result.mesh=std::move(candidate);result.analysis=restoredAnalysis;result.surfaceProjectionFraction=projectionFraction;result.projectedVertices=projectedVertices;result.meanSurfaceDeviationAfterProjectionMillimetres=afterDistance/double(mesh.vertices.size());result.successful=true;result.diagnostic=QStringLiteral("Certified source surfaces solidified on a %1 mm deterministic occupancy grid using ray axis %2; %3 vertices projected by %4% toward authoritative surfaces (%5 mm mean deviation before, %6 mm after).").arg(pitch,0,'f',3).arg(axis).arg(result.projectedVertices).arg(100.0*projectionFraction,0,'f',0).arg(result.meanSurfaceDeviationBeforeProjectionMillimetres,0,'f',4).arg(result.meanSurfaceDeviationAfterProjectionMillimetres,0,'f',4);return result;}
     result.diagnostic=QStringLiteral("Solidified source failed independent validation at every surface-projection level: %1").arg(lastValidationError);return result;
 }
 

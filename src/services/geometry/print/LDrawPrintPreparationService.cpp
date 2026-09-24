@@ -91,10 +91,10 @@ bool supportsBoundedSourceSolidification(const LDrawGeometry::LDrawLoadResult&lo
     const bool smallCertifiedInterface=source.triangles<=500 &&
         (CClipBarReceiverSemantic::recognize(loadResult).size()==1 ||
          BallJointSemantic::recognize(loadResult).size()==1);
-    const bool ballSocket=source.triangles<=1000 &&
+    const bool ballSocket=source.triangles<=1200 &&
         BallSocketSemantic::recognize(loadResult).size()==1;
-    return sorted[0]<=12.0 && sorted[1]<=16.0 && sorted[2]<=24.0 &&
-        (smallCertifiedInterface||ballSocket);
+    if(ballSocket)return sorted[0]<=12.0 && sorted[1]<=16.0 && sorted[2]<=32.0;
+    return sorted[0]<=12.0 && sorted[1]<=16.0 && sorted[2]<=24.0 && smallCertifiedInterface;
 }
 PrintPreparationResult solidifiedResult(const PrintPreparationRequest&request,const MeshAnalysisResult&sourceAnalysis,SourceSurfaceSolidificationResult solidified,const PrintPreparationTimings&partialTimings,qint64 elapsed)
 {
@@ -126,7 +126,17 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
         if(!sourceAnalysis.finite||!sourceAnalysis.indicesValid||sourceAnalysis.resourceLimitExceeded)return failure(sourceAnalysis.resourceLimitExceeded?PrintPreparationError::ResourceLimitExceeded:PrintPreparationError::InvalidSource,sourceAnalysis,request.profile.identity,"Source geometry is unsafe for semantic preparation.");
         if(!semantic.ok()){
             QString solidifierDiagnostic;
-            if(!m_semanticBuilder&&supportsBoundedSourceSolidification(request.loadResult,sourceAnalysis)){phase.restart();auto solidified=SourceSurfaceSolidifier::solidify(request.loadResult);timings.semanticConstructionMilliseconds+=phase.elapsed();if(solidified.successful){auto result=solidifiedResult(request,sourceAnalysis,std::move(solidified),timings,total.elapsed());if(result.ready())m_cache->insert(key,result.preparedMesh);return result;solidifierDiagnostic=result.diagnostic;}else solidifierDiagnostic=solidified.diagnostic;}
+            if(!m_semanticBuilder&&supportsBoundedSourceSolidification(request.loadResult,sourceAnalysis)){phase.restart();auto solidified=SourceSurfaceSolidifier::solidify(request.loadResult);
+                // An axial open attachment can be invisible to one winding-ray
+                // direction. For a certified friction socket, try an orthogonal
+                // ray against the same complete source before rejecting it.
+                if(!solidified.successful&&BallSocketSemantic::recognize(request.loadResult).size()==1){
+                    auto alternative=SourceSurfaceSolidifier::solidify(request.loadResult,.15,
+                        SourceSurfaceSolidifier::RayAxis::Y);
+                    if(alternative.successful)solidified=std::move(alternative);
+                    else solidifierDiagnostic=solidified.diagnostic+QStringLiteral(" Orthogonal ray: ")+alternative.diagnostic;
+                }
+                timings.semanticConstructionMilliseconds+=phase.elapsed();if(solidified.successful){auto result=solidifiedResult(request,sourceAnalysis,std::move(solidified),timings,total.elapsed());if(result.ready())m_cache->insert(key,result.preparedMesh);return result;solidifierDiagnostic=result.diagnostic;}else if(solidifierDiagnostic.isEmpty())solidifierDiagnostic=solidified.diagnostic;}
             auto error=mapSemanticError(semantic.status);return failure(error,sourceAnalysis,request.profile.identity,semantic.diagnostics.join(' ')+(solidifierDiagnostic.isEmpty()?QString():QStringLiteral(" Bounded source-surface solidification: ")+solidifierDiagnostic));}
         if(std::size_t(semantic.operands.size())>request.profile.maximumOperands)return failure(PrintPreparationError::ResourceLimitExceeded,sourceAnalysis,request.profile.identity,"Semantic operand limit exceeded.");
         if(std::any_of(semantic.operands.cbegin(),semantic.operands.cend(),[](const auto&operand){return operand.confidence!=SemanticConfidence::HighConfidence;}))return failure(PrintPreparationError::AmbiguousSemantics,sourceAnalysis,request.profile.identity,"Automatic preparation requires HighConfidence semantic operands.");

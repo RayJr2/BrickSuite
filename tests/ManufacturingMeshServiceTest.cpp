@@ -13,6 +13,7 @@
 #include "../src/services/geometry/print/StandardBarSemantic.h"
 #include "../src/services/geometry/print/CClipBarReceiverSemantic.h"
 #include "../src/services/geometry/print/BallJointSemantic.h"
+#include "../src/services/geometry/print/BallSocketSemantic.h"
 #include "../src/services/geometry/print/StandardStudSourceSemantic.h"
 #include "../src/services/geometry/print/LDrawPrintPreparationService.h"
 #include "../src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h"
@@ -1174,6 +1175,178 @@ if(libraryAt>=0 && libraryAt+1<args.size()) {
         ok &= check(!ManufacturingMeshService::hasApplicableCorrection(missing,ballSource,orientations[matching])&&
                     AutoFitProfileResolver::resolve(true,part,{missing},ballSource,orientations[matching]).state==AutoFitResolutionState::NoCompatibleProfile,
                     part+" missing Ball Joint correction remains nominal");
+    }
+}
+if(libraryAt>=0&&libraryAt+1<args.size()) {
+    FitProfile socketProfile=profile();
+    socketProfile.corrections.clear();
+    FitProfileCorrection socketCorrection;
+    socketCorrection.featureFamily="BallSocket";
+    socketCorrection.featureRole="female";
+    socketCorrection.printedOrientation="feature-axis-parallel-to-build-plate";
+    socketCorrection.semanticContractVersion="official-ldraw-joint8socket-friction-v1";
+    socketCorrection.semantics="female-ball-socket-contact-and-throat-clearance";
+    socketCorrection.correctionContractVersion="female-ball-socket-contact-and-throat-clearance-v1";
+    socketCorrection.valueMillimetres=0.0;
+    socketProfile.corrections.push_back(socketCorrection);
+    ok &= check(FitCalibrationLibrary::profileCompatibility(socketProfile),"Verified Ball Socket profile contract is compatible");
+    const int socketProfileAt=args.indexOf(QStringLiteral("--ball-socket-profile"));
+    if(socketProfileAt>=0&&socketProfileAt+1<args.size()) {
+        QFile file(args[socketProfileAt+1]);
+        ok &= check(file.open(QIODevice::ReadOnly),"managed Ball Socket profile opens read-only");
+        if(file.isOpen()) {
+            QString error;
+            const auto document=QJsonDocument::fromJson(file.readAll());
+            FitProfile actual;
+            const bool parsed=document.isObject()&&FitProfileJson::fromJson(document.object(),&actual,&error);
+            ok &= check(parsed,"managed Ball Socket profile parses: "+error);
+            if(parsed)socketProfile=actual;
+        }
+    }
+    for(const QString& part:{QStringLiteral("14418"),QStringLiteral("14419"),QStringLiteral("14704"),QStringLiteral("23922")}) {
+        const auto socketSource=LDrawLibraryService::loadPart(args[libraryAt+1],part);
+        ok &= check(socketSource.ok(),part+" Ball Socket source loads");
+        if(!socketSource.ok())continue;
+        const auto sockets=BallSocketSemantic::recognize(socketSource);
+        ok &= check(!sockets.isEmpty(),part+" certified friction Ball Socket recognized");
+        PrintPreparationRequest request;
+        request.partReference=part;
+        request.ldrawIdentity=QStringLiteral("parts/%1.dat").arg(part);
+        request.libraryAuthority=args[libraryAt+1];
+        request.loadResult=socketSource;
+        LDrawPrintPreparationService preparation;
+        const auto preparedResult=preparation.prepare(request);
+        QTextStream(stdout)<<"socketPreparation="<<part<<" ready="<<preparedResult.ready()
+                           <<" diagnostic="<<preparedResult.diagnostic<<Qt::endl;
+        ok &= check(preparedResult.ready(),part+" certified Ball Socket nominal preparation succeeds");
+        if(!preparedResult.ready())continue;
+        const auto& prepared=*preparedResult.preparedMesh;
+        ok &= check(prepared.finalAnalysis.connectedComponents==1&&
+                    validatePreparedMesh(prepared.finalAnalysis).ok()&&
+                    std::any_of(prepared.functionalFeatures.cbegin(),prepared.functionalFeatures.cend(),
+                        [](const FunctionalFeature& feature){return feature.family==FunctionalInterfaceFamily::BallSocket;}),
+                    part+" PreparedMesh is manifold and retains Ball Socket ownership");
+        const auto before=prepared.mesh;
+        const auto sourceBefore=socketSource.mesh.triangles;
+        const auto resolution=AutoFitProfileResolver::resolve(true,part,{socketProfile},socketSource,nominalOrientation);
+        ok &= check(resolution.resolved(),part+" nominal Auto Fit selects Verified parallel Ball Socket profile");
+        if(socketProfileAt>=0&&socketProfileAt+1<args.size()) {
+            const FitCalibrationLibrary library(QDir::cleanPath(
+                QFileInfo(args[socketProfileAt+1]).absolutePath()+QStringLiteral("/..")));
+            const auto managed=AutoFitProfileResolver::resolveManaged(true,part,library,socketSource,nominalOrientation);
+            ok &= check(managed.resolved()&&managed.profile.profileIdentity==socketProfile.profileIdentity,
+                        part+" managed Auto Fit resolves Ray's Verified Ball Socket profile");
+        }
+        const auto generated=ManufacturingMeshService().generate(socketSource,prepared,socketProfile,nominalOrientation);
+        ok &= check(generated.ok()&&generated.manufacturingMesh->featureIdentities.size()>=1&&
+                    same(prepared.mesh,before)&&
+                    sameSource(socketSource.mesh.triangles,sourceBefore),
+                    part+" Ball Socket correction preserves Source and PreparedMesh: "+generated.diagnostic);
+        auto socketOnly=profile();socketOnly.corrections={socketCorrection};
+        const auto nominalSocket=ManufacturingMeshService().generate(socketSource,prepared,socketOnly,nominalOrientation);
+        ok &= check(nominalSocket.ok()&&same(nominalSocket.manufacturingMesh->mesh,before),
+                    part+" Verified zero Ball Socket correction alone is bitwise nominal-equivalent");
+        if(generated.ok()) {
+            const auto* selectedSocket=ManufacturingMeshService::compatibleCorrections(socketProfile,
+                FitPrintedOrientation::FeatureAxisParallelToBuildPlate).ballSocketClearance;
+            if(socketProfileAt>=0&&socketProfileAt+1<args.size()) {
+                const auto studs=certifiedSourceStuds(socketSource);
+                ok &= check(generated.manufacturingMesh->featureIdentities.size()==1+studs.size()&&
+                            (studs.isEmpty()||
+                             (generated.diagnostic.contains(QStringLiteral("5.150 mm"))&&
+                              generated.diagnostic.contains(QStringLiteral("1.800 mm")))),
+                            part+" Verified Ball Socket composes with every applicable Standard Stud");
+            }
+            QTextStream(stdout)<<"socketManufacturing="<<part<<" profile="<<socketProfile.profileIdentity
+                               <<" correction="<<(selectedSocket?selectedSocket->valueMillimetres:999.0)
+                               <<" diagnostic="<<generated.diagnostic<<Qt::endl;
+            const int outputAt=args.indexOf(QStringLiteral("--ball-socket-output"));
+            const int outputDirAt=args.indexOf(QStringLiteral("--ball-socket-output-dir"));
+            const QString path=outputDirAt>=0&&outputDirAt+1<args.size()&&
+                (part==QStringLiteral("14419")||part==QStringLiteral("23922"))
+                ?QDir(args[outputDirAt+1]).filePath(part+QStringLiteral("-ball-socket-parallel-manufacturing.3mf"))
+                :part==QStringLiteral("14418")&&outputAt>=0&&outputAt+1<args.size()?args[outputAt+1]:QString();
+            if(!path.isEmpty()) {
+                QString error;
+                ok &= check(ManufacturingMeshDiagnosticExporter::writeThreeMf(*generated.manufacturingMesh,path,1.0,
+                            QColor("#A0A5A9"),&error),"Ball Socket ManufacturingMesh 3MF export: "+error);
+                if(QFileInfo::exists(path)) {
+                    Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();
+                    model->QueryReader("3mf")->ReadFromFile(path.toStdString());
+                    auto objects=model->GetMeshObjects();
+                    ok &= check(objects->MoveNext()&&objects->GetCurrentMeshObject()->GetTriangleCount()==
+                                generated.manufacturingMesh->mesh.faces.size(),
+                                "Ball Socket ManufacturingMesh proof 3MF reopens through lib3mf");
+                    QTextStream(stdout)<<"socketProof="<<path<<Qt::endl;
+                }
+            }
+            const auto repeated=ManufacturingMeshService().generate(socketSource,prepared,socketProfile,nominalOrientation);
+            ok &= check(repeated.ok()&&repeated.manufacturingMesh->identity==generated.manufacturingMesh->identity&&
+                        same(repeated.manufacturingMesh->mesh,generated.manufacturingMesh->mesh),
+                        part+" Ball Socket ManufacturingMesh is deterministic");
+        }
+        if(part==QStringLiteral("14418")) {
+            auto synthetic=profile();
+            synthetic.corrections={socketCorrection};
+            synthetic.corrections.front().valueMillimetres=.10;
+            const auto changed=ManufacturingMeshService().generate(socketSource,prepared,synthetic,nominalOrientation);
+            ok &= check(changed.ok()&&!same(changed.manufacturingMesh->mesh,before),
+                        "synthetic Ball Socket contact/throat correction changes prepared geometry safely: "+changed.diagnostic);
+            if(changed.ok()&&!sockets.isEmpty()) {
+                int contactMoved=0,mouthMoved=0,unrelatedMoved=0;
+                const auto& origin=sockets.front().frame.origin;
+                const auto& axis=sockets.front().frame.axis;
+                for(std::size_t i=0;i<before.vertices.size();++i) {
+                    const auto& a=before.vertices[i];
+                    const auto& b=changed.manufacturingMesh->mesh.vertices[i];
+                    if(std::abs(a.x-b.x)+std::abs(a.y-b.y)+std::abs(a.z-b.z)<1e-8)continue;
+                    const double x=a.x-origin.x,y=a.y-origin.y,z=a.z-origin.z;
+                    const double axial=x*axis.x+y*axis.y+z*axis.z;
+                    const double transverse=std::sqrt(std::max(0.0,x*x+y*y+z*z-axial*axial));
+                    const bool mouth=axial>=1.55&&axial<=2.7&&transverse>=2.35&&transverse<=3.35;
+                    const bool contact=std::sqrt(x*x+y*y+z*z)>=3.04&&
+                                       std::sqrt(x*x+y*y+z*z)<=3.25;
+                    if(mouth)++mouthMoved;
+                    else if(contact)++contactMoved;
+                    else ++unrelatedMoved;
+                }
+                ok &= check(mouthMoved>=12&&contactMoved>=24&&unrelatedMoved==0,
+                            "synthetic correction moves source-owned retaining mouth and spherical contact, not unrelated vertices");
+            }
+            auto unverified=socketProfile;unverified.verificationState=FitEvidenceState::Draft;
+            ok &= check(!ManufacturingMeshService::hasApplicableCorrection(unverified,socketSource,nominalOrientation),
+                        "unverified Ball Socket evidence remains nominal");
+            auto missing=socketOnly;missing.corrections.clear();
+            ok &= check(!ManufacturingMeshService::hasApplicableCorrection(missing,socketSource,nominalOrientation),
+                        "missing Ball Socket evidence remains nominal");
+            const QVector<PrintOrientation> rotations={xPositive,xNegative,yPositive,yNegative,zPositive,zNegative};
+            for(const auto& orientation:rotations)
+                if(ManufacturingMeshService::transformedOrientation(sockets.front(),orientation)==
+                   FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate) {
+                    ok &= check(!ManufacturingMeshService::hasApplicableCorrection(socketOnly,socketSource,orientation)&&
+                                AutoFitProfileResolver::resolve(true,part,{socketOnly},socketSource,orientation).state==
+                                    AutoFitResolutionState::NoCompatibleProfile,
+                                "parallel Ball Socket evidence does not substitute for perpendicular orientation");
+                    break;
+                }
+        }
+        if(part==QStringLiteral("14419")) {
+            auto uncertified=socketSource;
+            uncertified.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>(*socketSource.sourceModel);
+            uncertified.sourceModel->surfaces.front().certified=false;
+            PrintPreparationRequest invalid=request;invalid.loadResult=uncertified;
+            const auto rejected=LDrawPrintPreparationService().prepare(invalid);
+            ok &= check(!rejected.ready(),"uncertified source topology cannot use orthogonal Ball Socket solidification");
+        }
+    }
+    for(const QString& part:{QStringLiteral("63082"),QStringLiteral("98263"),QStringLiteral("104")}) {
+        const auto freeSource=LDrawLibraryService::loadPart(args[libraryAt+1],part);
+        if(freeSource.ok()) {
+            auto socketOnly=profile();socketOnly.corrections={socketCorrection};
+            ok &= check(BallSocketSemantic::recognize(freeSource).isEmpty()&&
+            !ManufacturingMeshService::hasApplicableCorrection(socketOnly,freeSource,nominalOrientation),
+            part+" free-moving or unrelated socket is excluded from production");
+        }
     }
 }
 return ok?0:1;}
