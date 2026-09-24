@@ -829,17 +829,14 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-joint8socket-friction-v1")
             && correction.semantics == QStringLiteral("female-ball-socket-contact-and-throat-clearance")
             && correction.correctionContractVersion == QStringLiteral("female-ball-socket-contact-and-throat-clearance-v1");
-        // Calibration evidence may live alongside production-ready entries in
-        // one profile. Recognize this contract without selecting or applying
-        // a Pin / Barrel Hinge ManufacturingMesh correction in this phase.
+        // Retain the certified hinge contract alongside other profile entries.
         const bool pinBarrelHinge = correction.featureFamily == QStringLiteral("PinBarrelHinge")
             && correction.featureRole == QStringLiteral("male")
             && correction.printedOrientation == QStringLiteral("feature-axis-parallel-to-build-plate")
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-3937-3938-rotating-pair-v1")
             && correction.semantics == QStringLiteral("male-pin-barrel-hinge-pin-od")
             && correction.correctionContractVersion == QStringLiteral("male-pin-barrel-hinge-pin-od-v1");
-        // Calibration evidence is importable, but no production regenerator
-        // selects or applies this new family until physical verification.
+        // Only a Verified profile may authorize the production bump adjustment.
         const bool interleavedFingerHinge = correction.featureFamily == QStringLiteral("InterleavedFingerHinge")
             && correction.featureRole == QStringLiteral("male")
             && correction.printedOrientation == QStringLiteral("feature-axis-parallel-to-build-plate")
