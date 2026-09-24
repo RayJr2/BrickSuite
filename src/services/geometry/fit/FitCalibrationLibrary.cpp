@@ -850,8 +850,8 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-h1-h2-interleaved-finger-v1")
             && correction.semantics == QStringLiteral("male-interleaved-finger-contact-bump-protrusion")
             && correction.correctionContractVersion == QStringLiteral("male-interleaved-finger-contact-bump-protrusion-v1");
-        // This contract is calibration-ready only; no Click Hinge production
-        // regenerator or Auto Fit selection exists before physical evidence.
+        // The certified arrestor contract may authorize production only
+        // through an applicable Verified profile correction.
         const bool clickHinge = correction.featureFamily == QStringLiteral("ClickHinge")
             && correction.featureRole == QStringLiteral("male")
             && correction.printedOrientation == QStringLiteral("feature-axis-parallel-to-build-plate")

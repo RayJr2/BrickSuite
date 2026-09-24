@@ -39,8 +39,7 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;auto 
             part+QStringLiteral(" retains certified finger-hinge identity"));
     }
  }
- if(libraryAt>=0&&libraryAt+1<arguments.size()) {
-    const QString part=QStringLiteral("30345");
+ if(libraryAt>=0&&libraryAt+1<arguments.size())for(const QString& part:{QStringLiteral("30345"),QStringLiteral("76385")}) {
     PrintPreparationRequest hingeRequest;
     hingeRequest.partReference=part;
     hingeRequest.ldrawIdentity=QStringLiteral("parts/")+part+QStringLiteral(".dat");
@@ -50,11 +49,11 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;auto 
     const auto prepared=hingeService.prepare(hingeRequest);
     ok&=check(prepared.ready(),part+QStringLiteral(" reaches production PreparedMesh: ")+prepared.diagnostic);
     if(prepared.ready()) {
-        ok&=check(validatePreparedMesh(prepared.finalAnalysis).ok(),"click hinge prepared manifold");
+        ok&=check(validatePreparedMesh(prepared.finalAnalysis).ok(),part+QStringLiteral(" click hinge prepared manifold"));
         ok&=check(std::any_of(prepared.preparedMesh->functionalFeatures.cbegin(),
             prepared.preparedMesh->functionalFeatures.cend(),[](const FunctionalFeature& feature) {
                 return feature.family==FunctionalInterfaceFamily::ClickHinge;
-            }),"click hinge retains certified identity after preparation");
+            }),part+QStringLiteral(" retains certified click hinge identity after preparation"));
     }
  }
  QVector<PrintPreparationProgress> progress;auto progressResult=service.prepare(request(),nullptr,[&progress](const auto&p){progress.push_back(p);});ok&=check(progressResult.ready()&&progress.size()>=5,"typed progress delivered");ok&=check(progress.front().phase==PrintPreparationPhase::SourceAnalysis&&progress.back().phase==PrintPreparationPhase::FinalValidation,"progress phase ordering");cache->clear();state->calls=0;

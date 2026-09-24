@@ -12,6 +12,7 @@
 #include "BallSocketSemantic.h"
 #include "PinBarrelHingeSemantic.h"
 #include "InterleavedFingerHingeSemantic.h"
+#include "ClickHingeSemantic.h"
 #include "StandardStudSourceSemantic.h"
 #include "FunctionalOperandRegenerator.h"
 #include "McutMeshBooleanService.h"
@@ -181,13 +182,19 @@ ManufacturingMeshCorrections ManufacturingMeshService::compatibleCorrections(con
                        "male-interleaved-finger-contact-bump-protrusion",printedOrientation) &&
                correction.correctionContractVersion==QStringLiteral("male-interleaved-finger-contact-bump-protrusion-v1"))
                 result.interleavedFingerBump=&correction;
+    if(orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate)
+        for(const auto& correction:profile.corrections)
+            if(matches(correction,"ClickHinge","male",
+                       "male-click-hinge-arrestor-radial-reach",printedOrientation) &&
+               correction.correctionContractVersion==QStringLiteral("male-click-hinge-arrestor-radial-reach-v1"))
+                result.clickHingeArrestor=&correction;
     if(heightCandidate){if(!heightCandidate->hasRequiredDiameterCorrection)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction does not record its required Stud OD context and was not applied.");else if(!result.studDiameter)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction requires its matching Verified Stud OD correction and was not applied.");else if(std::abs(result.studDiameter->valueMillimetres-heightCandidate->requiredDiameterCorrectionMillimetres)>1e-9)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction was measured with a different Stud OD correction and was not applied.");else result.studHeight=heightCandidate;}
     if(reason)*reason=result.any()?(result.studHeightDiagnostic.isEmpty()?QStringLiteral("Compatible"):result.studHeightDiagnostic):(result.studHeightDiagnostic.isEmpty()?QStringLiteral("The selected profile has no compatible verified functional correction for this print orientation."):result.studHeightDiagnostic);return result;
 }
 
 const FitProfileCorrection* ManufacturingMeshService::compatibleCorrection(const FitProfile&profile,FitPrintedOrientation orientation,QString*reason)
 {
-    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.receivingAntiStudBoreDiameter,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth,corrections.standardBarDiameter,corrections.cClipClearance,corrections.ballJointDiameter,corrections.ballSocketClearance,corrections.pinBarrelHingeDiameter,corrections.interleavedFingerBump})if(candidate)return candidate;return nullptr;
+    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.receivingAntiStudBoreDiameter,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth,corrections.standardBarDiameter,corrections.cClipClearance,corrections.ballJointDiameter,corrections.ballSocketClearance,corrections.pinBarrelHingeDiameter,corrections.interleavedFingerBump,corrections.clickHingeArrestor})if(candidate)return candidate;return nullptr;
 }
 
 FitPrintedOrientation ManufacturingMeshService::transformedOrientation(const FunctionalFeature&feature,const PrintOrientation&printOrientation)
@@ -263,6 +270,16 @@ bool ManufacturingMeshService::hasApplicableCorrection(const FitProfile&profile,
             return true;
         }
     }
+    for(const auto& feature:ClickHingeSemantic::recognize(source)) {
+        if(feature.role!=FunctionalInterfaceRole::Male)continue;
+        const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation));
+        if(corrections.clickHingeArrestor&&
+           corrections.clickHingeArrestor->semanticContractVersion==feature.evidenceContract) {
+            if(reason)*reason=QStringLiteral("Compatible Verified paired click-arrestor correction for %1 after Print Orientation %2.")
+                .arg(feature.stableIdentity,printOrientation.summary());
+            return true;
+        }
+    }
     if(reason)*reason=semanticReason;return false;
 }
 
@@ -274,7 +291,7 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
     // Localized, source-owned families share one mesh. Compose every applicable
     // correction and reject overlapping vertex ownership rather than returning
     // after the first family. Semantic operands are handled by the path below.
-    enum class SurfaceKind { Ball, Socket, Clip, Bar, HingePin, InterleavedBump, Stud };
+    enum class SurfaceKind { Ball, Socket, Clip, Bar, HingePin, InterleavedBump, ClickArrestor, Stud };
     struct SurfaceFeature { FunctionalFeature feature; SurfaceKind kind; int owner=-1; };
     QVector<SurfaceFeature> surfaceFeatures;
     const auto retained=[&](const FunctionalFeature& feature){
@@ -301,6 +318,10 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
     for(const auto& hinge:interleaved)
         if((hinge.role==FunctionalInterfaceRole::Male||nominalHingeProfile)&&retained(hinge))
             surfaceFeatures.push_back({hinge,SurfaceKind::InterleavedBump,-1});
+    const auto clicks=ClickHingeSemantic::recognize(source);
+    for(const auto& hinge:clicks)
+        if(hinge.role==FunctionalInterfaceRole::Male&&retained(hinge))
+            surfaceFeatures.push_back({hinge,SurfaceKind::ClickArrestor,-1});
     if(nominalHingeProfile&&std::none_of(surfaceFeatures.cbegin(),surfaceFeatures.cend(),
        [](const SurfaceFeature& item){return item.kind==SurfaceKind::InterleavedBump;}))
         return fail(ManufacturingMeshError::MissingCorrection,
@@ -344,6 +365,7 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
             case SurfaceKind::Bar: primary=corrections.standardBarDiameter;break;
             case SurfaceKind::HingePin: primary=corrections.pinBarrelHingeDiameter;break;
             case SurfaceKind::InterleavedBump: primary=corrections.interleavedFingerBump;break;
+            case SurfaceKind::ClickArrestor: primary=corrections.clickHingeArrestor;break;
             case SurfaceKind::Stud: primary=corrections.studDiameter;height=corrections.studHeight;break;
             }
             if(primary&&primary->semanticContractVersion!=item.feature.evidenceContract)primary=nullptr;
@@ -382,6 +404,9 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
             case SurfaceKind::InterleavedBump:
                 adjustedSuccessfully=InterleavedFingerHingeSemantic::adjustPrepared(source,adjusted,item.feature,
                     primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
+            case SurfaceKind::ClickArrestor:
+                adjustedSuccessfully=ClickHingeSemantic::adjustPrepared(source,adjusted,item.feature,
+                    primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
             case SurfaceKind::Stud:
                 adjustedSuccessfully=adjustCertifiedStud(source,adjusted,{item.feature,item.owner},
                     primary?primary->valueMillimetres:0.0,height?height->valueMillimetres:0.0,
@@ -397,7 +422,8 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
                         .arg(item.feature.stableIdentity));
             if(featureIdentities.isEmpty()){
                 firstKind=item.kind;
-                nominalDiameter=item.kind==SurfaceKind::InterleavedBump?.3:item.feature.nominalDiameterMillimetres;
+                nominalDiameter=item.kind==SurfaceKind::InterleavedBump?.3:
+                    item.kind==SurfaceKind::ClickArrestor?2.186:item.feature.nominalDiameterMillimetres;
                 diameterCorrection=primary?primary->valueMillimetres:0.0;
                 manufacturingDiameter=nominalDiameter+diameterCorrection;
             }
@@ -421,9 +447,12 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
             }
             provenance<<QStringLiteral("%1 [%2]: %3 mm + %4 mm = %5 mm%6; %7")
                 .arg(item.feature.stableIdentity,orientationName(orientation))
-                .arg(item.kind==SurfaceKind::InterleavedBump?.3:item.feature.nominalDiameterMillimetres,0,'f',3)
+                .arg(item.kind==SurfaceKind::InterleavedBump?.3:
+                     item.kind==SurfaceKind::ClickArrestor?2.186:item.feature.nominalDiameterMillimetres,0,'f',3)
                 .arg(primary?primary->valueMillimetres:0.0,0,'f',3)
-                .arg((item.kind==SurfaceKind::InterleavedBump?.3:item.feature.nominalDiameterMillimetres)+(primary?primary->valueMillimetres:0.0),0,'f',3)
+                .arg((item.kind==SurfaceKind::InterleavedBump?.3:
+                      item.kind==SurfaceKind::ClickArrestor?2.186:item.feature.nominalDiameterMillimetres)+
+                     (primary?primary->valueMillimetres:0.0),0,'f',3)
                 .arg(item.kind==SurfaceKind::Stud
                     ?QStringLiteral("; height 1.600 mm + %1 mm = %2 mm")
                         .arg(height?height->valueMillimetres:0.0,0,'f',3)
@@ -465,6 +494,8 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
             ?QStringLiteral("not-used-hinge-pin-source-surface-v1")
             :featureIdentities.size()==1&&firstKind==SurfaceKind::InterleavedBump
             ?QStringLiteral("not-used-interleaved-finger-source-surface-v1")
+            :featureIdentities.size()==1&&firstKind==SurfaceKind::ClickArrestor
+            ?QStringLiteral("not-used-click-arrestor-source-surface-v1")
             :QStringLiteral("not-used-certified-source-surface-composition-v1");
         output->nominalDiameterMillimetres=nominalDiameter;
         output->diameterCorrectionMillimetres=diameterCorrection;

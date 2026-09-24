@@ -48,17 +48,22 @@ int main(int argc,char** argv){
     if(at<0||at+1>=args.size())return 0;
     bool ok=true;
     const auto single=LDrawLibraryService::loadPart(args[at+1],QStringLiteral("30345"));
+    const auto assembled=LDrawLibraryService::loadPart(args[at+1],QStringLiteral("76385"));
     const auto dual=LDrawLibraryService::loadPart(args[at+1],QStringLiteral("30394"));
-    ok&=check(single.ok()&&dual.ok(),"real click-lock source parts load");
-    if(!single.ok()||!dual.ok())return 1;
+    ok&=check(single.ok()&&assembled.ok()&&dual.ok(),"click insert, catalog assembly, and mate load");
+    if(!single.ok()||!assembled.ok()||!dual.ok())return 1;
     const auto male=ClickHingeSemantic::recognize(single);
+    const auto assembledMale=ClickHingeSemantic::recognize(assembled);
     const auto female=ClickHingeSemantic::recognize(dual);
     ok&=check(male.size()==1&&male.front().role==FunctionalInterfaceRole::Male,
         "certified clh1 single-finger arrestor recognized");
     ok&=check(female.size()==1&&female.front().role==FunctionalInterfaceRole::Female,
         "certified paired clh4 indexed mate recognized");
+    ok&=check(male.size()==1&&assembledMale.size()==1&&assembledMale.front().role==FunctionalInterfaceRole::Male&&
+        assembledMale.front().provenance.front().sourceFile==male.front().provenance.front().sourceFile,
+        "catalog 76385 retains the same certified clh1 insert ancestry");
     for(const QString& id:{QStringLiteral("3937"),QStringLiteral("3938"),QStringLiteral("4275a"),
-                           QStringLiteral("4276a"),QStringLiteral("30619"),QStringLiteral("14137"),
+                           QStringLiteral("4276a"),QStringLiteral("30472"),QStringLiteral("30619"),QStringLiteral("14137"),
                            QStringLiteral("3700")}){
         const auto source=LDrawLibraryService::loadPart(args[at+1],id);
         ok&=check(source.ok()&&ClickHingeSemantic::recognize(source).isEmpty(),

@@ -16,6 +16,7 @@
 #include "../src/services/geometry/print/BallSocketSemantic.h"
 #include "../src/services/geometry/print/PinBarrelHingeSemantic.h"
 #include "../src/services/geometry/print/InterleavedFingerHingeSemantic.h"
+#include "../src/services/geometry/print/ClickHingeSemantic.h"
 #include "../src/services/geometry/print/StandardStudSourceSemantic.h"
 #include "../src/services/geometry/print/LDrawPrintPreparationService.h"
 #include "../src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h"
@@ -369,7 +370,152 @@ bool interleavedProductionProof(const QStringList& args) {
     return ok;
 }
 
-int main(int argc,char**argv){QCoreApplication app(argc,argv);if(app.arguments().contains(QStringLiteral("--interleaved-only")))return interleavedProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--hinge-only")))return hingeProductionProof(app.arguments())?0:1;bool ok=true;LDrawGeometry::LDrawLoadResult source;source.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>();PreparedMesh nominal;nominal.mesh=box();nominal.partReference="3700";nominal.ldrawIdentity="parts/3700.dat";nominal.preparationProfileVersion="profile-v1";nominal.mcutVersion="mcut-v1";const qsizetype sourceTriangleCount=source.mesh.triangles.size();const auto preparedBefore=nominal.mesh;ManufacturingMeshService service([]{return std::make_unique<ProofBoolean>();},[](const auto&){return semantic();});
+bool clickProductionProof(const QStringList& args) {
+    const int libraryAt=args.indexOf(QStringLiteral("--ldraw"));
+    if(libraryAt<0||libraryAt+1>=args.size())return check(false,"click proof requires --ldraw");
+    bool ok=true;
+    const auto source=LDrawLibraryService::loadPart(args[libraryAt+1],QStringLiteral("76385"));
+    const auto insert=LDrawLibraryService::loadPart(args[libraryAt+1],QStringLiteral("30345"));
+    const auto mate=LDrawLibraryService::loadPart(args[libraryAt+1],QStringLiteral("30394"));
+    ok&=check(source.ok()&&insert.ok()&&mate.ok(),"catalog click hinge, nested insert and indexed mate load");
+    if(!source.ok()||!insert.ok()||!mate.ok())return false;
+    const auto arrestors=ClickHingeSemantic::recognize(source);
+    const auto insertArrestors=ClickHingeSemantic::recognize(insert);
+    const auto indexed=ClickHingeSemantic::recognize(mate);
+    ok&=check(arrestors.size()==1&&insertArrestors.size()==1&&
+        arrestors.front().role==FunctionalInterfaceRole::Male&&
+        indexed.size()==1&&indexed.front().role==FunctionalInterfaceRole::Female,
+        "76385 retains certified nested 30345 arrestors; 30394 indexed mate stays distinct");
+    PrintPreparationRequest request;request.partReference="76385";
+    request.ldrawIdentity="parts/76385.dat";request.libraryAuthority=args[libraryAt+1];
+    request.loadResult=source;
+    const auto preparation=LDrawPrintPreparationService().prepare(request);
+    ok&=check(preparation.ready(),"76385 reaches nominal PreparedMesh: "+preparation.diagnostic);
+    if(!preparation.ready())return false;
+    const auto& prepared=*preparation.preparedMesh;
+    ok&=check(std::any_of(prepared.functionalFeatures.cbegin(),prepared.functionalFeatures.cend(),
+        [](const FunctionalFeature& feature){return feature.family==FunctionalInterfaceFamily::ClickHinge;}),
+        "certified Click Hinge identity survives preparation");
+    const auto before=prepared.mesh;
+    const auto sourceBefore=source.mesh.triangles;
+    PrintOrientation orientation;
+    ok&=check(ManufacturingMeshService::transformedOrientation(arrestors.front(),orientation)==
+        FitPrintedOrientation::FeatureAxisParallelToBuildPlate,"nominal 76385 hinge axis is parallel");
+    auto verified=profile();verified.corrections.clear();
+    FitProfileCorrection correction;
+    correction.featureFamily="ClickHinge";correction.featureRole="male";
+    correction.printedOrientation="feature-axis-parallel-to-build-plate";
+    correction.semanticContractVersion="official-ldraw-clh1-clh4-click-lock-v1";
+    correction.semantics="male-click-hinge-arrestor-radial-reach";
+    correction.correctionContractVersion="male-click-hinge-arrestor-radial-reach-v1";
+    correction.regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
+    correction.calibrationArtifactIdentity="synthetic-click-production-test";
+    correction.valueMillimetres=0.0;verified.corrections.push_back(correction);
+    ok&=check(FitCalibrationLibrary::profileCompatibility(verified)&&
+        ManufacturingMeshService::hasApplicableCorrection(verified,source,orientation)&&
+        AutoFitProfileResolver::resolve(true,"76385",{verified},source,orientation).resolved()&&
+        !ManufacturingMeshService::hasApplicableCorrection(verified,mate,orientation),
+        "Verified parallel arrestor entry selects 76385 but not indexed 30394");
+    const auto zero=ManufacturingMeshService().generate(source,prepared,verified,orientation);
+    ok&=check(zero.ok()&&same(zero.manufacturingMesh->mesh,before)&&
+        zero.diagnostic.contains(QStringLiteral("0.000 mm")),
+        "Verified zero correction is deterministic nominal-equivalent: "+zero.diagnostic);
+    if(zero.ok()){
+        const auto repeat=ManufacturingMeshService().generate(source,prepared,verified,orientation);
+        ok&=check(repeat.ok()&&repeat.manufacturingMesh->identity==zero.manufacturingMesh->identity&&
+            same(repeat.manufacturingMesh->mesh,zero.manufacturingMesh->mesh),
+            "zero-correction ManufacturingMesh is deterministic");
+    }
+    correction.valueMillimetres=.05;verified.corrections[0]=correction;
+    const auto changed=ManufacturingMeshService().generate(source,prepared,verified,orientation);
+    ok&=check(changed.ok()&&!same(changed.manufacturingMesh->mesh,before)&&
+        std::abs(changed.manufacturingMesh->manufacturingDiameterMillimetres-2.236)<1e-9&&
+        changed.diagnostic.contains(QStringLiteral("Two source-owned click arrestors adjusted")),
+        "synthetic nonzero correction adjusts both arrestors: "+changed.diagnostic);
+    if(changed.ok()){
+        int left=0,right=0;
+        const auto& frame=arrestors.front().frame;
+        for(std::size_t i=0;i<before.vertices.size();++i){
+            const auto& a=before.vertices[i];const auto& b=changed.manufacturingMesh->mesh.vertices[i];
+            if(a.x==b.x&&a.y==b.y&&a.z==b.z)continue;
+            const Point relative{a.x-frame.origin.x,a.y-frame.origin.y,a.z-frame.origin.z};
+            const double axial=(relative.x*frame.axis.x+relative.y*frame.axis.y+
+                relative.z*frame.axis.z)/.4;
+            ok&=check(std::abs(axial)>3.8&&std::abs(axial)<9.6,
+                "only certified arrestor regions move; bearing and attachment remain fixed");
+            if(axial<0)++left;else ++right;
+        }
+        ok&=check(left>=12&&right>=12,"both source-owned arrestors move together");
+    }
+    auto missing=verified;missing.corrections.clear();
+    ok&=check(!ManufacturingMeshService::hasApplicableCorrection(missing,source,orientation)&&
+        !AutoFitProfileResolver::resolve(true,"76385",{missing},source,orientation).resolved(),
+        "missing evidence leaves Click Hinge nominal");
+    auto draft=verified;draft.verificationState=FitEvidenceState::Draft;
+    ok&=check(!ManufacturingMeshService::hasApplicableCorrection(draft,source,orientation),
+        "unverified evidence cannot select production correction");
+    for(const auto turn:{PrintOrientation::Rotation::XPositive,PrintOrientation::Rotation::XNegative,
+                         PrintOrientation::Rotation::YPositive,PrintOrientation::Rotation::YNegative}){
+        PrintOrientation rotated;rotated.rotate(turn);
+        if(ManufacturingMeshService::transformedOrientation(arrestors.front(),rotated)!=
+            FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate)continue;
+        ok&=check(!ManufacturingMeshService::hasApplicableCorrection(verified,source,rotated)&&
+            !AutoFitProfileResolver::resolve(true,"76385",{verified},source,rotated).resolved(),
+            "parallel evidence does not substitute for perpendicular orientation");
+        break;
+    }
+    ok&=check(same(prepared.mesh,before)&&sameSource(source.mesh.triangles,sourceBefore),
+        "Source and nominal PreparedMesh remain unchanged");
+    const int outputAt=args.indexOf(QStringLiteral("--click-output-dir"));
+    if(outputAt>=0&&outputAt+1<args.size()){
+        QCoreApplication::setOrganizationName(QStringLiteral("RFStateSide"));
+        QCoreApplication::setApplicationName(QStringLiteral("BrickSuite"));
+        FitCalibrationLibrary library;
+        FitProfile actual;
+        QString error;
+        for(const auto& summary:library.profiles()){
+            FitProfile candidate;
+            if(!summary.compatible||!library.loadProfile(summary.identity,&candidate,&error))continue;
+            if(ManufacturingMeshService::hasApplicableCorrection(candidate,source,orientation)){
+                actual=candidate;break;
+            }
+        }
+        ok&=check(!actual.profileIdentity.isEmpty(),"Ray's managed Verified Click Hinge profile resolves");
+        if(!actual.profileIdentity.isEmpty()){
+            const auto selected=ManufacturingMeshService::compatibleCorrections(actual,
+                FitPrintedOrientation::FeatureAxisParallelToBuildPlate).clickHingeArrestor;
+            ok&=check(selected&&std::abs(selected->valueMillimetres)<1e-9&&
+                AutoFitProfileResolver::resolve(true,"76385",{actual},source,orientation).resolved(),
+                "Ray's Verified parallel profile supplies the physical zero correction");
+            const auto production=ManufacturingMeshService().generate(source,prepared,actual,orientation);
+            ok&=check(production.ok()&&production.manufacturingMesh->featureIdentities.size()==2&&
+                production.diagnostic.contains(QStringLiteral("2.186 mm + 0.000 mm = 2.186 mm"))&&
+                production.diagnostic.contains(QStringLiteral("5.150 mm"))&&
+                production.diagnostic.contains(QStringLiteral("1.800 mm"))&&
+                same(prepared.mesh,before)&&sameSource(source.mesh.triangles,sourceBefore),
+                "real profile composes nominal-equivalent arrestors with the independently certified stud: "+production.diagnostic);
+            if(production.ok()){
+                const QString path=QDir(args[outputAt+1]).filePath(
+                    QStringLiteral("76385-click-hinge-parallel-manufacturing.3mf"));
+                ok&=check(ManufacturingMeshDiagnosticExporter::writeThreeMf(*production.manufacturingMesh,
+                    path,1.0,QColor("#A0A5A9"),&error),"76385 ManufacturingMesh 3MF export: "+error);
+                if(QFileInfo::exists(path)){
+                    Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();
+                    model->QueryReader("3mf")->ReadFromFile(path.toStdString());
+                    auto objects=model->GetMeshObjects();
+                    ok&=check(objects->MoveNext()&&objects->GetCurrentMeshObject()->GetTriangleCount()==
+                        production.manufacturingMesh->mesh.faces.size(),"76385 proof 3MF reopens");
+                }
+                QTextStream(stdout)<<"clickProfile="<<actual.profileIdentity
+                    <<" correction="<<(selected?selected->valueMillimetres:0.0)
+                    <<" diagnostic="<<production.diagnostic<<" path="<<path<<Qt::endl;
+            }
+        }
+    }
+    return ok;
+}
+
+int main(int argc,char**argv){QCoreApplication app(argc,argv);if(app.arguments().contains(QStringLiteral("--click-only")))return clickProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--interleaved-only")))return interleavedProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--hinge-only")))return hingeProductionProof(app.arguments())?0:1;bool ok=true;LDrawGeometry::LDrawLoadResult source;source.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>();PreparedMesh nominal;nominal.mesh=box();nominal.partReference="3700";nominal.ldrawIdentity="parts/3700.dat";nominal.preparationProfileVersion="profile-v1";nominal.mcutVersion="mcut-v1";const qsizetype sourceTriangleCount=source.mesh.triangles.size();const auto preparedBefore=nominal.mesh;ManufacturingMeshService service([]{return std::make_unique<ProofBoolean>();},[](const auto&){return semantic();});
 auto p=profile();QString selectionReason;const auto*selectedCorrection=ManufacturingMeshService::compatibleCorrection(p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,&selectionReason);ok&=check(selectedCorrection&&std::abs(selectedCorrection->valueMillimetres-.2)<1e-9,"explicit per-export profile selection resolves the profile correction");ok&=check(!ManufacturingMeshService::compatibleCorrection(p,FitPrintedOrientation::FeatureAxisParallelToBuildPlate),"incompatible orientation cannot be selected for compensated export");const auto result=service.generate(source,nominal,p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(result.ok(),"compatible Verified profile produces ManufacturingMesh");if(result.ok()){const auto&m=*result.manufacturingMesh;ok&=check(std::abs(m.nominalDiameterMillimetres-4.8)<1e-9&&std::abs(m.diameterCorrectionMillimetres-.2)<1e-9&&std::abs(m.manufacturingDiameterMillimetres-5.0)<1e-9,"profile diameter correction enters semantic regeneration");ok&=check(!same(m.mesh,nominal.mesh)&&same(nominal.mesh,preparedBefore)&&source.mesh.triangles.size()==sourceTriangleCount,"Source and Prepared remain unchanged while ManufacturingMesh is distinct");ok&=check(m.fitProfileIdentity==p.profileIdentity&&m.sourceSessionIdentity==p.sourceSessionIdentity&&!m.identity.isEmpty(),"manufacturing provenance links profile and evidence");QTextStream(stdout)<<"Part 3700 proof: profile="<<m.fitProfileIdentity<<" nominalDiameter="<<m.nominalDiameterMillimetres<<" correction="<<m.diameterCorrectionMillimetres<<" manufacturingDiameter="<<m.manufacturingDiameterMillimetres<<" manufacturingIdentity="<<m.identity<<Qt::endl;const auto passage=analyzeSource(ProofBoolean::lastPassage);ok&=check(std::abs((passage.bounds.maximum.x-passage.bounds.minimum.x)-6.0)<1e-9,"protected entrance geometry remains nominal");const auto repeated=service.generate(source,nominal,p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(repeated.ok()&&repeated.manufacturingMesh->identity==m.identity&&same(repeated.manufacturingMesh->mesh,m.mesh),"generation deterministic");auto changed=profile(.1);changed.profileIdentity="other-profile";const auto other=service.generate(source,nominal,changed,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(other.ok()&&other.manufacturingMesh->identity!=m.identity&&std::abs(other.manufacturingMesh->manufacturingDiameterMillimetres-4.9)<1e-9,"correction and identity come from selected profile");QTemporaryDir output;const QString exportPath=output.filePath("manufacturing.3mf");QString exportError;ok&=check(ManufacturingMeshDiagnosticExporter::writeThreeMf(m,exportPath,1.0,QColor("#0055BF"),&exportError),QStringLiteral("diagnostic ManufacturingMesh export: %1").arg(exportError));if(QFileInfo::exists(exportPath)){Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();model->QueryReader("3mf")->ReadFromFile(exportPath.toStdString());auto meshes=model->GetMeshObjects();ok&=check(meshes->MoveNext(),"diagnostic 3MF contains a mesh");if(meshes->GetCurrentMeshObject()){const auto exported=meshes->GetCurrentMeshObject();ok&=check(exported->GetTriangleCount()==m.mesh.faces.size(),"diagnostic export contains ManufacturingMesh triangle data");ok&=check(std::abs(exported->GetVertex(1).m_Coordinates[0]-m.mesh.vertices[1].x)<1e-6&&std::abs(exported->GetVertex(1).m_Coordinates[0]-nominal.mesh.vertices[1].x)>1e-6,"diagnostic export uses ManufacturingMesh rather than nominal Prepared Mesh");}}}
 const auto disabled=AutoFitProfileResolver::resolve(false,"3700",{p},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(disabled.state==AutoFitResolutionState::Disabled&&!disabled.resolved(),"Auto Fit defaults to nominal when disabled");const auto unique=AutoFitProfileResolver::resolve(true,"3700",{p},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(unique.resolved()&&unique.profile.profileIdentity==p.profileIdentity,"Auto Fit deterministically resolves one compatible Verified profile");const auto none=AutoFitProfileResolver::resolve(true,"3700",{},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(none.state==AutoFitResolutionState::NoCompatibleProfile,"Auto Fit safely keeps nominal geometry without a compatible profile");auto second=profile(.1);second.profileIdentity="second-profile";const auto ambiguous=AutoFitProfileResolver::resolve(true,"3700",{p,second},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(ambiguous.state==AutoFitResolutionState::Ambiguous&&!ambiguous.resolved(),"Auto Fit refuses ambiguous compatible profiles");auto staleAuto=p;staleAuto.corrections.front().semanticContractVersion="stale";auto draftAuto=p;draftAuto.verificationState=FitEvidenceState::Draft;const auto invalid=AutoFitProfileResolver::resolve(true,"3700",{staleAuto,draftAuto},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(invalid.state==AutoFitResolutionState::NoCompatibleProfile,"Auto Fit rejects stale and non-Verified profiles");
 PrintOrientation nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative;xPositive.rotate(PrintOrientation::Rotation::XPositive);xNegative.rotate(PrintOrientation::Rotation::XNegative);yPositive.rotate(PrintOrientation::Rotation::YPositive);yNegative.rotate(PrintOrientation::Rotation::YNegative);zPositive.rotate(PrintOrientation::Rotation::ZPositive);zNegative.rotate(PrintOrientation::Rotation::ZNegative);const auto zAxisFeature=feature();ok&=check(ManufacturingMeshService::transformedOrientation(zAxisFeature,nominalOrientation)==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,xPositive)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,xNegative)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,yPositive)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,yNegative)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,zPositive)==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,zNegative)==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,"identity and X/Y/Z +/-90 classify transformed feature axes against the build plate");
