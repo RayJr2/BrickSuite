@@ -154,13 +154,14 @@ int main(int argc,char** argv) {
         std::abs(boreFirst-boreLast)<.03,
         "protected 1.60 mm hollow-pin bore remains nominal across the OD range");
     QTextStream(stdout)<<"hingeProtectedBore="<<boreFirst<<','<<boreNominal<<','<<boreLast<<Qt::endl;
-    static constexpr int masks[7]={0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07};
-    const Point probes[7]={{0,1.46,0},{.72,.8,0},{.72,-.68,0},
-        {0,-1.27,0},{-.72,-.68,0},{-.72,.8,0},{0,0,0}};
-    for(int i=0;i<7;++i)for(int bit=0;bit<7;++bit) {
-        const bool raised=topHit(artifact.candidateMeshes[i],probes[bit].x,probes[bit].y)>8.45;
-        ok&=check(raised==bool(masks[i]&(1<<bit)),
-            QStringLiteral("candidate %1 has its unique exterior numeral segment %2").arg(i+1).arg(bit));
+    for(int i=0;i<7;++i)for(int dot=0;dot<8;++dot) {
+        const double x=dot%2==0?-.82:.82;
+        const double y=-(2.4-1.6*(dot/2));
+        const double top=topHit(artifact.candidateMeshes[i],x,y);
+        const bool raised=top>8.70;
+        ok&=check(raised==(dot<=i),
+            QStringLiteral("candidate %1 has exactly its first %2 robust exterior dots (slot %3 top %4)")
+                .arg(i+1).arg(i+1).arg(dot+1).arg(top));
     }
     const auto experiment=PinBarrelHingeCalibrationArtifact::observationTemplate(artifact);
     ok&=check(experiment.featureFamily==QStringLiteral("PinBarrelHinge")&&
@@ -192,7 +193,25 @@ int main(int argc,char** argv) {
             Lib3MF::CWrapper wrapper;
             auto model=wrapper.CreateModel();
             model->QueryReader("3mf")->ReadFromFile(modelPath.toStdString());
-            ok&=check(model->GetMeshObjects()->Count()==7,"3MF reopens with seven numbered objects");
+            auto objects=model->GetMeshObjects();
+            ok&=check(objects->Count()==7,"3MF reopens with seven dot-marked objects");
+            for(int candidate=0;candidate<7&&objects->MoveNext();++candidate) {
+                const auto object=objects->GetCurrentMeshObject();
+                for(int dot=0;dot<8;++dot) {
+                    const double x=(dot%2==0?-.82:.82)+10.0+20.0*(candidate%4);
+                    const double y=-(2.4-1.6*(dot/2))+9.0+20.0*(candidate/4);
+                    bool raised=false;
+                    for(Lib3MF_uint32 vertex=0;vertex<object->GetVertexCount();++vertex) {
+                        const auto p=object->GetVertex(vertex);
+                        if(p.m_Coordinates[2]>8.70&&
+                           std::hypot(p.m_Coordinates[0]-x,p.m_Coordinates[1]-y)<.65) {
+                            raised=true;break;
+                        }
+                    }
+                    ok&=check(raised==(dot<=candidate),QStringLiteral("exported pin hinge candidate %1 dot %2")
+                        .arg(candidate+1).arg(dot+1));
+                }
+            }
         } catch(const std::exception& exception) {
             ok&=check(false,QStringLiteral("3MF reopening failed: %1").arg(QString::fromUtf8(exception.what())));
         }

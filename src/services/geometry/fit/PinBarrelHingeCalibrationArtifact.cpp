@@ -1,4 +1,5 @@
 #include "PinBarrelHingeCalibrationArtifact.h"
+#include "HingeCalibrationDotMarker.h"
 
 #include "../print/PinBarrelHingeSemantic.h"
 #include "../print/McutMeshBooleanService.h"
@@ -32,22 +33,6 @@ PrintMesh box(double x0,double x1,double y0,double y1,double z0,double z1) {
     m.faces={{0,2,1},{0,3,2},{4,5,6},{4,6,7},{0,1,5},{0,5,4},
              {1,2,6},{1,6,5},{2,3,7},{2,7,6},{3,0,4},{3,4,7}};
     return m;
-}
-std::vector<PrintMesh> numeral(int number) {
-    static constexpr int masks[7]={0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07};
-    const int mask=masks[number-1];
-    std::vector<PrintMesh> strokes;
-    auto stroke=[&](int bit,double x0,double x1,double z0,double z1) {
-        if(mask&(1<<bit))strokes.push_back(box(x0,x1,4.22,4.58,z0,z1));
-    };
-    stroke(0,-.9,.9,-1.65,-1.27);
-    stroke(1,.52,.9,-1.43,-.18);
-    stroke(2,.52,.9,.05,1.30);
-    stroke(3,-.9,.9,1.08,1.46);
-    stroke(4,-.9,-.52,.05,1.30);
-    stroke(5,-.9,-.52,-1.43,-.18);
-    stroke(6,-.9,.9,-.18,.20);
-    return strokes;
 }
 } // namespace
 
@@ -125,20 +110,20 @@ PinBarrelHingeCalibrationResult PinBarrelHingeCalibrationArtifact::generate(
                 .arg(i+1).arg(solidified.diagnostic);return result;
         }
         PrintMesh prepared=std::move(solidified.mesh);
-        // The central exterior tab and number are outside both pin contact
+        // The central exterior pad and dots are outside both pin contact
         // surfaces, their protected bores, and the mating barrel shoulders.
         McutMeshBooleanService boolean;
-        PrintMesh label=box(-1.35,1.35,3.73,4.28,-2.0,1.8);
-        for(const auto& stroke:numeral(i+1)) {
-            const auto joined=boolean.unite(label,stroke);
+        PrintMesh label=box(-1.55,1.55,3.73,4.28,-3.2,3.2);
+        for(const auto& dot:HingeCalibrationDotMarker::dots(i+1,0.0,0.0,4.28)) {
+            const auto joined=boolean.unite(label,dot);
             if(!joined.ok()||!validatePreparedMesh(joined.resultAnalysis).ok()) {
-                result.diagnostic=QStringLiteral("Candidate %1 numeral could not be joined.").arg(i+1);return result;
+                result.diagnostic=QStringLiteral("Candidate %1 dots could not be joined.").arg(i+1);return result;
             }
             label=joined.mesh;
         }
         const auto marked=boolean.unite(prepared,label);
         if(!marked.ok()||!validatePreparedMesh(marked.resultAnalysis).ok()) {
-            result.diagnostic=QStringLiteral("Candidate %1 label tab could not be joined: %2")
+            result.diagnostic=QStringLiteral("Candidate %1 marker pad could not be joined: %2")
                 .arg(i+1).arg(QString::fromStdString(marked.message));return result;
         }
         prepared=marked.mesh;
@@ -176,7 +161,7 @@ FitCalibrationExperiment PinBarrelHingeCalibrationArtifact::observationTemplate(
     e.hasRegenerationPrototype=true;
     e.candidates=result.candidates;
     e.process.actualPrintedOrientation=input.orientation;
-    e.process.orientationNotes=QStringLiteral("Print each numbered 3938 hinge top on its long exterior plate side at 100% scale, with both pin axes parallel to the build plate. Keep supports away from the two pin cylinders and protected bores. Snap each candidate into the same genuine LEGO 3937 base repeatedly; record assembly force, smooth rotation, retained alignment, binding, play, removal force, wear and repeatability. Candidate #4 is nominal. This first contract varies only the paired male pin OD; the real barrel remains the fixed reference.");
+    e.process.orientationNotes=QStringLiteral("Print each dot-marked 3938 hinge top on its long exterior plate side at 100% scale, with both pin axes parallel to the build plate. Keep supports away from the two pin cylinders and protected bores. Snap each candidate into the same genuine LEGO 3937 base repeatedly; record assembly force, smooth rotation, retained alignment, binding, play, removal force, wear and repeatability. Four dots (Candidate #4) is nominal. This first contract varies only the paired male pin OD; the real barrel remains the fixed reference.");
     e.process.dimensionalCompensationNotes=QStringLiteral("Record actual slicer dimensional compensation settings before testing.");
     return e;
 }

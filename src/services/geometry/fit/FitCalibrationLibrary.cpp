@@ -669,6 +669,10 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
         fail(error, "The certified Pin / Barrel Hinge fixture currently supports only the parallel print orientation."); return false;
     }
+    if (experiment.featureFamily == QStringLiteral("InterleavedFingerHinge") &&
+        session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
+        fail(error, "The certified Interleaved-Finger Hinge fixture currently supports only the parallel print orientation."); return false;
+    }
     if (experiment.featureFamily == QStringLiteral("CClipBarReceiver") &&
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
@@ -720,6 +724,9 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
     } else if (experiment.featureFamily == QStringLiteral("PinBarrelHinge")) {
         correction.semantics = QStringLiteral("male-pin-barrel-hinge-pin-od");
         correction.correctionContractVersion = QStringLiteral("male-pin-barrel-hinge-pin-od-v1");
+    } else if (experiment.featureFamily == QStringLiteral("InterleavedFingerHinge")) {
+        correction.semantics = QStringLiteral("male-interleaved-finger-contact-bump-protrusion");
+        correction.correctionContractVersion = QStringLiteral("male-interleaved-finger-contact-bump-protrusion-v1");
     } else if (experiment.featureFamily == QStringLiteral("FrictionlessTechnicPin")) {
         correction.semantics = QStringLiteral("male-frictionless-technic-pin-envelope-diameter");
         correction.correctionContractVersion = QStringLiteral("male-frictionless-technic-pin-envelope-diameter-v1");
@@ -831,6 +838,14 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-3937-3938-rotating-pair-v1")
             && correction.semantics == QStringLiteral("male-pin-barrel-hinge-pin-od")
             && correction.correctionContractVersion == QStringLiteral("male-pin-barrel-hinge-pin-od-v1");
+        // Calibration evidence is importable, but no production regenerator
+        // selects or applies this new family until physical verification.
+        const bool interleavedFingerHinge = correction.featureFamily == QStringLiteral("InterleavedFingerHinge")
+            && correction.featureRole == QStringLiteral("male")
+            && correction.printedOrientation == QStringLiteral("feature-axis-parallel-to-build-plate")
+            && correction.semanticContractVersion == QStringLiteral("official-ldraw-h1-h2-interleaved-finger-v1")
+            && correction.semantics == QStringLiteral("male-interleaved-finger-contact-bump-protrusion")
+            && correction.correctionContractVersion == QStringLiteral("male-interleaved-finger-contact-bump-protrusion-v1");
         const bool frictionPin = correction.featureFamily == QStringLiteral("FrictionTechnicPin")
             && correction.featureRole == QStringLiteral("male")
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-confric5-friction-pin-v1")
@@ -851,7 +866,7 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-axlehole-arm-width-clearance-v2")
             && correction.semantics == QStringLiteral("female-technic-axle-hole-arm-width-clearance")
             && correction.correctionContractVersion == QStringLiteral("female-technic-axle-hole-arm-width-clearance-v2");
-        if (!roundPassage && !standardStud && !receivingClutch && !standardBar && !cClip && !ballJoint && !ballSocket && !pinBarrelHinge && !frictionlessPin && !frictionPin && !technicAxle && !technicAxleHole && !technicAxleHoleArmWidth) { fail(reason, "The functional semantic or correction interpretation contract has changed."); return false; }
+        if (!roundPassage && !standardStud && !receivingClutch && !standardBar && !cClip && !ballJoint && !ballSocket && !pinBarrelHinge && !interleavedFingerHinge && !frictionlessPin && !frictionPin && !technicAxle && !technicAxleHole && !technicAxleHoleArmWidth) { fail(reason, "The functional semantic or correction interpretation contract has changed."); return false; }
         if (correction.regeneratorAlgorithmVersion != currentRegeneratorAlgorithmVersion()) { fail(reason, "The functional regenerator version has changed."); return false; }
         if (correction.printedOrientation == "unknown" || correction.printedOrientation == "other-unsupported") { fail(reason, "The calibrated print orientation is unsupported."); return false; }
     }
