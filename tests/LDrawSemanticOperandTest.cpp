@@ -6,6 +6,7 @@
 #include "../src/services/geometry/print/CClipBarReceiverSemantic.h"
 #include "../src/services/geometry/print/BallJointSemantic.h"
 #include "../src/services/geometry/print/BallSocketSemantic.h"
+#include "../src/services/geometry/print/PinBarrelHingeSemantic.h"
 #include "../src/services/geometry/LDrawLibraryService.h"
 #include "../src/ui/parts/PreparedMeshRenderAdapter.h"
 
@@ -99,6 +100,7 @@ int main(int argc,char**argv)
     QDir().mkpath(output);
     auto cache=std::make_shared<PrintPreparationCache>();
     LDrawPrintPreparationService service(cache);
+    if(!args.contains(QStringLiteral("--hinge-only"))) {
     for(const QString& id:{QStringLiteral("14417"),QStringLiteral("22484"),QStringLiteral("22890"),
                           QStringLiteral("14418"),QStringLiteral("14419"),QStringLiteral("14704"),
                           QStringLiteral("23922"),QStringLiteral("63082"),QStringLiteral("98263"),
@@ -350,6 +352,44 @@ int main(int argc,char**argv)
             <<" totalMs="<<result.timings.totalMilliseconds
             <<" cacheHitUs="<<hitMicros
             <<" cacheBytes="<<cache->statistics().approximateBytes<<Qt::endl;
+    }
+    }
+    for(const QString& id:{QStringLiteral("3937"),QStringLiteral("3938"),
+                           QStringLiteral("4275a"),QStringLiteral("4276a"),
+                           QStringLiteral("30364"),QStringLiteral("3700")}) {
+        const auto loaded=LDrawLibraryService::loadPart(args[libraryAt+1],id);
+        ok&=check(loaded.ok(),id+" hinge control loads");
+        if(!loaded.ok())continue;
+        const auto hinges=PinBarrelHingeSemantic::recognize(loaded);
+        if(id==QStringLiteral("3938"))for(const auto& ref:loaded.sourceModel->references)
+            if(ref.parentId<=2||ref.parentId==18||ref.parentId==46)QTextStream(stdout)<<"hingeRef "<<ref.id<<" parent="<<ref.parentId
+                <<" path="<<loaded.sourceModel->files[ref.fileId].relativePath<<Qt::endl;
+        const auto hingeAnalysis=LDrawSemanticOperandBuilder::build(loaded).sourceAnalysis;
+        QTextStream(stdout)<<"hinge "<<id<<" recognized="<<hinges.size()
+            <<" triangles="<<hingeAnalysis.triangles<<" components="<<hingeAnalysis.connectedComponents
+            <<" boundaries="<<hingeAnalysis.boundaryEdges<<" dimensions="
+            <<hingeAnalysis.bounds.maximum.x-hingeAnalysis.bounds.minimum.x<<','
+            <<hingeAnalysis.bounds.maximum.y-hingeAnalysis.bounds.minimum.y<<','
+            <<hingeAnalysis.bounds.maximum.z-hingeAnalysis.bounds.minimum.z<<Qt::endl;
+        const bool positive=id==QStringLiteral("3937")||id==QStringLiteral("3938");
+        ok&=check(hinges.size()==(positive?2:0),id+" pin/barrel ancestry and paired contacts");
+        if(positive) {
+            PrintPreparationRequest request;
+            request.partReference=id;
+            request.ldrawIdentity=id;
+            request.libraryAuthority=args[libraryAt+1];
+            request.loadResult=loaded;
+            const auto prepared=service.prepare(request);
+            QTextStream(stdout)<<"hinge "<<id<<" prepared="<<prepared.ready()
+                <<" diagnostic="<<prepared.diagnostic<<Qt::endl;
+            ok&=check(prepared.ready(),id+" nominal hinge preparation");
+            if(prepared.ready()) {
+                int retained=0;
+                for(const auto& f:prepared.preparedMesh->functionalFeatures)
+                    retained+=f.family==FunctionalInterfaceFamily::PinBarrelHinge;
+                ok&=check(retained==2,id+" retains both source-owned hinge contacts");
+            }
+        }
     }
     return ok?0:1;
 }

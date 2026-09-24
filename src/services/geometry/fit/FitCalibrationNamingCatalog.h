@@ -9,7 +9,7 @@ namespace PrintGeometry {
 enum class FitCalibrationNameKey {
     RoundPassagePerpendicular, RoundPassageParallel, StudOd, StudHeight,
     ClutchTubeWall, ClutchPostWall, ClutchWallPocketBrick, ClutchWallPocketPlate, ClutchAntiStudBore, FrictionlessPin, FrictionPin,
-    AxleTip, AxleHoleArmWidth, LegacyAxleHoleTip, BarDiameter, CClipBarReceiverClearance, CClipBarReceiverClearanceParallel, BallJointDiameter, BallJointDiameterParallel, BallSocketContactThroatParallel
+    AxleTip, AxleHoleArmWidth, LegacyAxleHoleTip, BarDiameter, CClipBarReceiverClearance, CClipBarReceiverClearanceParallel, BallJointDiameter, BallJointDiameterParallel, BallSocketContactThroatParallel, PinBarrelHingeDiameterParallel
 };
 
 struct FitCalibrationName {
@@ -21,7 +21,7 @@ struct FitCalibrationName {
 
 class FitCalibrationNamingCatalog {
 public:
-    static constexpr std::array<FitCalibrationName, 20> entries() {
+    static constexpr std::array<FitCalibrationName, 21> entries() {
         return {{{FitCalibrationNameKey::RoundPassagePerpendicular, "Technic Hole — Round Passage — Perpendicular", "TH-R-PERP", "technic-hole-round-perpendicular"},
                  {FitCalibrationNameKey::RoundPassageParallel, "Technic Hole — Round Passage — Parallel", "TH-R-PAR", "technic-hole-round-parallel"},
                  {FitCalibrationNameKey::StudOd, "Standard Stud — OD — Perpendicular", "STUD-OD-PERP", "standard-stud-od-perpendicular"},
@@ -41,7 +41,8 @@ public:
                  {FitCalibrationNameKey::CClipBarReceiverClearanceParallel, "C-Clip / Bar Receiver — Clearance — Parallel", "CLIP-BAR-PAR", "c-clip-bar-receiver-clearance-parallel"},
                  {FitCalibrationNameKey::BallJointDiameter, "Ball Joint — Diameter — Perpendicular", "BALL-OD-PERP", "ball-joint-diameter-perpendicular"},
                  {FitCalibrationNameKey::BallJointDiameterParallel, "Ball Joint — Diameter — Parallel", "BALL-OD-PAR", "ball-joint-diameter-parallel"},
-                 {FitCalibrationNameKey::BallSocketContactThroatParallel, "Ball Socket — Contact and Throat — Parallel", "BALL-SOCKET-PAR", "ball-socket-contact-throat-parallel"}}};
+                 {FitCalibrationNameKey::BallSocketContactThroatParallel, "Ball Socket — Contact and Throat — Parallel", "BALL-SOCKET-PAR", "ball-socket-contact-throat-parallel"},
+                 {FitCalibrationNameKey::PinBarrelHingeDiameterParallel, "Pin / Barrel Hinge — Male Pin OD — Parallel", "HINGE-PIN-PAR", "pin-barrel-hinge-male-pin-diameter-parallel"}}};
     }
     static FitCalibrationName forKey(FitCalibrationNameKey key) {
         for (const auto& item : entries()) if (item.key == key) return item;
@@ -81,6 +82,8 @@ public:
                 ? FitCalibrationNameKey::BallJointDiameterParallel : FitCalibrationNameKey::BallJointDiameter;
         if (experiment.featureFamily == QStringLiteral("BallSocket"))
             return FitCalibrationNameKey::BallSocketContactThroatParallel;
+        if (experiment.featureFamily == QStringLiteral("PinBarrelHinge"))
+            return FitCalibrationNameKey::PinBarrelHingeDiameterParallel;
         if (experiment.featureFamily == QStringLiteral("FrictionTechnicPin")) return FitCalibrationNameKey::FrictionPin;
         if (experiment.featureFamily == QStringLiteral("TechnicAxle")) return FitCalibrationNameKey::AxleTip;
         if (experiment.featureFamily == QStringLiteral("TechnicAxleHole"))
@@ -100,7 +103,8 @@ public:
             experiment.featureFamily != QStringLiteral("StandardBar") &&
             experiment.featureFamily != QStringLiteral("CClipBarReceiver") &&
             experiment.featureFamily != QStringLiteral("BallJoint") &&
-            experiment.featureFamily != QStringLiteral("BallSocket"))
+            experiment.featureFamily != QStringLiteral("BallSocket") &&
+            experiment.featureFamily != QStringLiteral("PinBarrelHinge"))
             return QStringLiteral("Unknown Calibration Feature — Orientation Unknown");
         const auto name = forKey(keyFor(experiment, orientation));
         QString result = QString::fromUtf8(name.canonical);

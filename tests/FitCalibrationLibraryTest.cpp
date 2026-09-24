@@ -65,13 +65,15 @@ int main(int argc, char** argv) {
                       !slugs.contains(slug), "canonical names, label abbreviations, and new-file slugs are unique");
         canonicalNames.insert(canonical); abbreviations.insert(abbreviated); slugs.insert(slug);
     }
-    ok &= require(canonicalNames.size() == 20 &&
+    ok &= require(canonicalNames.size() == 21 &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::BallJointDiameter).canonical)
                       .contains(QStringLiteral("Ball Joint")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::BallJointDiameterParallel).canonical)
                       .contains(QStringLiteral("Parallel")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::BallSocketContactThroatParallel).canonical)
                       .contains(QStringLiteral("Ball Socket")) &&
+                  QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::PinBarrelHingeDiameterParallel).canonical)
+                      .contains(QStringLiteral("Pin / Barrel Hinge")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::CClipBarReceiverClearance).canonical)
                       .contains(QStringLiteral("C-Clip / Bar Receiver")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::CClipBarReceiverClearanceParallel).canonical)
@@ -535,5 +537,20 @@ int main(int argc, char** argv) {
                   armWidthRoundTrip.corrections.front().hasFixedTipToTipCorrection &&
                   std::abs(armWidthRoundTrip.corrections.front().fixedTipToTipCorrectionMillimetres - .30) < 1e-9,
                   "female v2 fixed tip-to-tip calibration context survives Fit Profile JSON round trip");
+    auto hingeEvidence=profile;
+    FitProfileCorrection hingeCorrection;
+    hingeCorrection.featureFamily=QStringLiteral("PinBarrelHinge");
+    hingeCorrection.featureRole=QStringLiteral("male");
+    hingeCorrection.printedOrientation=QStringLiteral("feature-axis-parallel-to-build-plate");
+    hingeCorrection.semanticContractVersion=QStringLiteral("official-ldraw-3937-3938-rotating-pair-v1");
+    hingeCorrection.semantics=QStringLiteral("male-pin-barrel-hinge-pin-od");
+    hingeCorrection.correctionContractVersion=QStringLiteral("male-pin-barrel-hinge-pin-od-v1");
+    hingeCorrection.regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
+    hingeEvidence.corrections.push_back(hingeCorrection);
+    ok &= require(FitCalibrationLibrary::profileCompatibility(hingeEvidence,&error),
+                  "future Verified hinge evidence can coexist with completed fit families without enabling production correction");
+    hingeEvidence.corrections.back().printedOrientation=QStringLiteral("feature-axis-perpendicular-to-build-plate");
+    ok &= require(!FitCalibrationLibrary::profileCompatibility(hingeEvidence,&error),
+                  "unsupported hinge orientation cannot substitute for the parallel calibration contract");
     return ok ? 0 : 1;
 }
