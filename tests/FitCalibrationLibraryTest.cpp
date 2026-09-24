@@ -65,7 +65,9 @@ int main(int argc, char** argv) {
                       !slugs.contains(slug), "canonical names, label abbreviations, and new-file slugs are unique");
         canonicalNames.insert(canonical); abbreviations.insert(abbreviated); slugs.insert(slug);
     }
-    ok &= require(canonicalNames.size() == 21 &&
+    ok &= require(canonicalNames.size() == FitCalibrationNamingCatalog::entries().size() &&
+                  QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::RetainedWheelBearingPerpendicular).canonical)
+                      .contains(QStringLiteral("Retained Rotating Wheel")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::BallJointDiameter).canonical)
                       .contains(QStringLiteral("Ball Joint")) &&
                   QString::fromUtf8(FitCalibrationNamingCatalog::forKey(FitCalibrationNameKey::BallJointDiameterParallel).canonical)

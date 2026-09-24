@@ -9,7 +9,7 @@ namespace PrintGeometry {
 enum class FitCalibrationNameKey {
     RoundPassagePerpendicular, RoundPassageParallel, StudOd, StudHeight,
     ClutchTubeWall, ClutchPostWall, ClutchWallPocketBrick, ClutchWallPocketPlate, ClutchAntiStudBore, FrictionlessPin, FrictionPin,
-    AxleTip, AxleHoleArmWidth, LegacyAxleHoleTip, BarDiameter, CClipBarReceiverClearance, CClipBarReceiverClearanceParallel, BallJointDiameter, BallJointDiameterParallel, BallSocketContactThroatParallel, PinBarrelHingeDiameterParallel, InterleavedFingerHingeContactParallel, ClickHingeArrestorParallel
+    AxleTip, AxleHoleArmWidth, LegacyAxleHoleTip, BarDiameter, CClipBarReceiverClearance, CClipBarReceiverClearanceParallel, BallJointDiameter, BallJointDiameterParallel, BallSocketContactThroatParallel, PinBarrelHingeDiameterParallel, InterleavedFingerHingeContactParallel, ClickHingeArrestorParallel, RetainedWheelBearingPerpendicular
 };
 
 struct FitCalibrationName {
@@ -21,7 +21,7 @@ struct FitCalibrationName {
 
 class FitCalibrationNamingCatalog {
 public:
-    static constexpr std::array<FitCalibrationName, 23> entries() {
+    static constexpr std::array<FitCalibrationName, 24> entries() {
         return {{{FitCalibrationNameKey::RoundPassagePerpendicular, "Technic Hole — Round Passage — Perpendicular", "TH-R-PERP", "technic-hole-round-perpendicular"},
                  {FitCalibrationNameKey::RoundPassageParallel, "Technic Hole — Round Passage — Parallel", "TH-R-PAR", "technic-hole-round-parallel"},
                  {FitCalibrationNameKey::StudOd, "Standard Stud — OD — Perpendicular", "STUD-OD-PERP", "standard-stud-od-perpendicular"},
@@ -44,7 +44,8 @@ public:
                  {FitCalibrationNameKey::BallSocketContactThroatParallel, "Ball Socket — Contact and Throat — Parallel", "BALL-SOCKET-PAR", "ball-socket-contact-throat-parallel"},
                  {FitCalibrationNameKey::PinBarrelHingeDiameterParallel, "Pin / Barrel Hinge — Male Pin OD — Parallel", "HINGE-PIN-PAR", "pin-barrel-hinge-male-pin-diameter-parallel"},
                  {FitCalibrationNameKey::InterleavedFingerHingeContactParallel, "Interleaved-Finger Hinge — Contact Bump — Parallel", "HINGE-FINGER-PAR", "interleaved-finger-hinge-contact-bump-parallel"},
-                 {FitCalibrationNameKey::ClickHingeArrestorParallel, "Click Hinge — Arrestor Contact — Parallel", "HINGE-CLICK-PAR", "click-hinge-arrestor-contact-parallel"}}};
+                 {FitCalibrationNameKey::ClickHingeArrestorParallel, "Click Hinge — Arrestor Contact — Parallel", "HINGE-CLICK-PAR", "click-hinge-arrestor-contact-parallel"},
+                 {FitCalibrationNameKey::RetainedWheelBearingPerpendicular, "Retained Rotating Wheel — Notched Bearing / Retention — Perpendicular", "WHEEL-RET-PERP", "retained-wheel-bearing-retention-perpendicular"}}};
     }
     static FitCalibrationName forKey(FitCalibrationNameKey key) {
         for (const auto& item : entries()) if (item.key == key) return item;
@@ -90,6 +91,8 @@ public:
             return FitCalibrationNameKey::InterleavedFingerHingeContactParallel;
         if (experiment.featureFamily == QStringLiteral("ClickHinge"))
             return FitCalibrationNameKey::ClickHingeArrestorParallel;
+        if (experiment.featureFamily == QStringLiteral("RetainedRotatingWheel"))
+            return FitCalibrationNameKey::RetainedWheelBearingPerpendicular;
         if (experiment.featureFamily == QStringLiteral("FrictionTechnicPin")) return FitCalibrationNameKey::FrictionPin;
         if (experiment.featureFamily == QStringLiteral("TechnicAxle")) return FitCalibrationNameKey::AxleTip;
         if (experiment.featureFamily == QStringLiteral("TechnicAxleHole"))
@@ -112,7 +115,8 @@ public:
             experiment.featureFamily != QStringLiteral("BallSocket") &&
             experiment.featureFamily != QStringLiteral("PinBarrelHinge") &&
             experiment.featureFamily != QStringLiteral("InterleavedFingerHinge") &&
-            experiment.featureFamily != QStringLiteral("ClickHinge"))
+            experiment.featureFamily != QStringLiteral("ClickHinge") &&
+            experiment.featureFamily != QStringLiteral("RetainedRotatingWheel"))
             return QStringLiteral("Unknown Calibration Feature — Orientation Unknown");
         const auto name = forKey(keyFor(experiment, orientation));
         QString result = QString::fromUtf8(name.canonical);

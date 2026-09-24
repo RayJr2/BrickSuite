@@ -677,6 +677,10 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
         fail(error, "The certified clh1/clh4 Click Hinge fixture currently supports only the parallel print orientation."); return false;
     }
+    if (experiment.featureFamily == QStringLiteral("RetainedRotatingWheel") &&
+        session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate) {
+        fail(error, "The first certified notched wheel bearing fixture supports only perpendicular print orientation."); return false;
+    }
     if (experiment.featureFamily == QStringLiteral("CClipBarReceiver") &&
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate &&
         session.process.actualPrintedOrientation != FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
@@ -734,6 +738,9 @@ bool FitCalibrationLibrary::promoteVerifiedSession(const FitCalibrationSession& 
     } else if (experiment.featureFamily == QStringLiteral("ClickHinge")) {
         correction.semantics = QStringLiteral("male-click-hinge-arrestor-radial-reach");
         correction.correctionContractVersion = QStringLiteral("male-click-hinge-arrestor-radial-reach-v1");
+    } else if (experiment.featureFamily == QStringLiteral("RetainedRotatingWheel")) {
+        correction.semantics = QStringLiteral("female-retained-wheel-bearing-and-notch-clearance");
+        correction.correctionContractVersion = QStringLiteral("female-retained-wheel-bearing-and-notch-clearance-v1");
     } else if (experiment.featureFamily == QStringLiteral("FrictionlessTechnicPin")) {
         correction.semantics = QStringLiteral("male-frictionless-technic-pin-envelope-diameter");
         correction.correctionContractVersion = QStringLiteral("male-frictionless-technic-pin-envelope-diameter-v1");
@@ -858,6 +865,12 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-clh1-clh4-click-lock-v1")
             && correction.semantics == QStringLiteral("male-click-hinge-arrestor-radial-reach")
             && correction.correctionContractVersion == QStringLiteral("male-click-hinge-arrestor-radial-reach-v1");
+        const bool retainedWheel = correction.featureFamily == QStringLiteral("RetainedRotatingWheel")
+            && correction.featureRole == QStringLiteral("female")
+            && correction.printedOrientation == QStringLiteral("feature-axis-perpendicular-to-build-plate")
+            && correction.semanticContractVersion == QStringLiteral("official-ldraw-wpin2a-wpinhol2-retained-rotation-v1")
+            && correction.semantics == QStringLiteral("female-retained-wheel-bearing-and-notch-clearance")
+            && correction.correctionContractVersion == QStringLiteral("female-retained-wheel-bearing-and-notch-clearance-v1");
         const bool frictionPin = correction.featureFamily == QStringLiteral("FrictionTechnicPin")
             && correction.featureRole == QStringLiteral("male")
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-confric5-friction-pin-v1")
@@ -878,7 +891,7 @@ bool FitCalibrationLibrary::profileCompatibility(const FitProfile& profile, QStr
             && correction.semanticContractVersion == QStringLiteral("official-ldraw-axlehole-arm-width-clearance-v2")
             && correction.semantics == QStringLiteral("female-technic-axle-hole-arm-width-clearance")
             && correction.correctionContractVersion == QStringLiteral("female-technic-axle-hole-arm-width-clearance-v2");
-        if (!roundPassage && !standardStud && !receivingClutch && !standardBar && !cClip && !ballJoint && !ballSocket && !pinBarrelHinge && !interleavedFingerHinge && !clickHinge && !frictionlessPin && !frictionPin && !technicAxle && !technicAxleHole && !technicAxleHoleArmWidth) { fail(reason, "The functional semantic or correction interpretation contract has changed."); return false; }
+        if (!roundPassage && !standardStud && !receivingClutch && !standardBar && !cClip && !ballJoint && !ballSocket && !pinBarrelHinge && !interleavedFingerHinge && !clickHinge && !retainedWheel && !frictionlessPin && !frictionPin && !technicAxle && !technicAxleHole && !technicAxleHoleArmWidth) { fail(reason, "The functional semantic or correction interpretation contract has changed."); return false; }
         if (correction.regeneratorAlgorithmVersion != currentRegeneratorAlgorithmVersion()) { fail(reason, "The functional regenerator version has changed."); return false; }
         if (correction.printedOrientation == "unknown" || correction.printedOrientation == "other-unsupported") { fail(reason, "The calibrated print orientation is unsupported."); return false; }
     }
