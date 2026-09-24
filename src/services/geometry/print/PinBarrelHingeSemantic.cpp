@@ -1,16 +1,38 @@
 #include "PinBarrelHingeSemantic.h"
+#include "PrintMeshAnalysis.h"
 
 #include <QCryptographicHash>
 #include <cmath>
+#include <algorithm>
+#include <limits>
 
 namespace PrintGeometry { namespace {
 constexpr double MmPerLdu=.4;
 Point column(const std::array<double,12>& t,int c) { return {t[c]*MmPerLdu,t[8+c]*MmPerLdu,-t[4+c]*MmPerLdu}; }
 Point origin(const std::array<double,12>& t) { return {t[3]*MmPerLdu,t[11]*MmPerLdu,-t[7]*MmPerLdu}; }
 Point scaled(Point a,double s) { return {a.x*s,a.y*s,a.z*s}; }
+Point add(Point a,Point b) { return {a.x+b.x,a.y+b.y,a.z+b.z}; }
+Point subtract(Point a,Point b) { return {a.x-b.x,a.y-b.y,a.z-b.z}; }
 double dot(Point a,Point b) { return a.x*b.x+a.y*b.y+a.z*b.z; }
 double length(Point a) { return std::sqrt(dot(a,a)); }
 Point cross(Point a,Point b) { return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.y}; }
+Point converted(const QVector3D& p) { return {p.x()*MmPerLdu,p.z()*MmPerLdu,-p.y()*MmPerLdu}; }
+Point closest(Point p,Point a,Point b,Point c) {
+    const auto ab=subtract(b,a),ac=subtract(c,a),ap=subtract(p,a);
+    const double d1=dot(ab,ap),d2=dot(ac,ap);
+    if(d1<=0&&d2<=0)return a;
+    const auto bp=subtract(p,b);const double d3=dot(ab,bp),d4=dot(ac,bp);
+    if(d3>=0&&d4<=d3)return b;
+    const double vc=d1*d4-d3*d2;
+    if(vc<=0&&d1>=0&&d3<=0)return add(a,scaled(ab,d1/(d1-d3)));
+    const auto cp=subtract(p,c);const double d5=dot(ab,cp),d6=dot(ac,cp);
+    if(d6>=0&&d5<=d6)return c;
+    const double vb=d5*d2-d1*d6;
+    if(vb<=0&&d2>=0&&d6<=0)return add(a,scaled(ac,d2/(d2-d6)));
+    const double va=d3*d6-d5*d4;
+    if(va<=0&&d4-d3>=0&&d5-d6>=0){const auto bc=subtract(c,b);return add(b,scaled(bc,(d4-d3)/(d4-d3+d5-d6)));}
+    const double inv=1.0/(va+vb+vc);return add(a,add(scaled(ab,vb*inv),scaled(ac,vc*inv)));
+}
 QString path(const LDrawGeometry::LDrawSourceModel& model,const LDrawGeometry::ReferenceRecord& ref) {
     return ref.fileId>=0&&ref.fileId<model.files.size()?model.files[ref.fileId].relativePath.toLower():QString{};
 }
@@ -120,5 +142,79 @@ QVector<FunctionalFeature> PinBarrelHingeSemantic::recognize(const LDrawGeometry
         result.push_back(feature(model,model.references.front(),a,FunctionalInterfaceRole::Female));
     }
     return result.size()==2?result:QVector<FunctionalFeature>{};
+}
+
+bool PinBarrelHingeSemantic::adjustPrepared(const LDrawGeometry::LDrawLoadResult& source,
+    const PrintMesh& nominal,const FunctionalFeature& pin,double correction,
+    PrintMesh* adjusted,QString* diagnostic) {
+    if(!adjusted||!source.ok()||!source.sourceModel||nominal.faces.empty()||
+       pin.family!=FunctionalInterfaceFamily::PinBarrelHinge||pin.role!=FunctionalInterfaceRole::Male||
+       pin.constructionRecipe!=QStringLiteral("pin-barrel-hinge-hollow-pin-v1")||
+       pin.evidenceContract!=QStringLiteral("official-ldraw-3937-3938-rotating-pair-v1")||
+       pin.provenance.size()!=2||!std::isfinite(correction)||std::abs(correction)>.25||
+       1.6+correction*.5<=pin.protectedInnerRadiusMillimetres) {
+        if(diagnostic)*diagnostic=QStringLiteral("The certified hinge pin correction or source contract is invalid.");
+        return false;
+    }
+    const auto& model=*source.sourceModel;
+    const int owner=pin.provenance.back().referenceId;
+    if(owner<0||owner>=model.references.size()||path(model,model.references[owner])!=QStringLiteral("p/4-4cylo.dat")){
+        if(diagnostic)*diagnostic=QStringLiteral("The certified hinge pin exterior primitive is missing.");return false;
+    }
+    struct Triangle {Point a,b,c;};
+    QVector<Triangle> walls;
+    for(const auto& surface:model.surfaces)if(descendant(model,surface.referenceId,owner)) {
+        if(!surface.certified||surface.triangleIndex<0||surface.triangleIndex>=source.mesh.triangles.size()){
+            if(diagnostic)*diagnostic=QStringLiteral("The hinge pin exterior has uncertified source triangles.");return false;
+        }
+        const auto& t=source.mesh.triangles[surface.triangleIndex];
+        walls.push_back({converted(t.a),converted(t.b),converted(t.c)});
+    }
+    if(walls.size()<16){if(diagnostic)*diagnostic=QStringLiteral("Only %1 certified hinge exterior triangles were retained.").arg(walls.size());return false;}
+    if(correction==0.0){*adjusted=nominal;return true;}
+    struct Selection {std::size_t index;double distance;};
+    QVector<Selection> selected;
+    double measuredRadius=0;
+    for(std::size_t i=0;i<nominal.vertices.size();++i) {
+        const auto relative=subtract(nominal.vertices[i],pin.frame.origin);
+        const double axial=dot(relative,pin.frame.axis);
+        const auto radial=subtract(relative,scaled(pin.frame.axis,axial));
+        const double radius=length(radial);
+        if(axial<-.02||axial>pin.nominalAxialExtentMillimetres+.02||
+           std::abs(radius-pin.nominalRadiusMillimetres)>.12)continue;
+        double distance=std::numeric_limits<double>::max();
+        for(const auto& wall:walls)distance=std::min(distance,
+            length(subtract(nominal.vertices[i],closest(nominal.vertices[i],wall.a,wall.b,wall.c))));
+        if(distance>.12)continue;
+        selected.push_back({i,distance});
+        if(axial>.25&&axial<1.35)measuredRadius=std::max(measuredRadius,radius);
+    }
+    if(selected.size()<24||measuredRadius<1.45||measuredRadius>1.7) {
+        if(diagnostic)*diagnostic=QStringLiteral("The certified hinge pin exterior was not retained in PreparedMesh.");
+        return false;
+    }
+    *adjusted=nominal;
+    const double delta=pin.nominalRadiusMillimetres+correction*.5-measuredRadius;
+    const auto smooth=[](double x){x=std::clamp(x,0.0,1.0);return x*x*(3.0-2.0*x);};
+    for(const auto& selection:selected) {
+        auto& point=adjusted->vertices[selection.index];
+        const auto relative=subtract(point,pin.frame.origin);
+        const double axial=dot(relative,pin.frame.axis);
+        const auto radial=subtract(relative,scaled(pin.frame.axis,axial));
+        const double radius=length(radial);
+        const double weight=smooth(axial/.20)*smooth((pin.nominalAxialExtentMillimetres-axial)/.20)*
+            smooth((radius-1.43)/.12)*smooth((.12-selection.distance)/.10);
+        if(radius>1e-9)point=add(point,scaled(radial,delta*weight/radius));
+    }
+    const auto analysis=analyzeSource(*adjusted);
+    if(!validatePreparedMesh(analysis).ok()) {
+        if(diagnostic)*diagnostic=QStringLiteral("The adjusted hinge pin failed manifold validation: %1 boundary, %2 non-manifold, %3 self-intersections; %4 of %5 vertices selected, measured radius %6.")
+            .arg(analysis.boundaryEdges).arg(analysis.nonManifoldEdges).arg(analysis.selfIntersections)
+            .arg(selected.size()).arg(nominal.vertices.size()).arg(measuredRadius,0,'f',4);
+        return false;
+    }
+    if(diagnostic)*diagnostic=QStringLiteral("Certified hollow hinge pin exterior adjusted to %1 mm OD; 1.60 mm bore and attachment retained (%2 vertices).")
+        .arg(pin.nominalDiameterMillimetres+correction,0,'f',3).arg(selected.size());
+    return true;
 }
 }

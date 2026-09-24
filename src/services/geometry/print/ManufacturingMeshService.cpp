@@ -10,6 +10,7 @@
 #include "CClipBarReceiverSemantic.h"
 #include "BallJointSemantic.h"
 #include "BallSocketSemantic.h"
+#include "PinBarrelHingeSemantic.h"
 #include "StandardStudSourceSemantic.h"
 #include "FunctionalOperandRegenerator.h"
 #include "McutMeshBooleanService.h"
@@ -168,13 +169,18 @@ ManufacturingMeshCorrections ManufacturingMeshService::compatibleCorrections(con
                        "female-ball-socket-contact-and-throat-clearance",printedOrientation) &&
                correction.correctionContractVersion==QStringLiteral("female-ball-socket-contact-and-throat-clearance-v1"))
                 result.ballSocketClearance=&correction;
+    if(orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate)
+        for(const auto& correction:profile.corrections)
+            if(matches(correction,"PinBarrelHinge","male","male-pin-barrel-hinge-pin-od",printedOrientation) &&
+               correction.correctionContractVersion==QStringLiteral("male-pin-barrel-hinge-pin-od-v1"))
+                result.pinBarrelHingeDiameter=&correction;
     if(heightCandidate){if(!heightCandidate->hasRequiredDiameterCorrection)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction does not record its required Stud OD context and was not applied.");else if(!result.studDiameter)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction requires its matching Verified Stud OD correction and was not applied.");else if(std::abs(result.studDiameter->valueMillimetres-heightCandidate->requiredDiameterCorrectionMillimetres)>1e-9)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction was measured with a different Stud OD correction and was not applied.");else result.studHeight=heightCandidate;}
     if(reason)*reason=result.any()?(result.studHeightDiagnostic.isEmpty()?QStringLiteral("Compatible"):result.studHeightDiagnostic):(result.studHeightDiagnostic.isEmpty()?QStringLiteral("The selected profile has no compatible verified functional correction for this print orientation."):result.studHeightDiagnostic);return result;
 }
 
 const FitProfileCorrection* ManufacturingMeshService::compatibleCorrection(const FitProfile&profile,FitPrintedOrientation orientation,QString*reason)
 {
-    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.receivingAntiStudBoreDiameter,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth,corrections.standardBarDiameter,corrections.cClipClearance,corrections.ballJointDiameter,corrections.ballSocketClearance})if(candidate)return candidate;return nullptr;
+    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.receivingAntiStudBoreDiameter,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth,corrections.standardBarDiameter,corrections.cClipClearance,corrections.ballJointDiameter,corrections.ballSocketClearance,corrections.pinBarrelHingeDiameter})if(candidate)return candidate;return nullptr;
 }
 
 FitPrintedOrientation ManufacturingMeshService::transformedOrientation(const FunctionalFeature&feature,const PrintOrientation&printOrientation)
@@ -230,6 +236,16 @@ bool ManufacturingMeshService::hasApplicableCorrection(const FitProfile&profile,
             return true;
         }
     }
+    for(const auto& feature:PinBarrelHingeSemantic::recognize(source)) {
+        if(feature.role!=FunctionalInterfaceRole::Male)continue;
+        const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation));
+        if(corrections.pinBarrelHingeDiameter&&
+           corrections.pinBarrelHingeDiameter->semanticContractVersion==feature.evidenceContract) {
+            if(reason)*reason=QStringLiteral("Compatible Verified Pin / Barrel Hinge male-pin OD correction for feature %1 after Print Orientation %2.")
+                .arg(feature.stableIdentity,printOrientation.summary());
+            return true;
+        }
+    }
     if(reason)*reason=semanticReason;return false;
 }
 
@@ -240,7 +256,7 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
     // Localized, source-owned families share one mesh. Compose every applicable
     // correction and reject overlapping vertex ownership rather than returning
     // after the first family. Semantic operands are handled by the path below.
-    enum class SurfaceKind { Ball, Socket, Clip, Bar, Stud };
+    enum class SurfaceKind { Ball, Socket, Clip, Bar, HingePin, Stud };
     struct SurfaceFeature { FunctionalFeature feature; SurfaceKind kind; int owner=-1; };
     QVector<SurfaceFeature> surfaceFeatures;
     const auto retained=[&](const FunctionalFeature& feature){
@@ -259,6 +275,10 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
     const auto bars=StandardBarSemantic::recognize(source);
     if(bars.size()==1&&retained(bars.front()))
         surfaceFeatures.push_back({bars.front(),SurfaceKind::Bar,-1});
+    const auto hinges=PinBarrelHingeSemantic::recognize(source);
+    for(const auto& hinge:hinges)
+        if(hinge.role==FunctionalInterfaceRole::Male&&retained(hinge))
+            surfaceFeatures.push_back({hinge,SurfaceKind::HingePin,-1});
     if(prepared.preparationMethod.contains(QStringLiteral("source-surface"),Qt::CaseInsensitive)||
        !surfaceFeatures.isEmpty())
         for(const auto& stud:certifiedSourceStuds(source))
@@ -296,6 +316,7 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
             case SurfaceKind::Socket: primary=corrections.ballSocketClearance;break;
             case SurfaceKind::Clip: primary=corrections.cClipClearance;break;
             case SurfaceKind::Bar: primary=corrections.standardBarDiameter;break;
+            case SurfaceKind::HingePin: primary=corrections.pinBarrelHingeDiameter;break;
             case SurfaceKind::Stud: primary=corrections.studDiameter;height=corrections.studHeight;break;
             }
             if(primary&&primary->semanticContractVersion!=item.feature.evidenceContract)primary=nullptr;
@@ -320,6 +341,9 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
                     primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
             case SurfaceKind::Bar:
                 adjustedSuccessfully=StandardBarSemantic::adjustPrepared(source,adjusted,item.feature,
+                    primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
+            case SurfaceKind::HingePin:
+                adjustedSuccessfully=PinBarrelHingeSemantic::adjustPrepared(source,adjusted,item.feature,
                     primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
             case SurfaceKind::Stud:
                 adjustedSuccessfully=adjustCertifiedStud(source,adjusted,{item.feature,item.owner},
@@ -400,6 +424,8 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
             ?QStringLiteral("not-used-c-clip-source-surface-v1")
             :featureIdentities.size()==1&&firstKind==SurfaceKind::Bar
             ?QStringLiteral("not-used-standard-bar-source-surface-v1")
+            :featureIdentities.size()==1&&firstKind==SurfaceKind::HingePin
+            ?QStringLiteral("not-used-hinge-pin-source-surface-v1")
             :QStringLiteral("not-used-certified-source-surface-composition-v1");
         output->nominalDiameterMillimetres=nominalDiameter;
         output->diameterCorrectionMillimetres=diameterCorrection;
