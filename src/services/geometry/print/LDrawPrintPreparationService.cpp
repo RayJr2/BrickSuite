@@ -180,7 +180,26 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
                     }
                 }
                 timings.semanticConstructionMilliseconds+=phase.elapsed();if(solidified.successful){auto result=solidifiedResult(request,sourceAnalysis,std::move(solidified),semantic.coverage,timings,total.elapsed());if(result.ready())m_cache->insert(key,result.preparedMesh);return result;solidifierDiagnostic=result.diagnostic;}else if(solidifierDiagnostic.isEmpty())solidifierDiagnostic=solidified.diagnostic;}
-            auto error=mapSemanticError(semantic.status);auto rejected=failure(error,sourceAnalysis,request.profile.identity,semantic.diagnostics.join(' ')+(solidifierDiagnostic.isEmpty()?QString():QStringLiteral(" Bounded source-surface solidification: ")+solidifierDiagnostic));rejected.sourceCoverage=semantic.coverage;return rejected;}
+            // Intersection arrangement is diagnostic only after the existing
+            // safe fallback has failed. Successful semantic, local-composer,
+            // and source-surface routes never pay for an exploratory pass.
+            QStringList intersectionDiagnostics;
+            if(!m_semanticBuilder&&(!cancellation||!cancellation->isCancelled())&&
+               semantic.status==LDrawSemanticOperandBuilder::Status::OperandValidationFailed&&
+               semantic.semanticGroups>0&&semantic.semanticGroups<=6&&
+               semantic.diagnostics.contains(QStringLiteral("No independently closed body/cavity operand or certified round through-passage body was found."))){
+                const auto investigated=LDrawSemanticOperandBuilder::build(request.loadResult,
+                    [cancellation]{return cancellation&&cancellation->isCancelled();},true);
+                if(investigated.arrangementAttempted)
+                    for(const auto&message:investigated.diagnostics)
+                        if(message.contains(QStringLiteral("arrangement"),Qt::CaseInsensitive)||
+                           message.contains(QStringLiteral("Arranged source"),Qt::CaseInsensitive))
+                            intersectionDiagnostics.push_back(message);
+            }
+            auto error=mapSemanticError(semantic.status);auto rejected=failure(error,sourceAnalysis,request.profile.identity,
+                semantic.diagnostics.join(' ')+(solidifierDiagnostic.isEmpty()?QString():QStringLiteral(" Bounded source-surface solidification: ")+solidifierDiagnostic)+
+                (intersectionDiagnostics.isEmpty()?QString():QStringLiteral(" ")+intersectionDiagnostics.join(' ')));
+            rejected.sourceCoverage=semantic.coverage;return rejected;}
         if(!semantic.coverage.complete()){
             QStringList groups;for(int index:semantic.coverage.uncoveredGroups())groups<<QString::number(index);
             auto rejected=failure(PrintPreparationError::OperandValidationFailed,sourceAnalysis,request.profile.identity,

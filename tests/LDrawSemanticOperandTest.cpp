@@ -15,6 +15,7 @@
 #include <QElapsedTimer>
 #include <QTextStream>
 
+#include <algorithm>
 #include <cmath>
 
 using namespace PrintGeometry;
@@ -77,6 +78,68 @@ int main(int argc,char**argv)
     direction=boundaryAttachmentDirection(component,loop);
     ok&=check(direction.x<-.999,"rotated attachment direction");
 
+    LDrawGeometry::LDrawLoadResult crossing;
+    crossing.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>();
+    crossing.sourceModel->files={{0,"p/a.dat",LDrawGeometry::SourceClassification::Primitive},
+                                 {1,"p/b.dat",LDrawGeometry::SourceClassification::Primitive}};
+    crossing.sourceModel->references={{0,-1,0,1,{},false,false},{1,-1,1,1,{},false,false}};
+    auto addCrossingTriangle=[&](Point a,Point b,Point c,int owner){
+        LDrawGeometry::Triangle triangle;
+        triangle.a=sourcePoint(a);triangle.b=sourcePoint(b);triangle.c=sourcePoint(c);
+        triangle.color=QStringLiteral("16");
+        const int index=crossing.mesh.triangles.size();
+        crossing.mesh.triangles.push_back(triangle);
+        crossing.sourceModel->surfaces.push_back({index,owner,owner,1,3,true,true,false});
+    };
+    addCrossingTriangle({0,0,0},{2,0,0},{0,2,0},0);
+    addCrossingTriangle({1,-1,-1},{1,3,-1},{1,1,1},1);
+    const auto transverse=LDrawCertifiedInterfaceStitcher::arrangeIntersections(crossing);
+    ok&=check(transverse.bounded&&transverse.transversePairs==1&&
+              transverse.fragmentsAfter>transverse.fragmentsBefore,
+              "authored transverse intersection splits source triangles without creating a cap");
+    int parentCounts[2]={0,0};bool ancestryValid=true;
+    for(int i=0;i<transverse.stitchedTriangleForFragment.size();++i){
+        const int parent=transverse.stitchedTriangleForFragment[i];
+        ancestryValid&=parent>=0&&parent<2;
+        if(parent>=0&&parent<2){++parentCounts[parent];
+            ancestryValid&=transverse.loadResult.sourceModel->surfaces[i].referenceId==parent;
+            const auto&fragment=transverse.loadResult.mesh.triangles[i];
+            const auto&original=crossing.mesh.triangles[parent];
+            ancestryValid&=QVector3D::dotProduct(
+                QVector3D::crossProduct(fragment.b-fragment.a,fragment.c-fragment.a),
+                QVector3D::crossProduct(original.b-original.a,original.c-original.a))>0.0f;}
+    }
+    ok&=check(ancestryValid&&parentCounts[0]>1&&parentCounts[1]>1&&
+              crossing.mesh.triangles.size()==2&&crossing.sourceModel->surfaces.size()==2,
+              "each fragment retains exact source-reference ancestry and Source is immutable");
+    auto overlapping=crossing;
+    overlapping.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>(*crossing.sourceModel);
+    overlapping.mesh.triangles[1].a=sourcePoint({.5,.5,0});
+    overlapping.mesh.triangles[1].b=sourcePoint({1.5,.5,0});
+    overlapping.mesh.triangles[1].c=sourcePoint({.5,1.5,0});
+    const auto coplanar=LDrawCertifiedInterfaceStitcher::arrangeIntersections(overlapping);
+    ok&=check(coplanar.bounded&&coplanar.coplanarOverlapPairs==1&&
+              coplanar.fragmentsAfter>coplanar.fragmentsBefore,
+              "coplanar authored overlap boundaries are partitioned without choosing material ownership");
+    auto nearMiss=overlapping;
+    nearMiss.mesh.triangles[1].a.setY(nearMiss.mesh.triangles[1].a.y()+.01f);
+    nearMiss.mesh.triangles[1].b.setY(nearMiss.mesh.triangles[1].b.y()+.01f);
+    nearMiss.mesh.triangles[1].c.setY(nearMiss.mesh.triangles[1].c.y()+.01f);
+    const auto separate=LDrawCertifiedInterfaceStitcher::arrangeIntersections(nearMiss);
+    ok&=check(separate.bounded&&!separate.changed&&separate.transversePairs==0&&
+              separate.coplanarOverlapPairs==0,"nearby nonintersecting surfaces are never merged");
+    auto oversized=crossing;
+    oversized.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>(*crossing.sourceModel);
+    while(oversized.mesh.triangles.size()<=5000){
+        const int index=oversized.mesh.triangles.size();
+        oversized.mesh.triangles.push_back(crossing.mesh.triangles[0]);
+        oversized.sourceModel->surfaces.push_back({index,0,0,1,3,true,true,false});
+    }
+    const auto rejected=LDrawCertifiedInterfaceStitcher::arrangeIntersections(oversized);
+    ok&=check(!rejected.bounded&&!rejected.changed&&
+              rejected.loadResult.mesh.triangles.size()==oversized.mesh.triangles.size(),
+              "oversized intersection work rejects before splitting without changing Source");
+
     const auto validFixture=roundPassageFixture();const auto semantic=LDrawSemanticOperandBuilder::build(validFixture);
     ok&=check(semantic.ok(),"certified round through-passage recognized");
     ok&=check(std::count_if(semantic.operands.cbegin(),semantic.operands.cend(),[](const auto&o){return o.role==SemanticRole::SubtractivePassage&&o.feature==SemanticFeature::RoundThroughPassage;})==1,"round passage semantic identity retained");
@@ -106,6 +169,56 @@ int main(int argc,char**argv)
     const auto args=app.arguments();
     const int libraryAt=args.indexOf("--ldraw");
     if(libraryAt<0||libraryAt+1>=args.size())return ok?0:1;
+
+    if(args.contains(QStringLiteral("--arrangement-audit"))){
+        for(const QString& id:{QStringLiteral("6553"),QStringLiteral("32064a"),
+                               QStringLiteral("10113"),QStringLiteral("11399")}){
+            QElapsedTimer timer;timer.start();
+            const auto part=LDrawLibraryService::loadPart(args[libraryAt+1],id);
+            ok&=check(part.ok(),id+" arrangement corpus load");
+            if(!part.ok())continue;
+            const auto stitched=LDrawCertifiedInterfaceStitcher::stitch(part);
+            const auto arranged=LDrawCertifiedInterfaceStitcher::arrangeIntersections(stitched.loadResult);
+            if(id!=QStringLiteral("11399"))
+                ok&=check(arranged.bounded,id+" bounded intersection arrangement");
+            ok&=check(arranged.stitchedTriangleForFragment.size()==arranged.loadResult.mesh.triangles.size(),
+                      id+" complete fragment ancestry");
+            if(arranged.bounded){
+                QVector<bool> seen(stitched.loadResult.mesh.triangles.size(),false);
+                for(int parent:arranged.stitchedTriangleForFragment)
+                    if(parent>=0&&parent<seen.size())seen[parent]=true;
+                ok&=check(std::all_of(seen.cbegin(),seen.cend(),[](bool value){return value;}),
+                          id+" every certified stitched source triangle survives arrangement");
+            }
+            QTextStream(stdout)<<"arrangement part="<<id<<" stitched="<<stitched.loadResult.mesh.triangles.size()
+                <<" candidates="<<arranged.candidatePairs<<" transverse="<<arranged.transversePairs
+                <<" coplanar="<<arranged.coplanarOverlapPairs<<" fragments="<<arranged.fragmentsAfter
+                <<" bounded="<<arranged.bounded<<" elapsed-ms="<<timer.elapsed()
+                <<" diagnostic="<<arranged.diagnostic<<Qt::endl;
+            const auto ordinary=LDrawSemanticOperandBuilder::build(part);
+            ok&=check(!ordinary.arrangementAttempted,
+                      id+" normal semantic pass defers intersection diagnostics");
+            const auto semantic=LDrawSemanticOperandBuilder::build(part,{},true);
+            if(id!=QStringLiteral("11399"))
+                ok&=check(semantic.arrangementAttempted,id+" explicit bounded arrangement runs");
+            QTextStream(stdout)<<"semantic part="<<id<<" ready="<<semantic.ok()
+                <<" groups="<<semantic.semanticGroups<<" boundaryLoops="<<semantic.sourceBoundaryLoops
+                <<" represented="<<semantic.coverage.representedGroups()
+                <<" arrangedGroups="<<semantic.arrangementGroups
+                <<" arrangedBoundaryLoops="<<semantic.arrangementBoundaryLoops
+                <<" loopEdges="<<([&](){QStringList sizes;for(int edges:semantic.arrangementBoundaryLoopEdges)sizes<<QString::number(edges);return sizes.join(',');}())<<Qt::endl;
+            if(id==QStringLiteral("6553")){
+                PrintPreparationRequest request;
+                request.partReference=id;request.ldrawIdentity=QStringLiteral("parts/6553.dat");
+                request.libraryAuthority=args[libraryAt+1];request.loadResult=part;
+                const auto prepared=LDrawPrintPreparationService().prepare(request);
+                ok&=check(!prepared.ready()&&prepared.diagnostic.contains(QStringLiteral("Source intersection arrangement"))&&
+                          !prepared.sourceCoverage.complete(),
+                          "6553 service invokes diagnostics only after earlier safe routes fail and keeps Source Coverage rejection");
+            }
+        }
+        return ok?0:1;
+    }
 
     QString output=QDir::currentPath();
     const int outputAt=args.indexOf("--proof-dir");

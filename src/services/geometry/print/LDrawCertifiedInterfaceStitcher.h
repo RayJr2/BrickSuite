@@ -27,11 +27,29 @@ struct CertifiedInterfaceStitchResult {
     bool changed = false;
 };
 
+struct SurfaceIntersectionArrangement {
+    LDrawGeometry::LDrawLoadResult loadResult;
+    // Each fragment has exactly one authoritative stitched parent; a parent may
+    // own many fragments. The parent's SurfaceRecord retains reference ancestry.
+    QVector<int> stitchedTriangleForFragment;
+    int candidatePairs = 0;
+    int transversePairs = 0;
+    int coplanarOverlapPairs = 0;
+    int fragmentsBefore = 0;
+    int fragmentsAfter = 0;
+    bool bounded = true;
+    bool changed = false;
+    QString diagnostic;
+};
+
 class LDrawCertifiedInterfaceStitcher
 {
 public:
     static CertifiedInterfaceStitchResult stitch(
         const LDrawGeometry::LDrawLoadResult& source,
+        const LDrawPrintPreparationProfile& profile = {});
+    static SurfaceIntersectionArrangement arrangeIntersections(
+        const LDrawGeometry::LDrawLoadResult& stitched,
         const LDrawPrintPreparationProfile& profile = {});
 };
 

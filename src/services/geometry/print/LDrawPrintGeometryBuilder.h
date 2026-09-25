@@ -32,17 +32,27 @@ public:
         QVector<SemanticOperand> operands;
         QStringList diagnostics;
         int semanticGroups = 0;
+        int sourceBoundaryLoops = 0;
         int closureTriangles = 0;
         qsizetype approximateProvenanceBytes = 0;
         qint64 sourceConversionAnalysisMs = 0;
         qint64 semanticGenerationMs = 0;
         CertifiedInterfaceStitchDiagnostics stitchDiagnostics;
+        int arrangementTransversePairs = 0;
+        int arrangementCoplanarOverlapPairs = 0;
+        int arrangementFragments = 0;
+        int arrangementGroups = 0;
+        int arrangementBoundaryLoops = 0;
+        bool arrangementAttempted = false;
+        QVector<int> arrangementBoundaryLoopEdges;
+        bool arrangementBounded = true;
         SourceCoverage coverage;
         bool ok() const { return status == Status::Ready; }
     };
 
     static Result build(const LDrawGeometry::LDrawLoadResult& source,
-                        const std::function<bool()>& cancellationRequested = {});
+                        const std::function<bool()>& cancellationRequested = {},
+                        bool investigateIntersections = false);
 };
 
 } // namespace PrintGeometry

@@ -339,7 +339,7 @@ bool closeBodyToBallStem(Component c,int bodyLoop,PrintMesh*out,int*added)
 }
 }
 
-LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDrawGeometry::LDrawLoadResult&loaded,const std::function<bool()>&cancellationRequested)
+LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDrawGeometry::LDrawLoadResult&loaded,const std::function<bool()>&cancellationRequested,bool investigateIntersections)
 {
     Result r;if(!loaded.ok()||!loaded.sourceModel){r.diagnostics<<"No hierarchical LDraw source model is available.";return r;}const auto stitched=LDrawCertifiedInterfaceStitcher::stitch(loaded);const auto&effective=stitched.loadResult;r.stitchDiagnostics=stitched.diagnostics;r.diagnostics.append(stitched.diagnostics.messages);
     r.coverage.route=SourceCoverageRoute::SemanticOperands;
@@ -354,7 +354,7 @@ LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDr
     phase.restart();auto groups=components(r.source,infos);r.semanticGroups=int(groups.size());
     for(int i=0;i<int(groups.size());++i){r.coverage.groups.push_back({i,int(groups[i].sourceTriangles.size())});r.coverage.groupedTriangleCount+=int(groups[i].sourceTriangles.size());for(int triangle:groups[i].sourceTriangles)if(triangle>=0&&triangle<r.coverage.groupForStitchedTriangle.size())r.coverage.groupForStitchedTriangle[triangle]=i;}
     r.approximateProvenanceBytes=effective.sourceModel->files.size()*qsizetype(sizeof(LDrawGeometry::SourceFileRecord))+effective.sourceModel->references.size()*qsizetype(sizeof(LDrawGeometry::ReferenceRecord))+effective.sourceModel->surfaces.size()*qsizetype(sizeof(LDrawGeometry::SurfaceRecord));
-    if(groups.empty()||groups.size()>MaxGroups){r.status=Status::ResourceLimitExceeded;r.diagnostics<<"Semantic group limit was exceeded.";return r;}int loopCount=0;for(const auto&g:groups)loopCount+=int(g.loops.size());if(loopCount>MaxLoops){r.status=Status::ResourceLimitExceeded;r.diagnostics<<"Boundary loop limit was exceeded.";return r;}
+    if(groups.empty()||groups.size()>MaxGroups){r.status=Status::ResourceLimitExceeded;r.diagnostics<<"Semantic group limit was exceeded.";return r;}int loopCount=0;for(const auto&g:groups)loopCount+=int(g.loops.size());r.sourceBoundaryLoops=loopCount;if(loopCount>MaxLoops){r.status=Status::ResourceLimitExceeded;r.diagnostics<<"Boundary loop limit was exceeded.";return r;}
     auto certified=[&](const Component&g,QStringList*files){QSet<int>ids;for(int ti:g.sourceTriangles){if(ti<0||ti>=effective.sourceModel->surfaces.size())return false;const auto&s=effective.sourceModel->surfaces[ti];if(!s.certified)return false;ids.insert(s.fileId);}for(int id:ids){if(id<0||id>=effective.sourceModel->files.size())return false;const auto&f=effective.sourceModel->files[id];if(f.classification==LDrawGeometry::SourceClassification::Unknown)return false;files->append(f.relativePath);}files->sort();return true;};
     int body=-1;double bodySpan=-1;for(int i=0;i<int(groups.size());++i){if(cancellationRequested&&cancellationRequested()){r.status=Status::Cancelled;r.diagnostics<<"Semantic preparation was cancelled during grouping.";return r;}auto a=analyzeSource(groups[i].mesh);if(!validatePreparedMesh(a,true).ok())continue;auto d=sub(a.bounds.maximum,a.bounds.minimum);double span=d.x*d.y*d.z;if(span>bodySpan){body=i;bodySpan=span;}}
     int passage=-1;FunctionalFeature passageFeature;
@@ -377,7 +377,48 @@ LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDr
             }
         }
     }
-    if(body<0){r.status=Status::OperandValidationFailed;r.diagnostics<<"No independently closed body/cavity operand or certified round through-passage body was found.";return r;}const MeshBounds bodyBounds=analyzeSource(groups[body].mesh).bounds;
+    if(body<0){
+        // Arrangement is diagnostic until a separate, source-proven closure
+        // rule can consume every boundary. Its fragments must never be treated
+        // as a closed body merely because intersecting surfaces became adjacent.
+        // High-operand parts use the existing local composers and must not pay
+        // for a second, exploratory all-pairs surface pass.
+        constexpr std::size_t MaxDiagnosticOpenGroups=6;
+        if(investigateIntersections&&groups.size()<=MaxDiagnosticOpenGroups){
+            r.arrangementAttempted=true;
+            const auto arranged=LDrawCertifiedInterfaceStitcher::arrangeIntersections(effective);
+            r.arrangementBounded=arranged.bounded;
+            r.arrangementTransversePairs=arranged.transversePairs;
+            r.arrangementCoplanarOverlapPairs=arranged.coplanarOverlapPairs;
+            r.arrangementFragments=arranged.fragmentsAfter;
+            r.diagnostics<<arranged.diagnostic;
+            if(arranged.bounded&&arranged.changed){
+                QVector<bool> represented(effective.mesh.triangles.size(),false);
+                for(int parent:arranged.stitchedTriangleForFragment)
+                    if(parent>=0&&parent<represented.size())represented[parent]=true;
+                const bool complete=std::all_of(represented.cbegin(),represented.cend(),[](bool seen){return seen;});
+                if(!complete){
+                    r.arrangementBounded=false;
+                    r.diagnostics<<QStringLiteral("Arranged fragments did not retain complete stitched-source ancestry.");
+                }else{
+                    std::vector<FaceInfo> arrangedInfos;
+                    const auto arrangedMesh=welded(arranged.loadResult.mesh,&arrangedInfos);
+                    const auto arrangedGroups=components(arrangedMesh,arrangedInfos);
+                    r.arrangementGroups=int(arrangedGroups.size());
+                    for(const auto&group:arrangedGroups)for(const auto&loop:group.loops){
+                        ++r.arrangementBoundaryLoops;
+                        r.arrangementBoundaryLoopEdges.push_back(int(loop.size()));
+                    }
+                    QStringList sizes;for(int edges:r.arrangementBoundaryLoopEdges)sizes<<QString::number(edges);
+                    r.diagnostics<<QString("Arranged source remains diagnostic: groups=%1 boundaryLoops=%2 edges=[%3]; no authored closure was proven.")
+                        .arg(r.arrangementGroups).arg(r.arrangementBoundaryLoops).arg(sizes.join(','));
+                }
+            }
+        }else if(investigateIntersections)r.diagnostics<<QStringLiteral("Intersection arrangement diagnostic skipped for high-group source.");
+        r.status=Status::OperandValidationFailed;
+        r.diagnostics<<"No independently closed body/cavity operand or certified round through-passage body was found.";
+        return r;
+    }const MeshBounds bodyBounds=analyzeSource(groups[body].mesh).bounds;
     const auto wallPockets=StudReceivingWallPocketSemantic::recognize(effective);
     const auto antiStudBores=StudReceivingAntiStudSemantic::recognize(effective);
     const auto standardBars=StandardBarSemantic::recognize(effective);

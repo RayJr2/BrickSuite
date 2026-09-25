@@ -2,11 +2,13 @@
 
 #include <QHash>
 #include <QSet>
+#include <QElapsedTimer>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <map>
+#include <limits>
 #include <tuple>
 #include <vector>
 
@@ -44,6 +46,104 @@ Key key(const QVector3D& point,double toleranceLdu)
     return {std::llround(double(point.x())/toleranceLdu),
             std::llround(double(point.y())/toleranceLdu),
             std::llround(double(point.z())/toleranceLdu)};
+}
+
+// These cuts use intersections of the authored triangle planes. They partition
+// existing surfaces only: no cap, bridge, or inferred volume is generated.
+struct PlaneCut {QVector3D normal;double offset=0.0;};
+double signedDistance(const PlaneCut&plane,const QVector3D&point)
+{return double(QVector3D::dotProduct(plane.normal,point))-plane.offset;}
+PlaneCut planeFor(const Triangle&t)
+{
+    const auto normal=QVector3D::crossProduct(t.b-t.a,t.c-t.a);
+    const float magnitude=normal.length();
+    if(magnitude<=1e-12f)return {};
+    const auto unit=normal/magnitude;
+    return {unit,double(QVector3D::dotProduct(unit,t.a))};
+}
+double polygonArea(const QVector<QVector3D>&polygon)
+{
+    if(polygon.size()<3)return 0.0;
+    QVector3D sum;
+    for(int i=0;i<polygon.size();++i)
+        sum+=QVector3D::crossProduct(polygon[i],polygon[(i+1)%polygon.size()]);
+    return .5*double(sum.length());
+}
+QVector<QVector3D> clipPolygon(const QVector<QVector3D>&polygon,const PlaneCut&plane,
+                              double epsilon,bool positive)
+{
+    QVector<QVector3D> out;
+    for(int i=0;i<polygon.size();++i){
+        const auto a=polygon[i],b=polygon[(i+1)%polygon.size()];
+        const double da=signedDistance(plane,a)*(positive?1.0:-1.0);
+        const double db=signedDistance(plane,b)*(positive?1.0:-1.0);
+        if(da>=-epsilon)out.push_back(a);
+        if((da>epsilon&&db<-epsilon)||(da<-epsilon&&db>epsilon))
+            out.push_back(a+float(da/(da-db))*(b-a));
+    }
+    return out;
+}
+bool transverseOverlap(const Triangle&a,const Triangle&b,const PlaneCut&pa,
+                       const PlaneCut&pb,double epsilon)
+{
+    const auto axis=QVector3D::crossProduct(pa.normal,pb.normal).normalized();
+    QVector3D linePoint;
+    bool haveLinePoint=false;
+    auto interval=[&](const Triangle&t,const PlaneCut&plane){
+        const std::array<QVector3D,3> vertices{t.a,t.b,t.c};
+        double minimum=std::numeric_limits<double>::infinity(),maximum=-minimum;
+        for(int i=0;i<3;++i){
+            const auto p=vertices[i],q=vertices[(i+1)%3];
+            const double dp=signedDistance(plane,p),dq=signedDistance(plane,q);
+            if(std::abs(dp)<=epsilon){const double s=double(QVector3D::dotProduct(axis,p));minimum=std::min(minimum,s);maximum=std::max(maximum,s);if(!haveLinePoint){linePoint=p;haveLinePoint=true;}}
+            if((dp>epsilon&&dq<-epsilon)||(dp<-epsilon&&dq>epsilon)){
+                const auto hit=p+float(dp/(dp-dq))*(q-p);
+                const double s=double(QVector3D::dotProduct(axis,hit));minimum=std::min(minimum,s);maximum=std::max(maximum,s);
+                if(!haveLinePoint){linePoint=hit;haveLinePoint=true;}
+            }
+        }
+        return std::pair<double,double>{minimum,maximum};
+    };
+    const auto ia=interval(a,pb),ib=interval(b,pa);
+    if(!std::isfinite(ia.first)||!std::isfinite(ib.first)||
+       std::min(ia.second,ib.second)-std::max(ia.first,ib.first)<=epsilon||!haveLinePoint)return false;
+    const double midpoint=.5*(std::min(ia.second,ib.second)+std::max(ia.first,ib.first));
+    const auto point=linePoint+axis*float(midpoint-double(QVector3D::dotProduct(axis,linePoint)));
+    auto strictlyInside=[&](const Triangle&t,const QVector3D&normal){
+        const std::array<QVector3D,3>v{t.a,t.b,t.c};
+        for(int k=0;k<3;++k){
+            const auto edge=v[(k+1)%3]-v[k];
+            const double side=double(QVector3D::dotProduct(
+                QVector3D::crossProduct(edge,point-v[k]),normal));
+            if(side<=epsilon*double(edge.length()))return false;
+        }
+        return true;
+    };
+    return strictlyInside(a,pa.normal)||strictlyInside(b,pb.normal);
+}
+bool coplanarOverlap(const Triangle&a,const Triangle&b,const PlaneCut&plane,double epsilon)
+{
+    QVector<QVector3D> polygon{a.a,a.b,a.c};
+    const std::array<QVector3D,3> vertices{b.a,b.b,b.c};
+    for(int i=0;i<3;++i){
+        const auto edge=vertices[(i+1)%3]-vertices[i];
+        const auto inward=QVector3D::crossProduct(plane.normal,edge);
+        const auto cut=PlaneCut{inward,double(QVector3D::dotProduct(inward,vertices[i]))};
+        polygon=clipPolygon(polygon,cut,epsilon,true);
+        if(polygon.size()<3)return false;
+    }
+    return polygonArea(polygon)>epsilon*epsilon;
+}
+bool overlappingBounds(const Triangle&a,const Triangle&b,double epsilon)
+{
+    const std::array<QVector3D,3> x{a.a,a.b,a.c},y{b.a,b.b,b.c};
+    for(int axis=0;axis<3;++axis){
+        double x0=1e100,x1=-1e100,y0=1e100,y1=-1e100;
+        for(const auto&p:x){x0=std::min(x0,double(p[axis]));x1=std::max(x1,double(p[axis]));}
+        for(const auto&p:y){y0=std::min(y0,double(p[axis]));y1=std::max(y1,double(p[axis]));}
+        if(std::min(x1,y1)<std::max(x0,y0)-epsilon)return false;
+    }
+    return true;
 }
 EdgeKey edgeKey(Key a,Key b){return b<a?EdgeKey{b,a}:EdgeKey{a,b};}
 double length(const QVector3D& value){return std::sqrt(double(QVector3D::dotProduct(value,value)));}
@@ -142,6 +242,184 @@ CertifiedInterfaceStitchResult LDrawCertifiedInterfaceStitcher::stitch(
     diagnostics.trianglesAfter=result.loadResult.mesh.triangles.size();diagnostics.boundariesAfter=boundaryCount(result.loadResult.mesh.triangles,weldLdu);
     diagnostics.messages<<QStringLiteral("Certified interface stitching: candidates=%1 acceptedSplits=%2 ambiguous=%3 triangles=%4->%5 boundaries=%6->%7.")
         .arg(diagnostics.candidateRelationships).arg(diagnostics.acceptedSplits).arg(diagnostics.rejectedAmbiguousCandidates).arg(diagnostics.trianglesBefore).arg(diagnostics.trianglesAfter).arg(diagnostics.boundariesBefore).arg(diagnostics.boundariesAfter);
+    return result;
+}
+
+SurfaceIntersectionArrangement LDrawCertifiedInterfaceStitcher::arrangeIntersections(
+    const LDrawGeometry::LDrawLoadResult& source,const LDrawPrintPreparationProfile& profile)
+{
+    SurfaceIntersectionArrangement result;
+    result.loadResult=source;
+    const auto& triangles=source.mesh.triangles;
+    result.fragmentsBefore=triangles.size();
+    result.fragmentsAfter=triangles.size();
+    result.stitchedTriangleForFragment.reserve(triangles.size());
+    for(int i=0;i<triangles.size();++i)result.stitchedTriangleForFragment.push_back(i);
+    if(!source.ok()||!source.sourceModel||source.sourceModel->surfaces.size()!=triangles.size()){
+        result.diagnostic=QStringLiteral("Intersection arrangement requires complete authoritative provenance.");
+        result.bounded=false;return result;
+    }
+    constexpr int MaxInputTriangles=5000,MaxCandidatePairs=150000,MaxCutsPerTriangle=96,
+                  MaxFragments=200000,MaxCoplanarPairs=10000;
+    if(triangles.size()>MaxInputTriangles){
+        result.diagnostic=QStringLiteral("Intersection arrangement input triangle limit exceeded.");
+        result.bounded=false;return result;
+    }
+    const double epsilon=std::max(2e-5,profile.planarityToleranceMillimetres/0.4);
+    QElapsedTimer timer;timer.start();
+    QVector<QVector<PlaneCut>> cuts(triangles.size());
+    QVector<PlaneCut> planes;planes.reserve(triangles.size());
+    for(const auto& t:triangles)planes.push_back(planeFor(t));
+    for(int i=0;i<triangles.size();++i){
+        const auto&sa=source.sourceModel->surfaces[i];
+        if(!sa.certified||!sa.clipping||planes[i].normal.isNull())continue;
+        for(int j=i+1;j<triangles.size();++j){
+            if((j&255)==0&&timer.elapsed()>10000){result.bounded=false;break;}
+            const auto&sb=source.sourceModel->surfaces[j];
+            if(sa.referenceId==sb.referenceId||!sb.certified||!sb.clipping||
+               planes[j].normal.isNull()||triangles[i].color!=triangles[j].color||
+               !overlappingBounds(triangles[i],triangles[j],epsilon))continue;
+            if(++result.candidatePairs>MaxCandidatePairs){result.bounded=false;break;}
+            const auto normalCross=QVector3D::crossProduct(planes[i].normal,planes[j].normal);
+            if(normalCross.length()<1e-5f){
+                if(std::abs(signedDistance(planes[i],triangles[j].a))>epsilon||
+                   !coplanarOverlap(triangles[i],triangles[j],planes[j],epsilon))continue;
+                if(++result.coplanarOverlapPairs>MaxCoplanarPairs){result.bounded=false;break;}
+                const std::array<QVector3D,3>a{triangles[i].a,triangles[i].b,triangles[i].c},
+                                               b{triangles[j].a,triangles[j].b,triangles[j].c};
+                for(int k=0;k<3;++k){
+                    const auto na=QVector3D::crossProduct(planes[i].normal,a[(k+1)%3]-a[k]);
+                    const auto nb=QVector3D::crossProduct(planes[j].normal,b[(k+1)%3]-b[k]);
+                    cuts[j].push_back({na,double(QVector3D::dotProduct(na,a[k]))});
+                    cuts[i].push_back({nb,double(QVector3D::dotProduct(nb,b[k]))});
+                }
+            }else if(transverseOverlap(triangles[i],triangles[j],planes[i],planes[j],epsilon)){
+                ++result.transversePairs;
+                cuts[i].push_back(planes[j]);cuts[j].push_back(planes[i]);
+            }
+            if(cuts[i].size()>MaxCutsPerTriangle||cuts[j].size()>MaxCutsPerTriangle){
+                result.bounded=false;break;
+            }
+        }
+        if(!result.bounded)break;
+    }
+    if(!result.bounded){
+        result.diagnostic=QStringLiteral("Intersection arrangement candidate/coplanar/cut limit exceeded; no source was changed.");
+        return result;
+    }
+    QVector<Triangle> fragments;QVector<SurfaceRecord> surfaces;QVector<int> parents;
+    fragments.reserve(triangles.size());surfaces.reserve(triangles.size());parents.reserve(triangles.size());
+    for(int i=0;i<triangles.size();++i){
+        const auto&t=triangles[i];
+        QVector<QVector<QVector3D>> polygons{{t.a,t.b,t.c}};
+        for(const auto&cut:cuts[i]){
+            if(timer.elapsed()>10000){result.bounded=false;break;}
+            QVector<QVector<QVector3D>> next;
+            for(const auto&polygon:polygons){
+                double minimum=1e100,maximum=-1e100;
+                for(const auto&p:polygon){const double d=signedDistance(cut,p);minimum=std::min(minimum,d);maximum=std::max(maximum,d);}
+                if(minimum>=-epsilon||maximum<=epsilon){next.push_back(polygon);continue;}
+                const auto positive=clipPolygon(polygon,cut,epsilon,true);
+                const auto negative=clipPolygon(polygon,cut,epsilon,false);
+                if(polygonArea(positive)>epsilon*epsilon&&polygonArea(negative)>epsilon*epsilon){
+                    next.push_back(positive);next.push_back(negative);
+                }else next.push_back(polygon);
+            }
+            polygons=std::move(next);
+            if(polygons.size()+fragments.size()>MaxFragments){result.bounded=false;break;}
+        }
+        if(!result.bounded)break;
+        double area=0.0;
+        for(const auto&polygon:polygons)area+=polygonArea(polygon);
+        const double originalArea=polygonArea({t.a,t.b,t.c});
+        if(std::abs(area-originalArea)>std::max(1e-5,originalArea*1e-4)){
+            result.bounded=false;break;
+        }
+        for(const auto&polygon:polygons)for(int k=1;k+1<polygon.size();++k){
+            if(polygonArea({polygon[0],polygon[k],polygon[k+1]})<=epsilon*epsilon)continue;
+            fragments.push_back(triangle(polygon[0],polygon[k],polygon[k+1],t));
+            auto surface=source.sourceModel->surfaces[i];surface.triangleIndex=fragments.size()-1;
+            surfaces.push_back(surface);parents.push_back(i);
+        }
+        if(fragments.size()>MaxFragments){result.bounded=false;break;}
+    }
+    if(!result.bounded){
+        result.diagnostic=QStringLiteral("Intersection arrangement fragment/area limit exceeded; no source was changed.");
+        return result;
+    }
+    // Match new vertices lying strictly on another authored fragment edge.
+    // This is a conforming subdivision of existing edges, not a proximity join
+    // or an assertion that either side bounds material.
+    std::map<Key,QVector3D> uniquePoints;
+    for(int i=0;i<fragments.size();++i){
+        const auto&original=triangles[parents[i]];
+        for(const auto&p:{fragments[i].a,fragments[i].b,fragments[i].c}){
+            if(length(p-original.a)<=epsilon||length(p-original.b)<=epsilon||
+               length(p-original.c)<=epsilon)continue;
+            uniquePoints.emplace(key(p,epsilon),p);
+        }
+    }
+    QVector<Triangle> conformed;QVector<SurfaceRecord> conformingSurfaces;QVector<int> conformingParents;
+    QString conformanceLimit;
+    conformed.reserve(fragments.size());
+    for(int i=0;i<fragments.size();++i){
+        if(timer.elapsed()>10000){result.bounded=false;conformanceLimit=QStringLiteral("elapsed");break;}
+        const auto&t=fragments[i];const std::array<QVector3D,3>vertices{t.a,t.b,t.c};
+        if(planes[parents[i]].normal.isNull()){
+            conformed.push_back(t);auto surface=surfaces[i];surface.triangleIndex=conformed.size()-1;
+            conformingSurfaces.push_back(surface);conformingParents.push_back(parents[i]);continue;
+        }
+        QVector<QVector3D> boundary;
+        for(int edge=0;edge<3;++edge){
+            const auto a=vertices[edge],b=vertices[(edge+1)%3];
+            boundary.push_back(a);
+            QVector<std::pair<double,QVector3D>> interior;
+            const double edgeLength=length(b-a);
+            if(edgeLength<=epsilon)continue;
+            for(const auto&item:uniquePoints){
+                const auto&p=item.second;
+                if(std::abs(double(p.x()-a.x()))>edgeLength+epsilon||
+                   std::abs(double(p.y()-a.y()))>edgeLength+epsilon||
+                   std::abs(double(p.z()-a.z()))>edgeLength+epsilon)continue;
+                double position=0.0;
+                if(distanceToLine(p,a,b,&position)>epsilon||
+                   position<=epsilon/edgeLength||position>=1.0-epsilon/edgeLength)continue;
+                interior.push_back({position,a+float(position)*(b-a)});
+            }
+            std::sort(interior.begin(),interior.end(),[](const auto&x,const auto&y){return x.first<y.first;});
+            double previous=-1.0;
+            for(const auto&point:interior)
+                if(point.first-previous>epsilon/edgeLength){boundary.push_back(point.second);previous=point.first;}
+        }
+        if(!result.bounded)break;
+        if(boundary.size()==3){conformed.push_back(t);auto surface=surfaces[i];surface.triangleIndex=conformed.size()-1;
+            conformingSurfaces.push_back(surface);conformingParents.push_back(parents[i]);continue;}
+        const auto centroid=(t.a+t.b+t.c)/3.0f;
+        for(int k=0;k<boundary.size();++k){
+            const auto next=boundary[(k+1)%boundary.size()];
+            if(polygonArea({centroid,boundary[k],next})<=epsilon*epsilon)continue;
+            conformed.push_back(triangle(centroid,boundary[k],next,t));
+            auto surface=surfaces[i];surface.triangleIndex=conformed.size()-1;
+            conformingSurfaces.push_back(surface);conformingParents.push_back(parents[i]);
+        }
+        if(conformed.size()>MaxFragments){result.bounded=false;conformanceLimit=QStringLiteral("fragment count");break;}
+    }
+    if(!result.bounded){
+        result.diagnostic=QStringLiteral("Intersection arrangement edge conformance rejected (%1; points=%2, fragments=%3); no source was changed.")
+            .arg(conformanceLimit).arg(uniquePoints.size()).arg(conformed.size());
+        return result;
+    }
+    fragments=std::move(conformed);surfaces=std::move(conformingSurfaces);parents=std::move(conformingParents);
+    result.fragmentsAfter=fragments.size();result.changed=fragments.size()!=triangles.size();
+    if(result.changed){
+        result.loadResult.mesh.triangles=std::move(fragments);
+        result.loadResult.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>(*source.sourceModel);
+        result.loadResult.sourceModel->surfaces=std::move(surfaces);
+        result.stitchedTriangleForFragment=std::move(parents);
+    }
+    result.diagnostic=QStringLiteral("Source intersection arrangement: candidatePairs=%1 transverse=%2 coplanarOverlaps=%3 fragments=%4->%5; no closure inferred.")
+        .arg(result.candidatePairs).arg(result.transversePairs).arg(result.coplanarOverlapPairs)
+        .arg(result.fragmentsBefore).arg(result.fragmentsAfter);
     return result;
 }
 
