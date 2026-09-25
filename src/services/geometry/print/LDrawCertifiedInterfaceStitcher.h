@@ -47,6 +47,7 @@ struct OrientedSurfaceArrangement {
     // A retained fragment can represent several exactly coincident authored
     // fragments. Each entry remains traceable to its stitched source triangle.
     QVector<QVector<int>> stitchedTrianglesForFragment;
+    QVector<QVector<int>> arrangedFragmentsForFragment;
     int exactCoincidentGroups = 0;
     int sameFacingDuplicates = 0;
     int opposingCoincidentGroups = 0;
@@ -54,6 +55,26 @@ struct OrientedSurfaceArrangement {
     int fragmentsAfter = 0;
     qint64 elapsedMilliseconds = 0;
     bool bounded = true;
+    QString diagnostic;
+};
+
+struct MaterialCellArrangement {
+    enum class FragmentStatus {Unresolved,ProvenBoundary,ProvenInternalSharedBoundary,ExplicitDuplicate};
+    int inputFragments = 0;
+    int exactAdjacencies = 0;
+    int ambiguousEdges = 0;
+    int candidateCells = 0;
+    int provenCells = 0;
+    int provenBoundaryFragments = 0;
+    int explicitDuplicateFragments = 0;
+    int unresolvedFragments = 0;
+    int residualBoundaryEdges = 0;
+    qint64 elapsedMilliseconds = 0;
+    bool bounded = true;
+    // Per retained fragment: a proven cell boundary, or unresolved. No source
+    // fragment is excluded on the basis of winding or spatial proximity.
+    QVector<bool> provenBoundary;
+    QVector<FragmentStatus> arrangedFragmentStatus;
     QString diagnostic;
 };
 
@@ -68,6 +89,8 @@ public:
         const LDrawPrintPreparationProfile& profile = {});
     static OrientedSurfaceArrangement classifyOrientedFragments(
         const SurfaceIntersectionArrangement& arranged);
+    static MaterialCellArrangement proveMaterialCells(
+        const OrientedSurfaceArrangement& oriented);
 };
 
 } // namespace PrintGeometry

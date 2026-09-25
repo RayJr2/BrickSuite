@@ -202,6 +202,13 @@ int main(int argc,char**argv)
                     <<" opposingGroups="<<oriented.opposingCoincidentGroups
                     <<" retained="<<oriented.fragmentsAfter<<'/'<<oriented.fragmentsBefore
                     <<" elapsed-ms="<<oriented.elapsedMilliseconds<<Qt::endl;
+                const auto cells=LDrawCertifiedInterfaceStitcher::proveMaterialCells(oriented);
+                ok&=check(cells.bounded,id+" bounded material-cell diagnostic");
+                QTextStream(stdout)<<"cells part="<<id<<" candidates="<<cells.candidateCells
+                    <<" proven="<<cells.provenCells<<" represented="<<cells.provenBoundaryFragments
+                    <<" unresolved="<<cells.unresolvedFragments<<" residualEdges="<<cells.residualBoundaryEdges
+                    <<" exactAdjacencies="<<cells.exactAdjacencies<<" ambiguousEdges="<<cells.ambiguousEdges
+                    <<" elapsed-ms="<<cells.elapsedMilliseconds<<Qt::endl;
             }
             QTextStream(stdout)<<"arrangement part="<<id<<" stitched="<<stitched.loadResult.mesh.triangles.size()
                 <<" candidates="<<arranged.candidatePairs<<" transverse="<<arranged.transversePairs

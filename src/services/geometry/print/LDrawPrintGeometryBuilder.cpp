@@ -441,6 +441,8 @@ LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDr
                             for(int edges:r.orientedBoundaryLoopEdges)remaining<<QString::number(edges);
                             r.diagnostics<<QString("Oriented source remains diagnostic: boundaryLoops=%1 edges=[%2]; no material-side closure was proven.")
                                 .arg(r.orientedBoundaryLoops).arg(remaining.join(','));
+                            r.materialCells=LDrawCertifiedInterfaceStitcher::proveMaterialCells(oriented);
+                            r.diagnostics<<r.materialCells.diagnostic;
                         }
                     }
                 }

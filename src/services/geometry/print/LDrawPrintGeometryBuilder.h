@@ -49,6 +49,7 @@ public:
         int orientedFragments = 0;
         int orientedBoundaryLoops = 0;
         qint64 orientedElapsedMilliseconds = 0;
+        MaterialCellArrangement materialCells;
         bool arrangementAttempted = false;
         QVector<int> arrangementBoundaryLoopEdges;
         QVector<int> orientedBoundaryLoopEdges;

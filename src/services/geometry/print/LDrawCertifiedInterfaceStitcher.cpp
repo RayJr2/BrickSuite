@@ -1,4 +1,5 @@
 #include "LDrawCertifiedInterfaceStitcher.h"
+#include "PrintMeshAnalysis.h"
 
 #include <QHash>
 #include <QSet>
@@ -431,8 +432,10 @@ OrientedSurfaceArrangement LDrawCertifiedInterfaceStitcher::classifyOrientedFrag
     const auto& triangles=arranged.loadResult.mesh.triangles;
     result.fragmentsBefore=triangles.size();
     result.fragmentsAfter=triangles.size();
-    for(int parent:arranged.stitchedTriangleForFragment)
-        result.stitchedTrianglesForFragment.push_back({parent});
+    for(int i=0;i<arranged.stitchedTriangleForFragment.size();++i){
+        result.stitchedTrianglesForFragment.push_back({arranged.stitchedTriangleForFragment[i]});
+        result.arrangedFragmentsForFragment.push_back({i});
+    }
     if(!arranged.bounded||!arranged.loadResult.sourceModel||
        arranged.loadResult.sourceModel->surfaces.size()!=triangles.size()||
        arranged.stitchedTriangleForFragment.size()!=triangles.size()||triangles.size()>200000){
@@ -448,7 +451,9 @@ OrientedSurfaceArrangement LDrawCertifiedInterfaceStitcher::classifyOrientedFrag
     QVector<Triangle> retained;
     QVector<SurfaceRecord> surfaces;
     QVector<QVector<int>> ancestry;
+    QVector<QVector<int>> arrangedAncestry;
     retained.reserve(triangles.size());surfaces.reserve(triangles.size());ancestry.reserve(triangles.size());
+    arrangedAncestry.reserve(triangles.size());
     for(int i=0;i<triangles.size();++i){
         if((i&255)==0&&timer.elapsed()>10000){result.bounded=false;break;}
         const auto& triangle=triangles[i];
@@ -476,12 +481,14 @@ OrientedSurfaceArrangement LDrawCertifiedInterfaceStitcher::classifyOrientedFrag
         }
         if(representative>=0){
             ancestry[representative].push_back(arranged.stitchedTriangleForFragment[i]);
+            arrangedAncestry[representative].push_back(i);
             ++result.sameFacingDuplicates;
             continue;
         }
         auto copy=surface;copy.triangleIndex=retained.size();
         retained.push_back(triangle);surfaces.push_back(copy);
         ancestry.push_back({arranged.stitchedTriangleForFragment[i]});
+        arrangedAncestry.push_back({i});
     }
     result.elapsedMilliseconds=timer.elapsed();
     if(!result.bounded){
@@ -490,6 +497,7 @@ OrientedSurfaceArrangement LDrawCertifiedInterfaceStitcher::classifyOrientedFrag
     }
     result.fragmentsAfter=retained.size();
     result.stitchedTrianglesForFragment=std::move(ancestry);
+    result.arrangedFragmentsForFragment=std::move(arrangedAncestry);
     if(result.sameFacingDuplicates){
         result.loadResult.mesh.triangles=std::move(retained);
         result.loadResult.sourceModel=
@@ -500,6 +508,150 @@ OrientedSurfaceArrangement LDrawCertifiedInterfaceStitcher::classifyOrientedFrag
         .arg(result.exactCoincidentGroups).arg(result.sameFacingDuplicates)
         .arg(result.opposingCoincidentGroups).arg(result.fragmentsAfter)
         .arg(result.fragmentsBefore).arg(result.elapsedMilliseconds);
+    return result;
+}
+
+MaterialCellArrangement LDrawCertifiedInterfaceStitcher::proveMaterialCells(
+    const OrientedSurfaceArrangement& oriented)
+{
+    MaterialCellArrangement result;
+    const auto& triangles=oriented.loadResult.mesh.triangles;
+    result.inputFragments=triangles.size();
+    result.unresolvedFragments=triangles.size();
+    result.provenBoundary.fill(false,triangles.size());
+    result.arrangedFragmentStatus.fill(MaterialCellArrangement::FragmentStatus::Unresolved,
+                                       oriented.fragmentsBefore);
+    constexpr int MaxFragments=10000,MaxAdjacencies=30000,MaxCells=10000;
+    constexpr qint64 MaxMilliseconds=10000;
+    if(!oriented.bounded||!oriented.loadResult.sourceModel||
+       oriented.loadResult.sourceModel->surfaces.size()!=triangles.size()||
+       oriented.stitchedTrianglesForFragment.size()!=triangles.size()||
+       oriented.arrangedFragmentsForFragment.size()!=triangles.size()||
+       triangles.size()>MaxFragments){
+        result.bounded=false;
+        result.diagnostic=QStringLiteral("Material-cell proof requires bounded certified fragments and complete provenance.");
+        return result;
+    }
+    QElapsedTimer timer;timer.start();
+    using PointKey=std::array<float,3>;
+    using ExactEdge=std::pair<PointKey,PointKey>;
+    struct Incidence {int fragment;bool forward;};
+    auto point=[](const QVector3D& p){return PointKey{p.x(),p.y(),p.z()};};
+    std::map<ExactEdge,QVector<Incidence>> edges;
+    QVector<bool> certified(triangles.size(),false);
+    QVector<bool> accounted(oriented.fragmentsBefore,false);
+    for(const auto& descendants:oriented.arrangedFragmentsForFragment){
+        if(descendants.isEmpty()){result.bounded=false;break;}
+        for(int i=0;i<descendants.size();++i){
+            const int index=descendants[i];
+            if(index<0||index>=result.arrangedFragmentStatus.size()||accounted[index]){
+                result.bounded=false;break;
+            }
+            accounted[index]=true;
+            if(i>0){
+                result.arrangedFragmentStatus[index]=MaterialCellArrangement::FragmentStatus::ExplicitDuplicate;
+                ++result.explicitDuplicateFragments;
+            }
+        }
+        if(!result.bounded)break;
+    }
+    if(std::any_of(accounted.cbegin(),accounted.cend(),[](bool value){return !value;}))
+        result.bounded=false;
+    if(!result.bounded){
+        result.diagnostic=QStringLiteral("Material-cell proof duplicate provenance is incomplete.");
+        return result;
+    }
+    for(int i=0;i<triangles.size();++i){
+        if((i&255)==0&&timer.elapsed()>MaxMilliseconds){result.bounded=false;break;}
+        const auto& t=triangles[i];
+        const auto& s=oriented.loadResult.sourceModel->surfaces[i];
+        certified[i]=s.certified&&s.clipping&&t.backFaceCull&&
+            !oriented.stitchedTrianglesForFragment[i].isEmpty();
+        const std::array<PointKey,3> vertices{point(t.a),point(t.b),point(t.c)};
+        for(int k=0;k<3;++k){
+            auto a=vertices[k],b=vertices[(k+1)%3];
+            if(a==b){certified[i]=false;continue;}
+            const bool forward=a<b;
+            if(!forward)std::swap(a,b);
+            edges[{a,b}].push_back({i,forward});
+        }
+        if(edges.size()>MaxAdjacencies){result.bounded=false;break;}
+    }
+    if(!result.bounded){
+        result.diagnostic=QStringLiteral("Material-cell proof edge/workload limit exceeded; no cell accepted.");
+        return result;
+    }
+    QVector<QVector<int>> neighbors(triangles.size());
+    QVector<bool> unresolvedEdge(triangles.size(),false);
+    for(const auto& item:edges){
+        const auto& uses=item.second;
+        if(uses.size()==2&&uses[0].forward!=uses[1].forward&&
+           uses[0].fragment!=uses[1].fragment&&
+           certified[uses[0].fragment]&&certified[uses[1].fragment]){
+            neighbors[uses[0].fragment].push_back(uses[1].fragment);
+            neighbors[uses[1].fragment].push_back(uses[0].fragment);
+            ++result.exactAdjacencies;
+        }else{
+            if(uses.size()!=1)++result.ambiguousEdges;
+            else ++result.residualBoundaryEdges;
+            for(const auto& use:uses)unresolvedEdge[use.fragment]=true;
+        }
+    }
+    QVector<bool> visited(triangles.size(),false);
+    for(int start=0;start<triangles.size();++start){
+        if(visited[start])continue;
+        if(result.candidateCells>=MaxCells||timer.elapsed()>MaxMilliseconds){result.bounded=false;break;}
+        QVector<int> component{start};visited[start]=true;
+        for(int cursor=0;cursor<component.size();++cursor)
+            for(int next:neighbors[component[cursor]])if(!visited[next]){
+                visited[next]=true;component.push_back(next);
+            }
+        ++result.candidateCells;
+        // A partial closed shell may be intersected or partitioned by other
+        // authored fragments. Until adjacent spatial cells are proven, it is
+        // only a candidate, not a material cell.
+        bool closed=component.size()>=4&&component.size()==triangles.size();
+        for(int index:component)closed=closed&&certified[index]&&!unresolvedEdge[index];
+        if(!closed)continue;
+        PrintMesh shell;
+        std::map<PointKey,std::uint32_t> vertices;
+        for(int index:component){
+            const auto& t=triangles[index];
+            const std::array<PointKey,3> points{point(t.a),point(t.b),point(t.c)};
+            Face face{};
+            for(int k=0;k<3;++k){
+                const auto [it,inserted]=vertices.emplace(points[k],std::uint32_t(shell.vertices.size()));
+                if(inserted)shell.vertices.push_back({points[k][0],points[k][1],points[k][2]});
+                face[k]=it->second;
+            }
+            shell.faces.push_back(face);
+        }
+        // Exact edge closure is necessary but not sufficient: the ordinary
+        // strict analyzer remains authoritative for manifoldness and crossings.
+        const auto analysis=analyzeSource(shell);
+        if(!validatePreparedMesh(analysis).ok()||analysis.signedVolume<=0.0)continue;
+        ++result.provenCells;
+        for(int index:component){
+            result.provenBoundary[index]=true;++result.provenBoundaryFragments;
+            result.arrangedFragmentStatus[oriented.arrangedFragmentsForFragment[index].front()]=
+                MaterialCellArrangement::FragmentStatus::ProvenBoundary;
+        }
+    }
+    result.elapsedMilliseconds=timer.elapsed();
+    if(!result.bounded){
+        result.provenBoundary.fill(false,triangles.size());
+        result.arrangedFragmentStatus.fill(MaterialCellArrangement::FragmentStatus::Unresolved,
+                                           oriented.fragmentsBefore);
+        result.provenCells=0;result.provenBoundaryFragments=0;
+        result.diagnostic=QStringLiteral("Material-cell proof cell/time limit exceeded; no cell accepted.");
+        return result;
+    }
+    result.unresolvedFragments=triangles.size()-result.provenBoundaryFragments;
+    result.diagnostic=QStringLiteral("Source material-cell proof: fragments=%1 exactAdjacencies=%2 ambiguousEdges=%3 candidateCells=%4 provenCells=%5 provenBoundaryFragments=%6 explicitDuplicates=%7 unresolvedFragments=%8 residualBoundaryEdges=%9 elapsed-ms=%10; no cap or bridge inferred.")
+        .arg(result.inputFragments).arg(result.exactAdjacencies).arg(result.ambiguousEdges)
+        .arg(result.candidateCells).arg(result.provenCells).arg(result.provenBoundaryFragments)
+        .arg(result.explicitDuplicateFragments).arg(result.unresolvedFragments)
+        .arg(result.residualBoundaryEdges).arg(result.elapsedMilliseconds);
     return result;
 }
 

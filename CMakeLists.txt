@@ -713,6 +713,7 @@ if(BUILD_TESTING)
 
     qt_add_executable(LDrawCertifiedInterfaceStitcherTest EXCLUDE_FROM_ALL
         tests/LDrawCertifiedInterfaceStitcherTest.cpp
+        src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
         src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
         src/services/geometry/print/LDrawPrintPreparationProfile.h
         src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h)

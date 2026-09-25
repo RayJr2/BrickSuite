@@ -119,5 +119,45 @@ int main(int argc,char**argv)
     const auto uncertified=LDrawCertifiedInterfaceStitcher::classifyOrientedFragments(arranged);
     ok&=check(uncertified.sameFacingDuplicates==0&&uncertified.fragmentsAfter==3,
               "uncertified coincident fragment is not excluded");
+    SurfaceIntersectionArrangement closedArrangement;
+    closedArrangement.loadResult=fixture(0);
+    for(int i=0;i<closedArrangement.loadResult.mesh.triangles.size();++i)
+        closedArrangement.stitchedTriangleForFragment.push_back(i);
+    const auto closedOriented=LDrawCertifiedInterfaceStitcher::classifyOrientedFragments(closedArrangement);
+    const auto closedCells=LDrawCertifiedInterfaceStitcher::proveMaterialCells(closedOriented);
+    ok&=check(closedCells.bounded&&closedCells.candidateCells==1&&closedCells.provenCells==1&&
+              closedCells.unresolvedFragments==0&&closedCells.residualBoundaryEdges==0,
+              "fully authored oriented tetrahedron proves one closed material cell");
+    ok&=check(closedCells.arrangedFragmentStatus.size()==4&&
+              std::all_of(closedCells.arrangedFragmentStatus.cbegin(),closedCells.arrangedFragmentStatus.cend(),
+                          [](auto status){return status==MaterialCellArrangement::FragmentStatus::ProvenBoundary;}),
+              "every authored tetrahedron fragment is accounted for on the proven boundary");
+    closedArrangement.loadResult.mesh.triangles.removeLast();
+    closedArrangement.loadResult.sourceModel->surfaces.removeLast();
+    closedArrangement.stitchedTriangleForFragment.removeLast();
+    const auto openCells=LDrawCertifiedInterfaceStitcher::proveMaterialCells(
+        LDrawCertifiedInterfaceStitcher::classifyOrientedFragments(closedArrangement));
+    ok&=check(openCells.bounded&&openCells.provenCells==0&&openCells.residualBoundaryEdges>0&&
+              openCells.unresolvedFragments==openCells.inputFragments,
+              "authored opening cannot be inferred as a material-cell wall");
+    closedArrangement.loadResult=fixture(0);
+    closedArrangement.stitchedTriangleForFragment.clear();
+    for(int i=0;i<closedArrangement.loadResult.mesh.triangles.size();++i)
+        closedArrangement.stitchedTriangleForFragment.push_back(i);
+    auto opposingFace=closedArrangement.loadResult.mesh.triangles.front();
+    std::swap(opposingFace.b,opposingFace.c);
+    closedArrangement.loadResult.mesh.triangles.push_back(opposingFace);
+    auto opposingSurface=closedArrangement.loadResult.sourceModel->surfaces.front();
+    opposingSurface.triangleIndex=closedArrangement.loadResult.mesh.triangles.size()-1;
+    closedArrangement.loadResult.sourceModel->surfaces.push_back(opposingSurface);
+    closedArrangement.stitchedTriangleForFragment.push_back(4);
+    const auto partitionCells=LDrawCertifiedInterfaceStitcher::proveMaterialCells(
+        LDrawCertifiedInterfaceStitcher::classifyOrientedFragments(closedArrangement));
+    ok&=check(partitionCells.provenCells==0&&partitionCells.ambiguousEdges>0,
+              "opposing shared patch is not treated as an internal partition without two proven cells");
+    const auto duplicateCells=LDrawCertifiedInterfaceStitcher::proveMaterialCells(oriented);
+    ok&=check(duplicateCells.bounded&&duplicateCells.explicitDuplicateFragments==1&&
+              duplicateCells.arrangedFragmentStatus[1]==MaterialCellArrangement::FragmentStatus::ExplicitDuplicate,
+              "same-facing authored duplicate retains explicit arranged-fragment accounting");
     return ok?0:1;
 }
