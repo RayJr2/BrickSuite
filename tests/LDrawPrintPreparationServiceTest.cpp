@@ -85,6 +85,22 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;auto 
                   "orthogonal wheel-pin preparation rejects uncertified source topology");
     }
  }
+ if(libraryAt>=0&&libraryAt+1<arguments.size()){
+    PrintPreparationRequest plainRequest;
+    plainRequest.partReference=QStringLiteral("30027a");
+    plainRequest.ldrawIdentity=QStringLiteral("parts/30027a.dat");
+    plainRequest.libraryAuthority=arguments[libraryAt+1];
+    plainRequest.loadResult=LDrawLibraryService::loadPart(arguments[libraryAt+1],QStringLiteral("30027a"));
+    LDrawPrintPreparationService plainService;
+    const auto prepared=plainService.prepare(plainRequest);
+    ok&=check(prepared.ready(),QStringLiteral("real 30027a plain wheel prepares: ")+prepared.diagnostic);
+    if(prepared.ready())ok&=check(validatePreparedMesh(prepared.finalAnalysis).ok()&&
+        std::any_of(prepared.preparedMesh->functionalFeatures.cbegin(),
+            prepared.preparedMesh->functionalFeatures.cend(),[](const FunctionalFeature& feature){
+                return feature.family==FunctionalInterfaceFamily::PlainRoundBoreWheel&&
+                    feature.role==FunctionalInterfaceRole::Female;
+            }),QStringLiteral("real 30027a retains certified blind-bore identity after preparation"));
+ }
  QVector<PrintPreparationProgress> progress;auto progressResult=service.prepare(request(),nullptr,[&progress](const auto&p){progress.push_back(p);});ok&=check(progressResult.ready()&&progress.size()>=5,"typed progress delivered");ok&=check(progress.front().phase==PrintPreparationPhase::SourceAnalysis&&progress.back().phase==PrintPreparationPhase::FinalValidation,"progress phase ordering");cache->clear();state->calls=0;
  const auto original=request();const auto originalPoint=original.loadResult.mesh.triangles.front().a;auto first=service.prepare(original);ok&=check(first.ready()&&!first.cacheHit,"ready synthetic preparation");ok&=check(state->calls==1&&first.operations.size()==1,"deterministic incremental union");ok&=check(first.preparedMesh->partReference=="test"&&first.preparedMesh->preparationProfileVersion==LDrawPrintPreparationProfile::Version,"prepared provenance");ok&=check(original.loadResult.mesh.triangles.front().a==originalPoint,"authoritative source remains immutable");auto second=service.prepare(original);ok&=check(second.ready()&&second.cacheHit&&state->calls==1,"cache hit avoids Boolean work");ok&=check(second.operations.size()==first.operations.size()&&second.dimensionalFidelity.maximumBoundsDeviationMillimetres==first.dimensionalFidelity.maximumBoundsDeviationMillimetres,"cache hit preserves Ready metadata");
  auto changed=request();changed.loadResult.dependencyFingerprint.dependencies[0].size=2;auto stale=service.prepare(changed);ok&=check(stale.ready()&&!stale.cacheHit&&state->calls==2,"fingerprint invalidates cache");changed=request();changed.partReference="other-part";auto otherPart=service.prepare(changed);ok&=check(!otherPart.cacheHit&&otherPart.preparedMesh->partReference=="other-part","Part identity invalidates cache provenance");changed=request();changed.ldrawIdentity="other";ok&=check(!service.prepare(changed).cacheHit,"candidate invalidates cache");changed=request();changed.profile.identity="other-profile";ok&=check(!service.prepare(changed).cacheHit,"profile invalidates cache");changed=request();changed.libraryAuthority="other-library";ok&=check(!service.prepare(changed).cacheHit,"authority invalidates cache");auto versionState=std::make_shared<FakeState>();versionState->version="fake-2";LDrawPrintPreparationService versionService(cache,[versionState]{return std::make_unique<FakeBoolean>(versionState);},builder);ok&=check(!versionService.prepare(request()).cacheHit&&versionState->calls==1,"MCUT version invalidates cache");

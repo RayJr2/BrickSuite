@@ -13,6 +13,9 @@
 #include "../../services/geometry/fit/FrictionTechnicPinCalibrationArtifact.h"
 #include "../../services/geometry/fit/TechnicAxleCalibrationArtifact.h"
 #include "../../services/geometry/fit/TechnicAxleHoleCalibrationArtifact.h"
+#include "../../services/geometry/fit/PlainRoundBoreWheelCalibrationArtifact.h"
+#include "../../services/geometry/LDrawLibraryService.h"
+#include "../../settings/UserSettings.h"
 #include "../common/SessionFileDialogDirectoryService.h"
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -20,6 +23,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
+#include <QFutureWatcher>
 #include <QFormLayout>
 #include <QFont>
 #include <QGroupBox>
@@ -30,6 +34,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QProgressDialog>
+#include <QtConcurrent>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSaveFile>
@@ -214,7 +220,7 @@ void FitCalibrationDialog::generateFineSearch()
         FitCalibrationNamingCatalog::keyFor(source,m_session.process.actualPrintedOrientation);
     const QString stage=extension?QStringLiteral("extension"):(directVerification?QStringLiteral("verification"):QStringLiteral("fine-search"));
     auto&dirs=SessionFileDialogDirectoryService::instance();QString path=QFileDialog::getSaveFileName(this,QStringLiteral("Save %1 3MF").arg(title),fixtureDefault(nameKey,identity,stage),"3MF models (*.3mf)");if(path.isEmpty())return;if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
-    PrintMesh mesh;FitCalibrationExperiment verification;QString diagnostic;
+    PrintMesh mesh;QVector<ThreeMfWriter::NamedMesh> collection;FitCalibrationExperiment verification;QString diagnostic;
     if(source.featureFamily==QStringLiteral("StandardStud")){StandardStudCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.dimension=source.correctionDimension==FitCorrectionDimension::Height?StandardStudCalibrationDimension::Height:StandardStudCalibrationDimension::Diameter;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.fixedDiameterCorrectionMillimetres=source.fixedDiameterCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardStudCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StandardStudCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("StandardBar")){StandardBarCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardBarCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=StandardBarCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("CClipBarReceiver")){CClipBarReceiverCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;d.orientation=source.process.actualPrintedOrientation;const auto artifact=CClipBarReceiverCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=CClipBarReceiverCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
@@ -224,8 +230,35 @@ void FitCalibrationDialog::generateFineSearch()
     else if(source.featureFamily==QStringLiteral("TechnicAxle")){TechnicAxleCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerTipToTipCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=TechnicAxleCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("TechnicAxleHole")&&(axleHoleModelCorrection||source.regenerationPrototype.constructionRecipe==QStringLiteral("technic-axle-hole-arm-width-clearance-v2"))){auto prototype=source.regenerationPrototype;if(axleHoleModelCorrection){prototype.constructionRecipe=QStringLiteral("technic-axle-hole-arm-width-clearance-v2");prototype.evidenceContract=QStringLiteral("official-ldraw-axlehole-arm-width-clearance-v2");}TechnicAxleHoleArmWidthArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;if(!axleHoleModelCorrection){d.centerArmWidthCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;}const auto artifact=TechnicAxleHoleArmWidthCalibrationArtifact::generate(prototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleHoleArmWidthCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("TechnicAxleHole")){TechnicAxleHoleCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerTipToTipCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=TechnicAxleHoleCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleHoleCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else{RoundTechnicCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerDiameterCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=RoundTechnicCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=RoundTechnicCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    if(mesh.faces.empty()){QMessageBox::warning(this,"Calibration",diagnostic);return;}ThreeMfWriter::Options options;options.objectName=identity;options.partIdentity=identity;options.modelColor=QColor("#0055BF");QString error;if(!writeFixture(mesh,nameKey,false,path,options,&error)){QMessageBox::warning(this,"Calibration",error);return;}
+    else if(source.featureFamily==QStringLiteral("PlainRoundBoreWheel")){
+        PlainRoundBoreWheelCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;
+        d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;
+        const QString root=UserSettings::instance().ldrawLibraryPath();
+        QFutureWatcher<PlainRoundBoreWheelCalibrationResult> watcher;
+        QProgressDialog progress(QStringLiteral("Generating source-faithful blind-bore wheels..."),QString(),0,0,this);
+        progress.setWindowModality(Qt::WindowModal);
+        progress.setMinimumDuration(0);
+        connect(&watcher,&QFutureWatcher<PlainRoundBoreWheelCalibrationResult>::finished,
+            &progress,&QProgressDialog::close);
+        watcher.setFuture(QtConcurrent::run([root,prototype=source.regenerationPrototype,d]{
+            return PlainRoundBoreWheelCalibrationArtifact::generate(
+                LDrawLibraryService::loadPart(root,QStringLiteral("30027a")),prototype,d);
+        }));
+        progress.exec();
+        watcher.waitForFinished();
+        const auto artifact=watcher.result();
+        diagnostic=artifact.diagnostic;
+        if(artifact.ok){
+            verification=PlainRoundBoreWheelCalibrationArtifact::observationTemplate(artifact);
+            for(int i=0;i<artifact.candidateMeshes.size();++i)
+                collection.push_back({QStringLiteral("Candidate %1 — %2 mm blind bore")
+                    .arg(i+1).arg(artifact.candidates[i].functionalDiameterMillimetres,0,'f',3),
+                    artifact.candidateMeshes[i],{14.0+26.0*(i%4),12.0+23.0*(i/4),0.0}});
+        }
+    }
+    else if(source.featureFamily==QStringLiteral("RoundTechnicPassage")){RoundTechnicCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerDiameterCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=RoundTechnicCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=RoundTechnicCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
+    else diagnostic=QStringLiteral("No source-faithful continuation fixture is available for this calibration contract.");
+    if(mesh.faces.empty()&&collection.isEmpty()){QMessageBox::warning(this,"Calibration",diagnostic);return;}ThreeMfWriter::Options options;options.objectName=identity;options.partIdentity=identity;options.modelColor=QColor("#0055BF");QString error;if(!(collection.isEmpty()?writeFixture(mesh,nameKey,false,path,options,&error):ThreeMfWriter::writeCollection(collection,path,options,&error))){QMessageBox::warning(this,"Calibration",error);return;}
     verification.process=m_session.process;
     if(m_tabs->currentIndex()==1){if(m_dirty&&!saveSession())return;m_session=FitCalibrationLibrary::continuationSession(m_session,source,verification);}
     else{m_session.hasFineExperiment=true;m_session.fineExperiment=verification;if(m_session.sessionIdentity.isEmpty())m_session.sessionIdentity=source.artifactIdentity;}
