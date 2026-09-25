@@ -220,10 +220,36 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
                            message.contains(QStringLiteral("Arranged source"),Qt::CaseInsensitive))
                             intersectionDiagnostics.push_back(message);
             }
+            QStringList reconstructionDiagnostics;
+            // This separate surface-local candidate route is still diagnostic:
+            // strict mesh validity alone cannot establish local feature and
+            // source-owner fidelity. Never promote an unproven candidate.
+            if(!m_semanticBuilder&&(!cancellation||!cancellation->isCancelled())&&
+               semantic.status==LDrawSemanticOperandBuilder::Status::OperandValidationFailed&&
+               semantic.semanticGroups>0&&semantic.semanticGroups<=6&&
+               request.loadResult.mesh.triangles.size()<=1000&&
+               semantic.diagnostics.contains(QStringLiteral("No independently closed body/cavity operand or certified round through-passage body was found."))){
+                for(const auto axis:{SourceSurfaceSolidifier::RayAxis::X,
+                                     SourceSurfaceSolidifier::RayAxis::Y}){
+                    const auto candidate=SourceSurfaceSolidifier::solidify(request.loadResult,.15,axis,
+                        SourceSurfaceSolidifier::QueryMode::Indexed,4000,150000,
+                        SourceSurfaceSolidifier::ExtractionMode::SurfaceNetsDiagnostic);
+                    reconstructionDiagnostics<<QStringLiteral("Surface-local reconstruction axis %1: %2")
+                        .arg(int(axis)).arg(candidate.diagnostic);
+                    if(!candidate.successful)continue;
+                    const auto audit=SourceSurfaceSolidifier::auditCandidate(
+                        request.loadResult,candidate.mesh,4000);
+                    reconstructionDiagnostics<<audit.diagnostic;
+                    reconstructionDiagnostics<<QStringLiteral("Reconstruction remains Not Ready until complete local fidelity, source coverage, and fit ownership are proven.");
+                    break;
+                }
+            }
             auto error=mapSemanticError(semantic.status);auto rejected=failure(error,sourceAnalysis,request.profile.identity,
                 semantic.diagnostics.join(' ')+(solidifierDiagnostic.isEmpty()?QString():QStringLiteral(" Bounded source-surface solidification: ")+solidifierDiagnostic)+
-                (intersectionDiagnostics.isEmpty()?QString():QStringLiteral(" ")+intersectionDiagnostics.join(' ')));
-            rejected.sourceCoverage=semantic.coverage;rejected.detailedDiagnostics=solidifierAttempts;return rejected;}
+                (intersectionDiagnostics.isEmpty()?QString():QStringLiteral(" ")+intersectionDiagnostics.join(' '))+
+                (reconstructionDiagnostics.isEmpty()?QString():QStringLiteral(" ")+reconstructionDiagnostics.join(' ')));
+            rejected.sourceCoverage=semantic.coverage;rejected.detailedDiagnostics=solidifierAttempts;
+            rejected.detailedDiagnostics+=reconstructionDiagnostics;return rejected;}
         if(!semantic.coverage.complete()){
             QStringList groups;for(int index:semantic.coverage.uncoveredGroups())groups<<QString::number(index);
             auto rejected=failure(PrintPreparationError::OperandValidationFailed,sourceAnalysis,request.profile.identity,

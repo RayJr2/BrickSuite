@@ -235,8 +235,9 @@ int main(int argc,char**argv)
                 request.libraryAuthority=args[libraryAt+1];request.loadResult=part;
                 const auto prepared=LDrawPrintPreparationService().prepare(request);
                 ok&=check(!prepared.ready()&&prepared.diagnostic.contains(QStringLiteral("Source intersection arrangement"))&&
+                          prepared.diagnostic.contains(QStringLiteral("Surface-local reconstruction"))&&
                           !prepared.sourceCoverage.complete(),
-                          "6553 service invokes diagnostics only after earlier safe routes fail and keeps Source Coverage rejection");
+                          "6553 service invokes bounded reconstruction only after earlier safe routes fail and keeps Source Coverage rejection");
             }
         }
         for(const QString& id:{QStringLiteral("3032"),QStringLiteral("3037"),

@@ -84,9 +84,69 @@ bool queryIndexEquivalent()
 int main(int argc,char**argv)
 {
     QCoreApplication app(argc,argv);const auto arguments=app.arguments();bool ok=require(queryIndexEquivalent(),QStringLiteral("indexed ray hits/order and nearest source agree with exhaustive reference at boundaries and ties"));const int libraryAt=arguments.indexOf(QStringLiteral("--ldraw"));if(libraryAt<0||libraryAt+1>=arguments.size())return ok?0:1;
+    if(arguments.contains(QStringLiteral("--reconstruction-audit"))){
+        for(const QString&part:{QStringLiteral("6553"),QStringLiteral("32064a"),QStringLiteral("10113")}){
+            const auto loaded=LDrawLibraryService::loadPart(arguments[libraryAt+1],part);
+            ok&=require(loaded.ok(),part+QStringLiteral(" reconstruction source loads"));
+            if(!loaded.ok())continue;
+            const auto originalTriangles=loaded.mesh.triangles;
+            for(const auto axis:{SourceSurfaceSolidifier::RayAxis::X,
+                                 SourceSurfaceSolidifier::RayAxis::Y,
+                                 SourceSurfaceSolidifier::RayAxis::Z}){
+                if(part!=QStringLiteral("6553")&&axis!=SourceSurfaceSolidifier::RayAxis::X)break;
+                const auto attempt=SourceSurfaceSolidifier::solidify(loaded,.15,
+                    axis,SourceSurfaceSolidifier::QueryMode::Indexed,
+                    8000,150000,SourceSurfaceSolidifier::ExtractionMode::SurfaceNetsDiagnostic);
+                ok&=require(attempt.metrics.totalMilliseconds<=8000&&
+                            attempt.metrics.finalFaces<=150000,
+                            part+QStringLiteral(" reconstruction stays inside time/face bounds"));
+                QTextStream(stdout)<<"reconstruction-audit part="<<part<<" axis="<<int(axis)
+                    <<" success="<<attempt.successful<<" grid="<<attempt.metrics.gridX<<','
+                    <<attempt.metrics.gridY<<','<<attempt.metrics.gridZ
+                    <<" vertices="<<attempt.metrics.finalVertices<<" faces="<<attempt.metrics.finalFaces
+                    <<" primary-bytes~="<<attempt.metrics.approximatePrimaryBytes
+                    <<" elapsed-ms="<<attempt.metrics.totalMilliseconds
+                    <<" diagnostic="<<attempt.diagnostic<<Qt::endl;
+                if(attempt.successful){
+                    const auto fidelity=SourceSurfaceSolidifier::auditCandidate(loaded,attempt.mesh,8000);
+                    ok&=require(fidelity.bounded,part+QStringLiteral(" bilateral audit is bounded"));
+                    if(part==QStringLiteral("32064a"))ok&=require(
+                        !fidelity.localFidelityPassed&&!fidelity.completeOwnership&&
+                        fidelity.sourceTrianglesUnresolved>0,
+                        QStringLiteral("manifold candidate remains rejected with unresolved local fidelity and source ownership"));
+                    const auto repeated=SourceSurfaceSolidifier::solidify(loaded,.15,
+                        axis,SourceSurfaceSolidifier::QueryMode::Indexed,8000,150000,
+                        SourceSurfaceSolidifier::ExtractionMode::SurfaceNetsDiagnostic);
+                    ok&=require(repeated.successful&&repeated.mesh.faces==attempt.mesh.faces&&
+                                repeated.mesh.vertices.size()==attempt.mesh.vertices.size(),
+                                part+QStringLiteral(" surface-local extraction is deterministic"));
+                    QTextStream(stdout)<<"reconstruction-fidelity part="<<part
+                        <<" bounded="<<fidelity.bounded
+                        <<" owned="<<fidelity.confidentlyOwnedFaces<<'/'<<attempt.mesh.faces.size()
+                        <<" sourceRepresented="<<fidelity.sourceTrianglesRepresented<<'/'
+                        <<loaded.mesh.triangles.size()<<" diagnostic="<<fidelity.diagnostic<<Qt::endl;
+                }
+                if(part==QStringLiteral("6553"))ok&=require(!attempt.successful,
+                    QStringLiteral("6553 is not promoted from non-manifold/open reconstruction"));
+            }
+            ok&=require(sameSourceTriangles(originalTriangles,loaded.mesh.triangles),
+                        part+QStringLiteral(" reconstruction leaves Source unchanged"));
+        }
+        return ok?0:1;
+    }
     for(const QString&part:{QStringLiteral("3673"),QStringLiteral("4274"),QStringLiteral("2780")}){
         const auto loaded=LDrawLibraryService::loadPart(arguments[libraryAt+1],part);ok&=require(loaded.ok(),part+QStringLiteral(" loads"));if(!loaded.ok())continue;const auto sourceTriangles=loaded.mesh.triangles;
         const auto first=SourceSurfaceSolidifier::solidify(loaded);ok&=require(first.successful,part+QStringLiteral(" solidifies: ")+first.diagnostic);if(!first.successful)continue;
+        if(part==QStringLiteral("4274")){
+            const auto fidelity=SourceSurfaceSolidifier::auditCandidate(loaded,first.mesh,8000);
+            ok&=require(fidelity.bounded&&fidelity.reconstructedSamples>0&&fidelity.sourceSamples>0,
+                        QStringLiteral("bounded bilateral fidelity samples both surfaces"));
+            auto damaged=first.mesh;damaged.vertices.front().x+=5.0;
+            const auto damagedAudit=SourceSurfaceSolidifier::auditCandidate(loaded,damaged,8000);
+            ok&=require(damagedAudit.bounded&&damagedAudit.reconstructedToSourceMaximum>
+                        fidelity.reconstructedToSourceMaximum,
+                        QStringLiteral("local geometric damage increases maximum deviation"));
+        }
         ok&=require(sameSourceTriangles(sourceTriangles,loaded.mesh.triangles),part+QStringLiteral(" authoritative Source remains immutable"));
         const auto validation=validateBooleanOperand(first.analysis);ok&=require(validation.ok(),part+QStringLiteral(" validates independently"));const auto source=analyzeSource([&]{PrintMesh mesh;for(const auto&t:loaded.mesh.triangles){const auto convert=[](const QVector3D&p){return Point{.4*double(p.x()),.4*double(p.z()),-.4*double(p.y())};};const auto offset=std::uint32_t(mesh.vertices.size());mesh.vertices.push_back(convert(t.a));mesh.vertices.push_back(convert(t.b));mesh.vertices.push_back(convert(t.c));mesh.faces.push_back({offset,offset+1,offset+2});}return mesh;}());
         ok&=require(first.surfaceProjectionFraction>0.0&&first.projectedVertices>first.mesh.vertices.size()*9/10&&first.meanSurfaceDeviationBeforeProjectionMillimetres>0.01&&first.meanSurfaceDeviationAfterProjectionMillimetres<first.meanSurfaceDeviationBeforeProjectionMillimetres,part+QStringLiteral(" maximum valid authoritative-surface projection measurably reduces volumetric faceting"));
