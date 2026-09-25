@@ -70,6 +70,9 @@
 #include "import/GlobalRebrickableImportDialog.h"
 #include "collection/MyCollectionWidget.h"
 #include "parts/PartResolverTestDialog.h"
+#ifndef NDEBUG
+#include "parts/PrintCapabilityAuditDialog.h"
+#endif
 #include "parts/PartReferenceDialog.h"
 #include "parts/AddPartReferenceDialog.h"
 #include "parts/LDrawModelViewerManager.h"
@@ -1302,6 +1305,13 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 #ifndef NDEBUG
     // Test menu
     auto* testMenu = menuBar()->addMenu("Test");
+
+    auto* printAuditAction = testMenu->addAction(tr("Print Capability Audit..."));
+    connect(printAuditAction, &QAction::triggered, this, [this] {
+        auto* dialog = new PrintCapabilityAuditDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->show();
+    });
 
     auto* partIdentityMenu = testMenu->addMenu("Part Identity");
 

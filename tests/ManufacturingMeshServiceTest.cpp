@@ -1,5 +1,6 @@
 #include "../src/services/geometry/print/ManufacturingMeshService.h"
 #include "../src/services/geometry/print/AutoFitProfileResolver.h"
+#include "../src/services/geometry/print/BatchPrintableModelService.h"
 #include "../src/services/geometry/print/FrictionlessTechnicPinSemantic.h"
 #include "../src/services/geometry/print/FrictionTechnicPinSemantic.h"
 #include "../src/services/geometry/print/TechnicAxleSemantic.h"
@@ -30,6 +31,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QSet>
+#include <QSqlDatabase>
+#include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <cmath>
@@ -755,7 +759,297 @@ bool slopeStudInvestigation(const QString&library,const QString&proofPath,
     return ok;
 }
 
-int main(int argc,char**argv){QCoreApplication app(argc,argv);const auto investigationAt=app.arguments().indexOf(QStringLiteral("--slope-investigate"));if(investigationAt>=0&&investigationAt+1<app.arguments().size())return slopeStudInvestigation(app.arguments()[investigationAt+1],investigationAt+2<app.arguments().size()?app.arguments()[investigationAt+2]:QString(),investigationAt+3<app.arguments().size()?app.arguments()[investigationAt+3]:QString(),investigationAt+4<app.arguments().size()?app.arguments()[investigationAt+4]:QString())?0:1;if(app.arguments().contains(QStringLiteral("--click-only")))return clickProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--interleaved-only")))return interleavedProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--hinge-only")))return hingeProductionProof(app.arguments())?0:1;bool ok=true;LDrawGeometry::LDrawLoadResult source;source.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>();PreparedMesh nominal;nominal.mesh=box();nominal.partReference="3700";nominal.ldrawIdentity="parts/3700.dat";nominal.preparationProfileVersion="profile-v1";nominal.mcutVersion="mcut-v1";const qsizetype sourceTriangleCount=source.mesh.triangles.size();const auto preparedBefore=nominal.mesh;ManufacturingMeshService service([]{return std::make_unique<ProofBoolean>();},[](const auto&){return semantic();});
+int main(int argc,char**argv){QCoreApplication app(argc,argv);const auto investigationAt=app.arguments().indexOf(QStringLiteral("--slope-investigate"));if(investigationAt>=0&&investigationAt+1<app.arguments().size())return slopeStudInvestigation(app.arguments()[investigationAt+1],investigationAt+2<app.arguments().size()?app.arguments()[investigationAt+2]:QString(),investigationAt+3<app.arguments().size()?app.arguments()[investigationAt+3]:QString(),investigationAt+4<app.arguments().size()?app.arguments()[investigationAt+4]:QString())?0:1;if(app.arguments().contains(QStringLiteral("--click-only")))return clickProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--interleaved-only")))return interleavedProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--hinge-only")))return hingeProductionProof(app.arguments())?0:1;bool ok=true;
+{
+    QVector<BatchPrintablePart> catalog;
+    BatchPrintablePart printable;printable.partNumber=QStringLiteral("3001");printable.catalogPresent=true;
+    BatchPrintablePart sticker;sticker.partNumber=QStringLiteral("sticker");sticker.catalogPresent=true;sticker.noColor=true;
+    BatchPrintablePart missing;missing.partNumber=QStringLiteral("99999999");missing.catalogPresent=true;
+    BatchPrintablePart printed;printed.partNumber=QStringLiteral("cardupn0017pr0166");printed.catalogPresent=true;
+    catalog={printable,sticker,missing,printed};
+    BatchPrintPopulation population;
+    const auto first=BatchPrintableModelService::randomSample(catalog,2,8123,true,&population);
+    const auto second=BatchPrintableModelService::randomSample(catalog,2,8123);
+    bool sameOrder=first.size()==2&&second.size()==2;
+    for(int i=0;i<first.size()&&sameOrder;++i)sameOrder=first[i].partNumber==second[i].partNumber;
+    ok&=check(sameOrder&&first[0].partNumber!=first[1].partNumber&&
+              !first[0].noColor&&BatchPrintableModelService::isStandardAuditPartNumber(first[0].partNumber)&&
+              !first[1].noColor&&BatchPrintableModelService::isStandardAuditPartNumber(first[1].partNumber)&&
+              population.catalogTotal==4&&population.excludedNoColor==1&&
+              population.excludedNonstandardId==1&&population.eligibleTotal==2&&
+              population.actualSampled==2,
+              "batch random sample returns only eligible records and records aggregate exclusions");
+    const auto includeComposite=BatchPrintableModelService::randomSample(catalog,3,8123,false);
+    ok&=check(includeComposite.size()==3&&
+              std::count_if(includeComposite.cbegin(),includeComposite.cend(),[&](const auto&part){
+                  return part.partNumber==printed.partNumber;})==1,
+              "disabling nonstandard-ID exclusion includes composite Parts in the eligible sample");
+    ok&=check(BatchPrintOptions{}.excludeNonstandardIds&&
+              BatchPrintableModelService::isStandardAuditPartNumber("3001")&&
+              BatchPrintableModelService::isStandardAuditPartNumber("3037b")&&
+              BatchPrintableModelService::isStandardAuditPartNumber("3069B")&&
+              BatchPrintableModelService::isStandardAuditPartNumber("10082535c")&&
+              !BatchPrintableModelService::isStandardAuditPartNumber("3069bb")&&
+              !BatchPrintableModelService::isStandardAuditPartNumber("973c07h02pr1370")&&
+              !BatchPrintableModelService::isStandardAuditPartNumber("98138pr0003")&&
+              !BatchPrintableModelService::isStandardAuditPartNumber("7188pat0001")&&
+              !BatchPrintableModelService::isStandardAuditPartNumber("970c27pat02pr2367"),
+              "standard audit ID is exactly digits with at most one trailing letter");
+    BatchPrintablePart patOnly;patOnly.partNumber=QStringLiteral("7188pat0001");
+    patOnly.catalogPresent=true;
+    BatchPrintPopulation patPopulation;
+    const auto patSample=BatchPrintableModelService::randomSample({printable,patOnly,printed,sticker},1,8123,
+                                                                   true,&patPopulation);
+    ok&=check(patSample.size()==1&&patSample.front().partNumber==printable.partNumber&&
+              patPopulation.excludedNonstandardId==2&&patPopulation.excludedNoColor==1,
+              "pat and pr composite IDs are excluded before sampling; no-Color remains distinct");
+    QVector<BatchPrintablePart> orderedCatalog,eligibleOnly;
+    for(int i=0;i<30;++i){
+        BatchPrintablePart eligible;eligible.partNumber=QString::number(1000+i);eligible.catalogPresent=true;
+        orderedCatalog.push_back(eligible);eligibleOnly.push_back(eligible);
+        if(i%2==0){BatchPrintablePart excluded;excluded.partNumber=eligible.partNumber+QStringLiteral("pat0001");
+            excluded.catalogPresent=true;orderedCatalog.push_back(excluded);}
+    }
+    BatchPrintablePart stickerCategory;stickerCategory.partNumber=QStringLiteral("9090");
+    stickerCategory.category=QStringLiteral("Stickers");stickerCategory.catalogPresent=true;
+    orderedCatalog.insert(3,stickerCategory);
+    BatchPrintablePart noColorPart;noColorPart.partNumber=QStringLiteral("9091");
+    noColorPart.noColor=true;noColorPart.catalogPresent=true;orderedCatalog.insert(9,noColorPart);
+    const auto mixedSample=BatchPrintableModelService::randomSample(orderedCatalog,12,9371);
+    const auto eligibleSample=BatchPrintableModelService::randomSample(eligibleOnly,12,9371);
+    const auto changedSeed=BatchPrintableModelService::randomSample(orderedCatalog,12,9372);
+    QStringList mixedIds,eligibleIds,changedIds;
+    for(const auto& part:mixedSample)mixedIds<<part.partNumber;
+    for(const auto& part:eligibleSample)eligibleIds<<part.partNumber;
+    for(const auto& part:changedSeed)changedIds<<part.partNumber;
+    QSet<QString> uniqueIds;for(const auto& id:mixedIds)uniqueIds.insert(id);
+    ok&=check(mixedIds.size()==12&&mixedIds==eligibleIds&&mixedIds!=changedIds&&
+              uniqueIds.size()==12,
+              "ordered catalog exclusions never trigger neighbor fallback; seeded eligible sampling is unique and reproducible");
+    const auto oversized=BatchPrintableModelService::randomSample(orderedCatalog,100,9371);
+    ok&=check(oversized.size()==eligibleOnly.size(),"oversized request cleanly returns all eligible Parts");
+    BatchPrintPopulation orderedPopulation;
+    const auto twentyFive=BatchPrintableModelService::randomSample(orderedCatalog,25,9371,true,
+                                                                    &orderedPopulation);
+    ok&=check(twentyFive.size()==25&&orderedPopulation.catalogTotal==47&&
+              orderedPopulation.excludedStickerCategory==1&&orderedPopulation.excludedNoColor==1&&
+              orderedPopulation.excludedNonstandardId==15&&orderedPopulation.eligibleTotal==30&&
+              orderedPopulation.actualSampled==25&&
+              std::none_of(twentyFive.cbegin(),twentyFive.cend(),[](const auto& part){
+                  return BatchPrintableModelService::isStickerCategory(part);}),
+              "Sticker category and other exclusions precede the 25-Part seeded sample");
+    QVector<BatchPrintResult> denominatorRows(5);
+    denominatorRows[0].category=BatchPrintCategory::Success;denominatorRows[0].ldrawModel="3001";
+    denominatorRows[1].category=BatchPrintCategory::SkippedNoColor;
+    denominatorRows[2].category=BatchPrintCategory::NoLDrawModel;
+    denominatorRows[3].category=BatchPrintCategory::PrepareNotReady;denominatorRows[3].ldrawModel="3037";
+    denominatorRows[4].category=BatchPrintCategory::SkippedNonstandardId;
+    const auto denominator=BatchPrintableModelService::summarize(denominatorRows);
+    ok&=check(denominator.eligible==3&&denominator.modelAvailable==2&&
+              denominator.skippedNoColor==1&&denominator.skippedNonstandardIds==1&&
+              denominator.successful==1&&std::abs(denominator.modelAvailabilityPercent()-200.0/3)<1e-9&&
+              std::abs(denominator.printServicePercent()-50.0)<1e-9&&
+              std::abs(denominator.catalogToPrintablePercent()-100.0/3)<1e-9,
+              "batch statistics use distinct eligible, model-available, and print-success denominators");
+    const auto explicitList=BatchPrintableModelService::explicitParts(catalog,
+        {QStringLiteral("99999999"),QStringLiteral("3001"),QStringLiteral("unknown")});
+    ok&=check(explicitList.size()==3&&explicitList[0].partNumber==QStringLiteral("99999999")&&
+              explicitList[1].partNumber==QStringLiteral("3001")&&!explicitList[2].catalogPresent,
+              "explicit Part list retains order and unknown catalog identity");
+    QTemporaryDir output;BatchPrintOptions options;options.outputRoot=output.path();
+    {
+        const QString connection=QStringLiteral("batch-catalog-test");
+        {
+            auto db=QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"),connection);
+            db.setDatabaseName(output.filePath(QStringLiteral("catalog.db")));
+            ok&=check(db.open(),"synthetic batch catalog opens");
+            QSqlQuery q(db);
+            for(const auto&sql:{
+                    "CREATE TABLE part(id INTEGER,part_number TEXT,material TEXT,part_category_id INTEGER,is_active INTEGER)",
+                    "CREATE TABLE part_category(id INTEGER,name TEXT,rebrickable_id INTEGER)",
+                    "CREATE TABLE external_part_identifier(part_id INTEGER,external_id TEXT,provider TEXT,is_active INTEGER)",
+                    "CREATE TABLE color(id INTEGER,rebrickable_id INTEGER)",
+                    "CREATE TABLE set_catalog_part(part_id INTEGER,color_id INTEGER)",
+                    "CREATE TABLE minifig_catalog_part(part_id INTEGER,color_id INTEGER)",
+                    "CREATE TABLE part_element_identifier(part_id INTEGER,color_id INTEGER,is_active INTEGER)",
+                    "INSERT INTO part_category VALUES(7,'Bricks',11)",
+                    "INSERT INTO part_category VALUES(8,'Plates',14)",
+                    "INSERT INTO part_category VALUES(9,'Tiles',19)",
+                    "INSERT INTO part_category VALUES(10,'Stickers',58)",
+                    "INSERT INTO part VALUES(1,'3001','Plastic',7,1)",
+                    "INSERT INTO part VALUES(2,'sticker','Plastic',NULL,1)",
+                    "INSERT INTO part VALUES(3,'dual','Plastic',NULL,1)",
+                    "INSERT INTO part VALUES(4,'3069bpr1234','Plastic',NULL,1)",
+                    "INSERT INTO part VALUES(5,'3020','Plastic',8,1)",
+                    "INSERT INTO part VALUES(6,'3069b','Plastic',9,1)",
+                    "INSERT INTO part VALUES(7,'5000','Plastic',10,1)",
+                    "INSERT INTO color VALUES(1,1)",
+                    "INSERT INTO color VALUES(2,9999)",
+                    "INSERT INTO set_catalog_part VALUES(1,1)",
+                    "INSERT INTO set_catalog_part VALUES(2,2)",
+                    "INSERT INTO set_catalog_part VALUES(3,2)",
+                    "INSERT INTO set_catalog_part VALUES(3,1)"})
+                ok&=check(q.exec(QString::fromLatin1(sql)),QStringLiteral("synthetic catalog SQL: ")+sql);
+            db.close();
+        }
+        QSqlDatabase::removeDatabase(connection);
+        QString catalogError;
+        const auto loaded=BatchPrintableModelService::loadCatalog(output.filePath(QStringLiteral("catalog.db")),&catalogError);
+        const auto stickerEntry=BatchPrintableModelService::explicitParts(loaded,{QStringLiteral("sticker")});
+        const auto dualEntry=BatchPrintableModelService::explicitParts(loaded,{QStringLiteral("dual")});
+        const auto printedEntry=BatchPrintableModelService::explicitParts(loaded,{QStringLiteral("3069bpr1234")});
+        const auto plateEntry=BatchPrintableModelService::explicitParts(loaded,{QStringLiteral("3020")});
+        const auto tileEntry=BatchPrintableModelService::explicitParts(loaded,{QStringLiteral("3069b")});
+        const auto stickerCategoryEntry=BatchPrintableModelService::explicitParts(loaded,
+            {QStringLiteral("5000")});
+        ok&=check(catalogError.isEmpty()&&loaded.size()==7&&
+                  stickerEntry.size()==1&&stickerEntry[0].noColor&&
+                  dualEntry.size()==1&&!dualEntry[0].noColor&&
+                  printedEntry.size()==1&&
+                  !BatchPrintableModelService::isStandardAuditPartNumber(printedEntry[0].partNumber)&&
+                  loaded.front().categoryId==7&&loaded.front().rebrickableCategoryId==11&&
+                  loaded.front().category==QStringLiteral("Bricks")&&
+                  plateEntry.size()==1&&plateEntry[0].category==QStringLiteral("Plates")&&
+                  tileEntry.size()==1&&tileEntry[0].category==QStringLiteral("Tiles")&&
+                  stickerCategoryEntry.size()==1&&
+                  BatchPrintableModelService::isStickerCategory(stickerCategoryEntry.front()),
+                  "catalog relationship supplies Brick/Plate/Tile/Sticker categories independently of result status");
+    }
+    options.libraryRoot=output.path();options.runId=QStringLiteral("batch-test");options.autoFitEnabled=false;
+    options.seed=8123;
+    options.randomSample=true;options.requestedEligibleCount=25;options.population=orderedPopulation;
+    options.runId=QStringLiteral("batch-25-eligible");
+    const auto twentyFiveRun=BatchPrintableModelService().run(twentyFive,options);
+    QFile twentyFiveCsv(twentyFiveRun.csvPath),twentyFiveMetadata(twentyFiveRun.metadataPath);
+    const QStringList twentyFiveLines=twentyFiveCsv.open(QIODevice::ReadOnly)?
+        QString::fromUtf8(twentyFiveCsv.readAll()).split('\n',Qt::SkipEmptyParts):QStringList();
+    const auto twentyFiveMeta=twentyFiveMetadata.open(QIODevice::ReadOnly)?
+        QJsonDocument::fromJson(twentyFiveMetadata.readAll()).object():QJsonObject();
+    ok&=check(twentyFiveRun.ok&&twentyFiveRun.results.size()==25&&twentyFiveLines.size()==26&&
+              twentyFiveMeta.value("excludedStickerCategory").toInt()==1&&
+              twentyFiveMeta.value("actualSampledCount").toInt()==25&&
+              twentyFiveRun.totals.eligible==25,
+              "25 eligible sampled Parts create exactly 25 CSV rows and aggregate Sticker exclusion metadata");
+    options.randomSample=false;options.requestedEligibleCount=0;options.population={};
+    options.runId=QStringLiteral("batch-test");
+    printable.categoryId=7;printable.rebrickableCategoryId=11;printable.category=QStringLiteral("Bricks");
+    const auto run=BatchPrintableModelService().run({sticker,printed,missing},options);
+    QFile csv(run.csvPath);ok&=check(run.ok&&csv.open(QIODevice::ReadOnly)&&
+        csv.readAll().contains("skipped_nonstandard_id")&&run.results.size()==3&&
+        run.results[0].category==BatchPrintCategory::SkippedNoColor&&
+        run.results[1].category==BatchPrintCategory::SkippedNonstandardId&&
+        run.results[2].category==BatchPrintCategory::NoLDrawModel&&
+        run.totals.eligible==1&&run.totals.skippedNoColor==1&&
+        run.totals.skippedNonstandardIds==1&&run.totals.noModel==1,
+        "batch CSV persists distinct sticker/nonstandard-ID exclusions and no-model outcome");
+    options.runId=QStringLiteral("batch-random");options.randomSample=true;
+    options.requestedEligibleCount=2;options.population=population;
+    const auto sampledRun=BatchPrintableModelService().run(first,options);
+    QFile sampledCsv(sampledRun.csvPath),metadataFile(sampledRun.metadataPath);
+    const QStringList sampledLines=sampledCsv.open(QIODevice::ReadOnly)?
+        QString::fromUtf8(sampledCsv.readAll()).split('\n',Qt::SkipEmptyParts):QStringList();
+    const auto metadata=metadataFile.open(QIODevice::ReadOnly)?
+        QJsonDocument::fromJson(metadataFile.readAll()).object():QJsonObject();
+    ok&=check(sampledRun.ok&&sampledRun.results.size()==2&&sampledLines.size()==3&&
+              sampledLines[0].contains("sample_sequence")&&
+              sampledLines[1].split(',').value(8)==QStringLiteral("1")&&
+              sampledLines[2].split(',').value(8)==QStringLiteral("2")&&
+              !sampledLines.join('\n').contains("skipped_no_color")&&
+              !sampledLines.join('\n').contains("skipped_nonstandard_id")&&
+              metadata.value("catalogPopulation").toInt()==4&&
+              metadata.value("excludedNoColor").toInt()==1&&
+              metadata.value("excludedNonstandardId").toInt()==1&&
+              metadata.value("eligiblePopulation").toInt()==2&&
+              metadata.value("requestedEligibleCount").toInt()==2&&
+              metadata.value("actualSampledCount").toInt()==2&&
+              metadata.value("seed").toInt()==8123,
+              "random CSV has only sampled Parts in 1..N order; companion metadata retains exclusion totals");
+    options.randomSample=false;options.requestedEligibleCount=0;options.population={};
+    options.runId=QStringLiteral("batch-category");
+    const auto categoryRun=BatchPrintableModelService().run({printable},options);
+    QFile categoryCsv(categoryRun.csvPath);
+    const QByteArray categoryBytes=categoryCsv.open(QIODevice::ReadOnly)?categoryCsv.readAll():QByteArray();
+    ok&=check(categoryRun.ok&&categoryBytes.startsWith("csv_schema_version,")&&
+              categoryBytes.contains("category_id,rebrickable_category_id,category_name,ldraw_model,result_category")&&
+              !categoryBytes.contains(",category,")&&
+              categoryBytes.contains("\"3001\",7,11,\"Bricks\",\"\",\"no_ldraw_model\"")&&
+              categoryRun.results.front().category==BatchPrintCategory::NoLDrawModel,
+              "versioned CSV distinguishes audit result_category from catalog Brick category");
+    options.excludeNonstandardIds=false;options.runId=QStringLiteral("batch-composite-included");
+    const auto includedRun=BatchPrintableModelService().run({printed},options);
+    ok&=check(includedRun.ok&&includedRun.totals.eligible==1&&
+              includedRun.results.front().category==BatchPrintCategory::NoLDrawModel,
+              "turning off nonstandard-ID exclusion includes composite Parts in printable assessment");
+    options.excludeNonstandardIds=true;options.runId=QStringLiteral("batch-test");
+    ok&=check(QFileInfo(run.csvPath).absolutePath()==QDir(output.path()).filePath("batch-test")&&
+              QFileInfo::exists(QDir(run.runDirectory).filePath("exports"))&&
+              !BatchPrintableModelService().run({missing},options).ok,
+              "custom output root creates a unique run directory and does not overwrite it");
+    const QString diagnosticPath=output.filePath(QStringLiteral("31002-source_coverage.3mf"));
+    QString diagnosticError;
+    const bool diagnosticSaved=BatchPrintableModelService::writeDiagnosticThreeMf(
+        box(),diagnosticPath,QStringLiteral("31002"),QColor(QStringLiteral("#A0A5A9")),&diagnosticError);
+    BatchPrintResult sourceFailure;sourceFailure.category=BatchPrintCategory::SourceCoverage;
+    sourceFailure.diagnosticExportAvailable=diagnosticSaved;
+    const auto diagnosticTotals=BatchPrintableModelService::summarize({sourceFailure});
+    const QString noCandidatePath=output.filePath(QStringLiteral("31003-source_coverage.3mf"));
+    ok&=check(diagnosticSaved&&QFileInfo::exists(diagnosticPath)&&
+              diagnosticTotals.successful==0&&diagnosticTotals.prepareFailures==1&&
+              !BatchPrintableModelService::writeDiagnosticThreeMf(PrintMesh{},noCandidatePath,
+                  QStringLiteral("31003"),QColor(QStringLiteral("#A0A5A9")))&&
+              !QFileInfo::exists(noCandidatePath),
+              "source-coverage diagnostic 3MF is inspectable but remains a failure; absent candidate creates no file");
+    CancellationState cancelled;cancelled.cancel();options.runId=QStringLiteral("batch-stopped");
+    const auto stopped=BatchPrintableModelService().run({printable,missing},options,&cancelled);
+    ok&=check(stopped.ok&&stopped.stopped&&stopped.results.size()==2&&
+        stopped.results[0].category==BatchPrintCategory::NotStarted&&
+        stopped.results[1].category==BatchPrintCategory::NotStarted,
+        "Stop records pending Parts without beginning new preparation");
+    CancellationState stopAfterFirst;options.runId=QStringLiteral("batch-stop-between");
+    const auto between=BatchPrintableModelService().run({sticker,printable},options,&stopAfterFirst,
+        [&stopAfterFirst](const BatchPrintResult&,const BatchPrintTotals&){stopAfterFirst.cancel();});
+    ok&=check(between.ok&&between.stopped&&between.results.size()==2&&
+        between.results[0].category==BatchPrintCategory::SkippedNoColor&&
+        between.results[1].category==BatchPrintCategory::NotStarted,
+        "Stop after a persisted row prevents the next Part and closes CSV");
+    const int batchLdrawAt=app.arguments().indexOf(QStringLiteral("--batch-ldraw"));
+    if(batchLdrawAt>=0&&batchLdrawAt+1<app.arguments().size()){
+        options.libraryRoot=app.arguments()[batchLdrawAt+1];options.runId=QStringLiteral("batch-real");
+        BatchPrintablePart difficult;difficult.partNumber=QStringLiteral("6553");difficult.catalogPresent=true;
+        difficult.categoryId=8;difficult.rebrickableCategoryId=14;
+        difficult.category=QStringLiteral("Plates");
+        const auto real=BatchPrintableModelService().run({difficult,printable,sticker,missing},options);
+        ok&=check(real.ok&&real.results.size()==4&&
+            real.results.front().category!=BatchPrintCategory::Success&&
+            real.results[1].category==BatchPrintCategory::Success&&
+            real.results[1].reopened&&QFileInfo::exists(real.results[1].exportPath)&&
+            real.results[2].category==BatchPrintCategory::SkippedNoColor&&
+            real.results[3].category==BatchPrintCategory::NoLDrawModel&&
+            real.totals.eligible==3&&real.totals.successful==1,
+            "small batch continues after real 6553 preparation failure and records 3001 export, skip, and no model");
+        ok&=check(real.results[1].exportPath.startsWith(QDir(output.path()).filePath("batch-real/exports/"))&&
+                  QFileInfo::exists(real.results[1].exportPath)&&real.results[1].reopened&&
+                  QFileInfo(real.results[1].exportPath).fileName()==QStringLiteral("3001-success.3mf")&&
+                  !QFileInfo(real.results[1].exportPath).fileName().startsWith(QStringLiteral("00002-")),
+                  "successful 3MF uses Part-result filename without sample-sequence prefix");
+        QFile realCsv(real.csvPath);
+        const QByteArray realBytes=realCsv.open(QIODevice::ReadOnly)?realCsv.readAll():QByteArray();
+        ok&=check(realBytes.contains("\"6553\",8,14,\"Plates\"")&&
+                  realBytes.contains("\"3001\",7,11,\"Bricks\"")&&
+                  real.results.front().category!=BatchPrintCategory::Success,
+                  "catalog categories persist for both preparation failure and successful 3MF rows");
+        options.runId=QStringLiteral("batch-reopen-failure");
+        options.reopenValidator=[](const QString&,std::size_t,QString*error){
+            if(error)*error=QStringLiteral("Injected reopen failure");return false;};
+        const auto failedReopen=BatchPrintableModelService().run({printable},options);
+        ok&=check(failedReopen.ok&&failedReopen.results.size()==1&&
+            failedReopen.results.front().category==BatchPrintCategory::ReopenFailed&&
+            failedReopen.results.front().diagnostic==QStringLiteral("Injected reopen failure")&&
+            QFileInfo(failedReopen.results.front().exportPath).fileName()==QStringLiteral("3001-reopen_failed.3mf"),
+            "3MF reopen failure is a distinct persisted outcome");
+    }
+}
+LDrawGeometry::LDrawLoadResult source;source.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>();PreparedMesh nominal;nominal.mesh=box();nominal.partReference="3700";nominal.ldrawIdentity="parts/3700.dat";nominal.preparationProfileVersion="profile-v1";nominal.mcutVersion="mcut-v1";const qsizetype sourceTriangleCount=source.mesh.triangles.size();const auto preparedBefore=nominal.mesh;ManufacturingMeshService service([]{return std::make_unique<ProofBoolean>();},[](const auto&){return semantic();});
 auto p=profile();QString selectionReason;const auto*selectedCorrection=ManufacturingMeshService::compatibleCorrection(p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,&selectionReason);ok&=check(selectedCorrection&&std::abs(selectedCorrection->valueMillimetres-.2)<1e-9,"explicit per-export profile selection resolves the profile correction");ok&=check(!ManufacturingMeshService::compatibleCorrection(p,FitPrintedOrientation::FeatureAxisParallelToBuildPlate),"incompatible orientation cannot be selected for compensated export");const auto result=service.generate(source,nominal,p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(result.ok(),"compatible Verified profile produces ManufacturingMesh");if(result.ok()){const auto&m=*result.manufacturingMesh;ok&=check(std::abs(m.nominalDiameterMillimetres-4.8)<1e-9&&std::abs(m.diameterCorrectionMillimetres-.2)<1e-9&&std::abs(m.manufacturingDiameterMillimetres-5.0)<1e-9,"profile diameter correction enters semantic regeneration");ok&=check(!same(m.mesh,nominal.mesh)&&same(nominal.mesh,preparedBefore)&&source.mesh.triangles.size()==sourceTriangleCount,"Source and Prepared remain unchanged while ManufacturingMesh is distinct");ok&=check(m.fitProfileIdentity==p.profileIdentity&&m.sourceSessionIdentity==p.sourceSessionIdentity&&!m.identity.isEmpty(),"manufacturing provenance links profile and evidence");QTextStream(stdout)<<"Part 3700 proof: profile="<<m.fitProfileIdentity<<" nominalDiameter="<<m.nominalDiameterMillimetres<<" correction="<<m.diameterCorrectionMillimetres<<" manufacturingDiameter="<<m.manufacturingDiameterMillimetres<<" manufacturingIdentity="<<m.identity<<Qt::endl;const auto passage=analyzeSource(ProofBoolean::lastPassage);ok&=check(std::abs((passage.bounds.maximum.x-passage.bounds.minimum.x)-6.0)<1e-9,"protected entrance geometry remains nominal");const auto repeated=service.generate(source,nominal,p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(repeated.ok()&&repeated.manufacturingMesh->identity==m.identity&&same(repeated.manufacturingMesh->mesh,m.mesh),"generation deterministic");auto changed=profile(.1);changed.profileIdentity="other-profile";const auto other=service.generate(source,nominal,changed,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(other.ok()&&other.manufacturingMesh->identity!=m.identity&&std::abs(other.manufacturingMesh->manufacturingDiameterMillimetres-4.9)<1e-9,"correction and identity come from selected profile");QTemporaryDir output;const QString exportPath=output.filePath("manufacturing.3mf");QString exportError;ok&=check(ManufacturingMeshDiagnosticExporter::writeThreeMf(m,exportPath,1.0,QColor("#0055BF"),&exportError),QStringLiteral("diagnostic ManufacturingMesh export: %1").arg(exportError));if(QFileInfo::exists(exportPath)){Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();model->QueryReader("3mf")->ReadFromFile(exportPath.toStdString());auto meshes=model->GetMeshObjects();ok&=check(meshes->MoveNext(),"diagnostic 3MF contains a mesh");if(meshes->GetCurrentMeshObject()){const auto exported=meshes->GetCurrentMeshObject();ok&=check(exported->GetTriangleCount()==m.mesh.faces.size(),"diagnostic export contains ManufacturingMesh triangle data");ok&=check(std::abs(exported->GetVertex(1).m_Coordinates[0]-m.mesh.vertices[1].x)<1e-6&&std::abs(exported->GetVertex(1).m_Coordinates[0]-nominal.mesh.vertices[1].x)>1e-6,"diagnostic export uses ManufacturingMesh rather than nominal Prepared Mesh");}}}
 const auto disabled=AutoFitProfileResolver::resolve(false,"3700",{p},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(disabled.state==AutoFitResolutionState::Disabled&&!disabled.resolved(),"Auto Fit defaults to nominal when disabled");const auto unique=AutoFitProfileResolver::resolve(true,"3700",{p},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(unique.resolved()&&unique.profile.profileIdentity==p.profileIdentity,"Auto Fit deterministically resolves one compatible Verified profile");const auto none=AutoFitProfileResolver::resolve(true,"3700",{},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(none.state==AutoFitResolutionState::NoCompatibleProfile,"Auto Fit safely keeps nominal geometry without a compatible profile");auto second=profile(.1);second.profileIdentity="second-profile";const auto ambiguous=AutoFitProfileResolver::resolve(true,"3700",{p,second},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(ambiguous.state==AutoFitResolutionState::Ambiguous&&!ambiguous.resolved(),"Auto Fit refuses ambiguous compatible profiles");auto staleAuto=p;staleAuto.corrections.front().semanticContractVersion="stale";auto draftAuto=p;draftAuto.verificationState=FitEvidenceState::Draft;const auto invalid=AutoFitProfileResolver::resolve(true,"3700",{staleAuto,draftAuto},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(invalid.state==AutoFitResolutionState::NoCompatibleProfile,"Auto Fit rejects stale and non-Verified profiles");
 PrintOrientation nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative;xPositive.rotate(PrintOrientation::Rotation::XPositive);xNegative.rotate(PrintOrientation::Rotation::XNegative);yPositive.rotate(PrintOrientation::Rotation::YPositive);yNegative.rotate(PrintOrientation::Rotation::YNegative);zPositive.rotate(PrintOrientation::Rotation::ZPositive);zNegative.rotate(PrintOrientation::Rotation::ZNegative);const auto zAxisFeature=feature();ok&=check(ManufacturingMeshService::transformedOrientation(zAxisFeature,nominalOrientation)==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,xPositive)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,xNegative)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,yPositive)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,yNegative)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,zPositive)==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,zNegative)==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,"identity and X/Y/Z +/-90 classify transformed feature axes against the build plate");

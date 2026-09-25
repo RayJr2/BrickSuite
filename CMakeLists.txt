@@ -423,6 +423,7 @@ qt_add_executable(BrickSuite
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
     src/ui/parts/LDrawModelViewerManager.cpp src/ui/parts/LDrawModelViewerManager.h
     src/ui/parts/LDrawModelViewerWindow.cpp src/ui/parts/LDrawModelViewerWindow.h
+    src/ui/parts/PrintCapabilityAuditDialog.cpp src/ui/parts/PrintCapabilityAuditDialog.h
     src/ui/parts/LDrawModelViewerSelection.h
     src/ui/parts/ManufacturingMeshDiagnosticDialog.cpp src/ui/parts/ManufacturingMeshDiagnosticDialog.h
     src/ui/parts/LDrawViewportWidget.cpp src/ui/parts/LDrawViewportWidget.h
@@ -483,6 +484,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/print/MeshBooleanService.h src/services/geometry/print/PrintPreparation.h
     src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
     src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h
+    src/services/geometry/print/BatchPrintableModelService.cpp src/services/geometry/print/BatchPrintableModelService.h
     src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
     src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
     src/services/geometry/print/SourceSurfaceSolidifier.cpp src/services/geometry/print/SourceSurfaceSolidifier.h
@@ -865,6 +867,7 @@ if(BUILD_TESTING)
 
     qt_add_executable(ManufacturingMeshServiceTest EXCLUDE_FROM_ALL
         tests/ManufacturingMeshServiceTest.cpp
+        src/services/geometry/print/BatchPrintableModelService.cpp src/services/geometry/print/BatchPrintableModelService.h
         src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
         src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
         src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
@@ -888,7 +891,7 @@ if(BUILD_TESTING)
         src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
         src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h)
     target_sources(ManufacturingMeshServiceTest PRIVATE src/services/geometry/print/StudReceivingWallPocketSemantic.cpp src/services/geometry/print/StudReceivingAntiStudSemantic.cpp src/services/geometry/print/StandardBarSemantic.cpp src/services/geometry/print/CClipBarReceiverSemantic.cpp src/services/geometry/print/BallJointSemantic.cpp src/services/geometry/print/BallSocketSemantic.cpp src/services/geometry/print/PinBarrelHingeSemantic.cpp src/services/geometry/print/InterleavedFingerHingeSemantic.cpp src/services/geometry/print/ClickHingeSemantic.cpp src/services/geometry/print/RetainedRotatingWheelSemantic.cpp src/services/geometry/print/PlainRoundBoreWheelSemantic.cpp)
-    target_link_libraries(ManufacturingMeshServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
+    target_link_libraries(ManufacturingMeshServiceTest PRIVATE Qt6::Core Qt6::Gui Qt6::Sql BrickSuite::Mcut BrickSuite::Lib3mf)
     bricksuite_stage_mcut_runtime(ManufacturingMeshServiceTest)
     add_test(NAME ManufacturingMeshService COMMAND ManufacturingMeshServiceTest)
 

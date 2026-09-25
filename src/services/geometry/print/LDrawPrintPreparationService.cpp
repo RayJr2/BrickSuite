@@ -147,11 +147,21 @@ PrintPreparationResult solidifiedResult(const PrintPreparationRequest&request,co
     if(!coverage.complete()){
         auto rejected=failure(PrintPreparationError::OperandValidationFailed,sourceAnalysis,request.profile.identity,
             QStringLiteral("Full-source solidification did not retain complete authoritative source accounting."));
-        rejected.sourceCoverage=coverage;return rejected;
+        rejected.sourceCoverage=coverage;
+        rejected.diagnosticCandidateMesh=std::make_shared<PrintMesh>(std::move(solidified.mesh));
+        rejected.diagnosticCandidateDescription=QStringLiteral("Bounded source-surface candidate; source coverage rejected.");
+        return rejected;
     }
     PrintPreparationResult result;result.detailedDiagnostics=attemptDiagnostics;result.sourceCoverage=coverage;result.sourceAnalysis=sourceAnalysis;result.finalAnalysis=solidified.analysis;result.preparationProfileIdentity=request.profile.identity;result.dimensionalFidelity.sourceDimensions=dimensions(sourceAnalysis.bounds);result.dimensionalFidelity.preparedDimensions=dimensions(solidified.analysis.bounds);result.dimensionalFidelity.absoluteDimensionDifference={std::abs(result.dimensionalFidelity.sourceDimensions.x-result.dimensionalFidelity.preparedDimensions.x),std::abs(result.dimensionalFidelity.sourceDimensions.y-result.dimensionalFidelity.preparedDimensions.y),std::abs(result.dimensionalFidelity.sourceDimensions.z-result.dimensionalFidelity.preparedDimensions.z)};result.dimensionalFidelity.maximumBoundsDeviationMillimetres=maximumBoundsDeviation(sourceAnalysis.bounds,solidified.analysis.bounds);result.dimensionalFidelity.allowedBoundsDeviationMillimetres=request.profile.maximumExternalBoundsDeviationMillimetres;
     result.detailedDiagnostics<<QStringLiteral("fidelity-validation-ms=%1").arg(fidelityTimer.elapsed());
-    if(result.dimensionalFidelity.maximumBoundsDeviationMillimetres>request.profile.maximumExternalBoundsDeviationMillimetres)return failure(PrintPreparationError::DimensionalFidelityFailed,sourceAnalysis,request.profile.identity,"Solidified source exceeded the external-bounds preservation limit.");
+    if(result.dimensionalFidelity.maximumBoundsDeviationMillimetres>request.profile.maximumExternalBoundsDeviationMillimetres){
+        auto rejected=failure(PrintPreparationError::DimensionalFidelityFailed,sourceAnalysis,request.profile.identity,
+            "Solidified source exceeded the external-bounds preservation limit.");
+        rejected.sourceCoverage=coverage;
+        rejected.diagnosticCandidateMesh=std::make_shared<PrintMesh>(std::move(solidified.mesh));
+        rejected.diagnosticCandidateDescription=QStringLiteral("Bounded source-surface candidate; dimensional fidelity rejected.");
+        return rejected;
+    }
     auto prepared=std::make_shared<PreparedMesh>();prepared->sourceCoverage=coverage;prepared->mesh=std::move(solidified.mesh);prepared->millimetreBounds=solidified.analysis.bounds;prepared->sourceAnalysis=sourceAnalysis;prepared->finalAnalysis=solidified.analysis;prepared->componentCount=solidified.analysis.connectedComponents;prepared->partReference=request.partReference;prepared->ldrawIdentity=request.ldrawIdentity;prepared->dependencyFingerprint=request.loadResult.dependencyFingerprint;prepared->preparationProfileVersion=request.profile.identity+QStringLiteral("+source-surface-solidifier-v1");prepared->preparationMethod=QStringLiteral("Certified authoritative LDraw source-surface volumetric solidification");prepared->sourceTriangleCount=sourceAnalysis.triangles;prepared->preparedTriangleCount=solidified.analysis.triangles;prepared->elapsedMilliseconds=elapsed;prepared->dimensionalFidelity=result.dimensionalFidelity;prepared->warnings<<QStringLiteral("Source-surface solidification used a %1 mm sampling pitch; inspect fine functional details before printing.").arg(solidified.samplingPitchMillimetres,0,'f',3);prepared->timings=partialTimings;prepared->timings.totalMilliseconds=elapsed;prepared->functionalFeatures=CClipBarReceiverSemantic::recognize(request.loadResult);prepared->functionalFeatures+=BallJointSemantic::recognize(request.loadResult);prepared->functionalFeatures+=BallSocketSemantic::recognize(request.loadResult);prepared->functionalFeatures+=PinBarrelHingeSemantic::recognize(request.loadResult);prepared->functionalFeatures+=InterleavedFingerHingeSemantic::recognize(request.loadResult);prepared->functionalFeatures+=ClickHingeSemantic::recognize(request.loadResult);prepared->functionalFeatures+=RetainedRotatingWheelSemantic::recognize(request.loadResult);prepared->functionalFeatures+=PlainRoundBoreWheelSemantic::recognize(request.loadResult);
     for(const auto& stud:certifiedSourceStuds(request.loadResult))
         prepared->functionalFeatures.push_back(stud.feature);
@@ -221,6 +231,7 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
                             intersectionDiagnostics.push_back(message);
             }
             QStringList reconstructionDiagnostics;
+            std::shared_ptr<const PrintMesh> diagnosticCandidate;
             // This separate surface-local candidate route is still diagnostic:
             // strict mesh validity alone cannot establish local feature and
             // source-owner fidelity. Never promote an unproven candidate.
@@ -242,6 +253,7 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
                         request.loadResult,candidate.mesh,4000);
                     reconstructionDiagnostics<<audit.diagnostic;
                     reconstructionDiagnostics<<QStringLiteral("Reconstruction remains Not Ready until complete local fidelity, source coverage, and fit ownership are proven.");
+                    diagnosticCandidate=std::make_shared<PrintMesh>(std::move(candidate.mesh));
                     break;
                 }
             }
@@ -250,7 +262,11 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
                 (intersectionDiagnostics.isEmpty()?QString():QStringLiteral(" ")+intersectionDiagnostics.join(' '))+
                 (reconstructionDiagnostics.isEmpty()?QString():QStringLiteral(" ")+reconstructionDiagnostics.join(' ')));
             rejected.sourceCoverage=semantic.coverage;rejected.detailedDiagnostics=solidifierAttempts;
-            rejected.detailedDiagnostics+=reconstructionDiagnostics;return rejected;}
+            rejected.detailedDiagnostics+=reconstructionDiagnostics;
+            rejected.diagnosticCandidateMesh=std::move(diagnosticCandidate);
+            if(rejected.diagnosticCandidateMesh)
+                rejected.diagnosticCandidateDescription=QStringLiteral("Bounded diagnostic reconstruction; not accepted for printing.");
+            return rejected;}
         if(!semantic.coverage.complete()){
             QStringList groups;for(int index:semantic.coverage.uncoveredGroups())groups<<QString::number(index);
             auto rejected=failure(PrintPreparationError::OperandValidationFailed,sourceAnalysis,request.profile.identity,
