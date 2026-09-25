@@ -412,6 +412,37 @@ LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDr
                     QStringList sizes;for(int edges:r.arrangementBoundaryLoopEdges)sizes<<QString::number(edges);
                     r.diagnostics<<QString("Arranged source remains diagnostic: groups=%1 boundaryLoops=%2 edges=[%3]; no authored closure was proven.")
                         .arg(r.arrangementGroups).arg(r.arrangementBoundaryLoops).arg(sizes.join(','));
+                    const auto oriented=LDrawCertifiedInterfaceStitcher::classifyOrientedFragments(arranged);
+                    r.diagnostics<<oriented.diagnostic;
+                    if(!oriented.bounded)r.arrangementBounded=false;
+                    else{
+                        QVector<bool> orientedRepresented(effective.mesh.triangles.size(),false);
+                        for(const auto& parents:oriented.stitchedTrianglesForFragment)
+                            for(int parent:parents)
+                                if(parent>=0&&parent<orientedRepresented.size())orientedRepresented[parent]=true;
+                        if(!std::all_of(orientedRepresented.cbegin(),orientedRepresented.cend(),
+                                        [](bool seen){return seen;})){
+                            r.arrangementBounded=false;
+                            r.diagnostics<<QStringLiteral("Oriented fragments lost stitched-source ancestry.");
+                        }else{
+                            r.orientedExactCoincidentGroups=oriented.exactCoincidentGroups;
+                            r.orientedSameFacingDuplicates=oriented.sameFacingDuplicates;
+                            r.orientedOpposingCoincidentGroups=oriented.opposingCoincidentGroups;
+                            r.orientedFragments=oriented.fragmentsAfter;
+                            r.orientedElapsedMilliseconds=oriented.elapsedMilliseconds;
+                            std::vector<FaceInfo> orientedInfos;
+                            const auto orientedMesh=welded(oriented.loadResult.mesh,&orientedInfos);
+                            const auto orientedGroups=components(orientedMesh,orientedInfos);
+                            for(const auto&group:orientedGroups)for(const auto&loop:group.loops){
+                                ++r.orientedBoundaryLoops;
+                                r.orientedBoundaryLoopEdges.push_back(int(loop.size()));
+                            }
+                            QStringList remaining;
+                            for(int edges:r.orientedBoundaryLoopEdges)remaining<<QString::number(edges);
+                            r.diagnostics<<QString("Oriented source remains diagnostic: boundaryLoops=%1 edges=[%2]; no material-side closure was proven.")
+                                .arg(r.orientedBoundaryLoops).arg(remaining.join(','));
+                        }
+                    }
                 }
             }
         }else if(investigateIntersections)r.diagnostics<<QStringLiteral("Intersection arrangement diagnostic skipped for high-group source.");

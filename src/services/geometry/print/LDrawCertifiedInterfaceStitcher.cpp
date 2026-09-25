@@ -423,4 +423,84 @@ SurfaceIntersectionArrangement LDrawCertifiedInterfaceStitcher::arrangeIntersect
     return result;
 }
 
+OrientedSurfaceArrangement LDrawCertifiedInterfaceStitcher::classifyOrientedFragments(
+    const SurfaceIntersectionArrangement& arranged)
+{
+    OrientedSurfaceArrangement result;
+    result.loadResult=arranged.loadResult;
+    const auto& triangles=arranged.loadResult.mesh.triangles;
+    result.fragmentsBefore=triangles.size();
+    result.fragmentsAfter=triangles.size();
+    for(int parent:arranged.stitchedTriangleForFragment)
+        result.stitchedTrianglesForFragment.push_back({parent});
+    if(!arranged.bounded||!arranged.loadResult.sourceModel||
+       arranged.loadResult.sourceModel->surfaces.size()!=triangles.size()||
+       arranged.stitchedTriangleForFragment.size()!=triangles.size()||triangles.size()>200000){
+        result.bounded=false;
+        result.diagnostic=QStringLiteral("Oriented arrangement requires bounded fragments and complete provenance.");
+        return result;
+    }
+    QElapsedTimer timer;timer.start();
+    using PointKey=std::array<float,3>;
+    using TriangleKey=std::tuple<QString,std::array<PointKey,3>>;
+    struct Group {int first=-1,opposite=-1;bool firstOdd=false,counted=false;};
+    std::map<TriangleKey,Group> groups;
+    QVector<Triangle> retained;
+    QVector<SurfaceRecord> surfaces;
+    QVector<QVector<int>> ancestry;
+    retained.reserve(triangles.size());surfaces.reserve(triangles.size());ancestry.reserve(triangles.size());
+    for(int i=0;i<triangles.size();++i){
+        if((i&255)==0&&timer.elapsed()>10000){result.bounded=false;break;}
+        const auto& triangle=triangles[i];
+        const auto& surface=arranged.loadResult.sourceModel->surfaces[i];
+        const QVector3D normal=QVector3D::crossProduct(triangle.b-triangle.a,triangle.c-triangle.a);
+        const bool oriented=surface.certified&&surface.clipping&&triangle.backFaceCull&&
+            normal.lengthSquared()>1e-20f;
+        int representative=-1;
+        if(oriented){
+            std::array<PointKey,3> points{{{triangle.a.x(),triangle.a.y(),triangle.a.z()},
+                                           {triangle.b.x(),triangle.b.y(),triangle.b.z()},
+                                           {triangle.c.x(),triangle.c.y(),triangle.c.z()}}};
+            const bool odd=(points[1]<points[0])!=(points[2]<points[0])!=(points[2]<points[1]);
+            std::sort(points.begin(),points.end());
+            auto [it,inserted]=groups.emplace(TriangleKey{triangle.color,points},Group{});
+            auto& group=it->second;
+            if(!inserted){
+                if(!group.counted){++result.exactCoincidentGroups;group.counted=true;}
+                if(odd==group.firstOdd)representative=group.first;
+                else{
+                    if(group.opposite<0){group.opposite=retained.size();++result.opposingCoincidentGroups;}
+                    else representative=group.opposite;
+                }
+            }else{group.first=retained.size();group.firstOdd=odd;}
+        }
+        if(representative>=0){
+            ancestry[representative].push_back(arranged.stitchedTriangleForFragment[i]);
+            ++result.sameFacingDuplicates;
+            continue;
+        }
+        auto copy=surface;copy.triangleIndex=retained.size();
+        retained.push_back(triangle);surfaces.push_back(copy);
+        ancestry.push_back({arranged.stitchedTriangleForFragment[i]});
+    }
+    result.elapsedMilliseconds=timer.elapsed();
+    if(!result.bounded){
+        result.diagnostic=QStringLiteral("Oriented arrangement workload limit exceeded; no fragment was changed.");
+        return result;
+    }
+    result.fragmentsAfter=retained.size();
+    result.stitchedTrianglesForFragment=std::move(ancestry);
+    if(result.sameFacingDuplicates){
+        result.loadResult.mesh.triangles=std::move(retained);
+        result.loadResult.sourceModel=
+            std::make_shared<LDrawGeometry::LDrawSourceModel>(*arranged.loadResult.sourceModel);
+        result.loadResult.sourceModel->surfaces=std::move(surfaces);
+    }
+    result.diagnostic=QStringLiteral("Oriented source fragments: exactCoincidentGroups=%1 sameFacingDuplicates=%2 opposingCoincidentGroups=%3 retained=%4/%5 elapsed-ms=%6; opposing/intersecting patches remain unresolved without material-side proof.")
+        .arg(result.exactCoincidentGroups).arg(result.sameFacingDuplicates)
+        .arg(result.opposingCoincidentGroups).arg(result.fragmentsAfter)
+        .arg(result.fragmentsBefore).arg(result.elapsedMilliseconds);
+    return result;
+}
+
 } // namespace PrintGeometry

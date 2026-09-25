@@ -90,5 +90,34 @@ int main(int argc,char**argv)
     ok&=check(!LDrawCertifiedInterfaceStitcher::stitch(fixture(0)).changed,"endpoint-only closed topology ignored");
     ok&=check(!LDrawCertifiedInterfaceStitcher::stitch(crossingFixture()).changed,"proper crossing without an authoritative edge vertex is rejected");
     const auto ambiguous=LDrawCertifiedInterfaceStitcher::stitch(ambiguousFixture());ok&=check(!ambiguous.changed&&ambiguous.diagnostics.rejectedAmbiguousCandidates>0,"multiple competing target edges are rejected as ambiguous");
+    auto coincident=crossingFixture();
+    const auto same=coincident.mesh.triangles.front();
+    auto opposed=same;std::swap(opposed.b,opposed.c);opposed.normal=-same.normal;
+    coincident.mesh.triangles={same,same,opposed};
+    coincident.sourceModel->surfaces.resize(3);
+    for(int i=0;i<3;++i)coincident.sourceModel->surfaces[i]={i,0,0,i+1,3,true,true,false};
+    SurfaceIntersectionArrangement arranged;arranged.loadResult=coincident;
+    arranged.stitchedTriangleForFragment={0,1,2};
+    const auto oriented=LDrawCertifiedInterfaceStitcher::classifyOrientedFragments(arranged);
+    ok&=check(oriented.bounded&&oriented.sameFacingDuplicates==1&&
+              oriented.opposingCoincidentGroups==1&&oriented.fragmentsAfter==2,
+              "exact same-facing duplicate consolidates; opposite-facing patch remains unresolved");
+    ok&=check(oriented.stitchedTrianglesForFragment.size()==2&&
+              oriented.stitchedTrianglesForFragment[0]==QVector<int>({0,1})&&
+              oriented.stitchedTrianglesForFragment[1]==QVector<int>({2}),
+              "consolidated fragment retains one-to-many stitched ancestry");
+    const auto orientedAgain=LDrawCertifiedInterfaceStitcher::classifyOrientedFragments(arranged);
+    ok&=check(orientedAgain.stitchedTrianglesForFragment==oriented.stitchedTrianglesForFragment&&
+              orientedAgain.loadResult.mesh.triangles.size()==oriented.loadResult.mesh.triangles.size(),
+              "oriented classification is deterministic");
+    arranged.loadResult.mesh.triangles[1].a.setX(0.0001f);
+    const auto offset=LDrawCertifiedInterfaceStitcher::classifyOrientedFragments(arranged);
+    ok&=check(offset.sameFacingDuplicates==0&&offset.fragmentsAfter==3,
+              "nearby but noncoincident fragment is never removed");
+    arranged.loadResult.mesh.triangles[1]=same;
+    arranged.loadResult.sourceModel->surfaces[1].certified=false;
+    const auto uncertified=LDrawCertifiedInterfaceStitcher::classifyOrientedFragments(arranged);
+    ok&=check(uncertified.sameFacingDuplicates==0&&uncertified.fragmentsAfter==3,
+              "uncertified coincident fragment is not excluded");
     return ok?0:1;
 }

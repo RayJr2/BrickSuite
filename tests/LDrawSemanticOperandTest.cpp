@@ -189,6 +189,19 @@ int main(int argc,char**argv)
                     if(parent>=0&&parent<seen.size())seen[parent]=true;
                 ok&=check(std::all_of(seen.cbegin(),seen.cend(),[](bool value){return value;}),
                           id+" every certified stitched source triangle survives arrangement");
+                const auto oriented=LDrawCertifiedInterfaceStitcher::classifyOrientedFragments(arranged);
+                ok&=check(oriented.bounded&&oriented.fragmentsAfter+oriented.sameFacingDuplicates==
+                          arranged.fragmentsAfter,id+" bounded oriented classification only removes exact duplicates");
+                QVector<bool> orientedSeen(stitched.loadResult.mesh.triangles.size(),false);
+                for(const auto& parents:oriented.stitchedTrianglesForFragment)for(int parent:parents)
+                    if(parent>=0&&parent<orientedSeen.size())orientedSeen[parent]=true;
+                ok&=check(std::all_of(orientedSeen.cbegin(),orientedSeen.cend(),[](bool value){return value;}),
+                          id+" oriented fragments preserve one-to-many stitched ancestry");
+                QTextStream(stdout)<<"oriented part="<<id<<" coincidentGroups="<<oriented.exactCoincidentGroups
+                    <<" sameFacingDuplicates="<<oriented.sameFacingDuplicates
+                    <<" opposingGroups="<<oriented.opposingCoincidentGroups
+                    <<" retained="<<oriented.fragmentsAfter<<'/'<<oriented.fragmentsBefore
+                    <<" elapsed-ms="<<oriented.elapsedMilliseconds<<Qt::endl;
             }
             QTextStream(stdout)<<"arrangement part="<<id<<" stitched="<<stitched.loadResult.mesh.triangles.size()
                 <<" candidates="<<arranged.candidatePairs<<" transverse="<<arranged.transversePairs
@@ -206,6 +219,8 @@ int main(int argc,char**argv)
                 <<" represented="<<semantic.coverage.representedGroups()
                 <<" arrangedGroups="<<semantic.arrangementGroups
                 <<" arrangedBoundaryLoops="<<semantic.arrangementBoundaryLoops
+                <<" orientedBoundaryLoops="<<semantic.orientedBoundaryLoops
+                <<" orientedExcluded="<<semantic.orientedSameFacingDuplicates
                 <<" loopEdges="<<([&](){QStringList sizes;for(int edges:semantic.arrangementBoundaryLoopEdges)sizes<<QString::number(edges);return sizes.join(',');}())<<Qt::endl;
             if(id==QStringLiteral("6553")){
                 PrintPreparationRequest request;
@@ -216,6 +231,17 @@ int main(int argc,char**argv)
                           !prepared.sourceCoverage.complete(),
                           "6553 service invokes diagnostics only after earlier safe routes fail and keeps Source Coverage rejection");
             }
+        }
+        for(const QString& id:{QStringLiteral("3032"),QStringLiteral("3037"),
+                               QStringLiteral("3001"),QStringLiteral("3700"),
+                               QStringLiteral("22890"),QStringLiteral("76385"),
+                               QStringLiteral("4488")}){
+            const auto part=LDrawLibraryService::loadPart(args[libraryAt+1],id);
+            ok&=check(part.ok(),id+" oriented-control source loads");
+            if(!part.ok())continue;
+            const auto semantic=LDrawSemanticOperandBuilder::build(part);
+            ok&=check(!semantic.arrangementAttempted,
+                      id+" established preparation route bypasses oriented arrangement");
         }
         return ok?0:1;
     }

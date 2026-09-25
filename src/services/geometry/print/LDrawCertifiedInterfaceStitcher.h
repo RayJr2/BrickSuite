@@ -42,6 +42,21 @@ struct SurfaceIntersectionArrangement {
     QString diagnostic;
 };
 
+struct OrientedSurfaceArrangement {
+    LDrawGeometry::LDrawLoadResult loadResult;
+    // A retained fragment can represent several exactly coincident authored
+    // fragments. Each entry remains traceable to its stitched source triangle.
+    QVector<QVector<int>> stitchedTrianglesForFragment;
+    int exactCoincidentGroups = 0;
+    int sameFacingDuplicates = 0;
+    int opposingCoincidentGroups = 0;
+    int fragmentsBefore = 0;
+    int fragmentsAfter = 0;
+    qint64 elapsedMilliseconds = 0;
+    bool bounded = true;
+    QString diagnostic;
+};
+
 class LDrawCertifiedInterfaceStitcher
 {
 public:
@@ -51,6 +66,8 @@ public:
     static SurfaceIntersectionArrangement arrangeIntersections(
         const LDrawGeometry::LDrawLoadResult& stitched,
         const LDrawPrintPreparationProfile& profile = {});
+    static OrientedSurfaceArrangement classifyOrientedFragments(
+        const SurfaceIntersectionArrangement& arranged);
 };
 
 } // namespace PrintGeometry

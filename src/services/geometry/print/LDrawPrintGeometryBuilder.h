@@ -43,8 +43,15 @@ public:
         int arrangementFragments = 0;
         int arrangementGroups = 0;
         int arrangementBoundaryLoops = 0;
+        int orientedExactCoincidentGroups = 0;
+        int orientedSameFacingDuplicates = 0;
+        int orientedOpposingCoincidentGroups = 0;
+        int orientedFragments = 0;
+        int orientedBoundaryLoops = 0;
+        qint64 orientedElapsedMilliseconds = 0;
         bool arrangementAttempted = false;
         QVector<int> arrangementBoundaryLoopEdges;
+        QVector<int> orientedBoundaryLoopEdges;
         bool arrangementBounded = true;
         SourceCoverage coverage;
         bool ok() const { return status == Status::Ready; }
