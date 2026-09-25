@@ -194,8 +194,12 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;const
             }),part+QStringLiteral(" retains certified wheel interface after preparation"));
     if(part==QStringLiteral("4488")&&prepared.ready())
         ok&=check(prepared.preparedMesh->preparationMethod.contains(QStringLiteral("source-surface"),Qt::CaseInsensitive)&&
-                  prepared.diagnostic.contains(QStringLiteral("ray axis 1")),
-                  "real 4488 uses validated orthogonal source-surface solidification");
+                  prepared.diagnostic.contains(QStringLiteral("ray axis 1"))&&
+                  prepared.detailedDiagnostics.size()==3&&
+                  prepared.detailedDiagnostics[0].contains(QStringLiteral("axis=0 outcome="))&&
+                  prepared.detailedDiagnostics[0].contains(QStringLiteral("mesh is open"))&&
+                  prepared.detailedDiagnostics[1].contains(QStringLiteral("axis=1 outcome=")),
+                  "real 4488 retains failed X-axis diagnostics before validated orthogonal solidification");
     if(part==QStringLiteral("4488")){
         auto uncertified=wheelRequest;
         uncertified.loadResult.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>(
@@ -244,7 +248,7 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;const
         }
         const bool passing=part==QStringLiteral("3001")||part==QStringLiteral("3700")||
             part==QStringLiteral("22890")||part==QStringLiteral("76385")||part==QStringLiteral("4488")||
-            part==QStringLiteral("3032");
+            part==QStringLiteral("3032")||part==QStringLiteral("3037");
         ok&=check(prepared.ready()==passing,part+QStringLiteral(" retains corpus Ready/Not Ready behavior: ")+prepared.diagnostic);
         ok&=check(prepared.sourceCoverage.expandedTriangleCount==corpus.loadResult.mesh.triangles.size()&&
                   !prepared.sourceCoverage.groups.isEmpty(),part+QStringLiteral(" has authoritative stitched-source group accounting"));

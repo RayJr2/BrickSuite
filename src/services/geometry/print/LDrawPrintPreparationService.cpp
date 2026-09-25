@@ -123,8 +123,21 @@ bool supportsBoundedSourceSolidification(const LDrawGeometry::LDrawLoadResult&lo
     if(ballSocket)return sorted[0]<=12.0 && sorted[1]<=16.0 && sorted[2]<=32.0;
     return sorted[0]<=12.0 && sorted[1]<=16.0 && sorted[2]<=24.0 && smallCertifiedInterface;
 }
-PrintPreparationResult solidifiedResult(const PrintPreparationRequest&request,const MeshAnalysisResult&sourceAnalysis,SourceSurfaceSolidificationResult solidified,SourceCoverage coverage,const PrintPreparationTimings&partialTimings,qint64 elapsed)
+QString solidifierMetrics(const SourceSurfaceAttemptMetrics&metrics)
 {
+    return QStringLiteral("axis=%1 outcome=%2 total-ms=%3 source-ms=%4 index-ms=%5 ray-ms=%6 extraction-ms=%7 nearest-ms=%8 orientation-ms=%9 strict-analysis-ms=%10 grid=%11x%12x%13 ray-tests=%14/%15 nearest-tests=%16/%17 vertices=%18 faces=%19")
+        .arg(metrics.rayAxis).arg(metrics.outcome).arg(metrics.totalMilliseconds)
+        .arg(metrics.sourceAnalysisMilliseconds).arg(metrics.indexMilliseconds)
+        .arg(metrics.rayClassificationMilliseconds).arg(metrics.extractionMilliseconds)
+        .arg(metrics.nearestProjectionMilliseconds).arg(metrics.orientationMilliseconds)
+        .arg(metrics.strictAnalysisMilliseconds).arg(metrics.gridX).arg(metrics.gridY).arg(metrics.gridZ)
+        .arg(metrics.rayTriangleTests).arg(metrics.exhaustiveRayTriangleTests)
+        .arg(metrics.nearestTriangleTests).arg(metrics.exhaustiveNearestTriangleTests)
+        .arg(metrics.finalVertices).arg(metrics.finalFaces);
+}
+PrintPreparationResult solidifiedResult(const PrintPreparationRequest&request,const MeshAnalysisResult&sourceAnalysis,SourceSurfaceSolidificationResult solidified,SourceCoverage coverage,const PrintPreparationTimings&partialTimings,qint64 elapsed,const QStringList&attemptDiagnostics)
+{
+    QElapsedTimer fidelityTimer;fidelityTimer.start();
     coverage.route=SourceCoverageRoute::FullSourceSolidification;
     for(auto& group:coverage.groups)group.status=SourceGroupCoverage::FullSource;
     if(!coverage.complete()){
@@ -132,12 +145,15 @@ PrintPreparationResult solidifiedResult(const PrintPreparationRequest&request,co
             QStringLiteral("Full-source solidification did not retain complete authoritative source accounting."));
         rejected.sourceCoverage=coverage;return rejected;
     }
-    PrintPreparationResult result;result.sourceCoverage=coverage;result.sourceAnalysis=sourceAnalysis;result.finalAnalysis=solidified.analysis;result.preparationProfileIdentity=request.profile.identity;result.dimensionalFidelity.sourceDimensions=dimensions(sourceAnalysis.bounds);result.dimensionalFidelity.preparedDimensions=dimensions(solidified.analysis.bounds);result.dimensionalFidelity.absoluteDimensionDifference={std::abs(result.dimensionalFidelity.sourceDimensions.x-result.dimensionalFidelity.preparedDimensions.x),std::abs(result.dimensionalFidelity.sourceDimensions.y-result.dimensionalFidelity.preparedDimensions.y),std::abs(result.dimensionalFidelity.sourceDimensions.z-result.dimensionalFidelity.preparedDimensions.z)};result.dimensionalFidelity.maximumBoundsDeviationMillimetres=maximumBoundsDeviation(sourceAnalysis.bounds,solidified.analysis.bounds);result.dimensionalFidelity.allowedBoundsDeviationMillimetres=request.profile.maximumExternalBoundsDeviationMillimetres;
+    PrintPreparationResult result;result.detailedDiagnostics=attemptDiagnostics;result.sourceCoverage=coverage;result.sourceAnalysis=sourceAnalysis;result.finalAnalysis=solidified.analysis;result.preparationProfileIdentity=request.profile.identity;result.dimensionalFidelity.sourceDimensions=dimensions(sourceAnalysis.bounds);result.dimensionalFidelity.preparedDimensions=dimensions(solidified.analysis.bounds);result.dimensionalFidelity.absoluteDimensionDifference={std::abs(result.dimensionalFidelity.sourceDimensions.x-result.dimensionalFidelity.preparedDimensions.x),std::abs(result.dimensionalFidelity.sourceDimensions.y-result.dimensionalFidelity.preparedDimensions.y),std::abs(result.dimensionalFidelity.sourceDimensions.z-result.dimensionalFidelity.preparedDimensions.z)};result.dimensionalFidelity.maximumBoundsDeviationMillimetres=maximumBoundsDeviation(sourceAnalysis.bounds,solidified.analysis.bounds);result.dimensionalFidelity.allowedBoundsDeviationMillimetres=request.profile.maximumExternalBoundsDeviationMillimetres;
+    result.detailedDiagnostics<<QStringLiteral("fidelity-validation-ms=%1").arg(fidelityTimer.elapsed());
     if(result.dimensionalFidelity.maximumBoundsDeviationMillimetres>request.profile.maximumExternalBoundsDeviationMillimetres)return failure(PrintPreparationError::DimensionalFidelityFailed,sourceAnalysis,request.profile.identity,"Solidified source exceeded the external-bounds preservation limit.");
     auto prepared=std::make_shared<PreparedMesh>();prepared->sourceCoverage=coverage;prepared->mesh=std::move(solidified.mesh);prepared->millimetreBounds=solidified.analysis.bounds;prepared->sourceAnalysis=sourceAnalysis;prepared->finalAnalysis=solidified.analysis;prepared->componentCount=solidified.analysis.connectedComponents;prepared->partReference=request.partReference;prepared->ldrawIdentity=request.ldrawIdentity;prepared->dependencyFingerprint=request.loadResult.dependencyFingerprint;prepared->preparationProfileVersion=request.profile.identity+QStringLiteral("+source-surface-solidifier-v1");prepared->preparationMethod=QStringLiteral("Certified authoritative LDraw source-surface volumetric solidification");prepared->sourceTriangleCount=sourceAnalysis.triangles;prepared->preparedTriangleCount=solidified.analysis.triangles;prepared->elapsedMilliseconds=elapsed;prepared->dimensionalFidelity=result.dimensionalFidelity;prepared->warnings<<QStringLiteral("Source-surface solidification used a %1 mm sampling pitch; inspect fine functional details before printing.").arg(solidified.samplingPitchMillimetres,0,'f',3);prepared->timings=partialTimings;prepared->timings.totalMilliseconds=elapsed;prepared->functionalFeatures=CClipBarReceiverSemantic::recognize(request.loadResult);prepared->functionalFeatures+=BallJointSemantic::recognize(request.loadResult);prepared->functionalFeatures+=BallSocketSemantic::recognize(request.loadResult);prepared->functionalFeatures+=PinBarrelHingeSemantic::recognize(request.loadResult);prepared->functionalFeatures+=InterleavedFingerHingeSemantic::recognize(request.loadResult);prepared->functionalFeatures+=ClickHingeSemantic::recognize(request.loadResult);prepared->functionalFeatures+=RetainedRotatingWheelSemantic::recognize(request.loadResult);prepared->functionalFeatures+=PlainRoundBoreWheelSemantic::recognize(request.loadResult);
     for(const auto& stud:certifiedSourceStuds(request.loadResult))
         prepared->functionalFeatures.push_back(stud.feature);
-    result.state=PrintPreparationState::Ready;result.error=PrintPreparationError::None;result.preparedMesh=prepared;result.timings=prepared->timings;result.warnings=prepared->warnings;result.diagnostic=solidified.diagnostic+QStringLiteral(" Independently validated as one closed printable solid.");return result;
+    result.state=PrintPreparationState::Ready;result.error=PrintPreparationError::None;result.preparedMesh=prepared;result.timings=prepared->timings;result.warnings=prepared->warnings;result.diagnostic=solidified.diagnostic+QStringLiteral(" Independently validated as one closed printable solid.");
+    if(qEnvironmentVariableIsSet("BRICKSUITE_SOLIDIFIER_TIMINGS"))result.diagnostic+=QStringLiteral(" ")+result.detailedDiagnostics.join(QStringLiteral(" | "));
+    return result;
 }
 }
 LDrawPrintPreparationService::LDrawPrintPreparationService(std::shared_ptr<PrintPreparationCache>cache,BooleanServiceFactory factory,SemanticBuilderFunction semanticBuilder):m_cache(cache?std::move(cache):std::make_shared<PrintPreparationCache>()),m_factory(factory?std::move(factory):[]{return std::make_unique<McutMeshBooleanService>();}),m_semanticBuilder(std::move(semanticBuilder)){}
@@ -160,13 +176,16 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
         if(!sourceAnalysis.finite||!sourceAnalysis.indicesValid||sourceAnalysis.resourceLimitExceeded)return failure(sourceAnalysis.resourceLimitExceeded?PrintPreparationError::ResourceLimitExceeded:PrintPreparationError::InvalidSource,sourceAnalysis,request.profile.identity,"Source geometry is unsafe for semantic preparation.");
         if(!semantic.ok()){
             QString solidifierDiagnostic;
+            QStringList solidifierAttempts;
             if(!m_semanticBuilder&&supportsBoundedSourceSolidification(request.loadResult,sourceAnalysis)){phase.restart();auto solidified=SourceSurfaceSolidifier::solidify(request.loadResult);
+                solidifierAttempts<<solidifierMetrics(solidified.metrics);
                 // An axial open attachment can be invisible to one winding-ray
                 // direction. For a certified friction socket, try an orthogonal
                 // ray against the same complete source before rejecting it.
                 if(!solidified.successful&&BallSocketSemantic::recognize(request.loadResult).size()==1){
                     auto alternative=SourceSurfaceSolidifier::solidify(request.loadResult,.15,
                         SourceSurfaceSolidifier::RayAxis::Y);
+                    solidifierAttempts<<solidifierMetrics(alternative.metrics);
                     if(alternative.successful)solidified=std::move(alternative);
                     else solidifierDiagnostic=solidified.diagnostic+QStringLiteral(" Orthogonal ray: ")+alternative.diagnostic;
                 }
@@ -175,11 +194,12 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
                     if(wheels.size()==1&&wheels.front().role==FunctionalInterfaceRole::Male){
                         auto alternative=SourceSurfaceSolidifier::solidify(request.loadResult,.15,
                             SourceSurfaceSolidifier::RayAxis::Y);
+                        solidifierAttempts<<solidifierMetrics(alternative.metrics);
                         if(alternative.successful)solidified=std::move(alternative);
                         else solidifierDiagnostic=solidified.diagnostic+QStringLiteral(" Orthogonal ray: ")+alternative.diagnostic;
                     }
                 }
-                timings.semanticConstructionMilliseconds+=phase.elapsed();if(solidified.successful){auto result=solidifiedResult(request,sourceAnalysis,std::move(solidified),semantic.coverage,timings,total.elapsed());if(result.ready())m_cache->insert(key,result.preparedMesh);return result;solidifierDiagnostic=result.diagnostic;}else if(solidifierDiagnostic.isEmpty())solidifierDiagnostic=solidified.diagnostic;}
+                timings.semanticConstructionMilliseconds+=phase.elapsed();if(solidified.successful){auto result=solidifiedResult(request,sourceAnalysis,std::move(solidified),semantic.coverage,timings,total.elapsed(),solidifierAttempts);if(result.ready())m_cache->insert(key,result.preparedMesh);return result;solidifierDiagnostic=result.diagnostic;}else if(solidifierDiagnostic.isEmpty())solidifierDiagnostic=solidified.diagnostic;}
             // Intersection arrangement is diagnostic only after the existing
             // safe fallback has failed. Successful semantic, local-composer,
             // and source-surface routes never pay for an exploratory pass.
@@ -199,7 +219,7 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
             auto error=mapSemanticError(semantic.status);auto rejected=failure(error,sourceAnalysis,request.profile.identity,
                 semantic.diagnostics.join(' ')+(solidifierDiagnostic.isEmpty()?QString():QStringLiteral(" Bounded source-surface solidification: ")+solidifierDiagnostic)+
                 (intersectionDiagnostics.isEmpty()?QString():QStringLiteral(" ")+intersectionDiagnostics.join(' ')));
-            rejected.sourceCoverage=semantic.coverage;return rejected;}
+            rejected.sourceCoverage=semantic.coverage;rejected.detailedDiagnostics=solidifierAttempts;return rejected;}
         if(!semantic.coverage.complete()){
             QStringList groups;for(int index:semantic.coverage.uncoveredGroups())groups<<QString::number(index);
             auto rejected=failure(PrintPreparationError::OperandValidationFailed,sourceAnalysis,request.profile.identity,
