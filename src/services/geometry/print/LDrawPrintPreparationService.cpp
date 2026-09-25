@@ -125,7 +125,7 @@ bool supportsBoundedSourceSolidification(const LDrawGeometry::LDrawLoadResult&lo
 }
 QString solidifierMetrics(const SourceSurfaceAttemptMetrics&metrics)
 {
-    return QStringLiteral("axis=%1 outcome=%2 total-ms=%3 source-ms=%4 index-ms=%5 ray-ms=%6 extraction-ms=%7 nearest-ms=%8 orientation-ms=%9 strict-analysis-ms=%10 grid=%11x%12x%13 ray-tests=%14/%15 nearest-tests=%16/%17 vertices=%18 faces=%19")
+    return QStringLiteral("axis=%1 outcome=%2 total-ms=%3 source-ms=%4 index-ms=%5 ray-ms=%6 extraction-ms=%7 nearest-ms=%8 orientation-ms=%9 strict-analysis-ms=%10 grid=%11x%12x%13 ray-tests=%14/%15 nearest-tests=%16/%17 vertices=%18 faces=%19 bounds-us=%20 face-us=%21 edge-us=%22 components-us=%23 fans-us=%24 broad-us=%25 exact-us=%26 exact-tests=%27")
         .arg(metrics.rayAxis).arg(metrics.outcome).arg(metrics.totalMilliseconds)
         .arg(metrics.sourceAnalysisMilliseconds).arg(metrics.indexMilliseconds)
         .arg(metrics.rayClassificationMilliseconds).arg(metrics.extractionMilliseconds)
@@ -133,7 +133,11 @@ QString solidifierMetrics(const SourceSurfaceAttemptMetrics&metrics)
         .arg(metrics.strictAnalysisMilliseconds).arg(metrics.gridX).arg(metrics.gridY).arg(metrics.gridZ)
         .arg(metrics.rayTriangleTests).arg(metrics.exhaustiveRayTriangleTests)
         .arg(metrics.nearestTriangleTests).arg(metrics.exhaustiveNearestTriangleTests)
-        .arg(metrics.finalVertices).arg(metrics.finalFaces);
+        .arg(metrics.finalVertices).arg(metrics.finalFaces)
+        .arg(metrics.strictBreakdown.boundsMicroseconds).arg(metrics.strictBreakdown.faceBuildMicroseconds)
+        .arg(metrics.strictBreakdown.edgeAccountingMicroseconds).arg(metrics.strictBreakdown.componentsMicroseconds)
+        .arg(metrics.strictBreakdown.vertexFansMicroseconds).arg(metrics.strictBreakdown.broadPhaseMicroseconds)
+        .arg(metrics.strictBreakdown.exactIntersectionMicroseconds).arg(metrics.strictBreakdown.exactIntersectionTests);
 }
 PrintPreparationResult solidifiedResult(const PrintPreparationRequest&request,const MeshAnalysisResult&sourceAnalysis,SourceSurfaceSolidificationResult solidified,SourceCoverage coverage,const PrintPreparationTimings&partialTimings,qint64 elapsed,const QStringList&attemptDiagnostics)
 {

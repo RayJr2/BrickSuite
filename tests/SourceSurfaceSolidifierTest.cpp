@@ -5,6 +5,7 @@
 #include "../src/services/geometry/print/SourceSurfaceQueryIndex.h"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QTextStream>
 
 #include <algorithm>
@@ -19,6 +20,22 @@ bool sameSourceTriangles(const QVector<LDrawGeometry::Triangle>&a,const QVector<
 {
     if(a.size()!=b.size())return false;
     for(qsizetype i=0;i<a.size();++i){const auto&left=a[i];const auto&right=b[i];if(left.a!=right.a||left.b!=right.b||left.c!=right.c||left.normal!=right.normal||left.color!=right.color||left.backFaceCull!=right.backFaceCull)return false;}
+    return true;
+}
+bool sameAnalysis(const MeshAnalysisResult&a,const MeshAnalysisResult&b)
+{
+    if(a.vertices!=b.vertices||a.triangles!=b.triangles||a.invalidVertices!=b.invalidVertices||
+       a.invalidIndices!=b.invalidIndices||a.degenerateFaces!=b.degenerateFaces||
+       a.duplicateFaces!=b.duplicateFaces||a.boundaryEdges!=b.boundaryEdges||
+       a.nonManifoldEdges!=b.nonManifoldEdges||a.nonManifoldVertices!=b.nonManifoldVertices||
+       a.selfIntersections!=b.selfIntersections||a.connectedComponents!=b.connectedComponents||
+       a.broadPhaseCandidatePairs!=b.broadPhaseCandidatePairs||a.narrowPhaseChecks!=b.narrowPhaseChecks||
+       a.resourceLimitExceeded!=b.resourceLimitExceeded||a.consistentlyOriented!=b.consistentlyOriented||
+       a.signedVolume!=b.signedVolume||a.issues.size()!=b.issues.size()||
+       validateBooleanOperand(a).error!=validateBooleanOperand(b).error)return false;
+    for(std::size_t i=0;i<a.issues.size();++i)
+        if(a.issues[i].type!=b.issues[i].type||a.issues[i].first!=b.issues[i].first||
+           a.issues[i].second!=b.issues[i].second)return false;
     return true;
 }
 bool queryIndexEquivalent()
@@ -111,6 +128,38 @@ int main(int argc,char**argv)
             QTextStream(stdout)<<"comparison part="<<caseEntry.first<<" axis="<<int(caseEntry.second)
                 <<" indexed-ms="<<indexed.metrics.totalMilliseconds
                 <<" exhaustive-ms="<<reference.metrics.totalMilliseconds
+                <<" equal="<<equal<<Qt::endl;
+        }
+    if(arguments.contains(QStringLiteral("--compare-analysis")))
+        for(const QString&part:{QStringLiteral("4488"),QStringLiteral("76385"),
+                                 QStringLiteral("23922"),QStringLiteral("14419")}){
+            const auto loaded=LDrawLibraryService::loadPart(arguments[libraryAt+1],part);
+            ok&=require(loaded.ok(),part+QStringLiteral(" source loads for analysis comparison"));
+            if(!loaded.ok())continue;
+            SourceSurfaceSolidificationResult prepared;
+            for(const auto axis:{SourceSurfaceSolidifier::RayAxis::X,SourceSurfaceSolidifier::RayAxis::Y}){
+                prepared=SourceSurfaceSolidifier::solidify(loaded,.15,axis);
+                if(prepared.successful)break;
+            }
+            ok&=require(prepared.successful,part+QStringLiteral(" solidifies for analysis comparison"));
+            if(!prepared.successful)continue;
+            MeshAnalysisMetrics indexedMetrics,referenceMetrics;
+            MeshAnalysisOptions indexedOptions,referenceOptions;
+            indexedOptions.metrics=&indexedMetrics;referenceOptions.metrics=&referenceMetrics;
+            referenceOptions.referenceBroadPhase=true;
+            QElapsedTimer timer;timer.start();const auto indexed=analyzeSource(prepared.mesh,indexedOptions);
+            const auto indexedMilliseconds=timer.elapsed();timer.restart();
+            const auto reference=analyzeSource(prepared.mesh,referenceOptions);
+            const auto referenceMilliseconds=timer.elapsed();
+            const bool equal=sameAnalysis(indexed,reference);
+            ok&=require(equal,part+QStringLiteral(" indexed strict analysis equals reference"));
+            QTextStream(stdout)<<"analysis-comparison part="<<part
+                <<" faces="<<prepared.mesh.faces.size()<<" exact-tests="<<indexed.narrowPhaseChecks
+                <<" indexed-ms="<<indexedMilliseconds<<" reference-ms="<<referenceMilliseconds
+                <<" indexed-broad-us="<<indexedMetrics.broadPhaseMicroseconds
+                <<" reference-broad-us="<<referenceMetrics.broadPhaseMicroseconds
+                <<" indexed-exact-us="<<indexedMetrics.exactIntersectionMicroseconds
+                <<" reference-exact-us="<<referenceMetrics.exactIntersectionMicroseconds
                 <<" equal="<<equal<<Qt::endl;
         }
     return ok?0:1;

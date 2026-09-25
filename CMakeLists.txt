@@ -423,6 +423,7 @@ qt_add_executable(BrickSuite
     src/ui/parts/PartDetailsDialog.cpp src/ui/parts/PartDetailsDialog.h
     src/ui/parts/LDrawModelViewerManager.cpp src/ui/parts/LDrawModelViewerManager.h
     src/ui/parts/LDrawModelViewerWindow.cpp src/ui/parts/LDrawModelViewerWindow.h
+    src/ui/parts/LDrawModelViewerSelection.h
     src/ui/parts/ManufacturingMeshDiagnosticDialog.cpp src/ui/parts/ManufacturingMeshDiagnosticDialog.h
     src/ui/parts/LDrawViewportWidget.cpp src/ui/parts/LDrawViewportWidget.h
     src/ui/parts/PrintPreparationCoordinator.cpp src/ui/parts/PrintPreparationCoordinator.h
@@ -961,7 +962,8 @@ if(BUILD_TESTING)
     qt_add_executable(LDrawIdentityResolutionTest EXCLUDE_FROM_ALL
         tests/LDrawIdentityTest.cpp
         src/models/ExternalPartIdentifier.h
-        src/services/geometry/LDrawIdentitySelection.h)
+        src/services/geometry/LDrawIdentitySelection.h
+        src/ui/parts/LDrawModelViewerSelection.h)
     target_link_libraries(LDrawIdentityResolutionTest PRIVATE Qt6::Core)
     add_test(NAME LDrawIdentityResolutionTest COMMAND LDrawIdentityResolutionTest)
 

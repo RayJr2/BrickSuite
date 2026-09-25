@@ -1,4 +1,5 @@
 #include "LDrawModelViewerWindow.h"
+#include "LDrawModelViewerSelection.h"
 
 #include "LDrawViewportWidget.h"
 #include "PreparedMeshRenderAdapter.h"
@@ -110,7 +111,9 @@ void LDrawModelViewerWindow::showPart(const LDrawModelViewerRequest& request)
     if(colorIndex<0){for(int i=0;i<m_modelColor->count();++i)if(m_modelColor->itemText(i).compare(QStringLiteral("Light Bluish Gray"),Qt::CaseInsensitive)==0){colorIndex=i;break;}}
     if(colorIndex<0)colorIndex=0;m_modelColor->setCurrentIndex(colorIndex);
     const QColor selected=currentModelColor();if(selected.isValid())m_viewport->setModelColor(selected);
-    {QSignalBlocker blocker(m_candidate);m_candidate->clear();m_candidate->addItems(request.candidates);m_candidate->setCurrentIndex(request.candidates.isEmpty()?-1:0);}
+    const int initialIndex=LDrawModelViewerSelection::initialIndex(
+        request.partNumber,request.candidates,UserSettings::instance().ldrawLibraryPath());
+    {QSignalBlocker blocker(m_candidate);m_candidate->clear();m_candidate->addItems(request.candidates);m_candidate->setCurrentIndex(initialIndex);}
     m_candidate->setVisible(request.candidates.size()>1);startLoad(LoadBehavior::ResetView);
 }
 

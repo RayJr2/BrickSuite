@@ -2,6 +2,7 @@
 
 #include "../LDrawLoadResult.h"
 #include "PrintMesh.h"
+#include "PrintMeshAnalysis.h"
 
 #include <QString>
 #include <cstdint>
@@ -21,6 +22,7 @@ struct SourceSurfaceAttemptMetrics {
     qint64 nearestProjectionMilliseconds = 0;
     qint64 orientationMilliseconds = 0;
     qint64 strictAnalysisMilliseconds = 0;
+    MeshAnalysisMetrics strictBreakdown;
     qint64 totalMilliseconds = 0;
     QString outcome;
 };
