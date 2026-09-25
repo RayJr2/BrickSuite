@@ -14,6 +14,7 @@
 #include "InterleavedFingerHingeSemantic.h"
 #include "ClickHingeSemantic.h"
 #include "RetainedRotatingWheelSemantic.h"
+#include "PlainRoundBoreWheelSemantic.h"
 #include "StandardStudSourceSemantic.h"
 #include "FunctionalOperandRegenerator.h"
 #include "McutMeshBooleanService.h"
@@ -195,13 +196,19 @@ ManufacturingMeshCorrections ManufacturingMeshService::compatibleCorrections(con
                        "female-retained-wheel-bearing-and-notch-clearance",printedOrientation) &&
                correction.correctionContractVersion==QStringLiteral("female-retained-wheel-bearing-and-notch-clearance-v1"))
                 result.retainedWheelBearing=&correction;
+    if(orientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate)
+        for(const auto& correction:profile.corrections)
+            if(matches(correction,"PlainRoundBoreWheel","female",
+                       "female-plain-wheel-blind-bearing-clearance",printedOrientation) &&
+               correction.correctionContractVersion==QStringLiteral("female-plain-wheel-blind-bearing-clearance-v1"))
+                result.plainWheelBearing=&correction;
     if(heightCandidate){if(!heightCandidate->hasRequiredDiameterCorrection)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction does not record its required Stud OD context and was not applied.");else if(!result.studDiameter)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction requires its matching Verified Stud OD correction and was not applied.");else if(std::abs(result.studDiameter->valueMillimetres-heightCandidate->requiredDiameterCorrectionMillimetres)>1e-9)result.studHeightDiagnostic=QStringLiteral("The Verified Stud Height correction was measured with a different Stud OD correction and was not applied.");else result.studHeight=heightCandidate;}
     if(reason)*reason=result.any()?(result.studHeightDiagnostic.isEmpty()?QStringLiteral("Compatible"):result.studHeightDiagnostic):(result.studHeightDiagnostic.isEmpty()?QStringLiteral("The selected profile has no compatible verified functional correction for this print orientation."):result.studHeightDiagnostic);return result;
 }
 
 const FitProfileCorrection* ManufacturingMeshService::compatibleCorrection(const FitProfile&profile,FitPrintedOrientation orientation,QString*reason)
 {
-    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.receivingAntiStudBoreDiameter,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth,corrections.standardBarDiameter,corrections.cClipClearance,corrections.ballJointDiameter,corrections.ballSocketClearance,corrections.pinBarrelHingeDiameter,corrections.interleavedFingerBump,corrections.clickHingeArrestor,corrections.retainedWheelBearing})if(candidate)return candidate;return nullptr;
+    const auto corrections=compatibleCorrections(profile,orientation,reason);for(const auto* candidate:{corrections.femaleDiameter,corrections.studDiameter,corrections.studHeight,corrections.receivingTubeDiameter,corrections.receivingPostDiameter,corrections.receivingWallPocketWidth,corrections.receivingAntiStudBoreDiameter,corrections.frictionlessPinDiameter,corrections.frictionPinDiameter,corrections.technicAxleTipToTip,corrections.technicAxleHoleArmWidth,corrections.standardBarDiameter,corrections.cClipClearance,corrections.ballJointDiameter,corrections.ballSocketClearance,corrections.pinBarrelHingeDiameter,corrections.interleavedFingerBump,corrections.clickHingeArrestor,corrections.retainedWheelBearing,corrections.plainWheelBearing})if(candidate)return candidate;return nullptr;
 }
 
 FitPrintedOrientation ManufacturingMeshService::transformedOrientation(const FunctionalFeature&feature,const PrintOrientation&printOrientation)
@@ -297,6 +304,15 @@ bool ManufacturingMeshService::hasApplicableCorrection(const FitProfile&profile,
             return true;
         }
     }
+    for(const auto& feature:PlainRoundBoreWheelSemantic::recognize(source)) {
+        const auto corrections=compatibleCorrections(profile,transformedOrientation(feature,printOrientation));
+        if(corrections.plainWheelBearing&&
+           corrections.plainWheelBearing->semanticContractVersion==feature.evidenceContract){
+            if(reason)*reason=QStringLiteral("Compatible Verified plain-wheel blind-bore correction for %1 after Print Orientation %2.")
+                .arg(feature.stableIdentity,printOrientation.summary());
+            return true;
+        }
+    }
     if(reason)*reason=semanticReason;return false;
 }
 
@@ -308,7 +324,7 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
     // Localized, source-owned families share one mesh. Compose every applicable
     // correction and reject overlapping vertex ownership rather than returning
     // after the first family. Semantic operands are handled by the path below.
-    enum class SurfaceKind { Ball, Socket, Clip, Bar, HingePin, InterleavedBump, ClickArrestor, WheelBearing, Stud };
+    enum class SurfaceKind { Ball, Socket, Clip, Bar, HingePin, InterleavedBump, ClickArrestor, WheelBearing, PlainWheelBearing, Stud };
     struct SurfaceFeature { FunctionalFeature feature; SurfaceKind kind; int owner=-1; };
     QVector<SurfaceFeature> surfaceFeatures;
     const auto retained=[&](const FunctionalFeature& feature){
@@ -343,6 +359,10 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
     for(const auto& wheel:wheels)
         if(wheel.role==FunctionalInterfaceRole::Female&&retained(wheel))
             surfaceFeatures.push_back({wheel,SurfaceKind::WheelBearing,-1});
+    const auto plainWheels=PlainRoundBoreWheelSemantic::recognize(source);
+    for(const auto& wheel:plainWheels)
+        if(wheel.role==FunctionalInterfaceRole::Female&&retained(wheel))
+            surfaceFeatures.push_back({wheel,SurfaceKind::PlainWheelBearing,-1});
     if(nominalHingeProfile&&std::none_of(surfaceFeatures.cbegin(),surfaceFeatures.cend(),
        [](const SurfaceFeature& item){return item.kind==SurfaceKind::InterleavedBump;}))
         return fail(ManufacturingMeshError::MissingCorrection,
@@ -388,6 +408,7 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
             case SurfaceKind::InterleavedBump: primary=corrections.interleavedFingerBump;break;
             case SurfaceKind::ClickArrestor: primary=corrections.clickHingeArrestor;break;
             case SurfaceKind::WheelBearing: primary=corrections.retainedWheelBearing;break;
+            case SurfaceKind::PlainWheelBearing: primary=corrections.plainWheelBearing;break;
             case SurfaceKind::Stud: primary=corrections.studDiameter;height=corrections.studHeight;break;
             }
             if(primary&&primary->semanticContractVersion!=item.feature.evidenceContract)primary=nullptr;
@@ -431,6 +452,9 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
                     primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
             case SurfaceKind::WheelBearing:
                 adjustedSuccessfully=RetainedRotatingWheelSemantic::adjustPrepared(source,adjusted,item.feature,
+                    primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
+            case SurfaceKind::PlainWheelBearing:
+                adjustedSuccessfully=PlainRoundBoreWheelSemantic::adjustPrepared(source,adjusted,item.feature,
                     primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
             case SurfaceKind::Stud:
                 adjustedSuccessfully=adjustCertifiedStud(source,adjusted,{item.feature,item.owner},

@@ -18,6 +18,7 @@
 #include "../src/services/geometry/print/InterleavedFingerHingeSemantic.h"
 #include "../src/services/geometry/print/ClickHingeSemantic.h"
 #include "../src/services/geometry/print/RetainedRotatingWheelSemantic.h"
+#include "../src/services/geometry/print/PlainRoundBoreWheelSemantic.h"
 #include "../src/services/geometry/print/StandardStudSourceSemantic.h"
 #include "../src/services/geometry/print/LDrawPrintPreparationService.h"
 #include "../src/services/geometry/print/ManufacturingMeshDiagnosticExporter.h"
@@ -1902,6 +1903,137 @@ if(libraryAt>=0&&libraryAt+1<args.size()) {
         ok &= check(RetainedRotatingWheelSemantic::recognize(holder).size()==1&&
                     !ManufacturingMeshService::hasApplicableCorrection(femaleOnly,holder,nominalOrientation),
                     "female wheel correction never changes the certified male reference");
+    }
+}
+if(libraryAt>=0&&libraryAt+1<args.size()){
+    const auto source=LDrawLibraryService::loadPart(args[libraryAt+1],QStringLiteral("30027a"));
+    const auto retainedSource=LDrawLibraryService::loadPart(args[libraryAt+1],QStringLiteral("30027b"));
+    const auto holder=LDrawLibraryService::loadPart(args[libraryAt+1],QStringLiteral("4488"));
+    const auto features=PlainRoundBoreWheelSemantic::recognize(source);
+    ok &= check(source.ok()&&features.size()==1&&retainedSource.ok()&&holder.ok(),
+                "real plain wheel, retained wheel and mating holder load with distinct semantics");
+    if(features.size()==1){
+        PrintPreparationRequest request;request.partReference=QStringLiteral("30027a");
+        request.ldrawIdentity=QStringLiteral("parts/30027a.dat");
+        request.libraryAuthority=args[libraryAt+1];request.loadResult=source;
+        const auto preparation=LDrawPrintPreparationService().prepare(request);
+        ok &= check(preparation.ready(),"real plain wheel prepares: "+preparation.diagnostic);
+        if(preparation.ready()){
+            const auto& prepared=*preparation.preparedMesh;
+            auto selected=profile();selected.corrections.clear();
+            FitProfileCorrection correction;correction.featureFamily=QStringLiteral("PlainRoundBoreWheel");
+            correction.featureRole=QStringLiteral("female");
+            correction.printedOrientation=QStringLiteral("feature-axis-perpendicular-to-build-plate");
+            correction.semanticContractVersion=features.front().evidenceContract;
+            correction.semantics=QStringLiteral("female-plain-wheel-blind-bearing-clearance");
+            correction.correctionContractVersion=QStringLiteral("female-plain-wheel-blind-bearing-clearance-v1");
+            correction.valueMillimetres=.3;selected.corrections.push_back(correction);
+            const int profileAt=args.indexOf(QStringLiteral("--plain-wheel-profile"));
+            if(profileAt>=0&&profileAt+1<args.size()){
+                QFile file(args[profileAt+1]);
+                ok &= check(file.open(QIODevice::ReadOnly),"managed plain-wheel Fit Profile opens read-only");
+                if(file.isOpen()){
+                    QString error;FitProfile actual;
+                    const auto document=QJsonDocument::fromJson(file.readAll());
+                    const bool parsed=document.isObject()&&FitProfileJson::fromJson(document.object(),&actual,&error);
+                    ok &= check(parsed,"managed plain-wheel Fit Profile parses: "+error);
+                    if(parsed)selected=actual;
+                }
+            }
+            const QVector<PrintOrientation> orientations={nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative};
+            const auto matching=std::find_if(orientations.cbegin(),orientations.cend(),[&](const PrintOrientation& orientation){
+                return ManufacturingMeshService::transformedOrientation(features.front(),orientation)==
+                    FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;});
+            ok &= check(matching!=orientations.cend(),"plain-wheel bore has a perpendicular orientation");
+            if(matching!=orientations.cend()){
+                const auto before=prepared.mesh;const auto sourceBefore=source.mesh.triangles;
+                const auto autoFit=AutoFitProfileResolver::resolve(true,QStringLiteral("30027a"),{selected},source,*matching);
+                ok &= check(autoFit.resolved(),"Auto Fit resolves Verified plain-wheel profile");
+                const auto result=ManufacturingMeshService().generate(source,prepared,selected,*matching);
+                ok &= check(result.ok(),"real plain-wheel ManufacturingMesh: "+result.diagnostic);
+                if(result.ok()){
+                    const auto& manufacturing=*result.manufacturingMesh;
+                    const double expected=3.2+manufacturing.diameterCorrectionMillimetres;
+                    ok &= check(std::abs(manufacturing.nominalDiameterMillimetres-3.2)<1e-9&&
+                                std::abs(manufacturing.manufacturingDiameterMillimetres-expected)<1e-9&&
+                                !same(manufacturing.mesh,before)&&same(prepared.mesh,before)&&
+                                sameSource(source.mesh.triangles,sourceBefore),
+                                "profile-driven blind-bore correction leaves Source and PreparedMesh nominal");
+                    int boreMoved=0,stopMoved=0,exteriorMoved=0,fullRadiusMoves=0;
+                    const auto& frame=features.front().frame;
+                    for(std::size_t i=0;i<before.vertices.size();++i){
+                        const auto& a=before.vertices[i],& b=manufacturing.mesh.vertices[i];
+                        if(a.x==b.x&&a.y==b.y&&a.z==b.z)continue;
+                        const double dx=a.x-frame.origin.x,dy=a.y-frame.origin.y,dz=a.z-frame.origin.z;
+                        const double axial=dx*frame.axis.x+dy*frame.axis.y+dz*frame.axis.z;
+                        const double radius=std::sqrt(std::max(0.0,dx*dx+dy*dy+dz*dz-axial*axial));
+                        if(axial>=4.8)++stopMoved;else if(radius>=2.4)++exteriorMoved;else ++boreMoved;
+                        if(axial>=0&&axial<=4.0&&radius>=1.25&&radius<=2.0){
+                            const double movedRadius=std::sqrt(std::max(0.0,
+                                std::pow(b.x-frame.origin.x,2)+std::pow(b.y-frame.origin.y,2)+
+                                std::pow(b.z-frame.origin.z,2)-axial*axial));
+                            if(std::abs(movedRadius-radius-manufacturing.diameterCorrectionMillimetres*.5)<1e-6)
+                                ++fullRadiusMoves;
+                        }
+                    }
+                    ok &= check(boreMoved>=24&&fullRadiusMoves>=16&&stopMoved==0&&exteriorMoved==0,
+                                "continuous bore gains the requested radius while closed stop and exterior stay fixed");
+                    const auto repeated=ManufacturingMeshService().generate(source,prepared,selected,*matching);
+                    ok &= check(repeated.ok()&&repeated.manufacturingMesh->identity==manufacturing.identity&&
+                                same(repeated.manufacturingMesh->mesh,manufacturing.mesh),"plain-wheel output is deterministic");
+                    auto alternate=selected;
+                    alternate.profileIdentity=QStringLiteral("alternate-plain-wheel-profile");
+                    for(auto& entry:alternate.corrections)
+                        if(entry.featureFamily==QStringLiteral("PlainRoundBoreWheel"))entry.valueMillimetres=.2;
+                    const auto varied=ManufacturingMeshService().generate(source,prepared,alternate,*matching);
+                    ok &= check(varied.ok()&&std::abs(varied.manufacturingMesh->manufacturingDiameterMillimetres-3.4)<1e-9&&
+                                varied.manufacturingMesh->identity!=manufacturing.identity,
+                                "plain-wheel result follows selected profile value rather than a family constant");
+                    for(auto& entry:alternate.corrections)
+                        if(entry.featureFamily==QStringLiteral("PlainRoundBoreWheel"))entry.valueMillimetres=0;
+                    const auto zero=ManufacturingMeshService().generate(source,prepared,alternate,*matching);
+                    ok &= check(zero.ok()&&same(zero.manufacturingMesh->mesh,before),
+                                "Verified zero plain-wheel correction is nominal-equivalent");
+                    const int outputAt=args.indexOf(QStringLiteral("--plain-wheel-output"));
+                    if(outputAt>=0&&outputAt+1<args.size()){
+                        const QString path=QDir(args[outputAt+1]).filePath(
+                            QStringLiteral("30027a-plain-wheel-perpendicular-manufacturing.3mf"));
+                        QString error;
+                        ok &= check(ManufacturingMeshDiagnosticExporter::writeThreeMf(manufacturing,path,1.0,
+                            QColor("#A0A5A9"),&error),"plain-wheel proof 3MF export: "+error);
+                        if(QFileInfo::exists(path)){
+                            Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();
+                            model->QueryReader("3mf")->ReadFromFile(path.toStdString());
+                            auto objects=model->GetMeshObjects();
+                            ok &= check(objects->MoveNext()&&objects->GetCurrentMeshObject()->GetTriangleCount()==
+                                manufacturing.mesh.faces.size(),"plain-wheel proof 3MF reopens");
+                        }
+                        QTextStream(stdout)<<"plainWheelProfile="<<selected.profileIdentity
+                            <<" correction="<<manufacturing.diameterCorrectionMillimetres
+                            <<" diameter="<<manufacturing.manufacturingDiameterMillimetres
+                            <<" diagnostic="<<result.diagnostic<<" path="<<path<<Qt::endl;
+                    }
+                }
+                auto missing=selected;missing.corrections.clear();
+                auto draft=selected;draft.verificationState=FitEvidenceState::Draft;
+                ok &= check(!ManufacturingMeshService::hasApplicableCorrection(missing,source,*matching)&&
+                            !ManufacturingMeshService::hasApplicableCorrection(draft,source,*matching),
+                            "missing and unverified plain-wheel evidence remain nominal");
+                for(const auto& orientation:orientations)
+                    if(ManufacturingMeshService::transformedOrientation(features.front(),orientation)==
+                       FitPrintedOrientation::FeatureAxisParallelToBuildPlate){
+                        ok &= check(!ManufacturingMeshService::hasApplicableCorrection(selected,source,orientation),
+                                    "perpendicular plain-wheel evidence does not apply in parallel orientation");break;
+                    }
+                auto plainOnly=selected;
+                plainOnly.corrections.erase(std::remove_if(plainOnly.corrections.begin(),plainOnly.corrections.end(),
+                    [](const FitProfileCorrection& entry){return entry.featureFamily!=QStringLiteral("PlainRoundBoreWheel");}),
+                    plainOnly.corrections.end());
+                ok &= check(!ManufacturingMeshService::hasApplicableCorrection(plainOnly,retainedSource,*matching)&&
+                            !ManufacturingMeshService::hasApplicableCorrection(plainOnly,holder,*matching),
+                            "plain-wheel profile does not select notched wheel or holder");
+            }
+        }
     }
 }
 return ok?0:1;}
