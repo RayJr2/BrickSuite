@@ -71,10 +71,74 @@ bool checkLocalPlateCorpus(const QString& library)
     }
     return ok;
 }
+bool checkNonPlanarOpenGroups(const QString& library)
+{
+    bool ok=true;
+    PrintPreparationRequest slope;
+    slope.partReference=QStringLiteral("3037");
+    slope.ldrawIdentity=QStringLiteral("parts/3037.dat");
+    slope.libraryAuthority=library;
+    slope.loadResult=LDrawLibraryService::loadPart(library,slope.partReference);
+    ok&=check(slope.loadResult.ok(),"real 3037 source loads");
+    if(!slope.loadResult.ok())return false;
+    const auto sourceTriangles=slope.loadResult.mesh.triangles;
+    const auto semantic=LDrawSemanticOperandBuilder::build(slope.loadResult);
+    ok&=check(semantic.ok()&&semantic.coverage.complete()&&
+        semantic.coverage.groups.size()==8&&semantic.coverage.representedGroups()==8&&
+        semantic.coverage.uncoveredGroups().isEmpty()&&semantic.operands.size()==8,
+        "3037 represents all eight authoritative source groups, including three nonplanar open tubes");
+    const auto prepared=LDrawPrintPreparationService().prepare(slope);
+    ok&=check(prepared.ready(),QStringLiteral("3037 prepares through the normal service: ")+prepared.diagnostic);
+    if(prepared.ready()){
+        ok&=check(prepared.sourceCoverage.complete()&&prepared.operations.size()==7&&
+            prepared.finalAnalysis.connectedComponents==1&&prepared.finalAnalysis.boundaryEdges==0&&
+            prepared.finalAnalysis.nonManifoldEdges==0&&prepared.finalAnalysis.selfIntersections==0&&
+            prepared.finalAnalysis.triangles==1720&&
+            prepared.dimensionalFidelity.maximumBoundsDeviationMillimetres<0.001,
+            "3037 PreparedMesh is one source-faithful manifold after seven bounded Booleans");
+        QSet<QString> sourceStudIdentities;
+        for(const auto&operand:semantic.operands)for(const auto&feature:operand.functionalFeatures)
+            if(feature.family==FunctionalInterfaceFamily::StandardStud)sourceStudIdentities.insert(feature.stableIdentity);
+        bool studsRetained=sourceStudIdentities.size()==4;
+        for(const auto& identity:sourceStudIdentities)
+            studsRetained&=std::any_of(prepared.preparedMesh->functionalFeatures.cbegin(),
+                prepared.preparedMesh->functionalFeatures.cend(),
+                [&](const auto& feature){return feature.stableIdentity==identity;});
+        ok&=check(studsRetained,"3037 retains all four certified top-stud fit identities");
+        const auto repeated=LDrawPrintPreparationService().prepare(slope);
+        bool sameVertices=repeated.ready()&&repeated.preparedMesh->mesh.vertices.size()==prepared.preparedMesh->mesh.vertices.size();
+        if(sameVertices)for(std::size_t i=0;i<prepared.preparedMesh->mesh.vertices.size();++i){
+            const auto&a=repeated.preparedMesh->mesh.vertices[i],&b=prepared.preparedMesh->mesh.vertices[i];
+            if(a.x!=b.x||a.y!=b.y||a.z!=b.z){sameVertices=false;break;}
+        }
+        ok&=check(sameVertices&&repeated.preparedMesh->mesh.faces==prepared.preparedMesh->mesh.faces,
+            "3037 preparation is deterministic across independent service calls");
+    }
+    bool sourceUnchanged=slope.loadResult.mesh.triangles.size()==sourceTriangles.size();
+    if(sourceUnchanged)for(qsizetype i=0;i<sourceTriangles.size();++i){
+        const auto&a=slope.loadResult.mesh.triangles[i],&b=sourceTriangles[i];
+        if(a.a!=b.a||a.b!=b.b||a.c!=b.c){sourceUnchanged=false;break;}
+    }
+    ok&=check(sourceUnchanged,"3037 authoritative Source remains unchanged");
+    auto displaced=slope.loadResult;
+    QSet<int> shiftedTriangles;
+    for(int stitched=0;stitched<semantic.coverage.groupForStitchedTriangle.size();++stitched)
+        if(semantic.coverage.groupForStitchedTriangle[stitched]==0)
+            shiftedTriangles.insert(semantic.coverage.expandedTriangleForStitchedTriangle[stitched]);
+    for(int triangle:shiftedTriangles){
+        auto&face=displaced.mesh.triangles[triangle];
+        const QVector3D displacement(0.0f,1.0f,0.0f);
+        face.a+=displacement;face.b+=displacement;face.c+=displacement;
+    }
+    const auto invalid=LDrawSemanticOperandBuilder::build(displaced);
+    ok&=check(!invalid.ok()&&!invalid.coverage.complete(),
+        "nonplanar attachment inside body bounds is rejected when its source rim loses certified surface contact");
+    return ok;
+}
 }
 int main(int argc,char**argv){QCoreApplication app(argc,argv);bool ok=true;const auto diagnosticArguments=app.arguments();const int sourceOnlyAt=diagnosticArguments.indexOf(QStringLiteral("--source-only"));const int semanticOnlyAt=diagnosticArguments.indexOf(QStringLiteral("--semantic-only"));const int prepareOnlyAt=diagnosticArguments.indexOf(QStringLiteral("--prepare-only"));const int auditAt=sourceOnlyAt>=0?sourceOnlyAt:semanticOnlyAt>=0?semanticOnlyAt:prepareOnlyAt;if(auditAt>=0&&auditAt+2<diagnosticArguments.size()){const auto loaded=LDrawLibraryService::loadPart(diagnosticArguments[auditAt+1],diagnosticArguments[auditAt+2]);QTextStream(stdout)<<"source-load-ok="<<loaded.ok()<<" triangles="<<loaded.mesh.triangles.size()<<" references="<<(loaded.sourceModel?loaded.sourceModel->references.size():0)<<" surfaces="<<(loaded.sourceModel?loaded.sourceModel->surfaces.size():0)<<Qt::endl;if(!loaded.ok())return 1;if(semanticOnlyAt>=0){const auto semantic=LDrawSemanticOperandBuilder::build(loaded);QTextStream(stdout)<<"semantic-status="<<int(semantic.status)<<" groups="<<semantic.semanticGroups<<" operands="<<semantic.operands.size()<<" source-components="<<semantic.sourceAnalysis.connectedComponents<<" source-boundaries="<<semantic.sourceAnalysis.boundaryEdges<<" source-ms="<<semantic.sourceConversionAnalysisMs<<" semantic-ms="<<semantic.semanticGenerationMs<<" coverage-bytes="<<(semantic.coverage.expandedTriangleForStitchedTriangle.size()+semantic.coverage.groupForStitchedTriangle.size())*sizeof(int)<<" coverage-complete="<<semantic.coverage.complete()<<Qt::endl;}if(prepareOnlyAt>=0){PrintPreparationRequest audit;audit.partReference=diagnosticArguments[auditAt+2];audit.ldrawIdentity=QStringLiteral("parts/")+audit.partReference+QStringLiteral(".dat");audit.libraryAuthority=diagnosticArguments[auditAt+1];audit.loadResult=loaded;const auto prepared=LDrawPrintPreparationService().prepare(audit);QTextStream(stdout)<<"ready="<<prepared.ready()<<" error="<<int(prepared.error)<<" operands="<<prepared.semanticOperandCount<<" boolean-operations="<<prepared.operations.size()<<" source-ms="<<prepared.timings.sourceAnalysisMilliseconds<<" semantic-ms="<<prepared.timings.semanticConstructionMilliseconds<<" total-ms="<<prepared.timings.totalMilliseconds<<" diagnostic="<<prepared.diagnostic<<Qt::endl;}return 0;}auto state=std::make_shared<FakeState>();auto cache=std::make_shared<PrintPreparationCache>(2,1024*1024);auto factory=[state]{return std::make_unique<FakeBoolean>(state);};auto builder=[](const auto&){return semantic();};LDrawPrintPreparationService service(cache,factory,builder);
  const int localAt=diagnosticArguments.indexOf(QStringLiteral("--local-ldraw"));
- if(localAt>=0)return localAt+1<diagnosticArguments.size()&&checkLocalPlateCorpus(diagnosticArguments[localAt+1])?0:1;
+  if(localAt>=0)return localAt+1<diagnosticArguments.size()&&checkLocalPlateCorpus(diagnosticArguments[localAt+1])&&checkNonPlanarOpenGroups(diagnosticArguments[localAt+1])?0:1;
  const auto arguments=app.arguments();const int libraryAt=arguments.indexOf(QStringLiteral("--ldraw"));if(libraryAt>=0&&libraryAt+1<arguments.size()){const auto loaded=LDrawLibraryService::loadPart(arguments[libraryAt+1],QStringLiteral("2780"));ok&=check(loaded.ok(),"real 2780 loads for end-to-end preparation");if(loaded.ok()){PrintPreparationRequest realRequest;realRequest.partReference=QStringLiteral("2780");realRequest.ldrawIdentity=QStringLiteral("parts/2780.dat");realRequest.libraryAuthority=arguments[libraryAt+1];realRequest.loadResult=loaded;LDrawPrintPreparationService realService;const auto realPrepared=realService.prepare(realRequest);ok&=check(realPrepared.ready(),QStringLiteral("real 2780 reaches Ready PreparedMesh through the production service: ")+realPrepared.diagnostic);if(realPrepared.ready()){ok&=check(realPrepared.finalAnalysis.boundaryEdges==0&&realPrepared.finalAnalysis.nonManifoldEdges==0&&realPrepared.finalAnalysis.selfIntersections==0&&realPrepared.finalAnalysis.connectedComponents==1,"real 2780 PreparedMesh independently validates as one manifold solid");ok&=check(realPrepared.preparedMesh->preparationMethod.contains(QStringLiteral("source-surface"),Qt::CaseInsensitive),"real 2780 uses reusable source-surface preparation");}}}
  if(libraryAt>=0&&libraryAt+1<arguments.size())for(const QString& part:{QStringLiteral("4275a"),QStringLiteral("4276a")}) {
     PrintPreparationRequest hingeRequest;

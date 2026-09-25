@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <map>
 #include <queue>
 #include <set>
@@ -245,6 +246,64 @@ bool closeAnnularBoundary(Component c,PrintMesh*out,int*added)
     for(int reverse=0;reverse<2;++reverse)for(std::size_t shift=0;shift<sb.size();++shift){PrintMesh candidate=c.mesh;auto bi=[&](std::size_t i){return sb[reverse?(shift+sb.size()-i)%sb.size():(shift+i)%sb.size()];};for(std::size_t i=0;i<sa.size();++i){auto an=sa[i],ax=sa[(i+1)%sa.size()],bn=bi(i),bx=bi(i+1);candidate.faces.push_back({ax,an,bn});candidate.faces.push_back({ax,bn,bx});}normalize(&candidate);if(validateBooleanOperand(analyzeSource(candidate)).ok()){*added=int(a.size()*6);*out=std::move(candidate);return true;}}
     return false;
 }
+bool contactsBodySurface(const PrintMesh&body,const Point&p,const Point&intoBody)
+{
+    for(const auto&face:body.faces){
+        const auto&a=body.vertices[face[0]],&b=body.vertices[face[1]],&c=body.vertices[face[2]];
+        const Point u=sub(b,a),v=sub(c,a),w=sub(p,a);
+        const double uu=dot(u,u),uv=dot(u,v),vv=dot(v,v),wu=dot(w,u),wv=dot(w,v),denominator=uu*vv-uv*uv;
+        if(denominator<=1e-12)continue;
+        const double s=(wu*vv-wv*uv)/denominator,t=(wv*uu-wu*uv)/denominator;
+        if(s < -1e-5||t < -1e-5||s+t > 1.0+1e-5)continue;
+        const Point q=add(a,add({s*u.x,s*u.y,s*u.z},{t*v.x,t*v.y,t*v.z}));
+        if(length(sub(p,q))<=ContactMm&&dot(cross(u,v),intoBody)<-1e-8)return true;
+    }
+    return false;
+}
+bool closeConformingAnnularBoundary(Component c,const PrintMesh&body,PrintMesh*out,int*added)
+{
+    if(c.loops.size()!=2)return false;
+    const auto&a=c.loops[0],&b=c.loops[1];
+    // Candidate pairing and manifold analysis are bounded; planar annuli retain
+    // their existing, independent closure path above.
+    if(a.size()!=b.size()||a.size()<8||a.size()>128||
+       body.faces.size()*a.size()>250000)return false;
+    const Point direction=boundaryAttachmentDirection(c.mesh,a);
+    if(length(direction)<0.5)return false;
+    for(const auto&loop:c.loops)for(auto id:loop)
+        if(!contactsBodySurface(body,c.mesh.vertices[id],direction))return false;
+    const auto sa=shiftedLoop(&c.mesh,a,direction),sb=shiftedLoop(&c.mesh,b,direction);
+    double shortest=std::numeric_limits<double>::infinity();
+    PrintMesh best;
+    for(int reverse=0;reverse<2;++reverse)for(std::size_t shift=0;shift<sb.size();++shift){
+        auto bi=[&](std::size_t i){return sb[reverse?(shift+sb.size()-i)%sb.size():(shift+i)%sb.size()];};
+        double span=0.0;
+        bool conforms=true;
+        for(std::size_t i=0;i<sa.size();++i){
+            const auto&u=c.mesh.vertices[sa[i]],&v=c.mesh.vertices[bi(i)];
+            span+=length(sub(u,v));
+            const Point middle{(u.x+v.x)*0.5-direction.x*InterfaceIntrusionMm,
+                (u.y+v.y)*0.5-direction.y*InterfaceIntrusionMm,
+                (u.z+v.z)*0.5-direction.z*InterfaceIntrusionMm};
+            conforms&=contactsBodySurface(body,middle,direction);
+        }
+        if(!conforms)continue;
+        if(span>=shortest)continue;
+        PrintMesh candidate=c.mesh;
+        for(std::size_t i=0;i<sa.size();++i){
+            const auto next=(i+1)%sa.size();
+            candidate.faces.push_back({sa[next],sa[i],bi(i)});
+            candidate.faces.push_back({sa[next],bi(i),bi(next)});
+        }
+        normalize(&candidate);
+        if(!validateBooleanOperand(analyzeSource(candidate)).ok())continue;
+        shortest=span;best=std::move(candidate);
+    }
+    if(!std::isfinite(shortest))return false;
+    *added=int(a.size()*6);
+    *out=std::move(best);
+    return true;
+}
 bool closePlanarLoops(Component c,PrintMesh*out,int*added)
 {
     int count=0;
@@ -389,7 +448,7 @@ LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDr
         else if(ballStemBodyLoop.contains(index)){op.role=SemanticRole::AdditiveAttachment;op.feature=SemanticFeature::BodyOrCavity;op.compositionPriority=1;if(!closeBodyToBallStem(g,ballStemBodyLoop.value(index),&op.closedMesh,&op.closureTriangles)){r.status=Status::OperandClosureFailed;r.diagnostics<<QStringLiteral("Certified body-to-ball stem closure failed for group %1.").arg(index);return r;}op.analysis=analyzeSource(op.closedMesh);r.diagnostics<<QStringLiteral("Certified Ball Joint stem bridges the body and closed head (groups %1 and %2).").arg(index).arg(ballStemHead.value(index));}
         else {bool contacts=true;for(const auto&loop:g.loops)contacts=contacts&&inBounds(bodyBounds,center(g.mesh,loop),ContactMm);if(!contacts){r.status=Status::AmbiguousBoundary;const auto bounds=analyzeSource(g.mesh).bounds;QStringList centers;for(const auto&loop:g.loops){const auto p=center(g.mesh,loop);centers<<QStringLiteral("(%1,%2,%3)").arg(p.x,0,'g',5).arg(p.y,0,'g',5).arg(p.z,0,'g',5);}r.diagnostics<<QString("Group %1 does not contact the body at its boundary (files: %2; boundary centers: %3; group bounds: [%4,%5,%6]–[%7,%8,%9]; body bounds: [%10,%11,%12]–[%13,%14,%15]).").arg(index).arg(files.join(',')).arg(centers.join(',')).arg(bounds.minimum.x).arg(bounds.minimum.y).arg(bounds.minimum.z).arg(bounds.maximum.x).arg(bounds.maximum.y).arg(bounds.maximum.z).arg(bodyBounds.minimum.x).arg(bodyBounds.minimum.y).arg(bodyBounds.minimum.z).arg(bodyBounds.maximum.x).arg(bodyBounds.maximum.y).arg(bodyBounds.maximum.z);return r;}
             if(g.loops.size()==1){op.role=SemanticRole::AdditiveAttachment;op.feature=SemanticFeature::Stud;if(!closeSingle(g,&op.closedMesh,&op.closureTriangles,passage>=0)){r.status=Status::OperandClosureFailed;r.diagnostics<<QString("Single-loop closure failed for group %1.").arg(index);return r;}const auto studReference=reviewedStandardStudReference(g,*effective.sourceModel);if(studReference.reference>=0){op.functionalFeatures.push_back(standardStudFeature(studReference,*effective.sourceModel,g));r.diagnostics<<QString("Official standard solid stud recognized for group %1.").arg(index);}}
-            else if(g.loops.size()==2){op.role=SemanticRole::HollowAdditiveAttachment;op.feature=SemanticFeature::Tube;if(!closeAnnularBoundary(g,&op.closedMesh,&op.closureTriangles)){r.status=Status::OperandClosureFailed;r.diagnostics<<QString("Nested-loop annular closure failed for group %1.").arg(index);return r;}const int receivingReference=reviewedReceivingTubeReference(g,*effective.sourceModel);if(receivingReference>=0&&hasReceivingWallContext(receivingReference,*effective.sourceModel,bodyBounds)){op.functionalFeatures.push_back(receivingTubeFeature(receivingReference,*effective.sourceModel,g));r.diagnostics<<QString("Official stud4 receiving tube recognized in surrounding body-wall context for group %1.").arg(index);}else{const auto studReference=reviewedStandardStudReference(g,*effective.sourceModel);if(studReference.reference>=0&&studReference.open){op.feature=SemanticFeature::Stud;op.functionalFeatures.push_back(standardStudFeature(studReference,*effective.sourceModel,g));r.diagnostics<<QString("Official standard open stud recognized for group %1; its inner bore remains protected.").arg(index);}}}
+            else if(g.loops.size()==2){op.role=SemanticRole::HollowAdditiveAttachment;op.feature=SemanticFeature::Tube;if(!closeAnnularBoundary(g,&op.closedMesh,&op.closureTriangles)){if(!closeConformingAnnularBoundary(g,r.operands.front().closedMesh,&op.closedMesh,&op.closureTriangles)){r.status=Status::OperandClosureFailed;r.diagnostics<<QString("Nested-loop annular closure failed for group %1.").arg(index);return r;}op.conformingBodyContact=true;}const int receivingReference=reviewedReceivingTubeReference(g,*effective.sourceModel);if(receivingReference>=0&&hasReceivingWallContext(receivingReference,*effective.sourceModel,bodyBounds)){op.functionalFeatures.push_back(receivingTubeFeature(receivingReference,*effective.sourceModel,g));r.diagnostics<<QString("Official stud4 receiving tube recognized in surrounding body-wall context for group %1.").arg(index);}else{const auto studReference=reviewedStandardStudReference(g,*effective.sourceModel);if(studReference.reference>=0&&studReference.open){op.feature=SemanticFeature::Stud;op.functionalFeatures.push_back(standardStudFeature(studReference,*effective.sourceModel,g));r.diagnostics<<QString("Official standard open stud recognized for group %1; its inner bore remains protected.").arg(index);}}}
             else {r.status=Status::UnsupportedBoundaryTopology;r.diagnostics<<QString("Group %1 has %2 boundary loops.").arg(index).arg(g.loops.size());return r;}op.analysis=analyzeSource(op.closedMesh);}
         op.sourceTriangleIndices=g.sourceTriangles;
         QSet<int> operandTriangles;for(int triangle:g.sourceTriangles)operandTriangles.insert(triangle);

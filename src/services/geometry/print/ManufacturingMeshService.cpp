@@ -142,6 +142,66 @@ bool adjustCertifiedStud(const LDrawGeometry::LDrawLoadResult& source,const Prin
         .arg(4.8+diameterCorrection,0,'f',3).arg(1.6+heightCorrection,0,'f',3).arg(ownedVertices.size());
     return true;
 }
+bool adjustCertifiedReceivingTube(const LDrawGeometry::LDrawLoadResult& source,
+                                  const PrintMesh& nominal,const FunctionalFeature& tube,
+                                  double diameterCorrection,PrintMesh* adjusted,QString* diagnostic){
+    if(!adjusted||!source.sourceModel||tube.provenance.isEmpty()||
+       tube.constructionRecipe!=QStringLiteral("stud-receiving-tube-wall-cell-v1")||
+       tube.evidenceContract!=QStringLiteral("official-ldraw-stud4-tube-wall-cell-v1")||
+       !std::isfinite(diameterCorrection)||6.4+diameterCorrection<=4.8)return false;
+    if(diameterCorrection==0.0){*adjusted=nominal;return true;}
+    const auto& model=*source.sourceModel;
+    int owner=tube.provenance.front().referenceId;
+    while(owner>=0&&owner<model.references.size()){
+        const auto& reference=model.references[owner];
+        if(reference.fileId>=0&&reference.fileId<model.files.size()){
+            const auto& path=model.files[reference.fileId].relativePath;
+            if(path.compare(QStringLiteral("p/stud4.dat"),Qt::CaseInsensitive)==0||
+               path.compare(QStringLiteral("stud4.dat"),Qt::CaseInsensitive)==0)break;
+        }
+        owner=reference.parentId;
+    }
+    if(owner<0||owner>=model.references.size())return false;
+    struct Surface{Point a,b,c;bool owned;};
+    QVector<Surface> surfaces;surfaces.reserve(model.surfaces.size());
+    for(const auto& surface:model.surfaces){
+        if(!surface.certified||surface.triangleIndex<0||surface.triangleIndex>=source.mesh.triangles.size())
+            return false;
+        int ref=surface.referenceId;
+        while(ref>=0&&ref<model.references.size()&&ref!=owner)
+            ref=model.references[ref].parentId;
+        const auto& triangle=source.mesh.triangles[surface.triangleIndex];
+        surfaces.push_back({converted(triangle.a),converted(triangle.b),converted(triangle.c),ref==owner});
+    }
+    *adjusted=nominal;
+    int moved=0;
+    for(std::size_t i=0;i<nominal.vertices.size();++i){
+        const auto relative=subtract(nominal.vertices[i],tube.frame.origin);
+        const double axial=dot(relative,tube.frame.axis);
+        const auto radial=subtract(relative,scaled(tube.frame.axis,axial));
+        const double radius=length(radial);
+        if(axial<-.02||axial>tube.nominalAxialExtentMillimetres+.02||
+           std::abs(radius-tube.nominalRadiusMillimetres)>.12)continue;
+        double ownedDistance=std::numeric_limits<double>::max();
+        double otherDistance=std::numeric_limits<double>::max();
+        for(const auto& surface:surfaces){
+            const double distance=length(subtract(nominal.vertices[i],
+                closest(nominal.vertices[i],surface.a,surface.b,surface.c)));
+            auto& nearest=surface.owned?ownedDistance:otherDistance;
+            nearest=std::min(nearest,distance);
+        }
+        if(ownedDistance>.12||ownedDistance>otherDistance+1e-10)continue;
+        adjusted->vertices[i]=add(nominal.vertices[i],scaled(radial,diameterCorrection/(2*radius)));
+        ++moved;
+    }
+    if(moved<16){
+        if(diagnostic)*diagnostic=QStringLiteral("Certified receiving-tube exterior was not retained in the PreparedMesh.");
+        return false;
+    }
+    if(diagnostic)*diagnostic=QStringLiteral("Certified receiving-tube OD adjusted to %1 mm; 4.80 mm bore retained (%2 vertices).")
+        .arg(6.4+diameterCorrection,0,'f',3).arg(moved);
+    return true;
+}
 }
 
 ManufacturingMeshService::ManufacturingMeshService(BooleanServiceFactory f,SemanticBuilderFunction b):m_factory(f?std::move(f):[]{return std::make_unique<McutMeshBooleanService>();}),m_builder(std::move(b)){}
@@ -319,12 +379,16 @@ bool ManufacturingMeshService::hasApplicableCorrection(const FitProfile&profile,
 ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::LDrawLoadResult&source,const PreparedMesh&prepared,const FitProfile&profile,const PrintOrientation&printOrientation)const
 {
     if(!source.ok()||prepared.mesh.faces.empty()||prepared.partReference.isEmpty())return fail(ManufacturingMeshError::InvalidInput,"Source and nominal PreparedMesh are required.");
+    if((prepared.hasTopologyAwareLocalComposition||prepared.hasConformingBodyContacts)&&
+       !prepared.sourceCoverage.complete())
+        return fail(ManufacturingMeshError::InvalidInput,
+            QStringLiteral("Topology-aware PreparedMesh has incomplete authoritative source coverage."));
     const bool nominalHingeProfile=profile.profileIdentity.isEmpty()&&profile.corrections.isEmpty();
     QString reason;if(!nominalHingeProfile&&!FitCalibrationLibrary::profileCompatibility(profile,&reason))return fail(ManufacturingMeshError::IncompatibleProfile,reason);
     // Localized, source-owned families share one mesh. Compose every applicable
     // correction and reject overlapping vertex ownership rather than returning
     // after the first family. Semantic operands are handled by the path below.
-    enum class SurfaceKind { Ball, Socket, Clip, Bar, HingePin, InterleavedBump, ClickArrestor, WheelBearing, PlainWheelBearing, Stud };
+    enum class SurfaceKind { Ball, Socket, Clip, Bar, HingePin, InterleavedBump, ClickArrestor, WheelBearing, PlainWheelBearing, Stud, ReceivingTube };
     struct SurfaceFeature { FunctionalFeature feature; SurfaceKind kind; int owner=-1; };
     QVector<SurfaceFeature> surfaceFeatures;
     const auto retained=[&](const FunctionalFeature& feature){
@@ -367,11 +431,26 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
        [](const SurfaceFeature& item){return item.kind==SurfaceKind::InterleavedBump;}))
         return fail(ManufacturingMeshError::MissingCorrection,
             QStringLiteral("Nominal fallback requires a retained certified three-finger hinge."));
-    if(prepared.preparationMethod.contains(QStringLiteral("source-surface"),Qt::CaseInsensitive)||
-       !surfaceFeatures.isEmpty())
-        for(const auto& stud:certifiedSourceStuds(source))
-            if(stud.feature.constructionRecipe!=QStringLiteral("standard-open-stud-v1")||retained(stud.feature))
-                surfaceFeatures.push_back({stud.feature,SurfaceKind::Stud,stud.owner});
+    const bool sourceSurfacePreparation=prepared.preparationMethod.contains(
+        QStringLiteral("source-surface"),Qt::CaseInsensitive);
+    const bool hasOtherSurfaceFeatures=!surfaceFeatures.isEmpty();
+    // These preparation routes have already assembled the certified source
+    // surfaces into a validated manifold. Replaying their operands through
+    // MCUT would reconstruct contact caps that are no longer independent.
+    for(const auto& stud:certifiedSourceStuds(source)){
+        const bool retainedSourceOwnership=retained(stud.feature);
+        const bool solidStud=stud.feature.constructionRecipe!=QStringLiteral("standard-open-stud-v1");
+        if((retainedSourceOwnership&&(prepared.hasConformingBodyContacts||prepared.hasTopologyAwareLocalComposition))||
+           (solidStud&&(sourceSurfacePreparation||hasOtherSurfaceFeatures)))
+            surfaceFeatures.push_back({stud.feature,SurfaceKind::Stud,stud.owner});
+    }
+    if(prepared.hasTopologyAwareLocalComposition)
+        for(const auto& feature:prepared.functionalFeatures)
+            if(feature.constructionRecipe==QStringLiteral("stud-receiving-tube-wall-cell-v1")&&
+               feature.evidenceContract==QStringLiteral("official-ldraw-stud4-tube-wall-cell-v1")&&
+               !feature.provenance.isEmpty())
+                surfaceFeatures.push_back({feature,SurfaceKind::ReceivingTube,
+                                           feature.provenance.front().referenceId});
     if(!surfaceFeatures.isEmpty()){
         PrintMesh adjusted=prepared.mesh;
         std::vector<bool> moved(adjusted.vertices.size(),false);
@@ -410,6 +489,7 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
             case SurfaceKind::WheelBearing: primary=corrections.retainedWheelBearing;break;
             case SurfaceKind::PlainWheelBearing: primary=corrections.plainWheelBearing;break;
             case SurfaceKind::Stud: primary=corrections.studDiameter;height=corrections.studHeight;break;
+            case SurfaceKind::ReceivingTube: primary=corrections.receivingTubeDiameter;break;
             }
             if(primary&&primary->semanticContractVersion!=item.feature.evidenceContract)primary=nullptr;
             if(height&&height->semanticContractVersion!=item.feature.evidenceContract)height=nullptr;
@@ -460,6 +540,9 @@ ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::
                 adjustedSuccessfully=adjustCertifiedStud(source,adjusted,{item.feature,item.owner},
                     primary?primary->valueMillimetres:0.0,height?height->valueMillimetres:0.0,
                     &next,&adjustmentDiagnostic);break;
+            case SurfaceKind::ReceivingTube:
+                adjustedSuccessfully=adjustCertifiedReceivingTube(source,adjusted,item.feature,
+                    primary->valueMillimetres,&next,&adjustmentDiagnostic);break;
             }
             if(!adjustedSuccessfully)
                 return fail(ManufacturingMeshError::RegenerationFailure,

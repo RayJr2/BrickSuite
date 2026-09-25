@@ -34,5 +34,5 @@ struct SemanticOperand { SemanticRole role=SemanticRole::PrimaryBody;
     SemanticFeature feature=SemanticFeature::BodyOrCavity;
     SemanticConfidence confidence=SemanticConfidence::Unsupported;
     PrintMesh sourceMesh,closedMesh;MeshAnalysisResult analysis;Point attachmentDirection;
-    int closureTriangles=0;int compositionPriority=0;QVector<int> sourceTriangleIndices;QStringList sourceFiles;QVector<FunctionalFeature> functionalFeatures; };
+    int closureTriangles=0;int compositionPriority=0;bool conformingBodyContact=false;QVector<int> sourceTriangleIndices;QStringList sourceFiles;QVector<FunctionalFeature> functionalFeatures; };
 }

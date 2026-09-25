@@ -194,6 +194,21 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
         if(!composeCertifiedBallAssembly(request.loadResult,&operands,&assemblyDiagnostic))
             return failure(PrintPreparationError::OperandClosureFailed,sourceAnalysis,request.profile.identity,assemblyDiagnostic);
         std::stable_sort(operands.begin(),operands.end(),[](const auto&a,const auto&b){const auto ar=roleOrder(a.role),br=roleOrder(b.role);if(ar!=br)return ar<br;if(a.compositionPriority!=b.compositionPriority)return a.compositionPriority<b.compositionPriority;return identity(a)<identity(b);});
+        // Visit multiple nonplanar body contacts in spatial order so each MCUT
+        // step extends a local region. Keep every other operand in its original slot.
+        QVector<int> conformingPositions;
+        for(int i=0;i<operands.size();++i)if(operands[i].conformingBodyContact)conformingPositions.push_back(i);
+        if(conformingPositions.size()>=3){
+            std::array<double,3> minimum{1e100,1e100,1e100},maximum{-1e100,-1e100,-1e100};
+            const auto center=[](const SemanticOperand&o){const auto&b=o.analysis.bounds;return std::array<double,3>{(b.minimum.x+b.maximum.x)*0.5,(b.minimum.y+b.maximum.y)*0.5,(b.minimum.z+b.maximum.z)*0.5};};
+            for(int position:conformingPositions){const auto c=center(operands[position]);for(int axis=0;axis<3;++axis){minimum[axis]=std::min(minimum[axis],c[axis]);maximum[axis]=std::max(maximum[axis],c[axis]);}}
+            const std::array<double,3> spread{maximum[0]-minimum[0],maximum[1]-minimum[1],maximum[2]-minimum[2]};
+            const int axis=int(std::max_element(spread.begin(),spread.end())-spread.begin());
+            QVector<SemanticOperand> conforming;
+            for(int position:conformingPositions)conforming.push_back(std::move(operands[position]));
+            std::stable_sort(conforming.begin(),conforming.end(),[&](const auto&a,const auto&b){const auto ca=center(a),cb=center(b);if(ca[axis]!=cb[axis])return ca[axis]<cb[axis];return identity(a)<identity(b);});
+            for(int i=0;i<conformingPositions.size();++i)operands[conformingPositions[i]]=std::move(conforming[i]);
+        }
         const auto primaryCount=std::count_if(operands.cbegin(),operands.cend(),[](const auto&o){return o.role==SemanticRole::PrimaryBody;});if(primaryCount!=1)return failure(PrintPreparationError::AmbiguousSemantics,sourceAnalysis,request.profile.identity,"Exactly one primary body/cavity operand is required.");
         const bool requiresLocalComposition=std::size_t(operands.size()-1)>request.profile.maximumBooleanOperations;
         if(progress)progress({PrintPreparationPhase::OperandValidation,0,int(operands.size())});
@@ -269,6 +284,9 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
         prepared->partReference=request.partReference;prepared->ldrawIdentity=request.ldrawIdentity;
         prepared->dependencyFingerprint=request.loadResult.dependencyFingerprint;
         prepared->preparationProfileVersion=request.profile.identity;prepared->mcutVersion=backend->versionIdentity();
+        prepared->hasConformingBodyContacts=std::any_of(operands.cbegin(),operands.cend(),
+            [](const SemanticOperand& operand){return operand.conformingBodyContact;});
+        prepared->hasTopologyAwareLocalComposition=localComposition.successful;
         prepared->preparationMethod=localComposition.successful?
             QStringLiteral("LDraw semantic operands with topology-aware local planar composition"):
             QStringLiteral("LDraw semantic operands with incremental MCUT Boolean composition");prepared->operations=result.operations;

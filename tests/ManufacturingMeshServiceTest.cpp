@@ -517,7 +517,245 @@ bool clickProductionProof(const QStringList& args) {
     return ok;
 }
 
-int main(int argc,char**argv){QCoreApplication app(argc,argv);if(app.arguments().contains(QStringLiteral("--click-only")))return clickProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--interleaved-only")))return interleavedProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--hinge-only")))return hingeProductionProof(app.arguments())?0:1;bool ok=true;LDrawGeometry::LDrawLoadResult source;source.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>();PreparedMesh nominal;nominal.mesh=box();nominal.partReference="3700";nominal.ldrawIdentity="parts/3700.dat";nominal.preparationProfileVersion="profile-v1";nominal.mcutVersion="mcut-v1";const qsizetype sourceTriangleCount=source.mesh.triangles.size();const auto preparedBefore=nominal.mesh;ManufacturingMeshService service([]{return std::make_unique<ProofBoolean>();},[](const auto&){return semantic();});
+bool slopeStudInvestigation(const QString&library,const QString&proofPath,
+                            const QString&planarProofPath,const QString&savedProfilePath)
+{
+    bool ok=true;
+    const auto source=LDrawLibraryService::loadPart(library,QStringLiteral("3037"));
+    if(!source.ok())return false;
+    PrintPreparationRequest request;
+    request.partReference=QStringLiteral("3037");request.ldrawIdentity=QStringLiteral("parts/3037.dat");
+    request.libraryAuthority=library;request.loadResult=source;
+    const auto prepared=LDrawPrintPreparationService().prepare(request);
+    QTextStream(stdout)<<"prepared="<<prepared.ready()<<" faces="<<prepared.finalAnalysis.triangles
+        <<" method="<<(prepared.preparedMesh?prepared.preparedMesh->preparationMethod:QString())<<Qt::endl;
+    if(!prepared.ready())return false;
+    const auto nominalMesh=prepared.preparedMesh->mesh;
+    const auto sourceTriangleCount=source.mesh.triangles.size();
+    ok&=check(prepared.preparedMesh->sourceCoverage.complete()&&
+        prepared.preparedMesh->sourceCoverage.representedGroups()==8&&
+        prepared.preparedMesh->hasConformingBodyContacts,
+        "3037 has complete eight-group coverage and conforming nonplanar body contacts");
+    ok&=check(prepared.preparedMesh->functionalFeatures.size()>=4,
+        "3037 preparation retains Standard Stud functional ownership");
+    auto full=studProfile();
+    full.corrections.removeIf([](const auto&entry){return entry.featureFamily!=QStringLiteral("StandardStud");});
+    auto diameter=full;diameter.corrections.removeIf([](const auto&entry){return entry.semantics==QStringLiteral("male-stud-height");});
+    auto height=full;for(auto&entry:height.corrections)if(entry.semantics==QStringLiteral("male-stud-diameter"))entry.valueMillimetres=0;
+    for(auto&entry:height.corrections)if(entry.semantics==QStringLiteral("male-stud-height"))entry.requiredDiameterCorrectionMillimetres=0;
+    auto zero=height;for(auto&entry:zero.corrections)entry.valueMillimetres=0;
+    const PrintOrientation orientation;
+    ManufacturingMeshService service;
+    std::shared_ptr<ManufacturingMesh> fullMesh;
+    for(const auto&pair:std::array<std::pair<QString,FitProfile>,4>{{
+            {QStringLiteral("full"),full},{QStringLiteral("diameter"),diameter},
+            {QStringLiteral("height"),height},{QStringLiteral("zero"),zero}}}){
+        const auto selected=AutoFitProfileResolver::resolve(true,QStringLiteral("3037"),{pair.second},source,orientation);
+        const auto result=service.generate(source,*prepared.preparedMesh,pair.second,orientation);
+        QTextStream(stdout)<<pair.first<<" auto="<<selected.resolved()<<" result="<<result.ok()
+            <<" error="<<int(result.error)<<" diagnostic="<<result.diagnostic<<Qt::endl;
+        ok&=check(selected.resolved()&&result.ok(),
+            "3037 "+pair.first+" Stud evidence resolves and produces a valid ManufacturingMesh");
+        if(!result.ok())continue;
+        const auto& mesh=*result.manufacturingMesh;
+        ok&=check(mesh.featureIdentities.size()==4,
+            "3037 "+pair.first+" correction retains all four certified studs");
+        const auto repeated=service.generate(source,*prepared.preparedMesh,pair.second,orientation);
+        ok&=check(repeated.ok()&&repeated.manufacturingMesh->identity==mesh.identity&&
+            same(repeated.manufacturingMesh->mesh,mesh.mesh),
+            "3037 "+pair.first+" ManufacturingMesh is deterministic");
+        if(pair.first==QStringLiteral("full")){
+            ok&=check(std::abs(mesh.manufacturingDiameterMillimetres-5.15)<1e-9&&
+                std::abs(mesh.manufacturingHeightMillimetres-1.8)<1e-9,
+                "3037 full correction reaches 5.15 mm OD and 1.80 mm height");
+            std::size_t changedVertices=0;
+            for(std::size_t i=0;i<mesh.mesh.vertices.size();++i){
+                const auto& a=mesh.mesh.vertices[i];const auto& b=nominalMesh.vertices[i];
+                if(a.x!=b.x||a.y!=b.y||a.z!=b.z)++changedVertices;
+            }
+            ok&=check(mesh.mesh.faces==nominalMesh.faces&&changedVertices==132&&
+                mesh.analysis.selfIntersections==0,
+                "3037 changes only four certified stud patches; body/tube topology and self-intersection safeguards remain intact");
+            fullMesh=result.manufacturingMesh;
+        }
+        if(pair.first==QStringLiteral("zero"))
+            ok&=check(same(mesh.mesh,nominalMesh),"3037 zero correction remains nominal-equivalent");
+    }
+    ok&=check(same(prepared.preparedMesh->mesh,nominalMesh)&&
+        source.mesh.triangles.size()==sourceTriangleCount,
+        "3037 Source and nominal PreparedMesh remain unchanged");
+    if(fullMesh&&!proofPath.isEmpty()){
+        QString error;
+        ok&=check(ManufacturingMeshDiagnosticExporter::writeThreeMf(*fullMesh,proofPath,1.0,
+            QColor("#A0A5A9"),&error),"3037 ManufacturingMesh proof export: "+error);
+        if(QFileInfo::exists(proofPath)){
+            Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();
+            model->QueryReader("3mf")->ReadFromFile(proofPath.toStdString());
+            auto meshes=model->GetMeshObjects();
+            ok&=check(meshes->MoveNext()&&
+                meshes->GetCurrentMeshObject()->GetTriangleCount()==fullMesh->mesh.faces.size(),
+                "3037 proof 3MF reopens with the corrected mesh");
+        }
+    }
+    for(const auto& part:{QStringLiteral("3001"),QStringLiteral("3020"),
+        QStringLiteral("3032"),QStringLiteral("3006"),QStringLiteral("3031"),
+        QStringLiteral("3035"),QStringLiteral("3036"),QStringLiteral("3033")}){
+        const auto controlSource=LDrawLibraryService::loadPart(library,part);
+        ok&=check(controlSource.ok(),part+" control source loads");
+        if(!controlSource.ok())continue;
+        PrintPreparationRequest controlRequest;
+        controlRequest.partReference=part;
+        controlRequest.ldrawIdentity=QStringLiteral("parts/")+part+QStringLiteral(".dat");
+        controlRequest.libraryAuthority=library;
+        controlRequest.loadResult=controlSource;
+        const auto controlSourceBefore=controlSource.mesh.triangles;
+        const auto controlPrepared=LDrawPrintPreparationService().prepare(controlRequest);
+        QTextStream(stdout)<<part<<" prepared="<<controlPrepared.ready()
+            <<" method="<<(controlPrepared.preparedMesh?controlPrepared.preparedMesh->preparationMethod:QString())<<Qt::endl;
+        ok&=check(controlPrepared.ready(),part+" control nominal preparation succeeds");
+        if(!controlPrepared.ready())continue;
+        const auto before=controlPrepared.preparedMesh->mesh;
+        const auto control=service.generate(controlSource,*controlPrepared.preparedMesh,full,orientation);
+        ok&=check(control.ok(),part+" control Stud ManufacturingMesh succeeds: "+control.diagnostic);
+        if(control.ok())ok&=check(same(before,controlPrepared.preparedMesh->mesh),
+            part+" control PreparedMesh remains nominal");
+        if(part==QStringLiteral("3032")){
+            ok&=check(controlPrepared.preparedMesh->hasTopologyAwareLocalComposition&&
+                controlPrepared.preparedMesh->sourceCoverage.complete()&&
+                controlPrepared.preparedMesh->sourceCoverage.representedGroups()==40,
+                "3032 retains forty covered groups from topology-aware planar composition");
+            auto uncovered=*controlPrepared.preparedMesh;
+            uncovered.sourceCoverage.groups.front().status=SourceGroupCoverage::Unrepresented;
+            ok&=check(service.generate(controlSource,uncovered,full,orientation).error==
+                ManufacturingMeshError::InvalidInput,
+                "3032 ManufacturingMesh rejects incomplete authoritative source coverage");
+            FitProfileCorrection tube;
+            tube.featureFamily=QStringLiteral("StudReceivingClutch");
+            tube.featureRole=QStringLiteral("female");
+            tube.printedOrientation=QStringLiteral("feature-axis-perpendicular-to-build-plate");
+            tube.valueMillimetres=.2;
+            tube.semantics=QStringLiteral("female-stud-receiver-tube-od");
+            tube.correctionContractVersion=QStringLiteral("female-stud-receiver-tube-od-v1");
+            tube.semanticContractVersion=QStringLiteral("official-ldraw-stud4-tube-wall-cell-v1");
+            tube.regeneratorAlgorithmVersion=FitCalibrationLibrary::currentRegeneratorAlgorithmVersion();
+            auto tubeOnly=full;tubeOnly.corrections={tube};
+            auto all=full;all.corrections.push_back(tube);
+            auto allZero=all;
+            for(auto& entry:allZero.corrections){
+                entry.valueMillimetres=0;
+                if(entry.semantics==QStringLiteral("male-stud-height"))
+                    entry.requiredDiameterCorrectionMillimetres=0;
+            }
+            for(const auto& variant:std::array<std::pair<QString,FitProfile>,7>{{
+                {QStringLiteral("stud zero"),zero},{QStringLiteral("all zero"),allZero},
+                {QStringLiteral("stud OD"),diameter},
+                {QStringLiteral("stud height"),height},{QStringLiteral("stud full"),full},
+                {QStringLiteral("tube only"),tubeOnly},{QStringLiteral("all families"),all}}}){
+                const auto result=service.generate(controlSource,*controlPrepared.preparedMesh,
+                    variant.second,orientation);
+                ok&=check(result.ok(),"3032 "+variant.first+" correction succeeds: "+result.diagnostic);
+                if(!result.ok())continue;
+                const auto& manufactured=*result.manufacturingMesh;
+                const int expected=variant.first==QStringLiteral("tube only")?15:
+                    variant.first==QStringLiteral("all families")||
+                    variant.first==QStringLiteral("all zero")?39:24;
+                ok&=check(manufactured.featureIdentities.size()==expected&&
+                    manufactured.analysis.degenerateFaces==0&&manufactured.analysis.selfIntersections==0,
+                    "3032 "+variant.first+" retains every applicable feature and strict mesh validity");
+                if(variant.first.contains(QStringLiteral("zero")))
+                    ok&=check(same(manufactured.mesh,before),
+                        "3032 zero correction is nominal-equivalent");
+                if(variant.first==QStringLiteral("all families"))
+                    ok&=check(std::abs(manufactured.manufacturingDiameterMillimetres-5.15)<1e-9&&
+                        std::abs(manufactured.manufacturingHeightMillimetres-1.8)<1e-9&&
+                        manufactured.provenance.join('|').contains(QStringLiteral("6.600 mm")),
+                        "3032 composes 5.15 mm OD x 1.80 mm studs with 6.60 mm tube exteriors");
+                if(variant.first==QStringLiteral("tube only")){
+                    const auto tubeFeature=std::find_if(
+                        controlPrepared.preparedMesh->functionalFeatures.cbegin(),
+                        controlPrepared.preparedMesh->functionalFeatures.cend(),
+                        [](const auto& feature){return feature.constructionRecipe==
+                            QStringLiteral("stud-receiving-tube-wall-cell-v1");});
+                    int protectedBore=0,changedExterior=0;
+                    if(tubeFeature!=controlPrepared.preparedMesh->functionalFeatures.cend())
+                        for(std::size_t i=0;i<before.vertices.size();++i){
+                            const auto& p=before.vertices[i];
+                            const auto& q=manufactured.mesh.vertices[i];
+                            const Point relative{p.x-tubeFeature->frame.origin.x,
+                                p.y-tubeFeature->frame.origin.y,p.z-tubeFeature->frame.origin.z};
+                            const auto& axis=tubeFeature->frame.axis;
+                            const double axial=relative.x*axis.x+relative.y*axis.y+relative.z*axis.z;
+                            const double radius=std::sqrt(std::pow(relative.x-axial*axis.x,2)+
+                                std::pow(relative.y-axial*axis.y,2)+
+                                std::pow(relative.z-axial*axis.z,2));
+                            if(axial<-.02||axial>tubeFeature->nominalAxialExtentMillimetres+.02)continue;
+                            if(std::abs(radius-2.4)<.02){
+                                ++protectedBore;
+                                ok&=check(p.x==q.x&&p.y==q.y&&p.z==q.z,
+                                    "3032 protected 4.80 mm receiving-tube bore stays unchanged");
+                            }
+                            if(std::abs(radius-3.2)<.02&&
+                               (p.x!=q.x||p.y!=q.y||p.z!=q.z))++changedExterior;
+                        }
+                    ok&=check(protectedBore>=16&&changedExterior>=16&&
+                        manufactured.mesh.faces==before.faces,
+                        "3032 changes source-owned tube exterior while retaining bore and body topology");
+                }
+                const auto repeated=service.generate(controlSource,*controlPrepared.preparedMesh,
+                    variant.second,orientation);
+                ok&=check(repeated.ok()&&repeated.manufacturingMesh->identity==manufactured.identity&&
+                    same(repeated.manufacturingMesh->mesh,manufactured.mesh),
+                    "3032 "+variant.first+" ManufacturingMesh is deterministic");
+            }
+            if(!savedProfilePath.isEmpty()){
+                QFile file(savedProfilePath);
+                ok&=check(file.open(QIODevice::ReadOnly),
+                    "Ray's saved Verified Fit Profile can be read");
+                if(file.isOpen()){
+                    FitProfile saved;QString error;
+                    const auto json=QJsonDocument::fromJson(file.readAll());
+                    ok&=check(json.isObject()&&FitProfileJson::fromJson(json.object(),&saved,&error)&&
+                        FitCalibrationLibrary::profileCompatibility(saved,&error),
+                        "Ray's saved Verified Fit Profile loads compatibly: "+error);
+                    const auto selected=AutoFitProfileResolver::resolve(true,part,{saved},
+                        controlSource,orientation);
+                    const auto production=service.generate(controlSource,*controlPrepared.preparedMesh,
+                        saved,orientation);
+                    ok&=check(selected.resolved()&&production.ok()&&
+                        production.manufacturingMesh->featureIdentities.size()==39,
+                        "3032 Auto Fit and explicit export select Ray's Verified Stud and TubeWallCell evidence: "+production.diagnostic);
+                    if(production.ok())ok&=check(
+                        std::abs(production.manufacturingMesh->manufacturingDiameterMillimetres-5.15)<1e-9&&
+                        std::abs(production.manufacturingMesh->manufacturingHeightMillimetres-1.8)<1e-9&&
+                        production.manufacturingMesh->provenance.join('|').contains(QStringLiteral("6.600 mm")),
+                        "3032 Ray's Verified profile gives 5.15 mm studs, 1.80 mm height, and 6.60 mm tube OD");
+                    if(production.ok()&&!planarProofPath.isEmpty()){
+                        QString exportError;
+                        ok&=check(ManufacturingMeshDiagnosticExporter::writeThreeMf(
+                            *production.manufacturingMesh,planarProofPath,1.0,QColor("#A0A5A9"),
+                            &exportError),"3032 Verified-profile proof export: "+exportError);
+                        if(QFileInfo::exists(planarProofPath)){
+                            Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();
+                            model->QueryReader("3mf")->ReadFromFile(planarProofPath.toStdString());
+                            auto meshes=model->GetMeshObjects();
+                            ok&=check(meshes->MoveNext()&&
+                                meshes->GetCurrentMeshObject()->GetTriangleCount()==
+                                    production.manufacturingMesh->mesh.faces.size(),
+                                "3032 Verified-profile proof 3MF reopens");
+                        }
+                    }
+                    ok&=check(same(before,controlPrepared.preparedMesh->mesh),
+                        "3032 nominal PreparedMesh remains unchanged after all production cases");
+                }
+            }
+        }
+        ok&=check(sameSource(controlSource.mesh.triangles,controlSourceBefore),
+            part+" authoritative Source geometry remains unchanged");
+    }
+    return ok;
+}
+
+int main(int argc,char**argv){QCoreApplication app(argc,argv);const auto investigationAt=app.arguments().indexOf(QStringLiteral("--slope-investigate"));if(investigationAt>=0&&investigationAt+1<app.arguments().size())return slopeStudInvestigation(app.arguments()[investigationAt+1],investigationAt+2<app.arguments().size()?app.arguments()[investigationAt+2]:QString(),investigationAt+3<app.arguments().size()?app.arguments()[investigationAt+3]:QString(),investigationAt+4<app.arguments().size()?app.arguments()[investigationAt+4]:QString())?0:1;if(app.arguments().contains(QStringLiteral("--click-only")))return clickProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--interleaved-only")))return interleavedProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--hinge-only")))return hingeProductionProof(app.arguments())?0:1;bool ok=true;LDrawGeometry::LDrawLoadResult source;source.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>();PreparedMesh nominal;nominal.mesh=box();nominal.partReference="3700";nominal.ldrawIdentity="parts/3700.dat";nominal.preparationProfileVersion="profile-v1";nominal.mcutVersion="mcut-v1";const qsizetype sourceTriangleCount=source.mesh.triangles.size();const auto preparedBefore=nominal.mesh;ManufacturingMeshService service([]{return std::make_unique<ProofBoolean>();},[](const auto&){return semantic();});
 auto p=profile();QString selectionReason;const auto*selectedCorrection=ManufacturingMeshService::compatibleCorrection(p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,&selectionReason);ok&=check(selectedCorrection&&std::abs(selectedCorrection->valueMillimetres-.2)<1e-9,"explicit per-export profile selection resolves the profile correction");ok&=check(!ManufacturingMeshService::compatibleCorrection(p,FitPrintedOrientation::FeatureAxisParallelToBuildPlate),"incompatible orientation cannot be selected for compensated export");const auto result=service.generate(source,nominal,p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(result.ok(),"compatible Verified profile produces ManufacturingMesh");if(result.ok()){const auto&m=*result.manufacturingMesh;ok&=check(std::abs(m.nominalDiameterMillimetres-4.8)<1e-9&&std::abs(m.diameterCorrectionMillimetres-.2)<1e-9&&std::abs(m.manufacturingDiameterMillimetres-5.0)<1e-9,"profile diameter correction enters semantic regeneration");ok&=check(!same(m.mesh,nominal.mesh)&&same(nominal.mesh,preparedBefore)&&source.mesh.triangles.size()==sourceTriangleCount,"Source and Prepared remain unchanged while ManufacturingMesh is distinct");ok&=check(m.fitProfileIdentity==p.profileIdentity&&m.sourceSessionIdentity==p.sourceSessionIdentity&&!m.identity.isEmpty(),"manufacturing provenance links profile and evidence");QTextStream(stdout)<<"Part 3700 proof: profile="<<m.fitProfileIdentity<<" nominalDiameter="<<m.nominalDiameterMillimetres<<" correction="<<m.diameterCorrectionMillimetres<<" manufacturingDiameter="<<m.manufacturingDiameterMillimetres<<" manufacturingIdentity="<<m.identity<<Qt::endl;const auto passage=analyzeSource(ProofBoolean::lastPassage);ok&=check(std::abs((passage.bounds.maximum.x-passage.bounds.minimum.x)-6.0)<1e-9,"protected entrance geometry remains nominal");const auto repeated=service.generate(source,nominal,p,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(repeated.ok()&&repeated.manufacturingMesh->identity==m.identity&&same(repeated.manufacturingMesh->mesh,m.mesh),"generation deterministic");auto changed=profile(.1);changed.profileIdentity="other-profile";const auto other=service.generate(source,nominal,changed,FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(other.ok()&&other.manufacturingMesh->identity!=m.identity&&std::abs(other.manufacturingMesh->manufacturingDiameterMillimetres-4.9)<1e-9,"correction and identity come from selected profile");QTemporaryDir output;const QString exportPath=output.filePath("manufacturing.3mf");QString exportError;ok&=check(ManufacturingMeshDiagnosticExporter::writeThreeMf(m,exportPath,1.0,QColor("#0055BF"),&exportError),QStringLiteral("diagnostic ManufacturingMesh export: %1").arg(exportError));if(QFileInfo::exists(exportPath)){Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();model->QueryReader("3mf")->ReadFromFile(exportPath.toStdString());auto meshes=model->GetMeshObjects();ok&=check(meshes->MoveNext(),"diagnostic 3MF contains a mesh");if(meshes->GetCurrentMeshObject()){const auto exported=meshes->GetCurrentMeshObject();ok&=check(exported->GetTriangleCount()==m.mesh.faces.size(),"diagnostic export contains ManufacturingMesh triangle data");ok&=check(std::abs(exported->GetVertex(1).m_Coordinates[0]-m.mesh.vertices[1].x)<1e-6&&std::abs(exported->GetVertex(1).m_Coordinates[0]-nominal.mesh.vertices[1].x)>1e-6,"diagnostic export uses ManufacturingMesh rather than nominal Prepared Mesh");}}}
 const auto disabled=AutoFitProfileResolver::resolve(false,"3700",{p},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(disabled.state==AutoFitResolutionState::Disabled&&!disabled.resolved(),"Auto Fit defaults to nominal when disabled");const auto unique=AutoFitProfileResolver::resolve(true,"3700",{p},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(unique.resolved()&&unique.profile.profileIdentity==p.profileIdentity,"Auto Fit deterministically resolves one compatible Verified profile");const auto none=AutoFitProfileResolver::resolve(true,"3700",{},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(none.state==AutoFitResolutionState::NoCompatibleProfile,"Auto Fit safely keeps nominal geometry without a compatible profile");auto second=profile(.1);second.profileIdentity="second-profile";const auto ambiguous=AutoFitProfileResolver::resolve(true,"3700",{p,second},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(ambiguous.state==AutoFitResolutionState::Ambiguous&&!ambiguous.resolved(),"Auto Fit refuses ambiguous compatible profiles");auto staleAuto=p;staleAuto.corrections.front().semanticContractVersion="stale";auto draftAuto=p;draftAuto.verificationState=FitEvidenceState::Draft;const auto invalid=AutoFitProfileResolver::resolve(true,"3700",{staleAuto,draftAuto},FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate);ok&=check(invalid.state==AutoFitResolutionState::NoCompatibleProfile,"Auto Fit rejects stale and non-Verified profiles");
 PrintOrientation nominalOrientation,xPositive,xNegative,yPositive,yNegative,zPositive,zNegative;xPositive.rotate(PrintOrientation::Rotation::XPositive);xNegative.rotate(PrintOrientation::Rotation::XNegative);yPositive.rotate(PrintOrientation::Rotation::YPositive);yNegative.rotate(PrintOrientation::Rotation::YNegative);zPositive.rotate(PrintOrientation::Rotation::ZPositive);zNegative.rotate(PrintOrientation::Rotation::ZNegative);const auto zAxisFeature=feature();ok&=check(ManufacturingMeshService::transformedOrientation(zAxisFeature,nominalOrientation)==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,xPositive)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,xNegative)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,yPositive)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,yNegative)==FitPrintedOrientation::FeatureAxisParallelToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,zPositive)==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate&&ManufacturingMeshService::transformedOrientation(zAxisFeature,zNegative)==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate,"identity and X/Y/Z +/-90 classify transformed feature axes against the build plate");
