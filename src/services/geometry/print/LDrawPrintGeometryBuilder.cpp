@@ -283,10 +283,17 @@ bool closeBodyToBallStem(Component c,int bodyLoop,PrintMesh*out,int*added)
 LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDrawGeometry::LDrawLoadResult&loaded,const std::function<bool()>&cancellationRequested)
 {
     Result r;if(!loaded.ok()||!loaded.sourceModel){r.diagnostics<<"No hierarchical LDraw source model is available.";return r;}const auto stitched=LDrawCertifiedInterfaceStitcher::stitch(loaded);const auto&effective=stitched.loadResult;r.stitchDiagnostics=stitched.diagnostics;r.diagnostics.append(stitched.diagnostics.messages);
+    r.coverage.route=SourceCoverageRoute::SemanticOperands;
+    r.coverage.expandedTriangleCount=loaded.mesh.triangles.size();
+    r.coverage.stitchedTriangleCount=effective.mesh.triangles.size();
+    r.coverage.expandedTriangleForStitchedTriangle=stitched.expandedTriangleForStitchedTriangle;
+    r.coverage.groupForStitchedTriangle=QVector<int>(r.coverage.stitchedTriangleCount,-1);
     QElapsedTimer total,phase;total.start();phase.start();std::vector<FaceInfo>infos;r.source=welded(effective.mesh,&infos);r.sourceAnalysis=analyzeSource(r.source);r.sourceConversionAnalysisMs=phase.elapsed();
+    r.coverage.degenerateTriangleCount=r.coverage.stitchedTriangleCount-int(infos.size());
     if(!r.sourceAnalysis.finite||!r.sourceAnalysis.indicesValid||r.sourceAnalysis.resourceLimitExceeded){r.status=r.sourceAnalysis.resourceLimitExceeded?Status::ResourceLimitExceeded:Status::OperandValidationFailed;r.diagnostics<<"Source geometry is unsafe for semantic interpretation.";return r;}
     if(cancellationRequested&&cancellationRequested()){r.status=Status::Cancelled;r.diagnostics<<"Semantic preparation was cancelled after Source analysis.";return r;}
     phase.restart();auto groups=components(r.source,infos);r.semanticGroups=int(groups.size());
+    for(int i=0;i<int(groups.size());++i){r.coverage.groups.push_back({i,int(groups[i].sourceTriangles.size())});r.coverage.groupedTriangleCount+=int(groups[i].sourceTriangles.size());for(int triangle:groups[i].sourceTriangles)if(triangle>=0&&triangle<r.coverage.groupForStitchedTriangle.size())r.coverage.groupForStitchedTriangle[triangle]=i;}
     r.approximateProvenanceBytes=effective.sourceModel->files.size()*qsizetype(sizeof(LDrawGeometry::SourceFileRecord))+effective.sourceModel->references.size()*qsizetype(sizeof(LDrawGeometry::ReferenceRecord))+effective.sourceModel->surfaces.size()*qsizetype(sizeof(LDrawGeometry::SurfaceRecord));
     if(groups.empty()||groups.size()>MaxGroups){r.status=Status::ResourceLimitExceeded;r.diagnostics<<"Semantic group limit was exceeded.";return r;}int loopCount=0;for(const auto&g:groups)loopCount+=int(g.loops.size());if(loopCount>MaxLoops){r.status=Status::ResourceLimitExceeded;r.diagnostics<<"Boundary loop limit was exceeded.";return r;}
     auto certified=[&](const Component&g,QStringList*files){QSet<int>ids;for(int ti:g.sourceTriangles){if(ti<0||ti>=effective.sourceModel->surfaces.size())return false;const auto&s=effective.sourceModel->surfaces[ti];if(!s.certified)return false;ids.insert(s.fileId);}for(int id:ids){if(id<0||id>=effective.sourceModel->files.size())return false;const auto&f=effective.sourceModel->files[id];if(f.classification==LDrawGeometry::SourceClassification::Unknown)return false;files->append(f.relativePath);}files->sort();return true;};
@@ -387,8 +394,15 @@ LDrawSemanticOperandBuilder::Result LDrawSemanticOperandBuilder::build(const LDr
         op.sourceTriangleIndices=g.sourceTriangles;
         QSet<int> operandTriangles;for(int triangle:g.sourceTriangles)operandTriangles.insert(triangle);
         for(const auto& ball:ballJoints){const int owner=ball.provenance.front().referenceId;int owned=0,total=0;for(const auto& surface:effective.sourceModel->surfaces){int ref=surface.referenceId;while(ref>=0&&ref<effective.sourceModel->references.size()&&ref!=owner)ref=effective.sourceModel->references[ref].parentId;if(ref==owner){++total;if(operandTriangles.contains(surface.triangleIndex))++owned;}}if(total>=80&&owned==total){op.functionalFeatures.push_back(ball);r.diagnostics<<QStringLiteral("Certified Ball Joint spherical head retained in one nominal operand for feature %1; production correction is not enabled.").arg(ball.stableIdentity);}}
-        const auto operandValidation=validateBooleanOperand(op.analysis);if(!operandValidation.ok()){r.status=Status::OperandValidationFailed;r.diagnostics<<QString("The %1 operand failed Boolean-operand validation: %2 (boundaryEdges=%3, components=%4, nonManifoldVertices=%5, selfIntersections=%6).").arg(roleName(op.role),QString::fromStdString(operandValidation.message)).arg(op.analysis.boundaryEdges).arg(op.analysis.connectedComponents).arg(op.analysis.nonManifoldVertices).arg(op.analysis.selfIntersections);return r;}r.closureTriangles+=op.closureTriangles;r.operands.push_back(std::move(op));}
-    if(r.operands.size()>MaxOperands){r.status=Status::ResourceLimitExceeded;r.diagnostics<<"Semantic operand limit was exceeded.";return r;}r.semanticGenerationMs=phase.elapsed();r.status=Status::Ready;
+        const auto operandValidation=validateBooleanOperand(op.analysis);if(!operandValidation.ok()){r.status=Status::OperandValidationFailed;r.diagnostics<<QString("The %1 operand failed Boolean-operand validation: %2 (boundaryEdges=%3, components=%4, nonManifoldVertices=%5, selfIntersections=%6).").arg(roleName(op.role),QString::fromStdString(operandValidation.message)).arg(op.analysis.boundaryEdges).arg(op.analysis.connectedComponents).arg(op.analysis.nonManifoldVertices).arg(op.analysis.selfIntersections);return r;}r.closureTriangles+=op.closureTriangles;r.operands.push_back(std::move(op));r.coverage.groups[index].status=SourceGroupCoverage::SemanticOperand;}
+    if(r.operands.size()>MaxOperands){r.status=Status::ResourceLimitExceeded;r.diagnostics<<"Semantic operand limit was exceeded.";return r;}
+    if(!r.coverage.complete()){
+        QStringList ids;for(int index:r.coverage.uncoveredGroups())ids<<QString::number(index);
+        r.status=Status::OperandValidationFailed;
+        r.diagnostics<<QStringLiteral("Authoritative source coverage is incomplete: uncovered groups %1 (%2 represented of %3; %4 stitched triangles, %5 grouped, %6 degenerate).").arg(ids.join(',')).arg(r.coverage.representedGroups()).arg(r.coverage.groups.size()).arg(r.coverage.stitchedTriangleCount).arg(r.coverage.groupedTriangleCount).arg(r.coverage.degenerateTriangleCount);
+        return r;
+    }
+    r.semanticGenerationMs=phase.elapsed();r.status=Status::Ready;
     r.diagnostics<<QString("groups=%1 loops=%2 operands=%3 closureTriangles=%4 provenanceBytes~%5 semanticMs=%6 elapsedMs=%7")
         .arg(r.semanticGroups).arg(loopCount).arg(r.operands.size()).arg(r.closureTriangles).arg(r.approximateProvenanceBytes).arg(r.semanticGenerationMs).arg(total.elapsed());return r;
 }

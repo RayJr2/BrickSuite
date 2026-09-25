@@ -3,6 +3,7 @@
 #include "PrintMesh.h"
 #include "SemanticOperand.h"
 #include "LDrawCertifiedInterfaceStitcher.h"
+#include "SourceCoverage.h"
 #include "../LDrawLoadResult.h"
 
 #include <QStringList>
@@ -36,6 +37,7 @@ public:
         qint64 sourceConversionAnalysisMs = 0;
         qint64 semanticGenerationMs = 0;
         CertifiedInterfaceStitchDiagnostics stitchDiagnostics;
+        SourceCoverage coverage;
         bool ok() const { return status == Status::Ready; }
     };
 

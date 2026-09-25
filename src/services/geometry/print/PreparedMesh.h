@@ -1,6 +1,7 @@
 #pragma once
 #include "PrintMesh.h"
 #include "SemanticOperand.h"
+#include "SourceCoverage.h"
 #include "../LDrawLoadResult.h"
 #include <QString>
 #include <QStringList>
@@ -16,5 +17,6 @@ struct PreparedMesh { PrintMesh mesh;MeshBounds millimetreBounds;MeshAnalysisRes
     QStringList operationSummary;QVector<BooleanOperationSummary> operations;PrintPreparationTimings timings;
     DimensionalFidelityResult dimensionalFidelity;std::size_t semanticOperandCount=0,sourceTriangleCount=0,preparedTriangleCount=0;
     QVector<FunctionalFeature> functionalFeatures;
+    SourceCoverage sourceCoverage;
     QStringList warnings;qint64 elapsedMilliseconds=0; };
 }

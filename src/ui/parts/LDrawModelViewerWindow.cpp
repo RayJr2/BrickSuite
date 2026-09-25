@@ -164,8 +164,8 @@ void LDrawModelViewerWindow::applyPreparationProgress(quint64 generation,const P
 
 void LDrawModelViewerWindow::applyPreparationResult(quint64 generation,const PrintGeometry::PrintPreparationResult&result)
 {
-    if(!m_state.accepts(generation))return;m_preparing=false;m_preparedMeshStatus->setToolTip(result.diagnostic);
-    using S=PrintGeometry::PrintPreparationState;switch(result.state){case S::Ready:if(result.preparedMesh){m_preparedMesh=result.preparedMesh;m_preparedMeshStatus->setText(tr("Prepared Mesh: Ready for Printing"));{QSignalBlocker blocker(m_geometryView);m_geometryView->setCurrentIndex(m_geometryView->findData(1));}selectGeometry();}break;case S::Unsupported:m_prepareBlocked=true;m_preparedMeshStatus->setText(tr("Prepared Mesh: Built-in preparation unsupported"));break;case S::Ambiguous:m_prepareBlocked=true;m_preparedMeshStatus->setText(tr("Prepared Mesh: Construction ambiguous"));break;case S::Failed:m_preparedMeshStatus->setText(tr("Prepared Mesh: Preparation failed"));break;case S::Cancelled:updatePreparationControls();return;}updatePreparationControls();
+    if(!m_state.accepts(generation))return;m_preparedMeshStatus->setToolTip(result.diagnostic);
+    using S=PrintGeometry::PrintPreparationState;switch(result.state){case S::Ready:if(result.preparedMesh){m_preparedMesh=result.preparedMesh;m_preparedMeshStatus->setText(tr("Prepared Mesh: Ready for Printing"));{QSignalBlocker blocker(m_geometryView);m_geometryView->setCurrentIndex(m_geometryView->findData(1));}selectGeometry();}break;case S::Unsupported:m_prepareBlocked=true;m_preparedMeshStatus->setText(tr("Prepared Mesh: Built-in preparation unsupported"));break;case S::Ambiguous:m_prepareBlocked=true;m_preparedMeshStatus->setText(tr("Prepared Mesh: Construction ambiguous"));break;case S::Failed:m_preparedMeshStatus->setText(result.error==PrintGeometry::PrintPreparationError::ResourceLimitExceeded?tr("Prepared Mesh: Safe workload limit exceeded"):tr("Prepared Mesh: Preparation failed"));break;case S::Cancelled:break;}m_preparing=false;updatePreparationControls();
 }
 
 void LDrawModelViewerWindow::updatePreparationControls()

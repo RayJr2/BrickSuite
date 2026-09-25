@@ -103,6 +103,8 @@ CertifiedInterfaceStitchResult LDrawCertifiedInterfaceStitcher::stitch(
     const LDrawGeometry::LDrawLoadResult& source,const LDrawPrintPreparationProfile& profile)
 {
     CertifiedInterfaceStitchResult result;result.loadResult=source;
+    result.expandedTriangleForStitchedTriangle.reserve(source.mesh.triangles.size());
+    for(int i=0;i<source.mesh.triangles.size();++i)result.expandedTriangleForStitchedTriangle.push_back(i);
     if(source.sourceModel)result.loadResult.sourceModel=std::make_shared<LDrawGeometry::LDrawSourceModel>(*source.sourceModel);
     auto& diagnostics=result.diagnostics;diagnostics.trianglesBefore=source.mesh.triangles.size();
     const double weldLdu=profile.seamWeldMillimetres/0.4;
@@ -127,14 +129,15 @@ CertifiedInterfaceStitchResult LDrawCertifiedInterfaceStitcher::stitch(
     for(int ti=0;ti<source.mesh.triangles.size();++ti){int splitEdges=0,splitPoints=0;for(int edge=0;edge<3;++edge)if(!splits.value(ti*3+edge).isEmpty()){++splitEdges;splitPoints+=splits.value(ti*3+edge).size();}
         if(splitEdges<=1)continue;for(int edge=0;edge<3;++edge)splits.remove(ti*3+edge);diagnostics.acceptedSplits-=splitPoints;++diagnostics.rejectedAmbiguousCandidates;}
 
-    QVector<Triangle> triangles;QVector<SurfaceRecord> surfaces;triangles.reserve(source.mesh.triangles.size()+diagnostics.acceptedSplits);surfaces.reserve(triangles.capacity());
+    QVector<Triangle> triangles;QVector<SurfaceRecord> surfaces;QVector<int> ancestry;triangles.reserve(source.mesh.triangles.size()+diagnostics.acceptedSplits);surfaces.reserve(triangles.capacity());ancestry.reserve(triangles.capacity());
     for(int ti=0;ti<source.mesh.triangles.size();++ti){const auto&original=source.mesh.triangles[ti];const std::array<QVector3D,3> point{original.a,original.b,original.c};int splitEdge=-1;
         for(int edge=0;edge<3;++edge)if(!splits.value(ti*3+edge).isEmpty()){if(splitEdge>=0){splitEdge=-2;break;}splitEdge=edge;}
         QVector<Triangle> replacements;
         if(splitEdge<0)replacements.push_back(original);
         else {QVector<QVector3D> chain;chain.push_back(point[splitEdge]);for(const auto&candidate:splits.value(ti*3+splitEdge))chain.push_back(candidate.point);chain.push_back(point[(splitEdge+1)%3]);const QVector3D opposite=point[(splitEdge+2)%3];
             for(int i=0;i+1<chain.size();++i)replacements.push_back(triangle(chain[i],chain[i+1],opposite,original));}
-        const SurfaceRecord provenance=source.sourceModel->surfaces[ti];for(const auto&next:replacements){SurfaceRecord copy=provenance;copy.triangleIndex=triangles.size();triangles.push_back(next);surfaces.push_back(copy);}}
+        const SurfaceRecord provenance=source.sourceModel->surfaces[ti];for(const auto&next:replacements){SurfaceRecord copy=provenance;copy.triangleIndex=triangles.size();triangles.push_back(next);surfaces.push_back(copy);ancestry.push_back(ti);}}
+    result.expandedTriangleForStitchedTriangle=std::move(ancestry);
     result.changed=triangles.size()!=source.mesh.triangles.size();if(result.changed){result.loadResult.mesh.triangles=triangles;result.loadResult.sourceModel->surfaces=surfaces;}
     diagnostics.trianglesAfter=result.loadResult.mesh.triangles.size();diagnostics.boundariesAfter=boundaryCount(result.loadResult.mesh.triangles,weldLdu);
     diagnostics.messages<<QStringLiteral("Certified interface stitching: candidates=%1 acceptedSplits=%2 ambiguous=%3 triangles=%4->%5 boundaries=%6->%7.")

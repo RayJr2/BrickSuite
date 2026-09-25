@@ -65,6 +65,13 @@ int main(int argc,char**argv)
     ok&=check(allCoordinatesAuthoritative(source,stitched.loadResult),"no coordinate is invented");
     ok&=check(stitched.loadResult.mesh.minimumBounds==source.mesh.minimumBounds&&stitched.loadResult.mesh.maximumBounds==source.mesh.maximumBounds,"bounds unchanged");
     ok&=check(stitched.loadResult.sourceModel->surfaces.size()==stitched.loadResult.mesh.triangles.size(),"subdivided provenance retained");
+    ok&=check(stitched.expandedTriangleForStitchedTriangle.size()==stitched.loadResult.mesh.triangles.size(),"every stitched triangle retains expanded-source ancestry");
+    QVector<int> descendants(source.mesh.triangles.size());
+    for(int ancestor:stitched.expandedTriangleForStitchedTriangle){
+        ok&=check(ancestor>=0&&ancestor<descendants.size(),"stitched ancestor index is valid");
+        if(ancestor>=0&&ancestor<descendants.size())++descendants[ancestor];
+    }
+    for(int count:descendants)ok&=check(count>=1,"no expanded authoritative triangle is lost during stitching");
     for(const auto&s:stitched.loadResult.sourceModel->surfaces)ok&=check(s.certified&&s.triangleIndex>=0,"certification and triangle identity retained");
 
     const auto multiple=LDrawCertifiedInterfaceStitcher::stitch(fixture(2));

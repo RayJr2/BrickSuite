@@ -4,6 +4,7 @@
 #include "LDrawPrintPreparationProfile.h"
 
 #include <QStringList>
+#include <QVector>
 
 namespace PrintGeometry {
 
@@ -21,6 +22,8 @@ struct CertifiedInterfaceStitchDiagnostics {
 struct CertifiedInterfaceStitchResult {
     LDrawGeometry::LDrawLoadResult loadResult;
     CertifiedInterfaceStitchDiagnostics diagnostics;
+    // One authoritative expanded-source triangle for every stitched triangle.
+    QVector<int> expandedTriangleForStitchedTriangle;
     bool changed = false;
 };
 
