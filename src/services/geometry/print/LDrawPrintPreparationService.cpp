@@ -233,9 +233,10 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
                                      SourceSurfaceSolidifier::RayAxis::Y}){
                     const auto candidate=SourceSurfaceSolidifier::solidify(request.loadResult,.15,axis,
                         SourceSurfaceSolidifier::QueryMode::Indexed,4000,150000,
-                        SourceSurfaceSolidifier::ExtractionMode::SurfaceNetsDiagnostic);
-                    reconstructionDiagnostics<<QStringLiteral("Surface-local reconstruction axis %1: %2")
-                        .arg(int(axis)).arg(candidate.diagnostic);
+                        SourceSurfaceSolidifier::ExtractionMode::TopologyAwareSurfaceNetsDiagnostic);
+                    reconstructionDiagnostics<<QStringLiteral("Topology-aware reconstruction axis %1 (mixed cells %2, multi-vertex cells %3): %4")
+                        .arg(int(axis)).arg(candidate.metrics.mixedCells)
+                        .arg(candidate.metrics.multiVertexCells).arg(candidate.diagnostic);
                     if(!candidate.successful)continue;
                     const auto audit=SourceSurfaceSolidifier::auditCandidate(
                         request.loadResult,candidate.mesh,4000);

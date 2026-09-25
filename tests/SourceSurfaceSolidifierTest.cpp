@@ -96,14 +96,22 @@ int main(int argc,char**argv)
                 if(part!=QStringLiteral("6553")&&axis!=SourceSurfaceSolidifier::RayAxis::X)break;
                 const auto attempt=SourceSurfaceSolidifier::solidify(loaded,.15,
                     axis,SourceSurfaceSolidifier::QueryMode::Indexed,
-                    8000,150000,SourceSurfaceSolidifier::ExtractionMode::SurfaceNetsDiagnostic);
+                    8000,150000,SourceSurfaceSolidifier::ExtractionMode::TopologyAwareSurfaceNetsDiagnostic);
                 ok&=require(attempt.metrics.totalMilliseconds<=8000&&
                             attempt.metrics.finalFaces<=150000,
                             part+QStringLiteral(" reconstruction stays inside time/face bounds"));
+                if(part==QStringLiteral("6553")&&axis==SourceSurfaceSolidifier::RayAxis::X)
+                    ok&=require(attempt.metrics.multiVertexCells>0&&
+                                attempt.metrics.maximumCellVertices>1&&
+                                !attempt.successful,
+                                QStringLiteral("ambiguous source cells retain distinct sheets without promoting an open shell"));
                 QTextStream(stdout)<<"reconstruction-audit part="<<part<<" axis="<<int(axis)
                     <<" success="<<attempt.successful<<" grid="<<attempt.metrics.gridX<<','
                     <<attempt.metrics.gridY<<','<<attempt.metrics.gridZ
                     <<" vertices="<<attempt.metrics.finalVertices<<" faces="<<attempt.metrics.finalFaces
+                    <<" mixed-cells="<<attempt.metrics.mixedCells
+                    <<" multi-vertex-cells="<<attempt.metrics.multiVertexCells
+                    <<" max-cell-vertices="<<attempt.metrics.maximumCellVertices
                     <<" primary-bytes~="<<attempt.metrics.approximatePrimaryBytes
                     <<" elapsed-ms="<<attempt.metrics.totalMilliseconds
                     <<" diagnostic="<<attempt.diagnostic<<Qt::endl;
@@ -113,10 +121,10 @@ int main(int argc,char**argv)
                     if(part==QStringLiteral("32064a"))ok&=require(
                         !fidelity.localFidelityPassed&&!fidelity.completeOwnership&&
                         fidelity.sourceTrianglesUnresolved>0,
-                        QStringLiteral("manifold candidate remains rejected with unresolved local fidelity and source ownership"));
+                        QStringLiteral("candidate remains rejected with unresolved local fidelity and source ownership"));
                     const auto repeated=SourceSurfaceSolidifier::solidify(loaded,.15,
                         axis,SourceSurfaceSolidifier::QueryMode::Indexed,8000,150000,
-                        SourceSurfaceSolidifier::ExtractionMode::SurfaceNetsDiagnostic);
+                        SourceSurfaceSolidifier::ExtractionMode::TopologyAwareSurfaceNetsDiagnostic);
                     ok&=require(repeated.successful&&repeated.mesh.faces==attempt.mesh.faces&&
                                 repeated.mesh.vertices.size()==attempt.mesh.vertices.size(),
                                 part+QStringLiteral(" surface-local extraction is deterministic"));

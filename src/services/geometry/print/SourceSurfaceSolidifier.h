@@ -13,6 +13,7 @@ struct SourceSurfaceAttemptMetrics {
     int rayAxis = 0;
     int gridX = 0, gridY = 0, gridZ = 0;
     std::size_t finalVertices = 0, finalFaces = 0;
+    std::size_t mixedCells = 0, multiVertexCells = 0, maximumCellVertices = 0;
     std::uint64_t approximatePrimaryBytes = 0;
     std::uint64_t rayTriangleTests = 0, exhaustiveRayTriangleTests = 0;
     std::uint64_t nearestTriangleTests = 0, exhaustiveNearestTriangleTests = 0;
@@ -62,7 +63,7 @@ class SourceSurfaceSolidifier
 public:
     enum class RayAxis { X, Y, Z };
     enum class QueryMode { Indexed, ExhaustiveReference };
-    enum class ExtractionMode { MarchingTetrahedra, SurfaceNetsDiagnostic };
+    enum class ExtractionMode { MarchingTetrahedra, SurfaceNetsDiagnostic, TopologyAwareSurfaceNetsDiagnostic };
     static SourceSurfaceSolidificationResult solidify(
         const LDrawGeometry::LDrawLoadResult& source,
         double samplingPitchMillimetres = 0.15,

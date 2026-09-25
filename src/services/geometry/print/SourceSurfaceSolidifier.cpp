@@ -130,13 +130,23 @@ SourceSurfaceSolidificationResult SourceSurfaceSolidifier::solidify(
     const std::uint64_t primaryBase=inside.capacity()*sizeof(std::uint8_t)+
         queryTriangles.capacity()*sizeof(SourceSurfaceQueryIndex::Triangle)+
         std::uint64_t(index.rayReferences())*sizeof(int);
-    if(extractionMode==ExtractionMode::SurfaceNetsDiagnostic){
+    if(extractionMode==ExtractionMode::SurfaceNetsDiagnostic||
+       extractionMode==ExtractionMode::TopologyAwareSurfaceNetsDiagnostic){
+        const bool topologyAware=extractionMode==ExtractionMode::TopologyAwareSurfaceNetsDiagnostic;
         constexpr int cubeEdges[12][2]={{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},
                                         {6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
         const auto cell=[&](int x,int y,int z){return std::size_t(x)+std::size_t(nx-1)*
             (std::size_t(y)+std::size_t(ny-1)*std::size_t(z));};
-        std::vector<int>cellVertices(std::size_t(nx-1)*std::size_t(ny-1)*std::size_t(nz-1),-1);
-        result.metrics.approximatePrimaryBytes=primaryBase+cellVertices.capacity()*sizeof(int);
+        const auto cellCount=std::size_t(nx-1)*std::size_t(ny-1)*std::size_t(nz-1);
+        // Each crossing edge is assigned to its own inside/outside corner-component
+        // pair. A mixed cell may therefore retain distinct nearby surface sheets.
+        std::vector<std::array<int,12>> cellEdgeVertices(cellCount);
+        for(auto&entry:cellEdgeVertices)entry.fill(-1);
+        result.metrics.approximatePrimaryBytes=primaryBase+
+            cellEdgeVertices.capacity()*sizeof(std::array<int,12>);
+        if(result.metrics.approximatePrimaryBytes>128ull*1024ull*1024ull){
+            result.diagnostic=QStringLiteral("Bounded topology-aware cell storage limit exceeded.");return finish();
+        }
         for(int z=0;z+1<nz;++z)for(int y=0;y+1<ny;++y){
             if((y&31)==0&&overTime()){
                 result.diagnostic=QStringLiteral("Bounded surface-local extraction time limit exceeded.");return finish();
@@ -146,22 +156,66 @@ SourceSurfaceSolidificationResult SourceSurfaceSolidifier::solidify(
                 for(int i=0;i<8;++i){ids[i]=node(x+corner[i][0],y+corner[i][1],z+corner[i][2]);
                     occupied+=inside[std::size_t(ids[i])];}
                 if(occupied==0||occupied==8)continue;
-                Point center{};int crossings=0;
-                for(const auto& edge:cubeEdges){
-                    const auto a=ids[edge[0]],b=ids[edge[1]];
-                    if(inside[std::size_t(a)]==inside[std::size_t(b)])continue;
-                    const auto pa=point(a),pb=point(b);
-                    center=add(center,multiply(add(pa,pb),.5));++crossings;
+                ++result.metrics.mixedCells;
+                int roots[8];for(int i=0;i<8;++i)roots[i]=i;
+                auto root=[&](int i){while(roots[i]!=i)i=roots[i];return i;};
+                if(topologyAware)for(const auto&edge:cubeEdges){
+                    const int a=edge[0],b=edge[1];
+                    if(inside[std::size_t(ids[a])]==inside[std::size_t(ids[b])])
+                        roots[root(b)]=root(a);
+                }
+                std::map<std::pair<int,int>,std::pair<Point,int>> patches;
+                std::array<std::pair<int,int>,12> keys{};
+                int crossings=0;
+                for(int edgeIndex=0;edgeIndex<12;++edgeIndex){
+                    const auto&edge=cubeEdges[edgeIndex];const int a=edge[0],b=edge[1];
+                    if(inside[std::size_t(ids[a])]==inside[std::size_t(ids[b])])continue;
+                    ++crossings;
+                    const auto key=topologyAware?
+                        std::pair<int,int>{root(inside[std::size_t(ids[a])]?a:b),
+                                           root(inside[std::size_t(ids[a])]?b:a)}:
+                        std::pair<int,int>{0,0};
+                    keys[edgeIndex]=key;
+                    const auto pa=point(ids[a]),pb=point(ids[b]);
+                    auto&patch=patches[key];
+                    patch.first=add(patch.first,multiply(add(pa,pb),.5));++patch.second;
                 }
                 if(crossings<3){result.diagnostic=QStringLiteral("Surface-local cell has ambiguous crossings.");return finish();}
-                cellVertices[cell(x,y,z)]=int(mesh.vertices.size());
-                mesh.vertices.push_back(multiply(center,1.0/double(crossings)));
+                result.metrics.maximumCellVertices=std::max(result.metrics.maximumCellVertices,patches.size());
+                if(patches.size()>1)++result.metrics.multiVertexCells;
+                std::map<std::pair<int,int>,int> patchVertices;
+                for(const auto&patch:patches){
+                    if(mesh.vertices.size()>=150000){result.diagnostic=QStringLiteral("Bounded topology-aware vertex limit exceeded.");return finish();}
+                    patchVertices[patch.first]=int(mesh.vertices.size());
+                    mesh.vertices.push_back(multiply(patch.second.first,1.0/double(patch.second.second)));
+                }
+                auto&cellEdges=cellEdgeVertices[cell(x,y,z)];
+                for(int edgeIndex=0;edgeIndex<12;++edgeIndex){
+                    const auto&edge=cubeEdges[edgeIndex];
+                    if(inside[std::size_t(ids[edge[0]])]!=inside[std::size_t(ids[edge[1]])])
+                        cellEdges[edgeIndex]=patchVertices[keys[edgeIndex]];
+                }
             }
         }
-        auto quad=[&](int ax,int ay,int az,int bx,int by,int bz,
-                      int cx,int cy,int cz,int dx,int dy,int dz){
-            const int a=cellVertices[cell(ax,ay,az)],b=cellVertices[cell(bx,by,bz)],
-                      c=cellVertices[cell(cx,cy,cz)],d=cellVertices[cell(dx,dy,dz)];
+        auto edgeVertex=[&](int cx,int cy,int cz,int x,int y,int z,int dx,int dy,int dz){
+            int first=-1,second=-1;
+            for(int i=0;i<8;++i){
+                if(cx+corner[i][0]==x&&cy+corner[i][1]==y&&cz+corner[i][2]==z)first=i;
+                if(cx+corner[i][0]==x+dx&&cy+corner[i][1]==y+dy&&cz+corner[i][2]==z+dz)second=i;
+            }
+            if(first<0||second<0)return -1;
+            for(int i=0;i<12;++i)if((cubeEdges[i][0]==first&&cubeEdges[i][1]==second)||
+                                     (cubeEdges[i][1]==first&&cubeEdges[i][0]==second))
+                return cellEdgeVertices[cell(cx,cy,cz)][i];
+            return -1;
+        };
+        auto quad=[&](int x,int y,int z,int dx,int dy,int dz,
+                      int ax,int ay,int az,int bx,int by,int bz,
+                      int cx,int cy,int cz,int ex,int ey,int ez){
+            const int a=edgeVertex(ax,ay,az,x,y,z,dx,dy,dz),
+                      b=edgeVertex(bx,by,bz,x,y,z,dx,dy,dz),
+                      c=edgeVertex(cx,cy,cz,x,y,z,dx,dy,dz),
+                      d=edgeVertex(ex,ey,ez,x,y,z,dx,dy,dz);
             if(a<0||b<0||c<0||d<0)return false;
             mesh.faces.push_back({std::uint32_t(a),std::uint32_t(b),std::uint32_t(c)});
             mesh.faces.push_back({std::uint32_t(a),std::uint32_t(c),std::uint32_t(d)});
@@ -173,15 +227,15 @@ SourceSurfaceSolidificationResult SourceSurfaceSolidifier::solidify(
             }
             for(int x=1;x+1<nx;++x){
                 if(inside[std::size_t(node(x,y,z))]!=inside[std::size_t(node(x+1,y,z))]&&
-                   !quad(x,y-1,z-1,x,y,z-1,x,y,z,x,y-1,z)){
+                   !quad(x,y,z,1,0,0,x,y-1,z-1,x,y,z-1,x,y,z,x,y-1,z)){
                     result.diagnostic=QStringLiteral("Surface-local X edge has an unpaired cell.");return finish();
                 }
                 if(inside[std::size_t(node(x,y,z))]!=inside[std::size_t(node(x,y+1,z))]&&
-                   !quad(x-1,y,z-1,x,y,z-1,x,y,z,x-1,y,z)){
+                   !quad(x,y,z,0,1,0,x-1,y,z-1,x,y,z-1,x,y,z,x-1,y,z)){
                     result.diagnostic=QStringLiteral("Surface-local Y edge has an unpaired cell.");return finish();
                 }
                 if(inside[std::size_t(node(x,y,z))]!=inside[std::size_t(node(x,y,z+1))]&&
-                   !quad(x-1,y-1,z,x,y-1,z,x,y,z,x-1,y,z)){
+                   !quad(x,y,z,0,0,1,x-1,y-1,z,x,y-1,z,x,y,z,x-1,y,z)){
                     result.diagnostic=QStringLiteral("Surface-local Z edge has an unpaired cell.");return finish();
                 }
                 if(maximumOutputFaces&&mesh.faces.size()>maximumOutputFaces){
