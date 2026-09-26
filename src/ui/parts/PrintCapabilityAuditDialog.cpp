@@ -165,7 +165,7 @@ void PrintCapabilityAuditDialog::start()
         const int noColor=result.population.catalogTotal?result.population.excludedNoColor:t.skippedNoColor;
         const int stickers=result.population.catalogTotal?result.population.excludedStickerCategory:t.skippedStickerCategory;
         const int nonstandard=result.population.catalogTotal?result.population.excludedNonstandardId:t.skippedNonstandardIds;
-        self->m_counters->setText(self->tr("%1. Eligible pool %2; sampled %3; attempted %4; successful %5; excluded no Color %6; Sticker category %7; nonstandard IDs %8; no model %9; preparation failures %10; ManufacturingMesh failures %11; export/reopen failures %12. Model availability %13%; print-service success %14%; catalog-to-printable %15%. CSV: %16")
+        self->m_counters->setText(self->tr("%1. Eligible pool %2; sampled %3; attempted %4; practically printable %5; excluded no Color %6; Sticker category %7; nonstandard IDs %8; no model %9; native preparation failures %10; ManufacturingMesh failures %11; export/reopen failures %12. Model availability %13%; native print-service success %14%; catalog-to-printable %15%. CSV: %16. Native successes %17; override-assisted recoveries %18; practical printable success %19% (model-bearing denominator %20).")
             .arg(result.stopped?self->tr("Stopped"):self->tr("Complete"))
             .arg(result.population.catalogTotal?result.population.eligibleTotal:t.eligible)
             .arg(result.population.catalogTotal?result.population.actualSampled:t.input)
@@ -173,7 +173,9 @@ void PrintCapabilityAuditDialog::start()
             .arg(nonstandard).arg(t.noModel).arg(t.prepareFailures)
             .arg(t.manufacturingFailures).arg(t.exportFailures)
             .arg(t.modelAvailabilityPercent(),0,'f',1).arg(t.printServicePercent(),0,'f',1)
-            .arg(t.catalogToPrintablePercent(),0,'f',1).arg(result.csvPath));
+            .arg(t.catalogToPrintablePercent(),0,'f',1).arg(result.csvPath)
+            .arg(t.nativeSuccessful).arg(t.overrideRecoveries)
+            .arg(t.practicalPrintablePercent(),0,'f',1).arg(t.modelAvailable));
     });
     options.phaseProgress=[self](int sequence,const QString& part,const QString& phase){
         if(self)QMetaObject::invokeMethod(self,[self,sequence,part,phase]{

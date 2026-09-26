@@ -1224,7 +1224,7 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);if(app.arguments()
             "small batch continues after real 6553 preparation failure and records 3001 export, skip, and no model");
         ok&=check(real.results[1].exportPath.startsWith(QDir(output.path()).filePath("batch-real/exports/"))&&
                   QFileInfo::exists(real.results[1].exportPath)&&real.results[1].reopened&&
-                  QFileInfo(real.results[1].exportPath).fileName()==QStringLiteral("3001-success.3mf")&&
+                  QFileInfo(real.results[1].exportPath).fileName()==QStringLiteral("3001-native_success.3mf")&&
                   !QFileInfo(real.results[1].exportPath).fileName().startsWith(QStringLiteral("00002-")),
                   "successful 3MF uses Part-result filename without sample-sequence prefix");
         QFile realCsv(real.csvPath);

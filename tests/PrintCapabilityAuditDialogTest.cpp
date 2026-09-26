@@ -51,6 +51,10 @@ int main(int argc,char** argv)
         ok&=check(until([&]{return button(dialog,"Start")->isEnabled();}),"fast audit completes normally");
         bool complete=false;for(auto* label:dialog.findChildren<QLabel*>())complete|=label->text().startsWith("Complete.");
         ok&=check(complete,"normal completion is reported");
+        bool metrics=false;for(auto* label:dialog.findChildren<QLabel*>())metrics|=
+            label->text().contains("native print-service success")&&
+            label->text().contains("override-assisted recoveries")&&label->text().contains("practical printable success");
+        ok&=check(metrics,"native and practical percentages and recoveries remain visible together");
         button(dialog,"Close")->click();ok&=check(!dialog.isVisible(),"Close after normal completion is immediate");
     }
     for(int scenario=0;scenario<3;++scenario){

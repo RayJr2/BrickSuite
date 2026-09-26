@@ -1,5 +1,91 @@
 # Print Capability Audit run persistence
 
+## Native and local-override results
+
+Every model-bearing Part first attempts the existing native preparation and
+applicable Verified Fit/export/reopen workflow. A native success is
+`native_success`; it does not consult the override store. Only a native
+preparation failure triggers a read-only `LocalPrintableOverrideService::load`
+using the actual catalog Part ID and freshly loaded authoritative Source.
+Native loading, ManufacturingMesh, export, and reopen failures are not hidden
+by an override fallback. Stop skips optional override work.
+
+The existing loader checks identity, source/repaired fingerprints, acceptance
+versions, and geometry. The audit never imports, repairs, approves, removes, or
+updates overrides. A strict or already user-accepted override must complete
+nominal PreparedMesh 3MF export and reopen to count as `strict_override_success`
+or `user_override_success`. Experimental Auto Fit is never invoked. A candidate
+awaiting review is not a stored accepted override and cannot count as success.
+
+CSV schema 5 preserves the existing fields and adds:
+
+- `native_result_category`, `native_diagnostic`: the underlying native outcome;
+- `local_override_state`: `not_checked`, `none`, `strictly_validated`,
+  `user_accepted`, `stale`, or `invalid_unavailable`;
+- `local_override_used`, `local_override_stale`, `local_override_diagnostic`;
+- `local_override_route`, `local_override_identity`;
+- `export_result`, `reopen_result`: `not_attempted`, `success`, or `failed`.
+
+`local_override_used` means selected for export, not necessarily successful.
+Only the final success category plus successful reopen is a recovery. Stale or
+unavailable overrides retain the native failure. Override export/reopen failures
+use `export_failed`/`reopen_failed`, while retaining the native category separately.
+`preparation_route` and coverage still describe native preparation; the separate
+override route describes its rescue. Prepared vertex/face counts describe the
+mesh selected for accepted export. Diagnostic failure exports remain separate;
+their presence never counts as success. Final filenames retain the
+`<part_number>-<result_category>.3mf` convention.
+
+The final dialog reports native successes, override-assisted recoveries, and
+practical successes separately. Native print-service percentage is native
+successes / sampled model-bearing Parts. Practical percentage is (native +
+override successes) / the same denominator. Native preparation failures remain
+counted even when rescued. Catalog-to-printable includes both success kinds over
+eligible sampled Parts; model availability retains its separate denominator.
+
+`local_override_load`, `local_override_export`, and `local_override_reopen` join
+the durable phase/timing lifecycle below. The active native failure category is
+also checkpointed before override work. Model filters, seeded sampling, Stop,
+and CSV-before-completed-state ordering are unchanged.
+
+### Replaying a historical sample
+
+Preserve the original run folder. Use its `run-state.json` `orderedParts` array,
+not a new random draw against a possibly changed catalog. In PowerShell:
+
+```powershell
+$baseline = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'BrickSuite\Print Capability Audits\20260926T075310Z-b3b05671'
+$plan = Get-Content -LiteralPath (Join-Path $baseline 'run-state.json') -Raw | ConvertFrom-Json
+$plan.seed
+$plan.orderedParts.Count
+$plan.orderedParts -join "`r`n" | Set-Clipboard
+```
+
+In the Debug application's **Test > Print Capability Audit**, set seed
+**855063087** while Random Sample is selected, then switch to **Part List** and
+paste. Retain the standard-ID exclusion, installed library, and normal Auto Fit
+setting. Part List uses all 100 IDs in recorded order and ignores the random
+model filter; seed is retained as provenance and does not reorder this list.
+Choose an output root for new runs and Start; never replace the old CSV.
+
+The completed baseline above has 100 model-bearing Parts: 11 native successes,
+86 source-coverage failures, and 3 resource-limit failures. Compare old `success`
+rows with new `native_result_category == native_success`; then separately count
+`strict_override_success`/`user_override_success` in final `result_category`.
+Check Part IDs, order, model identity, and any library/profile changes before
+attributing differences to implementation changes. This is a replay with current
+production inputs, not a restoration of old geometry or profile data.
+
+`BatchPrintableOverrideTest` covers strict/user recoveries, stale source and mesh
+fingerprints, invalid storage, unaccepted candidates, nominal export/reopen,
+reopen failure, store immutability, metrics, and Stop using isolated fixtures.
+Its optional five arguments are catalog database, LDraw library, override store,
+new output root, and comma-separated Part IDs; this mode only reads the catalog
+and existing overrides. Native 3001, rescued 23422, and no-override 6553 can be
+checked without creating or approving an override.
+
+## Sample persistence
+
 The audit uses the existing batch print pipeline. Random Sample applies Sticker,
 no-Color, optional nonstandard-ID, then optional installed-model exclusions before
 shuffling. Model availability means a readable, nonempty installed Part file,

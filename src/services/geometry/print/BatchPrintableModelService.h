@@ -21,13 +21,14 @@ struct BatchPrintablePart {
     QStringList ldrawCandidates;
     bool catalogPresent = false;
     bool noColor = false;
+    int partId = 0;
 };
 
 enum class BatchPrintCategory {
     Success, SkippedNoColor, SkippedStickerCategory, SkippedNonstandardId, NoCatalogPart, NoLDrawModel, LoadFailed,
     PrepareNotReady, ResourceLimit, SourceCoverage, ManifoldFailure,
     SelfIntersection, ManufacturingFailed, ExportFailed, ReopenFailed,
-    Cancelled, NotStarted
+    Cancelled, NotStarted, StrictOverrideSuccess, UserOverrideSuccess
 };
 
 struct BatchPrintResult {
@@ -35,6 +36,11 @@ struct BatchPrintResult {
     QString partNumber, ldrawModel, preparationRoute, recognizedFeatures;
     QString fitResolution, profileIdentity, correctionSummary;
     BatchPrintCategory category = BatchPrintCategory::NotStarted;
+    BatchPrintCategory nativeCategory = BatchPrintCategory::NotStarted;
+    QString nativeDiagnostic;
+    QString localOverrideState = QStringLiteral("not_checked");
+    QString localOverrideDiagnostic, localOverrideRoute, localOverrideIdentity;
+    bool localOverrideUsed = false, localOverrideStale = false;
     QString diagnostic, exportPath;
     QString diagnosticExportPath;
     std::size_t sourceTriangles = 0, sourceGroups = 0;
@@ -46,10 +52,12 @@ struct BatchPrintResult {
 struct BatchPrintTotals {
     int input = 0, attempted = 0, eligible = 0, modelAvailable = 0;
     int successful = 0, skippedNoColor = 0, skippedStickerCategory = 0;
+    int nativeSuccessful = 0, overrideRecoveries = 0;
     int skippedNonstandardIds = 0, noModel = 0, prepareFailures = 0;
     int manufacturingFailures = 0, exportFailures = 0;
     double modelAvailabilityPercent() const;
     double printServicePercent() const;
+    double practicalPrintablePercent() const;
     double catalogToPrintablePercent() const;
 };
 
@@ -78,6 +86,8 @@ private:
 
 struct BatchPrintOptions {
     QString libraryRoot, outputRoot, runId;
+    // Empty uses the normal application override store. Load-only during audits.
+    QString localOverrideRoot;
     quint32 seed = 0;
     PrintOrientation printOrientation;
     QColor modelColor = QColor(QStringLiteral("#A0A5A9"));

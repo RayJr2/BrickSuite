@@ -868,6 +868,7 @@ if(BUILD_TESTING)
 
     qt_add_executable(ManufacturingMeshServiceTest EXCLUDE_FROM_ALL
         tests/ManufacturingMeshServiceTest.cpp
+        src/services/geometry/print/LocalPrintableOverrideService.cpp src/services/geometry/print/LocalPrintableOverrideUnion.cpp src/services/geometry/print/LocalPrintableOverrideStl.cpp src/services/geometry/print/PrintMeshConversion.cpp
         src/services/geometry/print/BatchPrintableModelService.cpp src/services/geometry/print/BatchPrintableModelService.h
         src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
         src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
@@ -898,6 +899,11 @@ if(BUILD_TESTING)
 
     get_target_property(_audit_test_geometry_sources ManufacturingMeshServiceTest SOURCES)
     list(FILTER _audit_test_geometry_sources EXCLUDE REGEX "(^tests/|autogen)")
+    qt_add_executable(BatchPrintableOverrideTest EXCLUDE_FROM_ALL
+        tests/BatchPrintableOverrideTest.cpp ${_audit_test_geometry_sources})
+    target_link_libraries(BatchPrintableOverrideTest PRIVATE Qt6::Core Qt6::Gui Qt6::Sql BrickSuite::Mcut BrickSuite::Lib3mf)
+    bricksuite_stage_mcut_runtime(BatchPrintableOverrideTest)
+    add_test(NAME BatchPrintableOverride COMMAND BatchPrintableOverrideTest)
     qt_add_executable(LocalPrintableOverrideServiceTest EXCLUDE_FROM_ALL
         tests/LocalPrintableOverrideServiceTest.cpp
         src/services/geometry/print/LocalPrintableOverrideService.cpp src/services/geometry/print/LocalPrintableOverrideUnion.cpp src/services/geometry/print/LocalPrintableOverrideStl.cpp src/services/geometry/print/PrintMeshConversion.cpp

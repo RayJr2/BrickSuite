@@ -3,6 +3,7 @@
 #include "AutoFitProfileResolver.h"
 #include "LDrawPrintPreparationService.h"
 #include "ManufacturingMeshService.h"
+#include "LocalPrintableOverrideService.h"
 #include "../LDrawLibraryService.h"
 #include "../ThreeMfWriter.h"
 
@@ -180,6 +181,8 @@ bool BatchPrintRunState::requestStop(QString* error)
 double BatchPrintTotals::modelAvailabilityPercent() const
 {return eligible?100.0*modelAvailable/eligible:0.0;}
 double BatchPrintTotals::printServicePercent() const
+{return modelAvailable?100.0*nativeSuccessful/modelAvailable:0.0;}
+double BatchPrintTotals::practicalPrintablePercent() const
 {return modelAvailable?100.0*successful/modelAvailable:0.0;}
 double BatchPrintTotals::catalogToPrintablePercent() const
 {return eligible?100.0*successful/eligible:0.0;}
@@ -187,7 +190,9 @@ double BatchPrintTotals::catalogToPrintablePercent() const
 QString BatchPrintableModelService::categoryCode(BatchPrintCategory category)
 {
     switch(category){
-    case BatchPrintCategory::Success:return QStringLiteral("success");
+    case BatchPrintCategory::Success:return QStringLiteral("native_success");
+    case BatchPrintCategory::StrictOverrideSuccess:return QStringLiteral("strict_override_success");
+    case BatchPrintCategory::UserOverrideSuccess:return QStringLiteral("user_override_success");
     case BatchPrintCategory::SkippedNoColor:return QStringLiteral("skipped_no_color");
     case BatchPrintCategory::SkippedStickerCategory:return QStringLiteral("skipped_sticker_category");
     case BatchPrintCategory::SkippedNonstandardId:return QStringLiteral("skipped_nonstandard_id");
@@ -233,7 +238,7 @@ QVector<BatchPrintablePart> BatchPrintableModelService::loadCatalog(const QStrin
                 while(query.next()){
                     const int id=query.value(0).toInt();
                     if(id!=lastId){
-                        BatchPrintablePart part;part.partNumber=query.value(1).toString();
+                        BatchPrintablePart part;part.partId=id;part.partNumber=query.value(1).toString();
                         part.material=query.value(2).toString();
                         part.categoryId=query.value(3).toInt();
                         part.rebrickableCategoryId=query.value(4).toInt();
@@ -367,14 +372,18 @@ BatchPrintTotals BatchPrintableModelService::summarize(const QVector<BatchPrintR
         if(result.category==BatchPrintCategory::NoCatalogPart)continue;
         ++totals.eligible;
         if(!result.ldrawModel.isEmpty())++totals.modelAvailable;
-        if(result.category==BatchPrintCategory::Success)++totals.successful;
+        if(result.category==BatchPrintCategory::Success){++totals.nativeSuccessful;++totals.successful;}
+        if(result.category==BatchPrintCategory::StrictOverrideSuccess||result.category==BatchPrintCategory::UserOverrideSuccess){
+            ++totals.overrideRecoveries;++totals.successful;
+        }
         if(result.category==BatchPrintCategory::NoLDrawModel)++totals.noModel;
         if(result.category==BatchPrintCategory::ManufacturingFailed)++totals.manufacturingFailures;
         if(result.category==BatchPrintCategory::ExportFailed||result.category==BatchPrintCategory::ReopenFailed)
             ++totals.exportFailures;
-        if(result.category==BatchPrintCategory::PrepareNotReady||result.category==BatchPrintCategory::ResourceLimit||
-           result.category==BatchPrintCategory::SourceCoverage||result.category==BatchPrintCategory::ManifoldFailure||
-           result.category==BatchPrintCategory::SelfIntersection)++totals.prepareFailures;
+        const auto native=result.nativeCategory==BatchPrintCategory::NotStarted?result.category:result.nativeCategory;
+        if(native==BatchPrintCategory::PrepareNotReady||native==BatchPrintCategory::ResourceLimit||
+           native==BatchPrintCategory::SourceCoverage||native==BatchPrintCategory::ManifoldFailure||
+           native==BatchPrintCategory::SelfIntersection)++totals.prepareFailures;
     }
     return totals;
 }
@@ -404,6 +413,7 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
     }
     const QJsonObject metadata{
         {QStringLiteral("runId"),runId},
+        {QStringLiteral("localOverridePolicy"),QStringLiteral("existing-validated-nominal-after-native-preparation-failure-v1")},
         {QStringLiteral("auditPreparationProfile"),QStringLiteral("audit-bounded-v1")},
         {QStringLiteral("maximumSequentialBooleanOperations"),8},
         {QStringLiteral("diagnosticMaximumFaces"),50000},
@@ -453,10 +463,10 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
     if(!csvFile.open(QIODevice::WriteOnly|QIODevice::Text)){
         run.diagnostic=csvFile.errorString();return run;
     }
-    csvFile.write("csv_schema_version,run_id,seed,sample_mode,requested_eligible_count,exclude_no_color,exclude_nonstandard_ids,part_id_eligibility_rule,sample_sequence,part_number,category_id,rebrickable_category_id,category_name,ldraw_model,result_category,preparation_route,source_triangles,source_groups,coverage_complete,prepare_ms,prepared_vertices,prepared_faces,recognized_features,fit_resolution,profile_identity,corrections,export_path,reopened,diagnostic_export_available,diagnostic_export_path,total_ms,diagnostic\n");
+    csvFile.write("csv_schema_version,run_id,seed,sample_mode,requested_eligible_count,exclude_no_color,exclude_nonstandard_ids,part_id_eligibility_rule,sample_sequence,part_number,category_id,rebrickable_category_id,category_name,ldraw_model,result_category,preparation_route,source_triangles,source_groups,coverage_complete,prepare_ms,prepared_vertices,prepared_faces,recognized_features,fit_resolution,profile_identity,corrections,export_path,reopened,diagnostic_export_available,diagnostic_export_path,total_ms,diagnostic,native_result_category,native_diagnostic,local_override_state,local_override_used,local_override_stale,local_override_diagnostic,local_override_route,local_override_identity,export_result,reopen_result\n");
     const auto save=[&](const BatchPrintResult& row){
         const auto& part=parts[row.sequence-1];
-        const QString line=QStringList{QStringLiteral("4"),csv(runId),QString::number(options.seed),
+        const QString line=QStringList{QStringLiteral("5"),csv(runId),QString::number(options.seed),
             csv(options.randomSample?QStringLiteral("random"):QStringLiteral("part_list")),
             QString::number(options.requestedEligibleCount),QStringLiteral("1"),
             options.excludeNonstandardIds?QStringLiteral("1"):QStringLiteral("0"),
@@ -470,7 +480,15 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
             csv(row.recognizedFeatures),csv(row.fitResolution),csv(row.profileIdentity),
             csv(row.correctionSummary),csv(row.exportPath),row.reopened?QStringLiteral("1"):QStringLiteral("0"),
             row.diagnosticExportAvailable?QStringLiteral("1"):QStringLiteral("0"),csv(row.diagnosticExportPath),
-            QString::number(row.totalMilliseconds),csv(row.diagnostic)}.join(',')+QLatin1Char('\n');
+            QString::number(row.totalMilliseconds),csv(row.diagnostic),
+            csv(categoryCode(row.nativeCategory)),csv(row.nativeDiagnostic),csv(row.localOverrideState),
+            row.localOverrideUsed?QStringLiteral("1"):QStringLiteral("0"),
+            row.localOverrideStale?QStringLiteral("1"):QStringLiteral("0"),
+            csv(row.localOverrideDiagnostic),csv(row.localOverrideRoute),csv(row.localOverrideIdentity),
+            csv(row.category==BatchPrintCategory::ExportFailed?QStringLiteral("failed"):
+                row.exportPath.isEmpty()?QStringLiteral("not_attempted"):QStringLiteral("success")),
+            csv(row.reopened?QStringLiteral("success"):row.category==BatchPrintCategory::ReopenFailed?
+                QStringLiteral("failed"):QStringLiteral("not_attempted"))}.join(',')+QLatin1Char('\n');
         const auto bytes=line.toUtf8();
         return csvFile.write(bytes)==bytes.size()&&durableFlush(csvFile);
     };
@@ -500,6 +518,7 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         state.insert(QStringLiteral("currentPartStatus"),QStringLiteral("active"));
         state.insert(QStringLiteral("currentPhase"),QStringLiteral("starting"));
         state.insert(QStringLiteral("phaseTimingsMs"),QJsonObject());
+        state.remove(QStringLiteral("nativeResultCategory"));
         if(!checkpoint())return run;
         if(options.phaseProgress)options.phaseProgress(index+1,parts[index].partNumber,QStringLiteral("starting"));
         if(options.beforePart)options.beforePart(run.statePath,index+1,parts[index].partNumber);
@@ -581,8 +600,64 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
                 row.coverageComplete=prepared.sourceCoverage.complete();
                 if(!prepared.ready()){
                     row.category=preparationCategory(prepared);row.diagnostic=prepared.diagnostic;
+                    row.nativeCategory=row.category;row.nativeDiagnostic=row.diagnostic;
+                    state.insert(QStringLiteral("nativeResultCategory"),categoryCode(row.nativeCategory));
                     phase(QStringLiteral("failure_classified"));
-                    diagnosticExport(prepared.diagnosticCandidateMesh.get());break;
+                    diagnosticExport(prepared.diagnosticCandidateMesh.get());
+                    if(!persistenceOk||cancellation->isCancelled()||row.category==BatchPrintCategory::Cancelled)break;
+                    phase(QStringLiteral("local_override_load"));
+                    if(!persistenceOk||cancellation->isCancelled())break;
+                    const LocalPrintableOverrideService overrides(options.localOverrideRoot);
+                    const LocalPrintableOverrideService::Context context{part.partId,part.partNumber,source};
+                    const auto local=overrides.load(context);
+                    row.localOverrideStale=local.stale;
+                    row.localOverrideDiagnostic=local.diagnostic;
+                    row.localOverrideState=local.stale?QStringLiteral("stale"):
+                        local.ok()?(local.prepared->userAcceptedOverride?QStringLiteral("user_accepted"):
+                            QStringLiteral("strictly_validated")):
+                        (part.partId<=0||!local.diagnostic.isEmpty()||local.reviewable?
+                            QStringLiteral("invalid_unavailable"):QStringLiteral("none"));
+                    if(!local.ok()||local.stale||local.reviewable)break;
+                    if(cancellation->isCancelled())break;
+                    row.localOverrideUsed=true;
+                    row.localOverrideRoute=local.prepared->preparationMethod;
+                    row.localOverrideIdentity=local.prepared->overrideIdentity;
+                    row.preparedVertices=local.prepared->mesh.vertices.size();
+                    row.preparedFaces=local.prepared->mesh.faces.size();
+                    row.fitResolution=QStringLiteral("Nominal local override; Auto Fit not invoked.");
+                    const auto success=local.prepared->userAcceptedOverride?
+                        BatchPrintCategory::UserOverrideSuccess:BatchPrintCategory::StrictOverrideSuccess;
+                    row.category=success;row.exportPath=exportPathFor(row);
+                    phase(QStringLiteral("local_override_export"));
+                    if(!persistenceOk||cancellation->isCancelled()){
+                        row.category=BatchPrintCategory::Cancelled;row.exportPath.clear();break;
+                    }
+                    ThreeMfWriter::Options exportOptions;exportOptions.phase=phase;
+                    exportOptions.objectName=part.partNumber+QStringLiteral(" - Local Override (Nominal)");
+                    exportOptions.partIdentity=part.partNumber;exportOptions.modelColor=options.modelColor;
+                    QString error;
+                    if(!ThreeMfWriter::write(options.printOrientation.apply(local.prepared->mesh),
+                        row.exportPath,exportOptions,&error)){
+                        row.category=BatchPrintCategory::ExportFailed;row.diagnostic=error;
+                        row.exportPath.clear();break;
+                    }
+                    phase(QStringLiteral("local_override_reopen"));
+                    const auto validator=options.reopenValidator?options.reopenValidator:
+                        std::function<bool(const QString&,std::size_t,QString*)>(reopen);
+                    if(!persistenceOk||cancellation->isCancelled()){
+                        row.category=BatchPrintCategory::Cancelled;row.diagnostic=QStringLiteral("Stopped before override reopen.");
+                    }else if(!validator(row.exportPath,local.prepared->mesh.faces.size(),&error)){
+                        row.category=BatchPrintCategory::ReopenFailed;row.diagnostic=error;
+                    }else{
+                        row.reopened=true;
+                        row.diagnostic=QStringLiteral("Existing local override nominal PreparedMesh exported and reopened. ")+local.diagnostic;
+                    }
+                    if(row.category!=success){
+                        const QString failedPath=exportPathFor(row);
+                        if(QFile::rename(row.exportPath,failedPath))row.exportPath=failedPath;
+                        else row.diagnostic+=QStringLiteral(" Export file could not be renamed to its failure status.");
+                    }
+                    break;
                 }
                 row.preparationRoute=prepared.preparedMesh->preparationMethod;
                 row.preparedVertices=prepared.preparedMesh->mesh.vertices.size();
@@ -645,6 +720,9 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
             row.totalMilliseconds=timer.elapsed();
         }
         if(!persistenceOk)return run;
+        if(row.nativeCategory==BatchPrintCategory::NotStarted){
+            row.nativeCategory=row.category;row.nativeDiagnostic=row.diagnostic;
+        }
         phase(QStringLiteral("persisting"));
         run.results.push_back(row);
         if(!save(row)){
