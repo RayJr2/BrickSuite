@@ -437,6 +437,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/LDrawIdentitySelection.h
     src/services/geometry/LDrawObjWriter.cpp src/services/geometry/LDrawObjWriter.h
     src/services/geometry/BinaryStlWriter.cpp src/services/geometry/BinaryStlWriter.h
+    src/services/geometry/print/LocalPrintableOverrideService.cpp src/services/geometry/print/LocalPrintableOverrideUnion.cpp src/services/geometry/print/LocalPrintableOverrideStl.cpp
     src/services/geometry/ThreeMfWriter.cpp src/services/geometry/ThreeMfWriter.h
     src/services/geometry/ModelExportPolicy.h
     src/services/geometry/print/PrintMesh.h src/services/geometry/print/PreparedMesh.h
@@ -897,6 +898,14 @@ if(BUILD_TESTING)
 
     get_target_property(_audit_test_geometry_sources ManufacturingMeshServiceTest SOURCES)
     list(FILTER _audit_test_geometry_sources EXCLUDE REGEX "(^tests/|autogen)")
+    qt_add_executable(LocalPrintableOverrideServiceTest EXCLUDE_FROM_ALL
+        tests/LocalPrintableOverrideServiceTest.cpp
+        src/services/geometry/print/LocalPrintableOverrideService.cpp src/services/geometry/print/LocalPrintableOverrideUnion.cpp src/services/geometry/print/LocalPrintableOverrideStl.cpp src/services/geometry/print/PrintMeshConversion.cpp
+        ${_audit_test_geometry_sources})
+    target_link_libraries(LocalPrintableOverrideServiceTest PRIVATE Qt6::Core Qt6::Gui Qt6::Sql BrickSuite::Mcut BrickSuite::Lib3mf)
+    bricksuite_stage_mcut_runtime(LocalPrintableOverrideServiceTest)
+    add_test(NAME LocalPrintableOverrideService COMMAND LocalPrintableOverrideServiceTest)
+
     qt_add_executable(PrintCapabilityAuditDialogTest EXCLUDE_FROM_ALL
         tests/PrintCapabilityAuditDialogTest.cpp
         src/ui/parts/PrintCapabilityAuditDialog.cpp src/ui/parts/PrintCapabilityAuditDialog.h
@@ -925,7 +934,7 @@ if(BUILD_TESTING)
         src/settings/UserSettings.cpp src/services/CredentialStore.cpp
         src/services/geometry/ConditionalEdgeVisibility.cpp src/services/geometry/LDrawColorResolver.cpp
         src/services/geometry/PartViewerCamera.cpp
-        src/services/geometry/print/PrintMeshConversion.cpp
+        src/services/geometry/print/LocalPrintableOverrideService.cpp src/services/geometry/print/LocalPrintableOverrideUnion.cpp src/services/geometry/print/LocalPrintableOverrideStl.cpp src/services/geometry/print/PrintMeshConversion.cpp
         src/services/geometry/LDrawObjWriter.cpp src/services/geometry/BinaryStlWriter.cpp
         ${_audit_test_geometry_sources})
     target_link_libraries(ExternalLDrawViewerTest PRIVATE Qt6::Widgets Qt6::OpenGLWidgets Qt6::Sql Qt6::Concurrent

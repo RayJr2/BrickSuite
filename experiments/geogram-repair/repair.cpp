@@ -83,8 +83,8 @@ int main(int argc, char** argv) {
                 if (mesh.facet_corners.adjacent_facet(c) == NO_FACET) return 3;
             return 0;
         }
-        if (argc != 5) {
-            std::cerr << "input.off output.off clean|arrange|outer|fill-outer|outer-fill|fill-outer-simplify epsilon_mm\n";
+        if (argc != 5 && argc != 6) {
+            std::cerr << "input.off output.off clean|arrange|outer|fill-outer|outer-fill|fill-outer-simplify epsilon_mm [provenance.json]\n";
             return 1;
         }
         const std::string mode(argv[3]);
@@ -94,10 +94,28 @@ int main(int argc, char** argv) {
         if (epsilon < 0 || !std::isfinite(epsilon)) return 1;
         Mesh mesh;
         if (!mesh_load(argv[1], mesh)) return 1;
+        // Optional diagnostic replay: zero denotes newly generated repair geometry.
+        // Geogram copies facet attributes when splitting/reordering facets.
+        Attribute<index_t> sourceFace;
+        if (argc == 6) {
+            sourceFace.bind(mesh.facets.attributes(), "proof_input_face_plus_one");
+            for (index_t f : mesh.facets) sourceFace[f] = f + 1;
+        }
         const auto start = std::chrono::steady_clock::now();
         repair(mesh, mode, epsilon);
         const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
         if (!saveExactOff(mesh, argv[2])) return 1;
+        if (argc == 6) {
+            std::ofstream provenance(argv[5]);
+            provenance << "{\"input_face_plus_one\":[";
+            for (index_t f : mesh.facets) {
+                if (f != 0) provenance << ',';
+                provenance << sourceFace[f];
+            }
+            provenance << "],\"zero_means\":\"generated repair geometry\"}\n";
+            provenance.flush();
+            if (!provenance) return 1;
+        }
         std::cout << "{\"repair_seconds\":" << elapsed << ",\"vertices\":" << mesh.vertices.nb()
                   << ",\"faces\":" << mesh.facets.nb() << "}\n";
         return 0;

@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "services/geometry/print/LocalPrintableOverrideService.h"
 #include <QApplication>
 #include <QDebug>
 #include <QDir>
@@ -87,6 +88,7 @@ QPixmap createSplashPixmap(const QApplication& application)
 
 int main(int argc, char *argv[])
 {
+    if(const auto worker=PrintGeometry::LocalPrintableOverrideService::runUnionWorker(argc,argv))return *worker;
     QElapsedTimer startupTimer;
     startupTimer.start();
     QApplication qtApplication(argc, argv);

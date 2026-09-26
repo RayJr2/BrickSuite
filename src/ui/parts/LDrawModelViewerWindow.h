@@ -4,6 +4,7 @@
 #include "../../services/geometry/PartViewerState.h"
 #include "../../services/geometry/print/PrintPreparation.h"
 #include "../../services/geometry/print/PrintMesh.h"
+#include "../../services/geometry/print/LocalPrintableOverrideService.h"
 
 #include <QDialog>
 #include <QStringList>
@@ -54,6 +55,13 @@ private:
     void updatePrintOrientationLabel();
     QColor currentModelColor() const;
     void exportModel();
+    PrintGeometry::LocalPrintableOverrideService::Context overrideContext() const;
+    void exportRepairSource();
+    void importRepairedMesh();
+    void acceptNominalOverride();
+    void attemptExperimentalFit();
+    void removeLocalOverride();
+    void applyLocalOverride(const PrintGeometry::LocalPrintableOverrideService::Result&);
     void startManufacturingExport(const PrintGeometry::FitProfile&,bool stl,bool threeMf,
                                   const QString& path,const QString& ldrawId,double scale,const QColor& color);
     void saveWindowGeometry();
@@ -87,6 +95,13 @@ private:
     QPushButton* m_resetView=nullptr;
     QPushButton* m_export=nullptr;
     QPushButton* m_prepare=nullptr;
+    QPushButton* m_exportRepair=nullptr;
+    QPushButton* m_importRepair=nullptr;
+    QPushButton* m_removeOverride=nullptr;
+    QPushButton* m_acceptOverride=nullptr;
+    QPushButton* m_experimentalFit=nullptr;
+    PrintGeometry::LocalPrintableOverrideService::Result m_pendingOverride;
+    QString m_pendingOverridePath;
     QProgressBar* m_prepareBusy=nullptr;
     QPushButton* m_manufacturingProof=nullptr;
     QCheckBox* m_showMeshIssues=nullptr;
@@ -95,5 +110,6 @@ private:
     bool m_sourceReady=false;
     bool m_preparing=false;
     bool m_prepareBlocked=false;
+    bool m_overrideBusy=false;
     QString m_renderingError;
 };

@@ -20,6 +20,7 @@
 #include "McutMeshBooleanService.h"
 #include "PrintMeshAnalysis.h"
 #include <QCryptographicHash>
+#include <QJsonArray>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -206,6 +207,50 @@ bool adjustCertifiedReceivingTube(const LDrawGeometry::LDrawLoadResult& source,
 
 ManufacturingMeshService::ManufacturingMeshService(BooleanServiceFactory f,SemanticBuilderFunction b):m_factory(f?std::move(f):[]{return std::make_unique<McutMeshBooleanService>();}),m_builder(std::move(b)){}
 
+ManufacturingMeshResult ManufacturingMeshService::attemptExperimentalOverride(
+    const LDrawGeometry::LDrawLoadResult& source,const PreparedMesh& prepared,
+    const FitProfile& profile,const PrintOrientation& orientation)const
+{
+    auto result=fail(ManufacturingMeshError::SemanticFailure,QString());
+    QJsonArray recognized;
+    QJsonArray considered;
+    for(const auto& correction:profile.corrections)considered.append(QJsonObject{
+        {"family",correction.featureFamily},{"role",correction.featureRole},
+        {"contract",correction.correctionContractVersion},{"valueMillimetres",correction.valueMillimetres}});
+    QStringList warnings;
+    if(!prepared.localRepairedOverride||!prepared.userAcceptedOverride){
+        warnings<<QStringLiteral("Experimental override fit requires explicit user-accepted nominal geometry.");
+    }else{
+        const auto semantics=m_builder?m_builder(source):LDrawSemanticOperandBuilder::build(source);
+        for(const auto& operand:semantics.operands)for(const auto& feature:operand.functionalFeatures)
+            recognized.append(feature.stableIdentity);
+        warnings+=semantics.diagnostics;
+        QString reason;
+        const bool applicable=!profile.profileIdentity.isEmpty()
+            &&profile.verificationState==FitEvidenceState::Verified
+            &&hasApplicableCorrection(profile,semantics,orientation,&reason);
+        if(!applicable)warnings<< (profile.profileIdentity.isEmpty()
+            ?QStringLiteral("No Verified Fit Profile selected.")
+            :QStringLiteral("Selected profile is available; no applicable source correction was established. %1").arg(reason));
+        // The native regenerator's source ancestry is not a mapping onto repaired
+        // triangles. Never clear localRepairedOverride to bypass that contract.
+        warnings<<QStringLiteral("Repaired surfaces have no proven semantic ownership mapping. No transformation or correction was applied.");
+    }
+    result.experimentalProvenance={{"status","experimental_autofit_failed"},
+        {"overrideIdentity",prepared.overrideIdentity},{"fitProfileId",profile.profileIdentity},
+        {"label","Experimental Auto Fit on User-Accepted Override"},{"fitProfileName",profile.name},
+        {"mappedRepairedSurfaceFitFeatures",0},{"correctionEntriesConsidered",considered},
+        {"unmappedSourceFeatures",recognized},
+        {"unmappedOrUnsupportedCorrectionEntries",considered},
+        {"recognizedSourceSemantics",recognized},{"appliedCorrections",QJsonArray{}},
+        {"warnings",QJsonArray::fromStringList(warnings)},
+        {"finalValidation","not_run_no_transformation"}};
+    result.diagnostic=QStringLiteral("Experimental Auto Fit failed safely. Profile: %1. Recognized source fit semantics: %2; mapped repaired-surface fit features: 0; correction entries considered: %3; corrections applied: 0; unmapped source features: %2. %4 No experimental output was generated. Nominal override remains available.")
+        .arg(profile.profileIdentity.isEmpty()?QStringLiteral("none selected"):profile.name)
+        .arg(recognized.size()).arg(considered.size()).arg(warnings.join(' '));
+    return result;
+}
+
 ManufacturingMeshCorrections ManufacturingMeshService::compatibleCorrections(const FitProfile&profile,FitPrintedOrientation orientation,QString*reason)
 {
     ManufacturingMeshCorrections result;QString compatibility;if(!FitCalibrationLibrary::profileCompatibility(profile,&compatibility)){if(reason)*reason=compatibility;return result;}const QString printedOrientation=orientationName(orientation);const QString barOrientation=orientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate?QStringLiteral("axis-perpendicular-to-build-plate"):QStringLiteral("unsupported");const FitProfileCorrection*heightCandidate=nullptr;
@@ -378,6 +423,7 @@ bool ManufacturingMeshService::hasApplicableCorrection(const FitProfile&profile,
 
 ManufacturingMeshResult ManufacturingMeshService::generate(const LDrawGeometry::LDrawLoadResult&source,const PreparedMesh&prepared,const FitProfile&profile,const PrintOrientation&printOrientation)const
 {
+    if(prepared.localRepairedOverride)return fail(ManufacturingMeshError::InvalidInput,QStringLiteral("Local repaired overrides support nominal PreparedMesh export only; repaired surfaces have no proven fit ownership."));
     if(!source.ok()||prepared.mesh.faces.empty()||prepared.partReference.isEmpty())return fail(ManufacturingMeshError::InvalidInput,"Source and nominal PreparedMesh are required.");
     if((prepared.hasTopologyAwareLocalComposition||prepared.hasConformingBodyContacts)&&
        !prepared.sourceCoverage.complete())

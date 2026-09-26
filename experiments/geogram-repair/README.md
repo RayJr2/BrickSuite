@@ -82,6 +82,12 @@ outer-shell operation occurs. Delaunay intersection triangulation is the upstrea
 default; neighbor intersections enabled, normalization disabled, thread budget 1.
 OFF output retains 17 significant digits.
 
+An optional final `provenance.json` argument writes `input_face_plus_one` for
+each output face; zero identifies generated repair geometry. This diagnostic
+is used by `experiments/source-constrained-repair`, which verifies exact replay
+geometry and composes lineage across passes before using the tags. The optional
+argument does not change the repair algorithm or establish fit ownership.
+
 Child processes are bounded to 120 seconds and 4 GiB RSS/private memory. A fatal
 engine exit is recorded; only the isolated child can be killed. `runs.json` and
 `sensitivity.json` retain return codes, timings, sampled peak RSS and logs.

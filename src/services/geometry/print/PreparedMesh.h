@@ -16,6 +16,11 @@ struct PreparedMesh { PrintMesh mesh;MeshBounds millimetreBounds;MeshAnalysisRes
     QString preparationProfileVersion,mcutVersion,preparationMethod;
     QStringList operationSummary;QVector<BooleanOperationSummary> operations;PrintPreparationTimings timings;
     DimensionalFidelityResult dimensionalFidelity;std::size_t semanticOperandCount=0,sourceTriangleCount=0,preparedTriangleCount=0;
+    bool localRepairedOverride=false;
+    bool userAcceptedOverride=false;
+    QString overrideIdentity;
+    QString auditStatus() const { return userAcceptedOverride?QStringLiteral("user_override_success")
+        :localRepairedOverride?QStringLiteral("strict_override_success"):QStringLiteral("native_success"); }
     bool hasConformingBodyContacts=false;
     bool hasTopologyAwareLocalComposition=false;
     QVector<FunctionalFeature> functionalFeatures;
