@@ -1,0 +1,17 @@
+cmake_minimum_required(VERSION 3.22)
+project(BrickSuiteMeshRepairProof LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui)
+find_package(CGAL 6.1 REQUIRED)
+set(BRICKSUITE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
+add_executable(source_dump source_dump.cpp
+    ${BRICKSUITE_ROOT}/src/services/geometry/LDrawLibraryService.cpp
+    ${BRICKSUITE_ROOT}/src/services/geometry/print/PrintMeshConversion.cpp)
+target_link_libraries(source_dump PRIVATE Qt6::Core Qt6::Gui)
+add_executable(cgal_repair cgal_repair.cpp refine.cpp local_repair.cpp intersection_metrics.cpp)
+target_link_libraries(cgal_repair PRIVATE CGAL::CGAL)
+add_executable(cgal_distance distance.cpp)
+target_link_libraries(cgal_distance PRIVATE CGAL::CGAL)
+enable_testing()
+add_test(NAME repair_synthetic COMMAND cgal_repair --self-test)
