@@ -56,6 +56,7 @@ struct BatchPrintPopulation {
     int excludedNoColor = 0;
     int excludedStickerCategory = 0;
     int excludedNonstandardId = 0;
+    int excludedNoModel = 0;
     int eligibleTotal = 0;
     int actualSampled = 0;
 };
@@ -67,14 +68,17 @@ struct BatchPrintOptions {
     QColor modelColor = QColor(QStringLiteral("#A0A5A9"));
     bool autoFitEnabled = true;
     bool excludeNonstandardIds = true;
+    bool excludeNoModel = false;
     bool randomSample = false;
     int requestedEligibleCount = 0;
     BatchPrintPopulation population;
     std::function<bool(const QString&,std::size_t,QString*)> reopenValidator;
+    // Called only after the active Part checkpoint is durable, before model loading.
+    std::function<void(const QString&,int,const QString&)> beforePart;
 };
 
 struct BatchPrintRun {
-    QString runDirectory, csvPath, metadataPath, diagnostic;
+    QString runDirectory, csvPath, metadataPath, statePath, diagnostic;
     BatchPrintPopulation population;
     QVector<BatchPrintResult> results;
     BatchPrintTotals totals;
@@ -89,7 +93,8 @@ public:
                                                       const QStringList& partNumbers);
     static QVector<BatchPrintablePart> randomSample(const QVector<BatchPrintablePart>& catalog,
                                                      int count,quint32 seed,bool excludeNonstandardIds = true,
-                                                     BatchPrintPopulation* population = nullptr);
+                                                     BatchPrintPopulation* population = nullptr,
+                                                     bool excludeNoModel = false,const QString& libraryRoot = {});
     static bool isStandardAuditPartNumber(const QString& partNumber);
     static bool isStickerCategory(const BatchPrintablePart& part);
     static bool writeDiagnosticThreeMf(const PrintMesh& candidate,const QString& path,

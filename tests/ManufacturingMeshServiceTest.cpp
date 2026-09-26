@@ -31,6 +31,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QSet>
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -962,7 +963,7 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);const auto investi
               metadata.value("eligiblePopulation").toInt()==2&&
               metadata.value("requestedEligibleCount").toInt()==2&&
               metadata.value("actualSampledCount").toInt()==2&&
-              metadata.value("seed").toInt()==8123,
+              metadata.value("seed").toInt()==8123&&!metadata.value("excludeNoModel").toBool(),
               "random CSV has only sampled Parts in 1..N order; companion metadata retains exclusion totals");
     options.randomSample=false;options.requestedEligibleCount=0;options.population={};
     options.runId=QStringLiteral("batch-category");
@@ -1001,17 +1002,104 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);const auto investi
               "source-coverage diagnostic 3MF is inspectable but remains a failure; absent candidate creates no file");
     CancellationState cancelled;cancelled.cancel();options.runId=QStringLiteral("batch-stopped");
     const auto stopped=BatchPrintableModelService().run({printable,missing},options,&cancelled);
-    ok&=check(stopped.ok&&stopped.stopped&&stopped.results.size()==2&&
-        stopped.results[0].category==BatchPrintCategory::NotStarted&&
-        stopped.results[1].category==BatchPrintCategory::NotStarted,
-        "Stop records pending Parts without beginning new preparation");
+    ok&=check(stopped.ok&&stopped.stopped&&stopped.results.isEmpty(),
+        "Stop leaves pending Parts only in the plan without beginning preparation");
     CancellationState stopAfterFirst;options.runId=QStringLiteral("batch-stop-between");
     const auto between=BatchPrintableModelService().run({sticker,printable},options,&stopAfterFirst,
         [&stopAfterFirst](const BatchPrintResult&,const BatchPrintTotals&){stopAfterFirst.cancel();});
-    ok&=check(between.ok&&between.stopped&&between.results.size()==2&&
-        between.results[0].category==BatchPrintCategory::SkippedNoColor&&
-        between.results[1].category==BatchPrintCategory::NotStarted,
+    ok&=check(between.ok&&between.stopped&&between.results.size()==1&&
+        between.results[0].category==BatchPrintCategory::SkippedNoColor,
         "Stop after a persisted row prevents the next Part and closes CSV");
+    const auto readState=[](const QString& path){
+        QFile file(path);return file.open(QIODevice::ReadOnly)?
+            QJsonDocument::fromJson(file.readAll()).object():QJsonObject();
+    };
+    ok&=check(readState(stopped.statePath).value("status")==QStringLiteral("stopped")&&
+        readState(categoryRun.statePath).value("status")==QStringLiteral("completed")&&
+        readState(between.statePath).value("completedCount").toInt()==1,
+        "completed and cleanly stopped checkpoints are distinct");
+    QTemporaryDir modelLibrary;
+    QDir().mkpath(modelLibrary.filePath("parts"));
+    QVector<BatchPrintablePart> modelCatalog;
+    for(int i=0;i<12;++i){
+        BatchPrintablePart part;part.partNumber=QString::number(7000+i);part.catalogPresent=true;
+        modelCatalog.append(part);
+        if(i<5){QFile model(modelLibrary.filePath("parts/"+part.partNumber+".dat"));
+            ok&=check(model.open(QIODevice::WriteOnly)&&model.write("0 synthetic installed model\n")>0,
+                "write synthetic installed model");}
+    }
+    BatchPrintPopulation modelsPopulation;
+    const auto modelSample=BatchPrintableModelService::randomSample(modelCatalog,4,8123,true,
+        &modelsPopulation,true,modelLibrary.path());
+    const auto repeated=BatchPrintableModelService::randomSample(modelCatalog,4,8123,true,
+        nullptr,true,modelLibrary.path());
+    bool same=modelSample.size()==repeated.size();
+    for(int i=0;i<modelSample.size();++i)same&=modelSample[i].partNumber==repeated[i].partNumber;
+    ok&=check(modelSample.size()==4&&modelsPopulation.eligibleTotal==5&&
+        modelsPopulation.excludedNoModel==7&&same&&
+        BatchPrintableModelService::randomSample(modelCatalog,20,8123).size()==12&&
+        BatchPrintableModelService::randomSample(modelCatalog,20,8123,true,nullptr,true,
+            modelLibrary.path()).size()==5,
+        "optional model filter precedes seeded sampling and refills requested slots");
+    auto aliasPart=modelCatalog.back();aliasPart.ldrawCandidates={QStringLiteral("parts/7000.dat")};
+    ok&=check(BatchPrintableModelService::randomSample({aliasPart},1,8123,true,nullptr,true,
+        modelLibrary.path()).size()==1,"model filter honors installed LDraw aliases");
+    options.libraryRoot=modelLibrary.path();options.excludeNoModel=true;options.randomSample=true;
+    options.population=modelsPopulation;options.requestedEligibleCount=4;options.runId="model-filtered";
+    const auto filteredRun=BatchPrintableModelService().run(modelSample,options);
+    const auto filteredMetadata=readState(filteredRun.metadataPath);
+    QFile filteredCsv(filteredRun.csvPath);
+    const auto filteredBytes=filteredCsv.open(QIODevice::ReadOnly)?filteredCsv.readAll():QByteArray();
+    ok&=check(filteredRun.ok&&filteredRun.results.size()==4&&
+        filteredMetadata.value("excludedNoModel").toInt()==7&&
+        filteredMetadata.value("excludeNoModel").toBool()&&
+        !filteredBytes.contains("no_ldraw_model")&&filteredBytes.split('\n').size()==6,
+        "filtered run records excluded count in metadata and only selected model-bearing CSV rows");
+    options.excludeNoModel=true;options.randomSample=false;options.runId="explicit-no-model";
+    const auto explicitNoModel=BatchPrintableModelService().run(
+        BatchPrintableModelService::explicitParts(modelCatalog,{"7011"}),options);
+    ok&=check(explicitNoModel.ok&&explicitNoModel.results.size()==1&&
+        explicitNoModel.results.front().category==BatchPrintCategory::NoLDrawModel,
+        "Part List retains explicit no-model IDs with the option enabled");
+    options.runId="interrupted";options.randomSample=true;options.population=modelsPopulation;
+    options.requestedEligibleCount=4;
+    struct SimulatedInterruption {};
+    QString interruptedPath;
+    options.beforePart=[&](const QString& path,int sequence,const QString& part){
+        interruptedPath=path;const auto state=readState(path);
+        const auto plan=state.value("orderedParts").toArray();
+        bool fullPlan=plan.size()==modelSample.size();
+        for(int i=0;i<plan.size()&&i<modelSample.size();++i)
+            fullPlan&=plan[i].toString()==modelSample[i].partNumber;
+        ok&=check(fullPlan&&state.value("stateSchemaVersion").toInt()==1&&
+            state.value("seed").toInt()==8123&&state.value("excludeNoModel").toBool()&&
+            state.value("requestedSampleCount").toInt()==4&&state.value("actualSampledCount").toInt()==4&&
+            state.value("currentSampleSequence").toInt()==sequence&&
+            state.value("currentPartNumber").toString()==part&&
+            state.value("currentPartStatus")==QStringLiteral("active")&&
+            state.value("completedCount").toInt()==sequence-1,
+            "full ordered plan and active Part are readable before any Part work");
+        if(sequence==2)throw SimulatedInterruption{};
+    };
+    bool interrupted=false;
+    try{BatchPrintableModelService().run(modelSample,options);}
+    catch(const SimulatedInterruption&){interrupted=true;}
+    QFile interruptedCsv(QFileInfo(interruptedPath).dir().filePath("results.csv"));
+    const auto interruptedLines=interruptedCsv.open(QIODevice::ReadOnly)?
+        interruptedCsv.readAll().split('\n'):QList<QByteArray>();
+    const auto interruptedState=readState(interruptedPath);
+    ok&=check(interrupted&&interruptedState.value("status")==QStringLiteral("running")&&
+        interruptedState.value("completedCount").toInt()==1&&
+        interruptedState.value("currentSampleSequence").toInt()==2&&interruptedLines.size()==3,
+        "simulated interruption preserves completed CSV row and exact active Part checkpoint");
+    options.runId="stop-before-load";CancellationState stopBeforeLoad;
+    options.beforePart=[&](const QString&,int,const QString&){stopBeforeLoad.cancel();};
+    const auto beforeLoad=BatchPrintableModelService().run(modelSample,options,&stopBeforeLoad);
+    ok&=check(beforeLoad.ok&&beforeLoad.stopped&&beforeLoad.results.isEmpty()&&
+        readState(beforeLoad.statePath).value("status")==QStringLiteral("stopped")&&
+        readState(beforeLoad.statePath).value("currentPartStatus")==QStringLiteral("not_started"),
+        "Stop at the checkpoint prevents loading and persists a clean stopped state");
+    options.beforePart={};options.excludeNoModel=false;options.randomSample=false;
     const int batchLdrawAt=app.arguments().indexOf(QStringLiteral("--batch-ldraw"));
     if(batchLdrawAt>=0&&batchLdrawAt+1<app.arguments().size()){
         options.libraryRoot=app.arguments()[batchLdrawAt+1];options.runId=QStringLiteral("batch-real");

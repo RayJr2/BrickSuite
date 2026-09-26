@@ -21,10 +21,13 @@ protected:
 private:
     void start();
     void stop();
+    void showIncompleteRuns();
     QComboBox* m_mode = nullptr;
     QSpinBox* m_sampleCount = nullptr;
     QSpinBox* m_seed = nullptr;
     QPlainTextEdit* m_partList = nullptr;
+    QCheckBox* m_excludeNoModel = nullptr;
+    QLabel* m_recovery = nullptr;
     QCheckBox* m_excludeNonstandardIds = nullptr;
     QLineEdit* m_output = nullptr;
     QPushButton* m_browseOutput = nullptr;

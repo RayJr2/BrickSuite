@@ -15,6 +15,13 @@
 #include <QHash>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
+#include <QSaveFile>
+#ifdef Q_OS_WIN
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 #include <QRegularExpression>
 #include <QSet>
 #include <QSqlDatabase>
@@ -27,13 +34,23 @@
 
 namespace PrintGeometry {
 namespace {
+bool durableFlush(QFileDevice& file)
+{
+    if(!file.flush())return false;
+#ifdef Q_OS_WIN
+    return ::_commit(file.handle())==0;
+#else
+    return ::fsync(file.handle())==0;
+#endif
+}
+
 QString csv(QString value)
 {
     value.replace('"',QStringLiteral("\"\""));
     return QStringLiteral("\"")+value+QStringLiteral("\"");
 }
 
-bool installed(const QString& root,QString candidate)
+bool installed(const QString& root,QString candidate,const QHash<QString,QString>* installedNames = nullptr)
 {
     candidate=candidate.trimmed();
     if(candidate.startsWith(QStringLiteral("parts/"),Qt::CaseInsensitive))candidate=candidate.mid(6);
@@ -41,20 +58,28 @@ bool installed(const QString& root,QString candidate)
     if(candidate.isEmpty()||candidate.contains('/')||candidate.contains('\\')||
        candidate==QStringLiteral(".")||candidate==QStringLiteral(".."))return false;
     const QDir parts(QDir(root).filePath(QStringLiteral("parts")));
-    if(QFileInfo::exists(parts.filePath(candidate+QStringLiteral(".dat"))))return true;
+    const auto usable=[](const QString& path){
+        QFile file(path);return QFileInfo(path).isFile()&&file.open(QIODevice::ReadOnly)&&file.size()>0;
+    };
+    if(installedNames){
+        const auto name=installedNames->value((candidate+QStringLiteral(".dat")).toCaseFolded());
+        return !name.isEmpty()&&usable(parts.filePath(name));
+    }
+    if(usable(parts.filePath(candidate+QStringLiteral(".dat"))))return true;
     for(const auto&name:parts.entryList(QDir::Files))
-        if(name.compare(candidate+QStringLiteral(".dat"),Qt::CaseInsensitive)==0)return true;
+        if(name.compare(candidate+QStringLiteral(".dat"),Qt::CaseInsensitive)==0&&usable(parts.filePath(name)))return true;
     return false;
 }
 
-QString modelFor(const BatchPrintablePart& part,const QString& root)
+QString modelFor(const BatchPrintablePart& part,const QString& root,
+                 const QHash<QString,QString>* installedNames = nullptr)
 {
     QStringList candidates=part.ldrawCandidates;
     if(!candidates.contains(part.partNumber,Qt::CaseInsensitive))candidates.prepend(part.partNumber);
     for(const auto&candidate:candidates)
-        if(candidate.compare(part.partNumber,Qt::CaseInsensitive)==0&&installed(root,candidate))
+        if(candidate.compare(part.partNumber,Qt::CaseInsensitive)==0&&installed(root,candidate,installedNames))
             return candidate;
-    for(const auto&candidate:candidates)if(installed(root,candidate))return candidate;
+    for(const auto&candidate:candidates)if(installed(root,candidate,installedNames))return candidate;
     return {};
 }
 
@@ -233,16 +258,23 @@ QVector<BatchPrintablePart> BatchPrintableModelService::explicitParts(
 
 QVector<BatchPrintablePart> BatchPrintableModelService::randomSample(
     const QVector<BatchPrintablePart>& catalog,int count,quint32 seed,bool excludeNonstandardIds,
-    BatchPrintPopulation* population)
+    BatchPrintPopulation* population,bool excludeNoModel,const QString& libraryRoot)
 {
     BatchPrintPopulation counts;counts.catalogTotal=catalog.size();
     QVector<BatchPrintablePart> shuffled;
+    QHash<QString,QString> installedNames;
+    if(excludeNoModel){
+        const QDir directory(QDir(libraryRoot).filePath(QStringLiteral("parts")));
+        for(const auto& name:directory.entryList(QDir::Files))
+            installedNames.insert(name.toCaseFolded(),name);
+    }
     for(const auto& part:catalog){
         if(isStickerCategory(part)){++counts.excludedStickerCategory;continue;}
         if(part.noColor){++counts.excludedNoColor;continue;}
         if(excludeNonstandardIds&&!isStandardAuditPartNumber(part.partNumber)){
             ++counts.excludedNonstandardId;continue;
         }
+        if(excludeNoModel&&modelFor(part,libraryRoot,&installedNames).isEmpty()){++counts.excludedNoModel;continue;}
         shuffled.push_back(part);
     }
     counts.eligibleTotal=shuffled.size();
@@ -325,21 +357,48 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         {QStringLiteral("sampleMode"),options.randomSample?QStringLiteral("random"):QStringLiteral("part_list")},
         {QStringLiteral("seed"),static_cast<qint64>(options.seed)},
         {QStringLiteral("requestedEligibleCount"),options.requestedEligibleCount},
-        {QStringLiteral("actualSampledCount"),options.randomSample?run.population.actualSampled:parts.size()},
+        {QStringLiteral("actualSampledCount"),parts.size()},
         {QStringLiteral("catalogPopulation"),run.population.catalogTotal},
         {QStringLiteral("excludedNoColor"),run.population.excludedNoColor},
         {QStringLiteral("excludedStickerCategory"),run.population.excludedStickerCategory},
         {QStringLiteral("excludedNonstandardId"),run.population.excludedNonstandardId},
+        {QStringLiteral("excludedNoModel"),run.population.excludedNoModel},
+        {QStringLiteral("excludeNoModel"),options.randomSample&&options.excludeNoModel},
+        {QStringLiteral("excludeStickerCategory"),true},
         {QStringLiteral("eligiblePopulation"),run.population.eligibleTotal},
         {QStringLiteral("excludeNoColor"),true},
         {QStringLiteral("excludeNonstandardIds"),options.excludeNonstandardIds},
         {QStringLiteral("partIdEligibilityRule"),QStringLiteral("^[0-9]+[A-Za-z]?$")}
     };
     const auto metadataBytes=QJsonDocument(metadata).toJson(QJsonDocument::Indented);
-    if(metadataFile.write(metadataBytes)!=metadataBytes.size()||!metadataFile.flush()){
+    if(metadataFile.write(metadataBytes)!=metadataBytes.size()||!durableFlush(metadataFile)){
         run.diagnostic=metadataFile.errorString();return run;
     }
     metadataFile.close();
+    run.statePath=QDir(run.runDirectory).filePath(QStringLiteral("run-state.json"));
+    QJsonArray sample;
+    for(const auto& part:parts)sample.append(part.partNumber);
+    QJsonObject state=metadata;
+    state.insert(QStringLiteral("stateSchemaVersion"),1);
+    state.insert(QStringLiteral("orderedParts"),sample);
+    state.insert(QStringLiteral("requestedSampleCount"),options.randomSample?options.requestedEligibleCount:parts.size());
+    state.insert(QStringLiteral("libraryRoot"),options.libraryRoot);
+    state.insert(QStringLiteral("currentSampleSequence"),0);
+    state.insert(QStringLiteral("currentPartNumber"),QString());
+    state.insert(QStringLiteral("completedCount"),0);
+    state.insert(QStringLiteral("currentPartStatus"),QStringLiteral("pending"));
+    state.insert(QStringLiteral("status"),QStringLiteral("running"));
+    const auto checkpoint=[&](){
+        QSaveFile file(run.statePath);
+        const auto bytes=QJsonDocument(state).toJson(QJsonDocument::Indented);
+        if(!file.open(QIODevice::WriteOnly)||file.write(bytes)!=bytes.size()||
+           !durableFlush(file)||!file.commit()){
+            run.diagnostic=QStringLiteral("Could not persist audit run state: %1").arg(file.errorString());
+            return false;
+        }
+        return true;
+    };
+    if(!checkpoint())return run;
     run.csvPath=QDir(run.runDirectory).filePath(QStringLiteral("results.csv"));
     QFile csvFile(run.csvPath);
     if(!csvFile.open(QIODevice::WriteOnly|QIODevice::Text)){
@@ -364,8 +423,9 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
             row.diagnosticExportAvailable?QStringLiteral("1"):QStringLiteral("0"),csv(row.diagnosticExportPath),
             QString::number(row.totalMilliseconds),csv(row.diagnostic)}.join(',')+QLatin1Char('\n');
         const auto bytes=line.toUtf8();
-        return csvFile.write(bytes)==bytes.size()&&csvFile.flush();
+        return csvFile.write(bytes)==bytes.size()&&durableFlush(csvFile);
     };
+    if(!durableFlush(csvFile)){run.diagnostic=QStringLiteral("Could not flush CSV header.");return run;}
     run.results.reserve(parts.size());
     QSet<QString> usedExportNames;
     const auto exportPathFor=[&](const BatchPrintResult& row){
@@ -383,6 +443,12 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         return QDir(run.runDirectory).filePath(QStringLiteral("exports/")+name);
     };
     for(int index=0;index<parts.size();++index){
+        if(cancellation&&cancellation->isCancelled()){run.stopped=true;break;}
+        state.insert(QStringLiteral("currentSampleSequence"),index+1);
+        state.insert(QStringLiteral("currentPartNumber"),parts[index].partNumber);
+        state.insert(QStringLiteral("currentPartStatus"),QStringLiteral("active"));
+        if(!checkpoint())return run;
+        if(options.beforePart)options.beforePart(run.statePath,index+1,parts[index].partNumber);
         const auto&part=parts[index];BatchPrintResult row;row.sequence=index+1;row.partNumber=part.partNumber;
         const auto diagnosticExport=[&](const PrintMesh* mesh){
             if(!mesh||mesh->vertices.empty()||mesh->faces.empty()){
@@ -396,7 +462,8 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
             }else row.diagnostic+=QStringLiteral(" Diagnostic 3MF could not be saved/reopened: ")+error;
         };
         if(cancellation&&cancellation->isCancelled()){
-            run.stopped=true;row.category=BatchPrintCategory::NotStarted;
+            run.stopped=true;
+            state.insert(QStringLiteral("currentPartStatus"),QStringLiteral("not_started"));break;
         }else{
             QElapsedTimer timer;timer.start();
             try{
@@ -492,9 +559,15 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
             run.diagnostic=QStringLiteral("The audit CSV could not be flushed: %1").arg(csvFile.errorString());
             csvFile.close();return run;
         }
+        state.insert(QStringLiteral("completedCount"),run.results.size());
+        state.insert(QStringLiteral("currentPartStatus"),QStringLiteral("finished"));
+        if(!checkpoint())return run;
         run.totals=summarize(run.results);
         if(progress)progress(row,run.totals);
     }
+    run.stopped=run.stopped||(cancellation&&cancellation->isCancelled());
+    state.insert(QStringLiteral("status"),run.stopped?QStringLiteral("stopped"):QStringLiteral("completed"));
+    if(!checkpoint())return run;
     csvFile.close();run.ok=true;
     return run;
 }
