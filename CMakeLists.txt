@@ -895,6 +895,24 @@ if(BUILD_TESTING)
     bricksuite_stage_mcut_runtime(ManufacturingMeshServiceTest)
     add_test(NAME ManufacturingMeshService COMMAND ManufacturingMeshServiceTest)
 
+    get_target_property(_audit_test_geometry_sources ManufacturingMeshServiceTest SOURCES)
+    list(FILTER _audit_test_geometry_sources EXCLUDE REGEX "(^tests/|autogen)")
+    qt_add_executable(PrintCapabilityAuditDialogTest EXCLUDE_FROM_ALL
+        tests/PrintCapabilityAuditDialogTest.cpp
+        src/ui/parts/PrintCapabilityAuditDialog.cpp src/ui/parts/PrintCapabilityAuditDialog.h
+        src/database/DatabaseManager.cpp src/database/DatabaseSchema.cpp
+        src/settings/UserSettings.cpp src/services/CredentialStore.cpp
+        ${_audit_test_geometry_sources})
+    target_link_libraries(PrintCapabilityAuditDialogTest PRIVATE Qt6::Widgets Qt6::Sql Qt6::Concurrent
+        BrickSuite::Mcut BrickSuite::Lib3mf)
+    if(WIN32)
+        target_link_libraries(PrintCapabilityAuditDialogTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(PrintCapabilityAuditDialogTest PRIVATE "-framework Security")
+    endif()
+    bricksuite_stage_mcut_runtime(PrintCapabilityAuditDialogTest)
+    add_test(NAME PrintCapabilityAuditDialog COMMAND PrintCapabilityAuditDialogTest -platform offscreen)
+
     qt_add_executable(LDrawPrintPreparationServiceTest EXCLUDE_FROM_ALL
         tests/LDrawPrintPreparationServiceTest.cpp
         src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h

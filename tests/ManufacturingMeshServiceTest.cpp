@@ -32,6 +32,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QElapsedTimer>
 #include <QSet>
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -760,7 +761,43 @@ bool slopeStudInvestigation(const QString&library,const QString&proofPath,
     return ok;
 }
 
-int main(int argc,char**argv){QCoreApplication app(argc,argv);const auto investigationAt=app.arguments().indexOf(QStringLiteral("--slope-investigate"));if(investigationAt>=0&&investigationAt+1<app.arguments().size())return slopeStudInvestigation(app.arguments()[investigationAt+1],investigationAt+2<app.arguments().size()?app.arguments()[investigationAt+2]:QString(),investigationAt+3<app.arguments().size()?app.arguments()[investigationAt+3]:QString(),investigationAt+4<app.arguments().size()?app.arguments()[investigationAt+4]:QString())?0:1;if(app.arguments().contains(QStringLiteral("--click-only")))return clickProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--interleaved-only")))return interleavedProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--hinge-only")))return hingeProductionProof(app.arguments())?0:1;bool ok=true;
+int traceAudit(const QStringList& args)
+{
+    const int at=args.indexOf(QStringLiteral("--audit-trace"));
+    if(at+3>=args.size())return 2;
+    BatchPrintOptions options;options.libraryRoot=args[at+1];options.outputRoot=args[at+2];
+    options.autoFitEnabled=false;options.excludeNonstandardIds=false;
+    QStringList ids;QJsonObject models;
+    if(args[at+3].endsWith(QStringLiteral(".json"))){
+        QFile file(args[at+3]);if(!file.open(QIODevice::ReadOnly))return 2;
+        const auto plan=QJsonDocument::fromJson(file.readAll()).object();
+        options.seed=quint32(plan.value("seed").toInteger());
+        models=plan.value("ldrawCandidates").toObject();
+        for(const auto& id:plan.value("orderedParts").toArray())ids.append(id.toString());
+        const int limit=at+4<args.size()?args[at+4].toInt():ids.size();
+        ids=ids.mid(0,limit);
+        options.randomSample=true;options.requestedEligibleCount=ids.size();
+        options.excludeNonstandardIds=plan.value("excludeNonstandardIds").toBool();
+        options.excludeNoModel=plan.value("excludeNoModel").toBool();
+    }else ids=args[at+3].split(',');
+    QVector<BatchPrintablePart> parts;
+    for(const auto& id:ids){BatchPrintablePart part;part.partNumber=id;part.catalogPresent=true;
+        for(const auto& model:models.value(id).toArray())part.ldrawCandidates.append(model.toString());parts.append(part);}
+    QElapsedTimer timer;timer.start();
+    options.phaseProgress=[&](int sequence,const QString& part,const QString& phase){
+        fprintf(stderr,"%lld ms: %d %s %s\n",timer.elapsed(),sequence,
+            qPrintable(part),qPrintable(phase));fflush(stderr);
+    };
+    const auto result=BatchPrintableModelService().run(parts,options,nullptr,
+        [](const BatchPrintResult& row,const BatchPrintTotals&){
+            fprintf(stderr,"RESULT %s %s diagnostic_export=%d total_ms=%lld\n",qPrintable(row.partNumber),
+                qPrintable(BatchPrintableModelService::categoryCode(row.category)),row.diagnosticExportAvailable,row.totalMilliseconds);
+        });
+    fprintf(stderr,"RUN %s ok=%d %s\n",qPrintable(result.runDirectory),result.ok,qPrintable(result.diagnostic));
+    return result.ok?0:1;
+}
+
+int main(int argc,char**argv){QCoreApplication app(argc,argv);if(app.arguments().contains(QStringLiteral("--audit-trace")))return traceAudit(app.arguments());const auto investigationAt=app.arguments().indexOf(QStringLiteral("--slope-investigate"));if(investigationAt>=0&&investigationAt+1<app.arguments().size())return slopeStudInvestigation(app.arguments()[investigationAt+1],investigationAt+2<app.arguments().size()?app.arguments()[investigationAt+2]:QString(),investigationAt+3<app.arguments().size()?app.arguments()[investigationAt+3]:QString(),investigationAt+4<app.arguments().size()?app.arguments()[investigationAt+4]:QString())?0:1;if(app.arguments().contains(QStringLiteral("--click-only")))return clickProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--interleaved-only")))return interleavedProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--hinge-only")))return hingeProductionProof(app.arguments())?0:1;bool ok=true;
 {
     QVector<BatchPrintablePart> catalog;
     BatchPrintablePart printable;printable.partNumber=QStringLiteral("3001");printable.catalogPresent=true;
@@ -1000,6 +1037,15 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);const auto investi
                   QStringLiteral("31003"),QColor(QStringLiteral("#A0A5A9")))&&
               !QFileInfo::exists(noCandidatePath),
               "source-coverage diagnostic 3MF is inspectable but remains a failure; absent candidate creates no file");
+    PrintMesh oversizedDiagnostic=box();oversizedDiagnostic.faces.resize(50001,oversizedDiagnostic.faces.front());
+    QString boundedError;const QString boundedPath=output.filePath("bounded-source_coverage.3mf");
+    ok&=check(!BatchPrintableModelService::writeDiagnosticThreeMf(oversizedDiagnostic,boundedPath,
+        "bounded",QColor("#A0A5A9"),&boundedError)&&boundedError.contains("bounded out")&&
+        !QFileInfo::exists(boundedPath),"diagnostic size bound rejects before package generation");
+    CancellationState diagnosticStop;diagnosticStop.cancel();
+    ok&=check(!BatchPrintableModelService::writeDiagnosticThreeMf(box(),boundedPath,
+        "stopped",QColor("#A0A5A9"),&boundedError,&diagnosticStop)&&
+        !QFileInfo::exists(boundedPath),"Stop skips optional diagnostic export");
     CancellationState cancelled;cancelled.cancel();options.runId=QStringLiteral("batch-stopped");
     const auto stopped=BatchPrintableModelService().run({printable,missing},options,&cancelled);
     ok&=check(stopped.ok&&stopped.stopped&&stopped.results.isEmpty(),
@@ -1100,6 +1146,25 @@ int main(int argc,char**argv){QCoreApplication app(argc,argv);const auto investi
         readState(beforeLoad.statePath).value("currentPartStatus")==QStringLiteral("not_started"),
         "Stop at the checkpoint prevents loading and persists a clean stopped state");
     options.beforePart={};options.excludeNoModel=false;options.randomSample=false;
+    options.runId="phase-stop";options.runState=std::make_shared<BatchPrintRunState>();
+    CancellationState phaseStop;
+    options.phaseProgress=[&](int sequence,const QString& part,const QString& phase){
+        const auto path=QDir(options.outputRoot).filePath(options.runId+"/run-state.json");
+        const auto saved=readState(path);
+        ok&=check(saved.value("currentPhase")==phase&&saved.value("currentPartNumber")==part&&
+            saved.value("currentSampleSequence").toInt()==sequence,"live phase follows durable checkpoint");
+        if(phase=="persisting"){
+            phaseStop.cancel();options.runState->requestStop();
+            ok&=check(readState(path).value("status")==QStringLiteral("stopping"),
+                "Stop synchronously persists current phase without racing worker writes");
+        }
+    };
+    const auto phaseStopped=BatchPrintableModelService().run({missing,missing},options,&phaseStop);
+    ok&=check(phaseStopped.ok&&phaseStopped.stopped&&phaseStopped.results.size()==1&&
+        readState(phaseStopped.statePath).value("status")==QStringLiteral("stopped")&&
+        readState(phaseStopped.statePath).value("completedCount").toInt()==1,
+        "Stop during fast result persistence finishes one row and starts no next Part");
+    options.phaseProgress={};options.runState.reset();
     const int batchLdrawAt=app.arguments().indexOf(QStringLiteral("--batch-ldraw"));
     if(batchLdrawAt>=0&&batchLdrawAt+1<app.arguments().size()){
         options.libraryRoot=app.arguments()[batchLdrawAt+1];options.runId=QStringLiteral("batch-real");

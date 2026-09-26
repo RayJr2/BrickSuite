@@ -7,6 +7,8 @@
 #include <QVector>
 #include <QStringList>
 #include <functional>
+#include <QJsonObject>
+#include <QMutex>
 
 namespace PrintGeometry {
 
@@ -61,6 +63,19 @@ struct BatchPrintPopulation {
     int actualSampled = 0;
 };
 
+// Serializes worker checkpoints and immediate UI Stop requests to the same file.
+class BatchPrintRunState {
+public:
+    bool save(const QString& path,const QJsonObject& state,QString* error);
+    bool requestStop(QString* error = nullptr);
+private:
+    bool write(QString* error);
+    QMutex m_mutex;
+    QString m_path;
+    QJsonObject m_state;
+    bool m_stopRequested = false;
+};
+
 struct BatchPrintOptions {
     QString libraryRoot, outputRoot, runId;
     quint32 seed = 0;
@@ -72,6 +87,8 @@ struct BatchPrintOptions {
     bool randomSample = false;
     int requestedEligibleCount = 0;
     BatchPrintPopulation population;
+    std::shared_ptr<BatchPrintRunState> runState;
+    std::function<void(int,const QString&,const QString&)> phaseProgress;
     std::function<bool(const QString&,std::size_t,QString*)> reopenValidator;
     // Called only after the active Part checkpoint is durable, before model loading.
     std::function<void(const QString&,int,const QString&)> beforePart;
@@ -98,7 +115,10 @@ public:
     static bool isStandardAuditPartNumber(const QString& partNumber);
     static bool isStickerCategory(const BatchPrintablePart& part);
     static bool writeDiagnosticThreeMf(const PrintMesh& candidate,const QString& path,
-                                       const QString& partNumber,const QColor& color,QString* error = nullptr);
+                                       const QString& partNumber,const QColor& color,QString* error = nullptr,
+                                       const CancellationState* cancellation = nullptr,
+                                       const std::function<void(const QString&)>& phase = {});
+    static bool diagnosticWithinBounds(const PrintMesh& mesh);
     static BatchPrintTotals summarize(const QVector<BatchPrintResult>& results);
     static QString categoryCode(BatchPrintCategory category);
     BatchPrintRun run(const QVector<BatchPrintablePart>& parts,const BatchPrintOptions& options,

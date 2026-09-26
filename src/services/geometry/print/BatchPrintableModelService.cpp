@@ -17,6 +17,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QSaveFile>
+#include <QMutexLocker>
 #ifdef Q_OS_WIN
 #include <io.h>
 #else
@@ -143,6 +144,37 @@ QString familyName(FunctionalInterfaceFamily family)
     }
     return QStringLiteral("Unknown");
 }
+}
+
+bool BatchPrintRunState::write(QString* error)
+{
+    if(m_path.isEmpty())return true;
+    QSaveFile file(m_path);
+    const auto bytes=QJsonDocument(m_state).toJson(QJsonDocument::Indented);
+    if(!file.open(QIODevice::WriteOnly)||file.write(bytes)!=bytes.size()||
+       !durableFlush(file)||!file.commit()){
+        if(error)*error=QStringLiteral("Could not persist audit run state: %1").arg(file.errorString());
+        return false;
+    }
+    return true;
+}
+
+bool BatchPrintRunState::save(const QString& path,const QJsonObject& state,QString* error)
+{
+    QMutexLocker lock(&m_mutex);m_path=path;m_state=state;
+    m_state.insert(QStringLiteral("stopRequested"),m_stopRequested);
+    if(m_stopRequested&&m_state.value(QStringLiteral("status"))==QStringLiteral("running"))
+        m_state.insert(QStringLiteral("status"),QStringLiteral("stopping"));
+    return write(error);
+}
+
+bool BatchPrintRunState::requestStop(QString* error)
+{
+    QMutexLocker lock(&m_mutex);m_stopRequested=true;
+    m_state.insert(QStringLiteral("stopRequested"),true);
+    if(m_state.value(QStringLiteral("status"))==QStringLiteral("running"))
+        m_state.insert(QStringLiteral("status"),QStringLiteral("stopping"));
+    return write(error);
 }
 
 double BatchPrintTotals::modelAvailabilityPercent() const
@@ -297,13 +329,30 @@ bool BatchPrintableModelService::isStickerCategory(const BatchPrintablePart& par
 }
 
 bool BatchPrintableModelService::writeDiagnosticThreeMf(const PrintMesh& candidate,
-    const QString& path,const QString& partNumber,const QColor& color,QString* error)
+    const QString& path,const QString& partNumber,const QColor& color,QString* error,
+    const CancellationState* cancellation,const std::function<void(const QString&)>& phase)
 {
-    ThreeMfWriter::Options options;
+    if(!diagnosticWithinBounds(candidate)){
+        if(error)*error=QStringLiteral("Diagnostic export bounded out (limit: 50000 faces / 150000 vertices).");
+        return false;
+    }
+    if(cancellation&&cancellation->isCancelled()){
+        if(error)*error=QStringLiteral("Diagnostic export skipped after Stop.");return false;
+    }
+    ThreeMfWriter::Options options;options.phase=phase;
     options.objectName=partNumber+QStringLiteral(" - DIAGNOSTIC, NOT ACCEPTED FOR PRINTING");
     options.partIdentity=partNumber;options.modelColor=color;
     if(!ThreeMfWriter::write(candidate,path,options,error))return false;
+    if(cancellation&&cancellation->isCancelled()){
+        if(error)*error=QStringLiteral("Diagnostic reopen skipped after Stop; package not validated.");return false;
+    }
+    if(phase)phase(QStringLiteral("reopen"));
     return reopen(path,candidate.faces.size(),error);
+}
+
+bool BatchPrintableModelService::diagnosticWithinBounds(const PrintMesh& mesh)
+{
+    return mesh.faces.size()<=50000&&mesh.vertices.size()<=150000;
 }
 
 BatchPrintTotals BatchPrintableModelService::summarize(const QVector<BatchPrintResult>& results)
@@ -333,6 +382,7 @@ BatchPrintTotals BatchPrintableModelService::summarize(const QVector<BatchPrintR
 BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>& parts,
     const BatchPrintOptions& options,CancellationState* cancellation,const Progress& progress) const
 {
+    CancellationState localCancellation;if(!cancellation)cancellation=&localCancellation;
     BatchPrintRun run;run.population=options.population;
     const QString root=options.outputRoot.isEmpty()?QDir(QStandardPaths::writableLocation(
         QStandardPaths::DocumentsLocation)).filePath(QStringLiteral("BrickSuite/Print Capability Audits")):
@@ -354,6 +404,10 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
     }
     const QJsonObject metadata{
         {QStringLiteral("runId"),runId},
+        {QStringLiteral("auditPreparationProfile"),QStringLiteral("audit-bounded-v1")},
+        {QStringLiteral("maximumSequentialBooleanOperations"),8},
+        {QStringLiteral("diagnosticMaximumFaces"),50000},
+        {QStringLiteral("diagnosticMaximumVertices"),150000},
         {QStringLiteral("sampleMode"),options.randomSample?QStringLiteral("random"):QStringLiteral("part_list")},
         {QStringLiteral("seed"),static_cast<qint64>(options.seed)},
         {QStringLiteral("requestedEligibleCount"),options.requestedEligibleCount},
@@ -376,11 +430,13 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
     }
     metadataFile.close();
     run.statePath=QDir(run.runDirectory).filePath(QStringLiteral("run-state.json"));
-    QJsonArray sample;
-    for(const auto& part:parts)sample.append(part.partNumber);
+    QJsonArray sample;QJsonObject candidates;
+    for(const auto& part:parts){sample.append(part.partNumber);
+        candidates.insert(part.partNumber,QJsonArray::fromStringList(part.ldrawCandidates));}
     QJsonObject state=metadata;
     state.insert(QStringLiteral("stateSchemaVersion"),1);
     state.insert(QStringLiteral("orderedParts"),sample);
+    state.insert(QStringLiteral("ldrawCandidates"),candidates);
     state.insert(QStringLiteral("requestedSampleCount"),options.randomSample?options.requestedEligibleCount:parts.size());
     state.insert(QStringLiteral("libraryRoot"),options.libraryRoot);
     state.insert(QStringLiteral("currentSampleSequence"),0);
@@ -388,16 +444,9 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
     state.insert(QStringLiteral("completedCount"),0);
     state.insert(QStringLiteral("currentPartStatus"),QStringLiteral("pending"));
     state.insert(QStringLiteral("status"),QStringLiteral("running"));
-    const auto checkpoint=[&](){
-        QSaveFile file(run.statePath);
-        const auto bytes=QJsonDocument(state).toJson(QJsonDocument::Indented);
-        if(!file.open(QIODevice::WriteOnly)||file.write(bytes)!=bytes.size()||
-           !durableFlush(file)||!file.commit()){
-            run.diagnostic=QStringLiteral("Could not persist audit run state: %1").arg(file.errorString());
-            return false;
-        }
-        return true;
-    };
+    state.insert(QStringLiteral("currentPhase"),QStringLiteral("pending"));
+    const auto runState=options.runState?options.runState:std::make_shared<BatchPrintRunState>();
+    const auto checkpoint=[&](){return runState->save(run.statePath,state,&run.diagnostic);};
     if(!checkpoint())return run;
     run.csvPath=QDir(run.runDirectory).filePath(QStringLiteral("results.csv"));
     QFile csvFile(run.csvPath);
@@ -426,6 +475,8 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         return csvFile.write(bytes)==bytes.size()&&durableFlush(csvFile);
     };
     if(!durableFlush(csvFile)){run.diagnostic=QStringLiteral("Could not flush CSV header.");return run;}
+    QFile timingsFile(QDir(run.runDirectory).filePath(QStringLiteral("stage-timings.jsonl")));
+    if(!timingsFile.open(QIODevice::WriteOnly)){run.diagnostic=timingsFile.errorString();return run;}
     run.results.reserve(parts.size());
     QSet<QString> usedExportNames;
     const auto exportPathFor=[&](const BatchPrintResult& row){
@@ -447,17 +498,38 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         state.insert(QStringLiteral("currentSampleSequence"),index+1);
         state.insert(QStringLiteral("currentPartNumber"),parts[index].partNumber);
         state.insert(QStringLiteral("currentPartStatus"),QStringLiteral("active"));
+        state.insert(QStringLiteral("currentPhase"),QStringLiteral("starting"));
+        state.insert(QStringLiteral("phaseTimingsMs"),QJsonObject());
         if(!checkpoint())return run;
+        if(options.phaseProgress)options.phaseProgress(index+1,parts[index].partNumber,QStringLiteral("starting"));
         if(options.beforePart)options.beforePart(run.statePath,index+1,parts[index].partNumber);
         const auto&part=parts[index];BatchPrintResult row;row.sequence=index+1;row.partNumber=part.partNumber;
+        QElapsedTimer phaseTimer;phaseTimer.start();QString currentPhase=QStringLiteral("starting");
+        QJsonObject stageTimes;bool persistenceOk=true;
+        const auto phase=[&](const QString& name){
+            stageTimes.insert(currentPhase,stageTimes.value(currentPhase).toInteger()+phaseTimer.elapsed());
+            currentPhase=name;
+            state.insert(QStringLiteral("currentPhase"),name);
+            state.insert(QStringLiteral("phaseTimingsMs"),stageTimes);
+            persistenceOk=checkpoint()&&persistenceOk;
+            if(!persistenceOk&&cancellation)cancellation->cancel();
+            if(options.phaseProgress)options.phaseProgress(row.sequence,row.partNumber,name);
+            phaseTimer.restart();
+        };
         const auto diagnosticExport=[&](const PrintMesh* mesh){
+            phase(QStringLiteral("diagnostic_candidate"));
             if(!mesh||mesh->vertices.empty()||mesh->faces.empty()){
                 row.diagnostic+=QStringLiteral(" No bounded diagnostic candidate mesh was available.");return;
             }
+            if(!diagnosticWithinBounds(*mesh)||(cancellation&&cancellation->isCancelled())){
+                row.diagnostic+=QStringLiteral(" Diagnostic export unavailable: bounded out or Stop requested.");return;
+            }
+            if(!persistenceOk)return;
+            phase(QStringLiteral("diagnostic_export"));
             const QString path=exportPathFor(row);
             QString error;
             if(writeDiagnosticThreeMf(options.printOrientation.apply(*mesh),path,part.partNumber,
-                                      options.modelColor,&error)){
+                                      options.modelColor,&error,cancellation,phase)){
                 row.diagnosticExportAvailable=true;row.diagnosticExportPath=path;
             }else row.diagnostic+=QStringLiteral(" Diagnostic 3MF could not be saved/reopened: ")+error;
         };
@@ -482,6 +554,8 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
                     row.category=BatchPrintCategory::NoLDrawModel;
                     row.diagnostic=QStringLiteral("No usable installed LDraw model was found.");break;
                 }
+                phase(QStringLiteral("loading"));
+                if(!persistenceOk)break;
                 const auto source=LDrawLibraryService::loadPart(options.libraryRoot,row.ldrawModel);
                 if(!source.ok()){
                     row.category=BatchPrintCategory::LoadFailed;row.diagnostic=source.error.message;break;
@@ -490,12 +564,24 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
                 PrintPreparationRequest request;request.partReference=part.partNumber;
                 request.ldrawIdentity=row.ldrawModel;request.libraryAuthority=options.libraryRoot;
                 request.loadResult=source;
-                const auto prepared=LDrawPrintPreparationService().prepare(request,cancellation);
-                row.prepareMilliseconds=prepared.timings.totalMilliseconds;
+                request.profile.identity+=QStringLiteral("-audit-bounded-v1");
+                request.profile.maximumBooleanOperations=8;
+                phase(QStringLiteral("preparing"));
+                if(!persistenceOk)break;
+                QElapsedTimer preparationTimer;preparationTimer.start();
+                const auto prepared=LDrawPrintPreparationService().prepare(request,cancellation,[&](const PrintPreparationProgress& p){
+                    static const char* names[]={"source_analysis","semantic_construction","operand_validation","boolean_composition","final_validation","diagnostic_candidate"};
+                    if(p.phase==PrintPreparationPhase::BooleanComposition)
+                        state.insert(QStringLiteral("booleanOperations"),p.totalOperations);
+                    phase(QStringLiteral("preparing/")+QString::fromLatin1(names[int(p.phase)]));
+                });
+                row.prepareMilliseconds=preparationTimer.elapsed();
+                phase(QStringLiteral("source_coverage"));
                 row.sourceGroups=prepared.sourceCoverage.groups.size();
                 row.coverageComplete=prepared.sourceCoverage.complete();
                 if(!prepared.ready()){
                     row.category=preparationCategory(prepared);row.diagnostic=prepared.diagnostic;
+                    phase(QStringLiteral("failure_classified"));
                     diagnosticExport(prepared.diagnosticCandidateMesh.get());break;
                 }
                 row.preparationRoute=prepared.preparedMesh->preparationMethod;
@@ -507,6 +593,8 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
                         featureContracts<<familyName(feature.family)+QStringLiteral(":")+
                             feature.evidenceContract;
                 featureContracts.removeDuplicates();row.recognizedFeatures=featureContracts.join(';');
+                if(cancellation&&cancellation->isCancelled()){row.category=BatchPrintCategory::Cancelled;break;}
+                phase(QStringLiteral("manufacturing"));
                 PrintMesh output=prepared.preparedMesh->mesh;
                 const FitCalibrationLibrary library;
                 const auto fit=AutoFitProfileResolver::resolveManaged(options.autoFitEnabled,
@@ -527,6 +615,7 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
                 row.category=BatchPrintCategory::Success;
                 row.exportPath=exportPathFor(row);
                 ThreeMfWriter::Options exportOptions;exportOptions.objectName=part.partNumber;
+                exportOptions.phase=phase;
                 exportOptions.partIdentity=part.partNumber;exportOptions.modelColor=options.modelColor;
                 QString error;
                 if(!ThreeMfWriter::write(options.printOrientation.apply(output),row.exportPath,
@@ -534,6 +623,7 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
                     row.category=BatchPrintCategory::ExportFailed;row.diagnostic=error;
                     row.exportPath.clear();break;
                 }
+                phase(QStringLiteral("reopen"));
                 const auto validator=options.reopenValidator?options.reopenValidator:
                     std::function<bool(const QString&,std::size_t,QString*)>(reopen);
                 if(!validator(row.exportPath,output.faces.size(),&error)){
@@ -554,14 +644,24 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
             }
             row.totalMilliseconds=timer.elapsed();
         }
+        if(!persistenceOk)return run;
+        phase(QStringLiteral("persisting"));
         run.results.push_back(row);
         if(!save(row)){
             run.diagnostic=QStringLiteral("The audit CSV could not be flushed: %1").arg(csvFile.errorString());
             csvFile.close();return run;
         }
+        phase(QStringLiteral("run_state"));
         state.insert(QStringLiteral("completedCount"),run.results.size());
         state.insert(QStringLiteral("currentPartStatus"),QStringLiteral("finished"));
         if(!checkpoint())return run;
+        phase(QStringLiteral("completed"));
+        if(!persistenceOk)return run;
+        const auto timingBytes=QJsonDocument(QJsonObject{{"sampleSequence",row.sequence},{"partNumber",row.partNumber},
+            {"timingsMs",stageTimes}}).toJson(QJsonDocument::Compact)+'\n';
+        if(timingsFile.write(timingBytes)!=timingBytes.size()||!durableFlush(timingsFile)){
+            run.diagnostic=QStringLiteral("Could not flush stage timings.");return run;
+        }
         run.totals=summarize(run.results);
         if(progress)progress(row,run.totals);
     }

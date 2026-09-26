@@ -240,8 +240,10 @@ PrintPreparationResult LDrawPrintPreparationService::prepare(const PrintPreparat
                semantic.semanticGroups>0&&semantic.semanticGroups<=6&&
                request.loadResult.mesh.triangles.size()<=1000&&
                semantic.diagnostics.contains(QStringLiteral("No independently closed body/cavity operand or certified round through-passage body was found."))){
+                if(progress)progress({PrintPreparationPhase::DiagnosticCandidate,0,0});
                 for(const auto axis:{SourceSurfaceSolidifier::RayAxis::X,
                                      SourceSurfaceSolidifier::RayAxis::Y}){
+                    if(cancellation&&cancellation->isCancelled())break;
                     const auto candidate=SourceSurfaceSolidifier::solidify(request.loadResult,.15,axis,
                         SourceSurfaceSolidifier::QueryMode::Indexed,4000,150000,
                         SourceSurfaceSolidifier::ExtractionMode::TopologyAwareSurfaceNetsDiagnostic);

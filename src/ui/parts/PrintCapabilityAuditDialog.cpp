@@ -5,6 +5,7 @@
 #include "../../settings/UserSettings.h"
 
 #include <QComboBox>
+#include <QCloseEvent>
 #include <QCheckBox>
 #include <QDir>
 #include <QFile>
@@ -31,7 +32,7 @@
 
 using namespace PrintGeometry;
 
-PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent):QDialog(parent)
+PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent,Runner runner):QDialog(parent),m_runner(std::move(runner))
 {
     setWindowTitle(tr("Print Capability Audit"));resize(620,450);
     auto* layout=new QVBoxLayout(this);auto* form=new QFormLayout;
@@ -105,12 +106,13 @@ void PrintCapabilityAuditDialog::showIncompleteRuns()
         QFile file(path);if(!file.open(QIODevice::ReadOnly))continue;
         const auto state=QJsonDocument::fromJson(file.readAll()).object();
         const auto status=state.value(QStringLiteral("status")).toString();
-        if(status==QStringLiteral("completed")||status==QStringLiteral("stopped"))continue;
-        notices.append(tr("Incomplete run %1: sequence %2, Part %3 (%4), completed %5. State: %6")
+        if(status==QStringLiteral("completed"))continue;
+        notices.append(tr("Prior run %1: sequence %2, Part %3 (%4), completed %5. State: %6")
             .arg(state.value(QStringLiteral("runId")).toString())
             .arg(state.value(QStringLiteral("currentSampleSequence")).toInt())
             .arg(state.value(QStringLiteral("currentPartNumber")).toString(),
-                 state.value(QStringLiteral("currentPartStatus")).toString())
+                 status+QStringLiteral(" / ")+state.value(QStringLiteral("currentPhase")).toString(
+                     state.value(QStringLiteral("currentPartStatus")).toString()))
             .arg(state.value(QStringLiteral("completedCount")).toInt()).arg(path));
     }
     m_recovery->setText(notices.join(QLatin1Char('\n')));
@@ -130,7 +132,9 @@ void PrintCapabilityAuditDialog::start()
     }
     QSettings().setValue(QStringLiteral("printAudit/outputRoot"),m_output->text().trimmed());
     m_excludeNoModel->setEnabled(false);
-    m_cancellation=std::make_shared<CancellationState>();m_running=true;
+    m_cancellation=std::make_shared<CancellationState>();m_runState=std::make_shared<BatchPrintRunState>();
+    m_running=true;m_closePending=false;m_stop->setText(tr("Stop"));
+    m_currentSequence=0;m_currentPart.clear();m_currentPhase=tr("Loading catalog");
     m_start->setEnabled(false);m_stop->setEnabled(true);m_mode->setEnabled(false);
     m_excludeNonstandardIds->setEnabled(false);m_output->setReadOnly(true);m_browseOutput->setEnabled(false);
     m_partList->setReadOnly(true);m_counters->setText(tr("Loading catalog Parts..."));
@@ -140,12 +144,17 @@ void PrintCapabilityAuditDialog::start()
     options.excludeNoModel=random&&m_excludeNoModel->isChecked();
     options.randomSample=random;options.requestedEligibleCount=random?m_sampleCount->value():0;
     options.autoFitEnabled=UserSettings::instance().autoFitEnabled();
+    options.runState=m_runState;
     const QString databasePath=DatabaseManager::instance().databasePath();
     const int count=m_sampleCount->value();const auto cancellation=m_cancellation;
     auto* watcher=new QFutureWatcher<BatchPrintRun>(this);QPointer<PrintCapabilityAuditDialog> self(this);
     connect(watcher,&QFutureWatcher<BatchPrintRun>::finished,this,[self,watcher]{
-        const auto result=watcher->result();watcher->deleteLater();if(!self)return;
-        self->m_running=false;self->m_start->setEnabled(true);self->m_stop->setEnabled(false);
+        BatchPrintRun result;
+        try{result=watcher->result();}catch(...){result.diagnostic=QStringLiteral("Audit worker failed; inspect its last durable checkpoint.");}
+        watcher->deleteLater();if(!self)return;
+        self->m_running=false;
+        if(self->m_closePending){self->QDialog::reject();return;}
+        self->m_start->setEnabled(true);self->m_stop->setEnabled(false);
         self->m_mode->setEnabled(true);self->m_partList->setReadOnly(false);
         self->m_excludeNonstandardIds->setEnabled(true);self->m_output->setReadOnly(false);
         self->m_browseOutput->setEnabled(true);
@@ -166,7 +175,20 @@ void PrintCapabilityAuditDialog::start()
             .arg(t.modelAvailabilityPercent(),0,'f',1).arg(t.printServicePercent(),0,'f',1)
             .arg(t.catalogToPrintablePercent(),0,'f',1).arg(result.csvPath));
     });
-    watcher->setFuture(QtConcurrent::run([databasePath,random,ids,count,options,cancellation,self]{
+    options.phaseProgress=[self](int sequence,const QString& part,const QString& phase){
+        if(self)QMetaObject::invokeMethod(self,[self,sequence,part,phase]{
+            if(self&&self->m_running)self->showPhase(sequence,part,phase);
+        },Qt::QueuedConnection);
+    };
+    const auto runner=m_runner;
+    m_future=QtConcurrent::run([databasePath,random,ids,count,options,cancellation,self,runner]{
+        const auto progress=[self](const BatchPrintResult& row,const BatchPrintTotals&){
+            if(self)QMetaObject::invokeMethod(self,[self,row]{
+                if(self&&self->m_running)self->showPhase(row.sequence,row.partNumber,
+                    QStringLiteral("completed: ")+BatchPrintableModelService::categoryCode(row.category));
+            },Qt::QueuedConnection);
+        };
+        if(runner)return runner(options,cancellation.get(),progress);
         QString error;const auto catalog=BatchPrintableModelService::loadCatalog(databasePath,&error);
         if(!error.isEmpty()){BatchPrintRun failed;failed.diagnostic=error;return failed;}
         BatchPrintPopulation population;
@@ -175,34 +197,46 @@ void PrintCapabilityAuditDialog::start()
                                                                            options.excludeNoModel,options.libraryRoot):
             BatchPrintableModelService::explicitParts(catalog,ids);
         BatchPrintOptions runOptions=options;runOptions.population=population;
-        return BatchPrintableModelService().run(entries,runOptions,cancellation.get(),
-            [self,population](const BatchPrintResult& row,const BatchPrintTotals& totals){
-                if(!self)return;
-                QMetaObject::invokeMethod(self,[self,row,totals,population]{
-                    if(!self)return;
-                    self->m_counters->setText(self->tr("Part %1: %2 â€” eligible pool %3, successful %4, excluded no Color %5, Sticker category %6, nonstandard IDs %7, no model %8, preparation %9, ManufacturingMesh %10, export/reopen %11")
-                        .arg(row.partNumber,BatchPrintableModelService::categoryCode(row.category))
-                        .arg(population.catalogTotal?population.eligibleTotal:totals.eligible)
-                        .arg(totals.successful)
-                        .arg(population.catalogTotal?population.excludedNoColor:totals.skippedNoColor)
-                        .arg(population.catalogTotal?population.excludedStickerCategory:totals.skippedStickerCategory)
-                        .arg(population.catalogTotal?population.excludedNonstandardId:totals.skippedNonstandardIds)
-                        .arg(totals.noModel).arg(totals.prepareFailures).arg(totals.manufacturingFailures)
-                        .arg(totals.exportFailures));
-                },Qt::QueuedConnection);
-            });
-    }));
+        return BatchPrintableModelService().run(entries,runOptions,cancellation.get(),progress);
+    });
+    watcher->setFuture(m_future);
+}
+
+PrintCapabilityAuditDialog::~PrintCapabilityAuditDialog()
+{
+    // Parent/application teardown is also a safe boundary. Keep the QObject
+    // alive until callbacks can no longer be issued by the worker.
+    if(m_running&&m_cancellation){m_cancellation->cancel();m_future.waitForFinished();}
+}
+
+void PrintCapabilityAuditDialog::showPhase(int sequence,const QString& part,const QString& phase)
+{
+    m_currentSequence=sequence;m_currentPart=part;m_currentPhase=phase;
+    const QString prefix=m_closePending?tr("Stopping / closing"):
+        (m_cancellation&&m_cancellation->isCancelled()?tr("Stopping"):tr("Auditing"));
+    m_counters->setText(tr("%1 — sequence %2, Part %3: %4")
+        .arg(prefix).arg(sequence).arg(part,phase));
 }
 
 void PrintCapabilityAuditDialog::stop()
 {
     if(!m_running||!m_cancellation)return;
-    m_cancellation->cancel();m_stop->setEnabled(false);
-    m_counters->setText(tr("Stop requested. The active Part will finish or reach a safe cancellation point; CSV will close cleanly."));
+    m_cancellation->cancel();m_stop->setEnabled(false);m_stop->setText(tr("Stopping..."));
+    QString error;
+    if(m_runState&&!m_runState->requestStop(&error)){
+        m_counters->setText(error);return;
+    }
+    showPhase(m_currentSequence,m_currentPart,m_currentPhase);
 }
 
 void PrintCapabilityAuditDialog::reject()
 {
-    if(m_running){stop();return;}
+    if(m_running){m_closePending=true;stop();return;}
     QDialog::reject();
+}
+
+void PrintCapabilityAuditDialog::closeEvent(QCloseEvent* event)
+{
+    if(m_running){event->ignore();reject();return;}
+    QDialog::closeEvent(event);
 }
