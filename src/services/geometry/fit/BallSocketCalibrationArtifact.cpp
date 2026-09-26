@@ -69,7 +69,7 @@ BallSocketCalibrationResult BallSocketCalibrationArtifact::generate(
     result.parentArtifactIdentity=input.parentArtifactIdentity;
     result.orientationIdentity=QStringLiteral("flat-base-ball-socket-mouth-axis-parallel-v1");
     if(!source.ok()||!source.sourceModel||input.orientation!=FitPrintedOrientation::FeatureAxisParallelToBuildPlate||
-       input.candidateCount<3||input.candidateCount>9||input.candidateCount%2==0||
+       input.candidateCount<3||input.candidateCount>7||input.candidateCount%2==0||
        !std::isfinite(input.centerCorrectionMillimetres)||!std::isfinite(input.spacingMillimetres)||
        input.spacingMillimetres<=0) {
         result.diagnostic=QStringLiteral("The certified Ball Socket fixture definition is invalid.");return result;

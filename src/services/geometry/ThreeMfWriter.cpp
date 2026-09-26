@@ -88,7 +88,9 @@ bool ThreeMfWriter::writeCollection(const QVector<NamedMesh>& meshes, const QStr
         }
         const QString temporaryName = temporary.fileName();
         temporary.close();
-        model->QueryWriter("3mf")->WriteToFile(temporaryName.toStdString());
+        auto writer=model->QueryWriter("3mf");
+        if(options.collectionDecimalPrecision>=0)writer->SetDecimalPrecision(options.collectionDecimalPrecision);
+        writer->WriteToFile(temporaryName.toStdString());
         QFile source(temporaryName);
         if (!source.open(QIODevice::ReadOnly)) {
             if (error) *error = QStringLiteral("The generated 3MF package could not be read.");

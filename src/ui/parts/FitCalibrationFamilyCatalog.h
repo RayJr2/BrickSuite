@@ -13,12 +13,13 @@ enum class FitCalibrationFamily {
     TechnicAxleHole,
     StandardBar,
     CClipBarReceiver,
-    BallJoint
+    BallJoint, BallSocket, PinBarrelHinge, InterleavedFingerHinge, ClickHinge, RetainedRotatingWheel, PlainRoundBoreWheel
 };
 
 struct FitCalibrationFamilyOption {
     FitCalibrationFamily family;
     QString label;
+    QString identity;
 };
 
 class FitCalibrationFamilyCatalog {

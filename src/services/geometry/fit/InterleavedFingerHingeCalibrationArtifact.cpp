@@ -47,9 +47,15 @@ QString InterleavedFingerHingeCalibrationArtifact::artifactIdentity() {
 }
 
 InterleavedFingerHingeCalibrationResult InterleavedFingerHingeCalibrationArtifact::generate(
-    const LDrawGeometry::LDrawLoadResult& source) {
+    const LDrawGeometry::LDrawLoadResult& source,const InterleavedFingerHingeCalibrationDefinition& definition) {
     InterleavedFingerHingeCalibrationResult result;
-    result.artifactIdentity=artifactIdentity();
+    result.artifactIdentity=definition.artifactIdentity.isEmpty()?artifactIdentity():definition.artifactIdentity;
+    result.parentArtifactIdentity=definition.parentArtifactIdentity;
+    if(definition.candidateCount<3||definition.candidateCount>7||definition.candidateCount%2==0||
+       !std::isfinite(definition.centerCorrectionMillimetres)||!std::isfinite(definition.spacingMillimetres)||definition.spacingMillimetres<=0||
+       std::abs(definition.centerCorrectionMillimetres)+(definition.candidateCount/2)*definition.spacingMillimetres>.150001){
+        result.diagnostic="Requested stage exceeds the established source-fixture range (-0.15 to +0.15 mm).";return result;
+    }
     result.orientationIdentity=QStringLiteral("4275a-side-down-finger-axis-parallel-v1");
     if(!source.ok()||!source.sourceModel) {
         result.diagnostic=QStringLiteral("A certified three-finger LDraw source is required.");return result;
@@ -97,8 +103,8 @@ InterleavedFingerHingeCalibrationResult InterleavedFingerHingeCalibrationArtifac
     if(ownedFaces<96||movements.size()<48||movedTipVertices<16) {
         result.diagnostic=QStringLiteral("The certified bump surfaces are incomplete.");return result;
     }
-    for(int i=0;i<7;++i) {
-        const double correction=(i-3)*.05;
+    for(int i=0;i<definition.candidateCount;++i) {
+        const double correction=definition.centerCorrectionMillimetres+(i-definition.candidateCount/2)*definition.spacingMillimetres;
         auto candidate=source;
         if(correction!=0)for(auto& triangle:candidate.mesh.triangles)
             for(auto* vertex:{&triangle.a,&triangle.b,&triangle.c}) {
@@ -156,21 +162,25 @@ InterleavedFingerHingeCalibrationResult InterleavedFingerHingeCalibrationArtifac
 }
 
 FitCalibrationExperiment InterleavedFingerHingeCalibrationArtifact::observationTemplate(
-    const InterleavedFingerHingeCalibrationResult& result) {
+    const InterleavedFingerHingeCalibrationResult& result,const InterleavedFingerHingeCalibrationDefinition& definition) {
     FitCalibrationExperiment e;
     e.artifactIdentity=result.artifactIdentity;
+    e.parentArtifactIdentity=result.parentArtifactIdentity;
     e.featureFamily=QStringLiteral("InterleavedFingerHinge");
     e.featureRole=QStringLiteral("male");
     e.modeledOrientationIdentity=result.orientationIdentity;
     e.correctionDimension=FitCorrectionDimension::Height;
     e.centerHeightCorrectionMillimetres=0;
-    e.candidateSpacingMillimetres=.05;
+    e.candidateSpacingMillimetres=definition.spacingMillimetres;
+    e.centerHeightCorrectionMillimetres=definition.centerCorrectionMillimetres;
     e.regenerationPrototype=result.regenerationPrototype;
     e.hasRegenerationPrototype=true;
     e.candidates=result.candidates;
     e.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
     e.process.orientationNotes=QStringLiteral("Print each dot-marked 4275a three-finger hinge on its long exterior plate edge at 100% scale, with the finger axis parallel to the build plate and no support on the fingers or bumps. Mate each candidate with the same genuine LEGO 4276a two-finger hinge. Assess assembly, repeated rotation, axial alignment, play, binding, retention and wear. Four dots (Candidate #4) is the unmodified nominal 0.30 mm contact-bump protrusion; only the two source-owned contact bumps vary.");
     e.process.dimensionalCompensationNotes=QStringLiteral("Record actual slicer dimensional compensation settings before testing.");
+    if(!definition.parentArtifactIdentity.isEmpty()) e.process.orientationNotes+=" This is a continuation: dot count is the candidate index; consult this session for its correction. Candidate 4 is not necessarily nominal.";
+    if(!definition.parentArtifactIdentity.isEmpty()) e.process.orientationNotes.replace("Four dots (Candidate #4) is the unmodified nominal 0.30 mm contact-bump protrusion; only the two source-owned contact bumps vary.","Only the two source-owned contact bumps vary.");
     return e;
 }
 }

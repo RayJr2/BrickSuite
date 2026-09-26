@@ -1,5 +1,12 @@
 #include "FitCalibrationGenerationService.h"
 #include "FitCalibrationArtifactLocation.h"
+#include "FitCalibrationCapabilities.h"
+#include "BallSocketCalibrationArtifact.h"
+#include "PinBarrelHingeCalibrationArtifact.h"
+#include "InterleavedFingerHingeCalibrationArtifact.h"
+#include "ClickHingeCalibrationArtifact.h"
+#include "RetainedRotatingWheelCalibrationArtifact.h"
+
 #include "FitCalibrationFixtureLabel.h"
 #include "../ThreeMfWriter.h"
 #include "../LDrawLibraryService.h"
@@ -40,13 +47,77 @@ struct Generated {
     bool hasParent=false,alreadyLabeled=false;
     QString stage="coarse";
 };
+template<class Artifact>
+bool sourceCandidates(const Artifact& artifact,const FitCalibrationExperiment& experiment,Generated* out,QString* error){
+    if(!artifact.ok)return fail(error,artifact.diagnostic);
+    out->experiment=experiment;
+    // Keep detachable candidates in a compact plate layout. A single long row
+    // needlessly magnifies float-coordinate serialization error far from origin.
+    double width=0,depth=0;QVector<MeshBounds> candidateBounds;
+    for(const auto& mesh:artifact.candidateMeshes){
+        if(mesh.vertices.empty())return fail(error,"The source candidate has no vertices.");
+        MeshBounds b;b.minimum=b.maximum=mesh.vertices.front();
+        for(const auto& v:mesh.vertices){b.minimum.x=std::min(b.minimum.x,v.x);b.maximum.x=std::max(b.maximum.x,v.x);
+            b.minimum.y=std::min(b.minimum.y,v.y);b.maximum.y=std::max(b.maximum.y,v.y);
+            b.minimum.z=std::min(b.minimum.z,v.z);b.maximum.z=std::max(b.maximum.z,v.z);}
+        candidateBounds.push_back(b);
+        width=std::max(width,b.maximum.x-b.minimum.x);depth=std::max(depth,b.maximum.y-b.minimum.y);
+    }
+    for(int i=0;i<artifact.candidateMeshes.size();++i){
+        const auto bounds=candidateBounds[i];
+        out->collection.push_back({QString("Candidate %1").arg(i+1),artifact.candidateMeshes[i],
+            {(i%3)*(width+6.0)-bounds.minimum.x,(i/3)*(depth+6.0)-bounds.minimum.y,-bounds.minimum.z}});
+    }
+    return true;
+}
+bool sourceFixture(const Service::Request& request,const QString& family,const QString& identity,
+                   const QString& parent,double center,double spacing,int count,Generated* out,QString* error){
+    const auto capability=FitCalibrationCapabilities::find(family);
+    if(capability.sourcePart.isEmpty())return fail(error,"No installed-source generator is available.");
+    const auto source=LDrawLibraryService::loadPart(request.libraryRoot,capability.sourcePart);
+    if(!source.ok())return fail(error,"The required installed LDraw source could not be loaded: "+capability.sourcePart);
+    if(family=="BallSocket"){
+        BallSocketCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=parent;
+        d.centerCorrectionMillimetres=center;d.spacingMillimetres=spacing;d.candidateCount=count;
+        const auto a=BallSocketCalibrationArtifact::generate(source,d);
+        return sourceCandidates(a,BallSocketCalibrationArtifact::observationTemplate(a,d),out,error);
+    }
+    if(family=="PinBarrelHinge"){
+        PinBarrelHingeCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=parent;
+        d.centerCorrectionMillimetres=center;d.spacingMillimetres=spacing;d.candidateCount=count;
+        const auto a=PinBarrelHingeCalibrationArtifact::generate(source,d);
+        return sourceCandidates(a,PinBarrelHingeCalibrationArtifact::observationTemplate(a,d),out,error);
+    }
+    if(family=="InterleavedFingerHinge"){
+        InterleavedFingerHingeCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=parent;
+        d.centerCorrectionMillimetres=center;d.spacingMillimetres=spacing;d.candidateCount=count;
+        const auto a=InterleavedFingerHingeCalibrationArtifact::generate(source,d);
+        return sourceCandidates(a,InterleavedFingerHingeCalibrationArtifact::observationTemplate(a,d),out,error);
+    }
+    if(family=="ClickHinge"){
+        ClickHingeCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=parent;
+        d.centerCorrectionMillimetres=center;d.spacingMillimetres=spacing;d.candidateCount=count;
+        const auto a=ClickHingeCalibrationArtifact::generate(source,d);
+        return sourceCandidates(a,ClickHingeCalibrationArtifact::observationTemplate(a,d),out,error);
+    }
+    if(family=="RetainedRotatingWheel"){
+        RetainedRotatingWheelCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=parent;
+        d.centerCorrectionMillimetres=center;d.spacingMillimetres=spacing;d.candidateCount=count;
+        const auto a=RetainedRotatingWheelCalibrationArtifact::generate(source,d);
+        return sourceCandidates(a,RetainedRotatingWheelCalibrationArtifact::observationTemplate(a,d),out,error);
+    }
+    if(parent.isEmpty()){const auto initial=PlainRoundBoreWheelCalibrationArtifact::generate(source);
+        return sourceCandidates(initial,PlainRoundBoreWheelCalibrationArtifact::observationTemplate(initial),out,error);}
+    PlainRoundBoreWheelCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=parent;
+    d.centerCorrectionMillimetres=center;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;
+    const auto a=PlainRoundBoreWheelCalibrationArtifact::generate(source,active(request.parent)->regenerationPrototype,d);
+    return sourceCandidates(a,PlainRoundBoreWheelCalibrationArtifact::observationTemplate(a),out,error);
+}
 bool continuation(const Service::Request& request,Generated* out,QString* error){
     const auto* current=active(request.parent);
     if(!current||!current->hasRegenerationPrototype||!FitCalibrationEvidencePolicy::continuationAvailable(*current))
         return fail(error,"No supported continuation is available for this evidence.");
     const auto source=*current;
-    if(source.featureFamily=="FrictionlessTechnicPin"||source.featureFamily=="BallSocket")
-        return fail(error,"Source-faithful continuation is not supported for this family yet.");
     auto plan=FitCalibrationEvidencePolicy::nextSearchPlan(source);
     const bool extension=plan.boundary!=FitPreferredBoundary::None;
     const bool directVerification=!extension&&request.stage==Service::Stage::Verification;
@@ -58,8 +129,23 @@ bool continuation(const Service::Request& request,Generated* out,QString* error)
     const int count=axleHoleModelCorrection?7:request.candidateCount>0&&!directVerification?request.candidateCount:plan.candidateCount;
     const QString identity=axleHoleModelCorrection?TechnicAxleHoleArmWidthCalibrationArtifact::artifactIdentity():
         source.artifactIdentity+(extension?"-boundary-extension-v2":directVerification?"-direct-verification-v2":"-fine-search-v2");
+    if(!FitCalibrationCapabilities::find(source.featureFamily).sourcePart.isEmpty()){
+        if(!sourceFixture(request,source.featureFamily,identity,source.artifactIdentity,plan.centerCorrectionMillimetres,spacing,count,out,error))return false;
+        if(out->experiment.regenerationPrototype.stableIdentity!=source.regenerationPrototype.stableIdentity||
+           out->experiment.regenerationPrototype.evidenceContract!=source.regenerationPrototype.evidenceContract||
+           out->experiment.regenerationPrototype.constructionRecipe!=source.regenerationPrototype.constructionRecipe)
+            return fail(error,"The installed source does not match this historical continuation contract.");
+        out->parent=request.parent;out->hasParent=true;
+        out->stage=extension?"extension":directVerification?"verification":"fine-search";return true;
+    }
     PrintMesh mesh;QVector<ThreeMfWriter::NamedMesh> collection;FitCalibrationExperiment verification;QString diagnostic;
-    if(source.featureFamily==QStringLiteral("StandardStud")){StandardStudCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.dimension=source.correctionDimension==FitCorrectionDimension::Height?StandardStudCalibrationDimension::Height:StandardStudCalibrationDimension::Diameter;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.fixedDiameterCorrectionMillimetres=source.fixedDiameterCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardStudCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StandardStudCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
+    if(source.featureFamily=="FrictionlessTechnicPin"){
+        FrictionlessTechnicPinCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;
+        d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;
+        const auto a=FrictionlessTechnicPinCalibrationArtifact::generate(source.regenerationPrototype,d);
+        if(a.ok){mesh=a.mesh;verification=FrictionlessTechnicPinCalibrationArtifact::observationTemplate(a);}diagnostic=a.diagnostic;
+    }
+    else if(source.featureFamily==QStringLiteral("StandardStud")){StandardStudCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.dimension=source.correctionDimension==FitCorrectionDimension::Height?StandardStudCalibrationDimension::Height:StandardStudCalibrationDimension::Diameter;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.fixedDiameterCorrectionMillimetres=source.fixedDiameterCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardStudCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StandardStudCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("StandardBar")){StandardBarCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardBarCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=StandardBarCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("CClipBarReceiver")){CClipBarReceiverCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;d.orientation=source.process.actualPrintedOrientation;const auto artifact=CClipBarReceiverCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=CClipBarReceiverCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("BallJoint")){BallJointCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;d.orientation=source.process.actualPrintedOrientation;const auto artifact=BallJointCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=BallJointCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
@@ -68,20 +154,6 @@ bool continuation(const Service::Request& request,Generated* out,QString* error)
     else if(source.featureFamily==QStringLiteral("TechnicAxle")){TechnicAxleCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerTipToTipCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=TechnicAxleCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("TechnicAxleHole")&&(axleHoleModelCorrection||source.regenerationPrototype.constructionRecipe==QStringLiteral("technic-axle-hole-arm-width-clearance-v2"))){auto prototype=source.regenerationPrototype;if(axleHoleModelCorrection){prototype.constructionRecipe=QStringLiteral("technic-axle-hole-arm-width-clearance-v2");prototype.evidenceContract=QStringLiteral("official-ldraw-axlehole-arm-width-clearance-v2");}TechnicAxleHoleArmWidthArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;if(!axleHoleModelCorrection){d.centerArmWidthCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;}const auto artifact=TechnicAxleHoleArmWidthCalibrationArtifact::generate(prototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleHoleArmWidthCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else if(source.featureFamily==QStringLiteral("TechnicAxleHole")){TechnicAxleHoleCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerTipToTipCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=TechnicAxleHoleCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleHoleCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("PlainRoundBoreWheel")){
-        PlainRoundBoreWheelCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;
-        d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;
-        const auto artifact=PlainRoundBoreWheelCalibrationArtifact::generate(
-            LDrawLibraryService::loadPart(request.libraryRoot,QStringLiteral("30027a")),source.regenerationPrototype,d);
-        diagnostic=artifact.diagnostic;
-        if(artifact.ok){
-            verification=PlainRoundBoreWheelCalibrationArtifact::observationTemplate(artifact);
-            for(int i=0;i<artifact.candidateMeshes.size();++i)
-                collection.push_back({QStringLiteral("Candidate %1 - %2 mm blind bore")
-                    .arg(i+1).arg(artifact.candidates[i].functionalDiameterMillimetres,0,'f',3),
-                    artifact.candidateMeshes[i],{14.0+26.0*(i%4),12.0+23.0*(i/4),0.0}});
-        }
-    }
     else if(source.featureFamily==QStringLiteral("RoundTechnicPassage")){RoundTechnicCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerDiameterCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=RoundTechnicCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=RoundTechnicCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
     else diagnostic=QStringLiteral("No source-faithful continuation fixture is available for this calibration contract.");
 
@@ -98,6 +170,8 @@ bool capture(const Artifact& artifact,const FitCalibrationExperiment& experiment
     out->mesh=artifact.mesh;out->experiment=experiment;return true;
 }
 bool coarse(const Service::Request& r,Generated* out,QString* error){
+    if(!FitCalibrationCapabilities::find(r.family).sourcePart.isEmpty())
+        return sourceFixture(r,r.family,{},{},0,r.family=="BallSocket"||r.family=="PlainRoundBoreWheel"?.1:.05,7,out,error);
     if(r.family=="RoundTechnicPassage"){
         const auto d=RoundTechnicCalibrationArtifact::parallelCoarseDefinition();
         const auto a=RoundTechnicCalibrationArtifact::generate(RoundTechnicCalibrationArtifact::canonicalPrototype(),d);
@@ -110,7 +184,9 @@ bool coarse(const Service::Request& r,Generated* out,QString* error){
         if(d.dimension==StandardStudCalibrationDimension::Height){
             bool found=false;double od=0;
             for(const auto& session:r.workspace.featureSessions){const auto* e=active(session);
-                if(!e||e->featureFamily!="StandardStud"||e->correctionDimension!=FitCorrectionDimension::Diameter||e->state!=FitEvidenceState::Verified)continue;
+                if(!e||e->featureFamily!="StandardStud"||e->correctionDimension!=FitCorrectionDimension::Diameter||e->state!=FitEvidenceState::Verified||
+                   e->process.actualPrintedOrientation!=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate||
+                   FitCalibrationLibrary::manufacturingContextFingerprint(session.process)!=FitCalibrationLibrary::manufacturingContextFingerprint(r.workspace.process))continue;
                 for(const auto& c:e->candidates)if(c.index==e->preferredCandidateIndex){od=c.diameterCorrectionMillimetres;found=true;break;}
                 if(found)break;
             }
@@ -210,9 +286,45 @@ FitCalibrationGenerationService::FitCalibrationGenerationService(QString artifac
     :m_artifactRoot(artifactRoot.isEmpty()?FitCalibrationArtifactLocation::directory():std::move(artifactRoot)),
      m_managedRoot(std::move(managedRoot)),m_observer(std::move(observer)){}
 
+QString FitCalibrationGenerationService::unavailableReason(const Request& request)
+{
+    const auto* parent=request.hasParent?active(request.parent):nullptr;
+    if(request.hasParent&&!parent)return "No parent calibration is available.";
+    const auto c=FitCalibrationCapabilities::find(parent?parent->featureFamily:request.family,parent?QString():request.variant);
+    if(!c.initial)return "This family/variant is not supported.";
+    if(request.orientation!=FitPrintedOrientation::Unknown&&!c.orientations.contains(request.orientation))
+        return "This fixture cannot be generated in the requested orientation.";
+    if(!c.sourcePart.isEmpty()&&!QFileInfo::exists(QDir(request.libraryRoot).filePath("parts/"+c.sourcePart+".dat")))
+        return "Requires installed LDraw source "+c.sourcePart+" and its dependencies.";
+    if(!parent&&!c.prerequisite.isEmpty()){
+        bool found=false;
+        for(const auto& session:request.workspace.featureSessions){const auto* e=active(session);
+            if(e&&e->featureFamily=="StandardStud"&&e->correctionDimension==FitCorrectionDimension::Diameter&&e->state==FitEvidenceState::Verified&&
+               e->process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate&&
+               FitCalibrationLibrary::manufacturingContextFingerprint(session.process)==FitCalibrationLibrary::manufacturingContextFingerprint(request.workspace.process))found=true;
+        }
+        if(!found)return "Requires "+c.prerequisite+".";
+    }
+    if(parent){
+        if(!c.continuation||!parent->hasRegenerationPrototype||!FitCalibrationEvidencePolicy::continuationAvailable(*parent))return "Record eligible parent evidence before continuing.";
+        if(!c.sourcePart.isEmpty()&&!c.orientations.contains(parent->process.actualPrintedOrientation))return "Continuation requires the supported physical fixture orientation.";
+        auto plan=FitCalibrationEvidencePolicy::nextSearchPlan(*parent);
+        if(request.stage==Stage::Verification&&plan.boundary==FitPreferredBoundary::None)plan=FitCalibrationEvidencePolicy::directVerificationPlan(*parent);
+        const int count=request.candidateCount?request.candidateCount:plan.candidateCount;
+        const double spacing=request.candidateSpacing?request.candidateSpacing:plan.candidateSpacingMillimetres;
+        if(count<c.minimumCandidates||count>c.maximumCandidates||count%2==0)return "Use an odd candidate count from 3 to 7; historical candidate mappings are unchanged.";
+        if(!std::isfinite(spacing)||spacing<=0||!std::isfinite(plan.centerCorrectionMillimetres))return "Candidate spacing must be finite and positive.";
+        if(plan.centerCorrectionMillimetres-(count/2)*spacing<c.minimumCorrection-1e-9||
+           plan.centerCorrectionMillimetres+(count/2)*spacing>c.maximumCorrection+1e-9)
+            return "The requested search exceeds this source fixture's established correction range. A wider source contract requires separate geometry validation.";
+    }
+    return {};
+}
+
 FitCalibrationGenerationService::Result FitCalibrationGenerationService::generate(const Request& request) const
 {
     Result result;
+    result.diagnostic=unavailableReason(request);if(!result.diagnostic.isEmpty())return result;
     try{
         const auto process=request.hasParent?request.parent.process:request.workspace.process;
         if(!request.hasParent&&(request.stage!=Stage::Coarse||request.candidateCount!=0||request.candidateSpacing!=0)){
@@ -259,7 +371,7 @@ FitCalibrationGenerationService::Result FitCalibrationGenerationService::generat
         const QString stem=QString::fromLatin1(FitCalibrationNamingCatalog::forKey(key).slug)+"-"+g.stage;
         const QString modelName=stem+".3mf",sessionName=stem+"-session.json";
         const QString modelPath=QDir(staging.path()).filePath(modelName),sessionPath=QDir(staging.path()).filePath(sessionName);
-        ThreeMfWriter::Options options;options.objectName=e.artifactIdentity;options.partIdentity=e.artifactIdentity;
+        ThreeMfWriter::Options options;options.collectionDecimalPrecision=9;options.objectName=e.artifactIdentity;options.partIdentity=e.artifactIdentity;
         options.modelColor=QColor(g.hasParent||request.family=="RoundTechnicPassage"||request.family=="StandardStud"||request.family=="StudReceivingClutch"?"#0055BF":"#A0A5A9");
         if(!ThreeMfWriter::writeCollection(g.collection,modelPath,options,&result.diagnostic))return result;
         if(m_observer&&!m_observer(Checkpoint::GeometryWritten,staging.path(),&result.diagnostic))return result;

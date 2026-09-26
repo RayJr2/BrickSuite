@@ -48,7 +48,7 @@ PinBarrelHingeCalibrationResult PinBarrelHingeCalibrationArtifact::generate(
     result.orientationIdentity=QStringLiteral("3938-long-side-down-hinge-axis-parallel-v1");
     if(!source.ok()||!source.sourceModel||
        input.orientation!=FitPrintedOrientation::FeatureAxisParallelToBuildPlate||
-       input.candidateCount!=7||!std::isfinite(input.centerCorrectionMillimetres)||
+       (input.candidateCount<3||input.candidateCount>7||input.candidateCount%2==0)||!std::isfinite(input.centerCorrectionMillimetres)||
        !std::isfinite(input.spacingMillimetres)||input.spacingMillimetres<=0) {
         result.diagnostic=QStringLiteral("The certified pin/barrel hinge fixture definition is invalid.");return result;
     }
@@ -163,6 +163,8 @@ FitCalibrationExperiment PinBarrelHingeCalibrationArtifact::observationTemplate(
     e.process.actualPrintedOrientation=input.orientation;
     e.process.orientationNotes=QStringLiteral("Print each dot-marked 3938 hinge top on its long exterior plate side at 100% scale, with both pin axes parallel to the build plate. Keep supports away from the two pin cylinders and protected bores. Snap each candidate into the same genuine LEGO 3937 base repeatedly; record assembly force, smooth rotation, retained alignment, binding, play, removal force, wear and repeatability. Four dots (Candidate #4) is nominal. This first contract varies only the paired male pin OD; the real barrel remains the fixed reference.");
     e.process.dimensionalCompensationNotes=QStringLiteral("Record actual slicer dimensional compensation settings before testing.");
+    if(!input.parentArtifactIdentity.isEmpty()) e.process.orientationNotes+=" Continuation dots identify the session candidate index; Candidate 4 is not necessarily nominal.";
+    if(!input.parentArtifactIdentity.isEmpty()) e.process.orientationNotes.replace("Four dots (Candidate #4) is nominal.","");
     return e;
 }
 }

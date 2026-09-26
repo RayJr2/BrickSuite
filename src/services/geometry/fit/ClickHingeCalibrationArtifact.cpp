@@ -42,9 +42,15 @@ QString ClickHingeCalibrationArtifact::artifactIdentity(){
     return QStringLiteral("click-hinge-clh1-arrestor-parallel-coarse-v1");
 }
 
-ClickHingeCalibrationResult ClickHingeCalibrationArtifact::generate(const LDrawGeometry::LDrawLoadResult& source){
+ClickHingeCalibrationResult ClickHingeCalibrationArtifact::generate(const LDrawGeometry::LDrawLoadResult& source,const ClickHingeCalibrationDefinition& definition){
     ClickHingeCalibrationResult result;
-    result.artifactIdentity=artifactIdentity();
+    result.artifactIdentity=definition.artifactIdentity.isEmpty()?artifactIdentity():definition.artifactIdentity;
+    result.parentArtifactIdentity=definition.parentArtifactIdentity;
+    if(definition.candidateCount<3||definition.candidateCount>7||definition.candidateCount%2==0||
+       !std::isfinite(definition.centerCorrectionMillimetres)||!std::isfinite(definition.spacingMillimetres)||definition.spacingMillimetres<=0||
+       std::abs(definition.centerCorrectionMillimetres)+(definition.candidateCount/2)*definition.spacingMillimetres>.150001){
+        result.diagnostic="Requested stage exceeds the established source-fixture range (-0.15 to +0.15 mm).";return result;
+    }
     result.orientationIdentity=QStringLiteral("30345-exterior-side-down-axis-parallel-v1");
     const auto features=ClickHingeSemantic::recognize(source);
     if(features.size()!=1||features.front().role!=FunctionalInterfaceRole::Male||!source.sourceModel){
@@ -87,8 +93,8 @@ ClickHingeCalibrationResult ClickHingeCalibrationArtifact::generate(const LDrawG
     if(ownedFaces<200||weights.size()<32||contactVertices<8||oppositeContactVertices<8){
         result.diagnostic=QStringLiteral("Both clh1 arrestor contact regions must be certified and distinct.");return result;
     }
-    for(int i=0;i<7;++i){
-        const double correction=(i-3)*.05;
+    for(int i=0;i<definition.candidateCount;++i){
+        const double correction=definition.centerCorrectionMillimetres+(i-definition.candidateCount/2)*definition.spacingMillimetres;
         auto candidate=source;
         if(correction!=0)for(auto& triangle:candidate.mesh.triangles)
             for(auto* vertex:{&triangle.a,&triangle.b,&triangle.c}){
@@ -144,21 +150,25 @@ ClickHingeCalibrationResult ClickHingeCalibrationArtifact::generate(const LDrawG
 }
 
 FitCalibrationExperiment ClickHingeCalibrationArtifact::observationTemplate(
-    const ClickHingeCalibrationResult& result){
+    const ClickHingeCalibrationResult& result,const ClickHingeCalibrationDefinition& definition){
     FitCalibrationExperiment experiment;
     experiment.artifactIdentity=result.artifactIdentity;
+    experiment.parentArtifactIdentity=result.parentArtifactIdentity;
     experiment.featureFamily=QStringLiteral("ClickHinge");
     experiment.featureRole=QStringLiteral("male");
     experiment.modeledOrientationIdentity=result.orientationIdentity;
     experiment.correctionDimension=FitCorrectionDimension::Height;
     experiment.centerHeightCorrectionMillimetres=0;
-    experiment.candidateSpacingMillimetres=.05;
+    experiment.candidateSpacingMillimetres=definition.spacingMillimetres;
+    experiment.centerHeightCorrectionMillimetres=definition.centerCorrectionMillimetres;
     experiment.regenerationPrototype=result.regenerationPrototype;
     experiment.hasRegenerationPrototype=true;
     experiment.candidates=result.candidates;
     experiment.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
     experiment.process.orientationNotes=QStringLiteral("Print each dot-marked 30345 click-lock insert on its exterior long side at 100% scale with the rotation axis parallel to the bed. Keep supports off both arrestors and the bearing. Engage each with the same genuine paired-clh4 mating part, such as 30394. Repeatedly assess insertion, indexed rotation, holding torque, release force, play, and wear. Four dots (Candidate #4) retains the unmodified 2.186 mm source arrestor radial reach; the seven corrections are offsets relative to that reference.");
     experiment.process.dimensionalCompensationNotes=QStringLiteral("Record actual slicer dimensional compensation settings before testing.");
+    if(!definition.parentArtifactIdentity.isEmpty()) experiment.process.orientationNotes+=" This is a continuation: dot count is the candidate index; consult this session for its correction. Candidate 4 is not necessarily nominal.";
+    if(!definition.parentArtifactIdentity.isEmpty()) experiment.process.orientationNotes.replace("Four dots (Candidate #4) retains the unmodified 2.186 mm source arrestor radial reach; the seven corrections are offsets relative to that reference.","Corrections are relative to the 2.186 mm source arrestor radial reach.");
     return experiment;
 }
 }

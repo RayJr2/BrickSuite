@@ -24,9 +24,15 @@ QString RetainedRotatingWheelCalibrationArtifact::artifactIdentity(){
 }
 
 RetainedRotatingWheelCalibrationResult RetainedRotatingWheelCalibrationArtifact::generate(
-    const LDrawGeometry::LDrawLoadResult& femaleSource){
+    const LDrawGeometry::LDrawLoadResult& femaleSource,const RetainedRotatingWheelCalibrationDefinition& definition){
     RetainedRotatingWheelCalibrationResult result;
-    result.artifactIdentity=artifactIdentity();
+    result.artifactIdentity=definition.artifactIdentity.isEmpty()?artifactIdentity():definition.artifactIdentity;
+    result.parentArtifactIdentity=definition.parentArtifactIdentity;
+    if(definition.candidateCount<3||definition.candidateCount>7||definition.candidateCount%2==0||
+       !std::isfinite(definition.centerCorrectionMillimetres)||!std::isfinite(definition.spacingMillimetres)||definition.spacingMillimetres<=0||
+       std::abs(definition.centerCorrectionMillimetres)+(definition.candidateCount/2)*definition.spacingMillimetres>.150001){
+        result.diagnostic="Requested stage exceeds the established source-fixture range (-0.15 to +0.15 mm).";return result;
+    }
     result.orientationIdentity=QStringLiteral("30027b-wheel-face-down-bearing-axis-perpendicular-v1");
     const auto features=RetainedRotatingWheelSemantic::recognize(femaleSource);
     if(features.size()!=1||features.front().role!=FunctionalInterfaceRole::Female||
@@ -49,8 +55,8 @@ RetainedRotatingWheelCalibrationResult RetainedRotatingWheelCalibrationArtifact:
         result.diagnostic=QStringLiteral("Both the certified cylindrical bearing and notched retention entry are required.");
         return result;
     }
-    for(int i=0;i<7;++i){
-        const double correction=(i-3)*.05;
+    for(int i=0;i<definition.candidateCount;++i){
+        const double correction=definition.centerCorrectionMillimetres+(i-definition.candidateCount/2)*definition.spacingMillimetres;
         auto candidate=femaleSource;
         if(correction!=0)for(auto& triangle:candidate.mesh.triangles)
             for(auto* vertex:{&triangle.a,&triangle.b,&triangle.c}){
@@ -103,19 +109,23 @@ RetainedRotatingWheelCalibrationResult RetainedRotatingWheelCalibrationArtifact:
 }
 
 FitCalibrationExperiment RetainedRotatingWheelCalibrationArtifact::observationTemplate(
-    const RetainedRotatingWheelCalibrationResult& result){
+    const RetainedRotatingWheelCalibrationResult& result,const RetainedRotatingWheelCalibrationDefinition& definition){
     FitCalibrationExperiment e;
     e.artifactIdentity=result.artifactIdentity;
+    e.parentArtifactIdentity=result.parentArtifactIdentity;
     e.featureFamily=QStringLiteral("RetainedRotatingWheel");
     e.featureRole=QStringLiteral("female");
     e.modeledOrientationIdentity=result.orientationIdentity;
-    e.candidateSpacingMillimetres=.05;
+    e.candidateSpacingMillimetres=definition.spacingMillimetres;
+    e.centerDiameterCorrectionMillimetres=definition.centerCorrectionMillimetres;
     e.regenerationPrototype=result.regenerationPrototype;
     e.hasRegenerationPrototype=true;
     e.candidates=result.candidates;
     e.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
     e.process.orientationNotes=QStringLiteral("Print the seven dot-marked notched wheels flat, bearing axes perpendicular to the build plate, at 100% scale. Keep supports out of both sides of the bearing and notched entry. Repeatedly fit each wheel to the same genuine LEGO 4488 wheel holder; record insertion force, snap retention, free rotation, radial play, removal force, and wear. Four dots is the nominal 3.20 mm bearing and unmodified retention entry. The genuine pin is the fixed reference.");
     e.process.dimensionalCompensationNotes=QStringLiteral("Record actual slicer dimensional compensation settings before testing.");
+    if(!definition.parentArtifactIdentity.isEmpty()) e.process.orientationNotes+=" This is a continuation: dot count is the candidate index; consult this session for its correction. Candidate 4 is not necessarily nominal.";
+    if(!definition.parentArtifactIdentity.isEmpty()) e.process.orientationNotes.replace("Four dots is the nominal 3.20 mm bearing and unmodified retention entry.","Corrections are relative to the nominal 3.20 mm bearing.");
     return e;
 }
 }

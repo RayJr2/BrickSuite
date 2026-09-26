@@ -8,6 +8,8 @@
 #include <QTemporaryDir>
 #include <lib3mf_implicit.hpp>
 #include <cstdio>
+#include "../src/services/geometry/fit/FitCalibrationCapabilities.h"
+#include "../src/services/geometry/fit/HingeCalibrationDotMarker.h"
 
 using namespace PrintGeometry;
 using Service=FitCalibrationGenerationService;
@@ -25,6 +27,45 @@ int main(int argc,char** argv)
     auto& process=request.workspace.process;process.printerIdentity="Synthetic printer";process.materialIdentity="PETG";
     process.profileName="Synthetic process";process.hasNozzleDiameter=true;process.nozzleDiameterMillimetres=.4;
     process.hasLayerHeight=true;process.layerHeightMillimetres=.2;process.dimensionalCompensationNotes="None";
+    const QStringList args=app.arguments();const int sourceAt=args.indexOf("--ldraw");
+    if(sourceAt>=0){
+        if(sourceAt+1>=args.size())return 1;
+        const int familyAt=args.indexOf("--family");
+        for(const auto& capability:FitCalibrationCapabilities::entries()){
+            if(capability.sourcePart.isEmpty()||(familyAt>=0&&familyAt+1<args.size()&&capability.family!=args[familyAt+1]))continue;
+            auto r=request;r.family=capability.family;r.variant=capability.variant;r.libraryRoot=args[sourceAt+1];r.orientation=capability.orientations.front();
+            auto unsupported=r;unsupported.orientation=r.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate?FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate:FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
+            ok&=check(!Service::unavailableReason(unsupported).isEmpty(),"unsupported source orientation rejected before generation");
+            const auto initial=service.generate(r);
+            fprintf(stderr,"source %s: %s\n",qPrintable(r.family),qPrintable(initial.diagnostic));
+            ok&=check(initial.ok(),"source-backed family publishes and reopens");if(!initial.ok())continue;
+            auto parent=initial.session;
+            ok&=check(parent.coarseExperiment.candidates.size()==7&&parent.coarseExperiment.hasRegenerationPrototype,"source mapping retained");
+            for(int i=0;i<7;++i){ok&=check(parent.coarseExperiment.candidates[i].index==i+1,"candidate index mapping unchanged");
+                ok&=check(HingeCalibrationDotMarker::dots(i+1,0,0,0).size()==size_t(i+1),"dot marker count mapping");}
+            FitCalibrationObservation o;o.result=FitObservation::Acceptable;
+            FitCalibrationEvidencePolicy::addObservation(&parent.coarseExperiment,4,o);
+            FitCalibrationEvidencePolicy::selectPreferredCandidate(&parent.coarseExperiment,4);
+            r.hasParent=true;r.parent=parent;r.stage=Service::Stage::Verification;
+            const auto child=service.generate(r);
+            fprintf(stderr,"continue %s: %s\n",qPrintable(r.family),qPrintable(child.diagnostic));
+            ok&=check(child.ok(),"source-faithful direct verification publishes");if(!child.ok())continue;
+            ok&=check(child.session.fineExperiment.candidates.size()==3&&child.session.coarseExperiment.candidates.size()==7&&
+                child.session.coarseExperiment.candidates[3].observations.size()==1&&child.session.fineExperiment.candidates[1].observations.isEmpty()&&
+                child.session.fineExperiment.parentArtifactIdentity==parent.coarseExperiment.artifactIdentity,"fresh child preserves independent coarse evidence");
+            auto verified=child.session;auto& fine=verified.fineExperiment;
+            for(int index:{1,2,3})FitCalibrationEvidencePolicy::addObservation(&fine,index,o);
+            o.repeatNumber=2;FitCalibrationEvidencePolicy::addObservation(&fine,2,o);
+            FitCalibrationEvidencePolicy::selectPreferredCandidate(&fine,2);
+            ok&=check(FitCalibrationEvidencePolicy::markVerified(&fine)&&library.saveSession(&verified),"explicit child verification persisted");
+            FitCalibrationSession resumed;
+            ok&=check(library.loadSession(verified.sessionIdentity,&resumed)&&resumed.fineExperiment.state==FitEvidenceState::Verified&&
+                !library.coarseReviewHistory(resumed).isEmpty()&&resumed.coarseExperiment.candidates[3].observations.size()==1,"resumed Verified session retains separate coarse and fine evidence");
+            r.stage=Service::Stage::FineSearch;r.parent.coarseExperiment.preferredCandidateIndex=7;
+            if(capability.maximumCorrection<=.25){ok&=check(!Service::unavailableReason(r).isEmpty(),"out-of-contract boundary extension unavailable");}
+        }
+        return ok?0:1;
+    }
     const auto result=service.generate(request);if(!result.ok())fprintf(stderr,"%s\n",qPrintable(result.diagnostic));
     ok&=check(result.ok()&&QFile::exists(result.fixturePath)&&QFile::exists(result.companionPath),"complete pair published and registered");
     if(!result.ok())return 1;
@@ -67,6 +108,14 @@ int main(int argc,char** argv)
         FitCalibrationEvidencePolicy::markVerified(&verified.coarseExperiment)&&library.saveSession(&verified),"persist explicitly Verified test evidence");
     const auto verifiedRecovery=service.recover(result.directory);
     ok&=check(verifiedRecovery.ok()&&verifiedRecovery.session.coarseExperiment.state==FitEvidenceState::Verified,"registration retry preserves Verified evidence");
+    auto unavailableHeight=request;unavailableHeight.variant="Height";
+    ok&=check(!Service::unavailableReason(unavailableHeight).isEmpty(),"missing prerequisite rejected before generation");
+    auto incompatible=verified;incompatible.process.materialIdentity="Other material";
+    unavailableHeight.workspace.featureSessions={incompatible};
+    ok&=check(!Service::unavailableReason(unavailableHeight).isEmpty(),"incompatible Verified workspace cannot satisfy prerequisite");
+    incompatible=verified;incompatible.coarseExperiment.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
+    unavailableHeight.workspace.featureSessions={incompatible};
+    ok&=check(!Service::unavailableReason(unavailableHeight).isEmpty(),"incompatible physical OD orientation cannot satisfy height prerequisite");
     auto height=request;height.variant="Height";height.workspace.featureSessions={verified};
     const auto heightResult=service.generate(height);
     ok&=check(heightResult.ok()&&heightResult.session.coarseExperiment.correctionDimension==FitCorrectionDimension::Height&&
@@ -129,7 +178,7 @@ int main(int argc,char** argv)
         ok&=check(generatedPackage.ok(),"receiving variants retain existing generators");
     }
     for(const auto& family:QStringList{"CClipBarReceiver","BallJoint"}){
-        auto entry=request;entry.family=family;entry.orientation=FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
+        auto entry=request;entry.family=family;entry.variant={};entry.orientation=FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
         const auto generatedPackage=service.generate(entry);
         ok&=check(generatedPackage.ok()&&generatedPackage.session.process.actualPrintedOrientation==entry.orientation,"parallel orientation-specific generation preserved");
     }
@@ -139,5 +188,13 @@ int main(int argc,char** argv)
     const auto extension=service.generate(boundary);
     ok&=check(extension.ok()&&extension.session.fineExperiment.artifactIdentity.contains("extension")&&
         extension.session.fineExperiment.state!=FitEvidenceState::Verified,"boundary winner extends without premature verification");
+    auto pin=request;pin.family="FrictionlessTechnicPin";pin.variant={};
+    const auto pins=service.generate(pin);ok&=check(pins.ok(),"frictionless coarse");
+    pin.hasParent=true;pin.parent=pins.session;pin.stage=Service::Stage::FineSearch;
+    pin.parent.coarseExperiment.candidates.back().observations.push_back(observation);pin.parent.coarseExperiment.preferredCandidateIndex=7;
+    const auto pinExtension=service.generate(pin);
+    ok&=check(pinExtension.ok()&&pinExtension.session.fineExperiment.candidates.size()==7&&
+        pinExtension.session.fineExperiment.candidates.front().diameterCorrectionMillimetres>=.299999&&
+        pinExtension.session.coarseExperiment.candidates.back().observations.size()==1,"frictionless boundary continuation retains source profile and parent evidence");
     return ok?0:1;
 }

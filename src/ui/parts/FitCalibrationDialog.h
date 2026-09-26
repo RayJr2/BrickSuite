@@ -16,6 +16,8 @@ private:
     void addObservation(); void selectPreferred(); void markVerified(); void generateFineSearch();
     void runGeneration(PrintGeometry::FitCalibrationGenerationService::Request);
     void recoverPackage();
+    void refreshCapabilities();
+    QPushButton* m_newGeneration=nullptr;
     void showGenerationResult(const PrintGeometry::FitCalibrationGenerationService::Result&);
     void readProcess(); void showSession(const PrintGeometry::FitCalibrationSession&,const QString&); void refresh(); void refreshTable(QTableWidget*,const PrintGeometry::FitCalibrationExperiment*); void updateGuidance();
     void showWorkspace(const PrintGeometry::FitCalibrationWorkspace&, const QString& preferredSession = {}); void selectFeature(int);

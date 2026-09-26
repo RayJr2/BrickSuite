@@ -827,6 +827,14 @@ if(BUILD_TESTING)
     target_link_libraries(FitCalibrationGenerationServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
     bricksuite_stage_mcut_runtime(FitCalibrationGenerationServiceTest)
     add_test(NAME FitCalibrationGenerationService COMMAND FitCalibrationGenerationServiceTest)
+    set(BRICKSUITE_CALIBRATION_LDRAW_ROOT "" CACHE PATH "Installed LDraw library for source-backed calibration integration tests")
+    if(BRICKSUITE_CALIBRATION_LDRAW_ROOT)
+        foreach(_calibrationFamily BallSocket PinBarrelHinge InterleavedFingerHinge ClickHinge RetainedRotatingWheel PlainRoundBoreWheel)
+            add_test(NAME FitCalibrationSource${_calibrationFamily} COMMAND FitCalibrationGenerationServiceTest
+                --ldraw "${BRICKSUITE_CALIBRATION_LDRAW_ROOT}" --family "${_calibrationFamily}")
+            set_tests_properties(FitCalibrationSource${_calibrationFamily} PROPERTIES TIMEOUT 1800)
+        endforeach()
+    endif()
 
     qt_add_executable(PinBarrelHingeCalibrationTest EXCLUDE_FROM_ALL
         tests/PinBarrelHingeCalibrationTest.cpp ${_fitArtifactSources})

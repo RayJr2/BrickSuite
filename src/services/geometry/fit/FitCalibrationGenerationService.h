@@ -31,6 +31,7 @@ public:
     // Optional fault/observation seam. Normal callers leave this empty.
     using Observer = std::function<bool(Checkpoint,const QString&,QString*)>;
     explicit FitCalibrationGenerationService(QString artifactRoot = {}, QString managedRoot = {}, Observer observer = {});
+    static QString unavailableReason(const Request&);
     Result generate(const Request&) const;
     Result recover(const QString& publishedDirectory) const;
 private:

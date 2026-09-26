@@ -1,17 +1,13 @@
 #include "FitCalibrationFamilyCatalog.h"
-
+#include "../../services/geometry/fit/FitCalibrationCapabilities.h"
+#include <QSet>
 QVector<FitCalibrationFamilyOption> FitCalibrationFamilyCatalog::availableFamilies()
 {
-    return {
-        {FitCalibrationFamily::TechnicHole, QStringLiteral("Technic Hole")},
-        {FitCalibrationFamily::StandardStud, QStringLiteral("Standard Stud")},
-        {FitCalibrationFamily::StudReceivingClutch, QStringLiteral("Stud Receiving Clutch")},
-        {FitCalibrationFamily::FrictionlessTechnicPin, QStringLiteral("Frictionless Technic Pin")},
-        {FitCalibrationFamily::FrictionTechnicPin, QStringLiteral("Friction Technic Pin")},
-        {FitCalibrationFamily::TechnicAxle, QStringLiteral("Technic Axle")},
-        {FitCalibrationFamily::TechnicAxleHole, QStringLiteral("Technic Axle Hole")},
-        {FitCalibrationFamily::StandardBar, QStringLiteral("Standard Bar")},
-        {FitCalibrationFamily::CClipBarReceiver, QStringLiteral("C-Clip / Bar Receiver")},
-        {FitCalibrationFamily::BallJoint, QStringLiteral("Ball Joint")}
-    };
+    QVector<FitCalibrationFamilyOption> result;QSet<QString> seen;
+    for(const auto& capability:PrintGeometry::FitCalibrationCapabilities::entries()) {
+        if(!capability.initial||seen.contains(capability.family))continue;
+        seen.insert(capability.family);
+        result.push_back({FitCalibrationFamily(result.size()),capability.name,capability.family});
+    }
+    return result;
 }
