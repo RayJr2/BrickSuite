@@ -797,7 +797,49 @@ int traceAudit(const QStringList& args)
     return result.ok?0:1;
 }
 
-int main(int argc,char**argv){QCoreApplication app(argc,argv);if(app.arguments().contains(QStringLiteral("--audit-trace")))return traceAudit(app.arguments());const auto investigationAt=app.arguments().indexOf(QStringLiteral("--slope-investigate"));if(investigationAt>=0&&investigationAt+1<app.arguments().size())return slopeStudInvestigation(app.arguments()[investigationAt+1],investigationAt+2<app.arguments().size()?app.arguments()[investigationAt+2]:QString(),investigationAt+3<app.arguments().size()?app.arguments()[investigationAt+3]:QString(),investigationAt+4<app.arguments().size()?app.arguments()[investigationAt+4]:QString())?0:1;if(app.arguments().contains(QStringLiteral("--click-only")))return clickProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--interleaved-only")))return interleavedProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--hinge-only")))return hingeProductionProof(app.arguments())?0:1;bool ok=true;
+// Optional installed-library acceptance check; creates only temporary external files.
+int externalFileAcceptance(const QString& library)
+{
+    QTemporaryDir temporary;
+    if(!temporary.isValid())return 1;
+    LDrawPrintPreparationService service;
+    for(const QString& id:{QStringLiteral("3001"),QStringLiteral("23422")}){
+        const QString path=temporary.filePath(id+QStringLiteral(".dat"));
+        if(!QFile::copy(QDir(library).filePath("parts/"+id+".dat"),path))return 1;
+        PrintPreparationRequest request;request.libraryAuthority=library;
+        request.loadResult=LDrawLibraryService::loadExternalFile(library,path);
+        request.ldrawIdentity=QStringLiteral("external:")+request.loadResult.externalFilePath;
+        if(!check(request.loadResult.ok(),request.loadResult.error.message))return 1;
+        const auto result=service.prepare(request);
+        QTextStream(stdout)<<id<<": "<<result.diagnostic<<Qt::endl;
+        if(id==QStringLiteral("3001")){
+            if(!check(result.ready(),QStringLiteral("external known-good Part prepares")))return 1;
+            if(!check(result.preparedMesh->partReference.isEmpty(),QStringLiteral("external preparation has no Part identity")))return 1;
+            const auto fit=AutoFitProfileResolver::resolve(true,QStringLiteral("3001"),{},request.loadResult,PrintOrientation{});
+            if(!check(fit.state==AutoFitResolutionState::UnsupportedPart,QStringLiteral("external origin rejects guessed Auto Fit identity")))return 1;
+            const auto originalKey=PrintPreparationCache::keyFor(request,QStringLiteral("test-backend"));
+            auto edited=request;edited.loadResult.externalContentHash=QByteArray("changed bytes");
+            if(!check(!(originalKey==PrintPreparationCache::keyFor(edited,QStringLiteral("test-backend"))),QStringLiteral("external content invalidates cache independently of timestamp")))return 1;
+            QString error;ThreeMfWriter::Options options;options.objectName=QStringLiteral("External test");options.modelColor=QColor("#aaaaaa");
+            if(!check(ThreeMfWriter::write(result.preparedMesh->mesh,temporary.filePath("nominal.3mf"),options,&error),error))return 1;
+            Lib3MF::CWrapper wrapper;auto model=wrapper.CreateModel();
+            model->QueryReader("3mf")->ReadFromFile(temporary.filePath("nominal.3mf").toStdString());
+            auto objects=model->GetMeshObjects();
+            if(!check(objects->MoveNext()&&objects->GetCurrentMeshObject()->GetTriangleCount()==result.preparedMesh->mesh.faces.size(),QStringLiteral("external nominal 3MF reopens intact")))return 1;
+        }else if(!check(!result.ready()&&!result.sourceCoverage.complete(),QStringLiteral("external source coverage failure stays rejected")))return 1;
+    }
+    const QString assembly=temporary.filePath("assembly.ldr");
+    QFile file(assembly);if(!file.open(QIODevice::WriteOnly))return 1;
+    file.write("0 Local assembly\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n");file.close();
+    PrintPreparationRequest assemblyRequest;assemblyRequest.libraryAuthority=library;
+    assemblyRequest.loadResult=LDrawLibraryService::loadExternalFile(library,assembly);
+    assemblyRequest.ldrawIdentity=assembly;
+    if(!check(assemblyRequest.loadResult.ok()&&service.prepare(assemblyRequest).ready(),QStringLiteral("external ldr with installed dependencies prepares")))return 1;
+    const auto catalog=LDrawLibraryService::loadPart(library,QStringLiteral("3001"));
+    return check(catalog.ok()&&catalog.externalFilePath.isEmpty()&&catalog.mesh.ldrawId==QStringLiteral("3001"),QStringLiteral("return to catalog identity"))?0:1;
+}
+
+int main(int argc,char**argv){QCoreApplication app(argc,argv);if(app.arguments().contains(QStringLiteral("--external-files"))){const int i=app.arguments().indexOf(QStringLiteral("--external-files"));return i+1<app.arguments().size()?externalFileAcceptance(app.arguments()[i+1]):2;}if(app.arguments().contains(QStringLiteral("--audit-trace")))return traceAudit(app.arguments());const auto investigationAt=app.arguments().indexOf(QStringLiteral("--slope-investigate"));if(investigationAt>=0&&investigationAt+1<app.arguments().size())return slopeStudInvestigation(app.arguments()[investigationAt+1],investigationAt+2<app.arguments().size()?app.arguments()[investigationAt+2]:QString(),investigationAt+3<app.arguments().size()?app.arguments()[investigationAt+3]:QString(),investigationAt+4<app.arguments().size()?app.arguments()[investigationAt+4]:QString())?0:1;if(app.arguments().contains(QStringLiteral("--click-only")))return clickProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--interleaved-only")))return interleavedProductionProof(app.arguments())?0:1;if(app.arguments().contains(QStringLiteral("--hinge-only")))return hingeProductionProof(app.arguments())?0:1;bool ok=true;
 {
     QVector<BatchPrintablePart> catalog;
     BatchPrintablePart printable;printable.partNumber=QStringLiteral("3001");printable.catalogPresent=true;

@@ -38,9 +38,29 @@ int main(int argc,char**argv)
     if(!writeFile(root.filePath("parts/3001.dat"),
         "0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 box.dat\n"
         "4 4 0 0 0 80 0 0 80 0 40 0 0 40\n2 24 0 0 0 80 0 0\n5 24 0 0 0 80 0 0 0 1 0 80 1 0\n"))return 1;
+    QTemporaryDir external;
+    const QString externalPath=external.filePath("3001.ldr");
+    writeFile(externalPath,"0 External test\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n");
+    const auto externalLoaded=LDrawLibraryService::loadExternalFile(temp.path(),externalPath);
+    if(!require(externalLoaded.ok() && externalLoaded.mesh.triangles.size()==3
+        && externalLoaded.mesh.ldrawId.isEmpty() && !externalLoaded.externalFilePath.isEmpty()
+        && externalLoaded.sourceModel->files.first().relativePath==QStringLiteral("@external/model"),
+        "external .ldr root has neutral identity and installed dependencies"))return 1;
+    const auto originalHash=externalLoaded.externalContentHash;
+    writeFile(externalPath,"0 External test\n1 16 1 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n");
+    if(!require(LDrawLibraryService::loadExternalFile(temp.path(),externalPath).externalContentHash!=originalHash,
+        "same-size external edit changes content fingerprint"))return 1;
+    writeFile(external.filePath("missing.dat"),"1 16 0 0 0 1 0 0 0 1 0 0 0 1 absent.dat\n");
+    const auto missingExternal=LDrawLibraryService::loadExternalFile(temp.path(),external.filePath("missing.dat"));
+    if(!require(!missingExternal.ok() && missingExternal.error.reference==QStringLiteral("absent.dat"),
+        "external missing dependency diagnostic names reference"))return 1;
+    writeFile(external.filePath("escape.dat"),"1 16 0 0 0 1 0 0 0 1 0 0 0 1 ../outside.dat\n");
+    if(!require(!LDrawLibraryService::loadExternalFile(temp.path(),external.filePath("escape.dat")).ok(),
+        "external root does not relax dependency traversal rules"))return 1;
     auto validation=LDrawLibraryService::validateLibrary(temp.path());
     if(!require(validation.valid,"valid library accepted"))return 1;
     auto loaded=LDrawLibraryService::loadPart(temp.path(),"3001");
+    if(!require(loaded.externalFilePath.isEmpty() && loaded.mesh.ldrawId==QStringLiteral("3001"),"catalog load after external load retains catalog identity"))return 1;
     if(!require(loaded.ok(),qPrintable(loaded.error.message)))return 1;
     if(!require(loaded.sourceModel && !loaded.sourceModel->files.isEmpty()
                 && loaded.sourceModel->files.first().relativePath==QStringLiteral("parts/3001.dat"),

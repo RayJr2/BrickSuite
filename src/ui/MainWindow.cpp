@@ -978,6 +978,19 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     // Tools menu
     auto* toolsMenu = menuBar()->addMenu("Tools");
+    auto* modelViewerMenu = toolsMenu->addMenu(tr("3D Model Viewer"));
+    auto* openLDrawAction = modelViewerMenu->addAction(tr("Open LDraw File..."));
+    connect(openLDrawAction, &QAction::triggered, this, [this] {
+        auto& directories = SessionFileDialogDirectoryService::instance();
+        const QString path = QFileDialog::getOpenFileName(this, tr("Open External LDraw File"),
+            directories.initialDirectory(FileDialogDirectoryCategory::OpenImport),
+            tr("LDraw Files (*.dat *.ldr)"));
+        if(path.isEmpty())return;
+        directories.rememberSelectedFile(FileDialogDirectoryCategory::OpenImport,path);
+        LDrawModelViewerRequest request;
+        request.externalFilePath=path;
+        LDrawModelViewerManager::showPart(request);
+    });
 
     auto* fitCalibrationAction = toolsMenu->addAction("LEGO Fit Calibration...");
     connect(fitCalibrationAction, &QAction::triggered, this, [this]() {

@@ -23,6 +23,7 @@ namespace PrintGeometry { struct FitProfile; }
 
 struct LDrawModelViewerRequest
 {
+    QString externalFilePath;
     int partId=0;
     QString partNumber;
     QString partName;

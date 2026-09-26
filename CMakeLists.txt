@@ -913,6 +913,31 @@ if(BUILD_TESTING)
     bricksuite_stage_mcut_runtime(PrintCapabilityAuditDialogTest)
     add_test(NAME PrintCapabilityAuditDialog COMMAND PrintCapabilityAuditDialogTest -platform offscreen)
 
+    qt_add_executable(ExternalLDrawViewerTest EXCLUDE_FROM_ALL
+        tests/ExternalLDrawViewerTest.cpp
+        src/ui/parts/LDrawModelViewerWindow.cpp src/ui/parts/LDrawViewportWidget.cpp
+        src/ui/parts/PrintPreparationCoordinator.cpp src/ui/parts/PreparedMeshRenderAdapter.cpp
+        src/ui/parts/ManufacturingMeshDiagnosticDialog.cpp
+        src/ui/help/HelpManager.cpp src/ui/help/HelpDialog.cpp
+        src/ui/helpers/ColorComboHelper.cpp src/ui/common/SessionFileDialogDirectoryService.cpp
+        src/repositories/ColorRepository.cpp src/models/Color.cpp
+        src/database/DatabaseManager.cpp src/database/DatabaseSchema.cpp
+        src/settings/UserSettings.cpp src/services/CredentialStore.cpp
+        src/services/geometry/ConditionalEdgeVisibility.cpp src/services/geometry/LDrawColorResolver.cpp
+        src/services/geometry/PartViewerCamera.cpp
+        src/services/geometry/print/PrintMeshConversion.cpp
+        src/services/geometry/LDrawObjWriter.cpp src/services/geometry/BinaryStlWriter.cpp
+        ${_audit_test_geometry_sources})
+    target_link_libraries(ExternalLDrawViewerTest PRIVATE Qt6::Widgets Qt6::OpenGLWidgets Qt6::Sql Qt6::Concurrent
+        BrickSuite::Mcut BrickSuite::Lib3mf)
+    if(WIN32)
+        target_link_libraries(ExternalLDrawViewerTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(ExternalLDrawViewerTest PRIVATE "-framework Security")
+    endif()
+    bricksuite_stage_mcut_runtime(ExternalLDrawViewerTest)
+    add_test(NAME ExternalLDrawViewer COMMAND ExternalLDrawViewerTest -platform offscreen)
+
     qt_add_executable(LDrawPrintPreparationServiceTest EXCLUDE_FROM_ALL
         tests/LDrawPrintPreparationServiceTest.cpp
         src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h

@@ -24,6 +24,9 @@ struct LDrawLoadResult {
     PartMesh mesh;
     std::shared_ptr<LDrawSourceModel> sourceModel;
     LDrawDependencyFingerprint dependencyFingerprint;
+    // External roots have no catalog Part identity; dependencies retain library provenance.
+    QString externalFilePath;
+    QByteArray externalContentHash;
     Error error;
     bool ok() const { return error.code == ErrorCode::None; }
 };

@@ -32,6 +32,7 @@
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QFutureWatcher>
 #include <QHBoxLayout>
@@ -106,22 +107,24 @@ LDrawModelViewerWindow::LDrawModelViewerWindow(PrintPreparationCoordinator*coord
 
 void LDrawModelViewerWindow::showPart(const LDrawModelViewerRequest& request)
 {
-    m_request=request;m_part->setText(QStringLiteral("%1 — %2").arg(request.partNumber,request.partName));
+    m_request=request;if(!request.externalFilePath.isEmpty()){m_request.partId=0;m_request.partNumber.clear();m_request.partName.clear();m_request.candidates.clear();}
+    m_part->setText(QStringLiteral("%1 — %2").arg(request.partNumber,request.partName));
+    if(!request.externalFilePath.isEmpty())m_part->setText(tr("External LDraw File: %1").arg(QFileInfo(request.externalFilePath).fileName()));
     int colorIndex=-1;if(request.initialRebrickableColorId)colorIndex=m_modelColor->findData(*request.initialRebrickableColorId);
     if(colorIndex<0){for(int i=0;i<m_modelColor->count();++i)if(m_modelColor->itemText(i).compare(QStringLiteral("Light Bluish Gray"),Qt::CaseInsensitive)==0){colorIndex=i;break;}}
     if(colorIndex<0)colorIndex=0;m_modelColor->setCurrentIndex(colorIndex);
     const QColor selected=currentModelColor();if(selected.isValid())m_viewport->setModelColor(selected);
     const int initialIndex=LDrawModelViewerSelection::initialIndex(
-        request.partNumber,request.candidates,UserSettings::instance().ldrawLibraryPath());
-    {QSignalBlocker blocker(m_candidate);m_candidate->clear();m_candidate->addItems(request.candidates);m_candidate->setCurrentIndex(initialIndex);}
-    m_candidate->setVisible(request.candidates.size()>1);startLoad(LoadBehavior::ResetView);
+        m_request.partNumber,m_request.candidates,UserSettings::instance().ldrawLibraryPath());
+    {QSignalBlocker blocker(m_candidate);m_candidate->clear();m_candidate->addItems(m_request.candidates);m_candidate->setCurrentIndex(initialIndex);}
+    m_candidate->setVisible(m_request.candidates.size()>1);startLoad(LoadBehavior::ResetView);
 }
 
 void LDrawModelViewerWindow::startLoad(LoadBehavior behavior)
 {
     const quint64 generation=behavior==LoadBehavior::PreserveView?m_state.beginReload():m_state.beginNewModelLoad();
-    m_sourceGeneration=generation;invalidatePreparation();m_sourceReady=false;m_sourceMeshStatus->setText(tr("Source Mesh: Loading…"));updatePreparationControls();
-    const QString id=m_candidate->currentText().trimmed();if(id.isEmpty()){m_status->setText(tr("No authoritative LDraw identity is available."));m_sourceMeshStatus->setText(tr("Source Mesh: Unavailable"));m_viewport->clearMesh();return;}
+    m_sourceGeneration=generation;invalidatePreparation();m_mesh={};m_loadResult={};m_sourcePrintMesh={};m_sourceAnalysis={};m_viewport->clearMesh();m_counts->clear();m_counts->setToolTip({});m_sourceMeshStatus->setToolTip({});m_source->clear();m_bfc->clear();m_export->setEnabled(false);m_sourceReady=false;updateDimensions();m_sourceMeshStatus->setText(tr("Source Mesh: Loading…"));updatePreparationControls();
+    const QString id=m_candidate->currentText().trimmed();if(id.isEmpty()&&m_request.externalFilePath.isEmpty()){m_status->setText(tr("No authoritative LDraw identity is available."));m_sourceMeshStatus->setText(tr("Source Mesh: Unavailable"));m_viewport->clearMesh();return;}
     if(behavior==LoadBehavior::ResetView){
         QSignalBlocker scaleBlocker(m_scale);m_scale->setValue(100.0);m_viewport->setUniformScale(1.0f);
         m_viewport->setPrintOrientation(m_state.printOrientation());updatePrintOrientationLabel();
@@ -130,13 +133,15 @@ void LDrawModelViewerWindow::startLoad(LoadBehavior behavior)
     m_status->setText(tr("Loading 3D model..."));m_export->setEnabled(false);m_reload->setEnabled(false);
     const QString root=UserSettings::instance().ldrawLibraryPath();auto*watcher=new QFutureWatcher<LDrawGeometry::LDrawLoadResult>(this);QPointer<LDrawModelViewerWindow> self(this);
     connect(watcher,&QFutureWatcher<LDrawGeometry::LDrawLoadResult>::finished,this,[self,watcher,generation,behavior]{const auto result=watcher->result();watcher->deleteLater();if(!self||!self->m_state.accepts(generation))return;self->m_reload->setEnabled(true);self->applyResult(result,behavior);});
-    watcher->setFuture(QtConcurrent::run([root,id]{return LDrawLibraryService::loadPart(root,id);}));
+    const QString externalPath=m_request.externalFilePath;
+    watcher->setFuture(QtConcurrent::run([root,id,externalPath]{return externalPath.isEmpty()?LDrawLibraryService::loadPart(root,id):LDrawLibraryService::loadExternalFile(root,externalPath);}));
 }
 
 void LDrawModelViewerWindow::applyResult(const LDrawGeometry::LDrawLoadResult&result,LoadBehavior behavior)
 {
     if(!result.ok()){m_status->setText(result.error.message);m_source->setText(result.error.reference);m_sourceMeshStatus->setText(tr("Source Mesh: Unavailable"));updatePreparationControls();return;}
     m_loadResult=result;m_mesh=result.mesh;m_status->setText(m_renderingError.isEmpty()?tr("Geometry loaded successfully."):m_renderingError);m_source->setText(QStringLiteral("%1 (%2)").arg(m_mesh.sourceRelativePath,m_mesh.sourceProvenance));
+    m_counts->setToolTip(tr("%1 source files; %2 reference instances").arg(m_loadResult.sourceModel?m_loadResult.sourceModel->files.size():0).arg(m_loadResult.sourceModel?m_loadResult.sourceModel->references.size():0));
     m_counts->setText(tr("%1 triangles, %2 hard edges, %3 conditional edges; %4 degenerate faces omitted").arg(m_mesh.triangles.size()).arg(m_mesh.hardEdges.size()).arg(m_mesh.conditionalEdges.size()).arg(m_mesh.degenerateFaces));
     m_bfc->setText(m_mesh.bfcCertified?tr("Certified source geometry encountered."):tr("No BFC certification was found in the loaded source."));
     m_viewport->setMesh(m_mesh,behavior==LoadBehavior::ResetView);m_export->setEnabled(!m_mesh.triangles.isEmpty());updateDimensions();
@@ -156,7 +161,7 @@ void LDrawModelViewerWindow::invalidatePreparation()
 void LDrawModelViewerWindow::startPreparation()
 {
     if(!m_sourceReady||m_preparing||!m_loadResult.ok())return;
-    PrintGeometry::PrintPreparationRequest request;request.partReference=m_request.partNumber;request.ldrawIdentity=m_candidate->currentText().trimmed();request.libraryAuthority=UserSettings::instance().ldrawLibraryPath();request.loadResult=m_loadResult;
+    PrintGeometry::PrintPreparationRequest request;request.partReference=m_request.partNumber;request.ldrawIdentity=m_request.externalFilePath.isEmpty()?m_candidate->currentText().trimmed():QStringLiteral("external:")+m_loadResult.externalFilePath;request.libraryAuthority=UserSettings::instance().ldrawLibraryPath();request.loadResult=m_loadResult;
     if(!m_coordinator->start(m_sourceGeneration,request))return;m_preparing=true;m_preparedMeshStatus->setText(tr("Prepared Mesh: Preparing — Analyzing Source…"));updatePreparationControls();
 }
 
@@ -167,7 +172,11 @@ void LDrawModelViewerWindow::applyPreparationProgress(quint64 generation,const P
 
 void LDrawModelViewerWindow::applyPreparationResult(quint64 generation,const PrintGeometry::PrintPreparationResult&result)
 {
-    if(!m_state.accepts(generation))return;m_preparedMeshStatus->setToolTip(result.diagnostic);
+    if(!m_preparing||!m_state.accepts(generation))return;QString details=result.diagnostic;
+    details+=tr("\nSource Coverage: %1 of %2 groups represented; %3 expanded triangles.").arg(result.sourceCoverage.representedGroups()).arg(result.sourceCoverage.groups.size()).arg(result.sourceCoverage.expandedTriangleCount);
+    if(result.preparedMesh){details+=tr("\nPreparation route: %1").arg(result.preparedMesh->preparationMethod);for(const auto& feature:result.preparedMesh->functionalFeatures)details+=QStringLiteral("\n")+feature.evidenceContract;}
+    if(!m_request.externalFilePath.isEmpty())details+=tr("\nExternal file: nominal PreparedMesh export only; no catalog/profile identity for Auto Fit or profile ManufacturingMesh.");
+    m_preparedMeshStatus->setToolTip(details);
     using S=PrintGeometry::PrintPreparationState;switch(result.state){case S::Ready:if(result.preparedMesh){m_preparedMesh=result.preparedMesh;m_preparedMeshStatus->setText(tr("Prepared Mesh: Ready for Printing"));{QSignalBlocker blocker(m_geometryView);m_geometryView->setCurrentIndex(m_geometryView->findData(1));}selectGeometry();}break;case S::Unsupported:m_prepareBlocked=true;m_preparedMeshStatus->setText(tr("Prepared Mesh: Built-in preparation unsupported"));break;case S::Ambiguous:m_prepareBlocked=true;m_preparedMeshStatus->setText(tr("Prepared Mesh: Construction ambiguous"));break;case S::Failed:m_preparedMeshStatus->setText(result.error==PrintGeometry::PrintPreparationError::ResourceLimitExceeded?tr("Prepared Mesh: Safe workload limit exceeded"):tr("Prepared Mesh: Preparation failed"));break;case S::Cancelled:break;}m_preparing=false;updatePreparationControls();
 }
 
@@ -219,7 +228,8 @@ QColor LDrawModelViewerWindow::currentModelColor() const
 
 void LDrawModelViewerWindow::exportModel()
 {
-    QDialog d(this);d.setWindowTitle(tr("Export 3D Model"));auto*l=new QFormLayout(&d);QComboBox geometry(&d),format(&d),profiles(&d);geometry.addItem(tr("Source Mesh"),0);if(m_preparedMesh)geometry.addItem(tr("Prepared Mesh — Nominal / Ready for Printing"),1);const bool manufacturingSupported=bool(m_preparedMesh);if(manufacturingSupported)geometry.addItem(tr("ManufacturingMesh — Verified Fit Profile / Nominal Hinge"),2);if(m_preparedMesh)geometry.setCurrentIndex(1);format.addItems({tr("OBJ"),tr("Binary STL"),tr("3MF")});profiles.addItem(tr("Select a compatible Verified Fit Profile..."),QString());PrintGeometry::FitCalibrationLibrary library;if(manufacturingSupported){for(const auto&summary:library.profiles()){if(!summary.compatible)continue;PrintGeometry::FitProfile profile;QString error;if(library.loadProfile(summary.identity,&profile,&error)&&PrintGeometry::ManufacturingMeshService::hasApplicableCorrection(profile,m_loadResult,m_state.printOrientation()))profiles.addItem(summary.name,summary.identity);}}
+    const quint64 generation=m_sourceGeneration;
+    QDialog d(this);d.setWindowTitle(tr("Export 3D Model"));auto*l=new QFormLayout(&d);QComboBox geometry(&d),format(&d),profiles(&d);geometry.addItem(tr("Source Mesh"),0);if(m_preparedMesh)geometry.addItem(tr("Prepared Mesh — Nominal / Ready for Printing"),1);const bool manufacturingSupported=bool(m_preparedMesh)&&m_request.externalFilePath.isEmpty();if(manufacturingSupported)geometry.addItem(tr("ManufacturingMesh — Verified Fit Profile / Nominal Hinge"),2);if(m_preparedMesh)geometry.setCurrentIndex(1);format.addItems({tr("OBJ"),tr("Binary STL"),tr("3MF")});profiles.addItem(tr("Select a compatible Verified Fit Profile..."),QString());PrintGeometry::FitCalibrationLibrary library;if(manufacturingSupported){for(const auto&summary:library.profiles()){if(!summary.compatible)continue;PrintGeometry::FitProfile profile;QString error;if(library.loadProfile(summary.identity,&profile,&error)&&PrintGeometry::ManufacturingMeshService::hasApplicableCorrection(profile,m_loadResult,m_state.printOrientation()))profiles.addItem(summary.name,summary.identity);}}
     const QString nominalHingeChoice=QStringLiteral("nominal-interleaved-finger-hinge");
     if(manufacturingSupported){
         for(const auto& hinge:PrintGeometry::InterleavedFingerHingeSemantic::recognize(m_loadResult))
@@ -246,8 +256,8 @@ void LDrawModelViewerWindow::exportModel()
                         }
                     }
             }
-        }else if(UserSettings::instance().autoFitEnabled()&&m_preparedMesh)note->setText(autoFit.resolved()?tr("Prepared Mesh exports nominal validated geometry. Auto Fit selection was overridden for this export."):autoFit.diagnostic);else note->setText(m_preparedMesh?tr("Prepared Mesh exports nominal validated geometry. Source remains available."):tr("Source export is not a BrickSuite printability guarantee. Your slicer may need to repair it."));};connect(&geometry,qOverload<int>(&QComboBox::currentIndexChanged),&d,[&](int){updateChoice();});connect(&profiles,qOverload<int>(&QComboBox::currentIndexChanged),&d,[&](int){updateChoice();});connect(&buttons,&QDialogButtonBox::accepted,&d,&QDialog::accept);connect(&buttons,&QDialogButtonBox::rejected,&d,&QDialog::reject);updateChoice();if(d.exec()!=QDialog::Accepted)return;
-    const bool stl=format.currentIndex()==1,threeMf=format.currentIndex()==2,prepared=geometry.currentData().toInt()==1,manufacturing=geometry.currentData().toInt()==2;auto&directories=SessionFileDialogDirectoryService::instance();const QString id=m_candidate->currentText().trimmed(),ext=threeMf?QStringLiteral(".3mf"):(stl?QStringLiteral(".stl"):QStringLiteral(".obj"));QString path=QFileDialog::getSaveFileName(this,tr("Export 3D Model"),directories.initialFilePath(FileDialogDirectoryCategory::SaveExport,id+(manufacturing?QStringLiteral("-ManufacturingMesh"):QString())+ext),threeMf?tr("3MF Model (*.3mf)"):(stl?tr("Binary STL (*.stl)"):tr("Wavefront OBJ (*.obj)")));if(path.isEmpty())return;if(!path.endsWith(ext,Qt::CaseInsensitive))path+=ext;directories.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);const double scale=m_state.scalePercent()/100.0;if(manufacturing){PrintGeometry::FitProfile profile;QString error;if(profiles.currentData().toString()!=nominalHingeChoice&&(profiles.currentData().toString().isEmpty()||!PrintGeometry::FitCalibrationLibrary().loadProfile(profiles.currentData().toString(),&profile,&error))){QMessageBox::warning(this,tr("Export ManufacturingMesh"),error.isEmpty()?tr("Select a compatible Verified Fit Profile."):error);return;}startManufacturingExport(profile,stl,threeMf,path,id,scale,currentModelColor());return;}const auto source=PrintGeometry::PrintMeshConversion::fromPartMesh(m_mesh);const auto&mesh=prepared?m_preparedMesh->mesh:source;QString failure;
+        }else if(!m_request.externalFilePath.isEmpty())note->setText(tr("External file: no trusted catalog/profile identity. Auto Fit and profile ManufacturingMesh are unavailable. Prepared Mesh exports nominal validated geometry; Source export is not a printability guarantee."));else if(UserSettings::instance().autoFitEnabled()&&m_preparedMesh)note->setText(autoFit.resolved()?tr("Prepared Mesh exports nominal validated geometry. Auto Fit selection was overridden for this export."):autoFit.diagnostic);else note->setText(m_preparedMesh?tr("Prepared Mesh exports nominal validated geometry. Source remains available."):tr("Source export is not a BrickSuite printability guarantee. Your slicer may need to repair it."));};connect(&geometry,qOverload<int>(&QComboBox::currentIndexChanged),&d,[&](int){updateChoice();});connect(&profiles,qOverload<int>(&QComboBox::currentIndexChanged),&d,[&](int){updateChoice();});connect(&buttons,&QDialogButtonBox::accepted,&d,&QDialog::accept);connect(&buttons,&QDialogButtonBox::rejected,&d,&QDialog::reject);updateChoice();if(d.exec()!=QDialog::Accepted||!m_state.accepts(generation))return;
+    const bool stl=format.currentIndex()==1,threeMf=format.currentIndex()==2,prepared=geometry.currentData().toInt()==1,manufacturing=geometry.currentData().toInt()==2;auto&directories=SessionFileDialogDirectoryService::instance();const QString id=m_request.externalFilePath.isEmpty()?m_candidate->currentText().trimmed():QFileInfo(m_request.externalFilePath).completeBaseName(),ext=threeMf?QStringLiteral(".3mf"):(stl?QStringLiteral(".stl"):QStringLiteral(".obj"));QString path=QFileDialog::getSaveFileName(this,tr("Export 3D Model"),directories.initialFilePath(FileDialogDirectoryCategory::SaveExport,id+(manufacturing?QStringLiteral("-ManufacturingMesh"):QString())+ext),threeMf?tr("3MF Model (*.3mf)"):(stl?tr("Binary STL (*.stl)"):tr("Wavefront OBJ (*.obj)")));if(path.isEmpty()||!m_state.accepts(generation))return;if(!path.endsWith(ext,Qt::CaseInsensitive))path+=ext;directories.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);const double scale=m_state.scalePercent()/100.0;if(manufacturing){PrintGeometry::FitProfile profile;QString error;if(profiles.currentData().toString()!=nominalHingeChoice&&(profiles.currentData().toString().isEmpty()||!PrintGeometry::FitCalibrationLibrary().loadProfile(profiles.currentData().toString(),&profile,&error))){QMessageBox::warning(this,tr("Export ManufacturingMesh"),error.isEmpty()?tr("Select a compatible Verified Fit Profile."):error);return;}startManufacturingExport(profile,stl,threeMf,path,id,scale,currentModelColor());return;}const auto source=PrintGeometry::PrintMeshConversion::fromPartMesh(m_mesh);const auto&mesh=prepared?m_preparedMesh->mesh:source;QString failure;
     const auto exportMesh=m_state.printOrientation().apply(mesh);if(threeMf){ThreeMfWriter::Options options;options.uniformScale=scale;options.objectName=id;options.partIdentity=m_request.partNumber;options.modelColor=currentModelColor();if(!ThreeMfWriter::write(exportMesh,path,options,&failure))QMessageBox::critical(this,tr("Export 3D Model"),failure);else m_status->setText(tr("3D model exported successfully."));}else if(stl){if(!BinaryStlWriter::write(exportMesh,path,scale,&failure))QMessageBox::critical(this,tr("Export 3D Model"),failure);else m_status->setText(tr("3D model exported successfully."));}else{LDrawObjWriter::Options options;options.uniformScale=scale;options.partNumber=m_request.partNumber;options.ldrawId=id;options.geometryLabel=prepared?QStringLiteral("Prepared"):QStringLiteral("Source");LDrawGeometry::Error error;if(!LDrawObjWriter::write(exportMesh,path,options,&error))QMessageBox::critical(this,tr("Export 3D Model"),error.message);else m_status->setText(tr("3D model exported successfully."));}
 }
 
@@ -255,10 +265,10 @@ void LDrawModelViewerWindow::startManufacturingExport(const PrintGeometry::FitPr
 {
     if(!m_preparedMesh)return;
     m_export->setEnabled(false);m_status->setText(profile.profileIdentity.isEmpty()?tr("Generating nominal/unverified hinge ManufacturingMesh for export..."):tr("Generating profile-driven ManufacturingMesh for export..."));
-    const auto source=m_loadResult;const auto prepared=*m_preparedMesh;const auto printOrientation=m_state.printOrientation();
+    const quint64 generation=m_sourceGeneration;const auto source=m_loadResult;const auto prepared=*m_preparedMesh;const auto printOrientation=m_state.printOrientation();
     auto*watcher=new QFutureWatcher<PrintGeometry::ManufacturingMeshResult>(this);QPointer<LDrawModelViewerWindow>self(this);
-    connect(watcher,&QFutureWatcher<PrintGeometry::ManufacturingMeshResult>::finished,this,[self,watcher,profile,stl,threeMf,path,ldrawId,scale,color,printOrientation]{
-        const auto result=watcher->result();watcher->deleteLater();if(!self)return;self->m_export->setEnabled(true);
+    connect(watcher,&QFutureWatcher<PrintGeometry::ManufacturingMeshResult>::finished,this,[self,watcher,generation,profile,stl,threeMf,path,ldrawId,scale,color,printOrientation]{
+        const auto result=watcher->result();watcher->deleteLater();if(!self||!self->m_state.accepts(generation))return;self->m_export->setEnabled(true);
         if(!result.ok()||!result.manufacturingMesh){QMessageBox::critical(self,self->tr("Export ManufacturingMesh"),result.diagnostic);self->m_status->setText(self->tr("ManufacturingMesh export was rejected; no nominal geometry was exported."));return;}
         const auto&manufacturing=*result.manufacturingMesh;const auto exportMesh=printOrientation.apply(manufacturing.mesh);QString failure;
         if(threeMf){ThreeMfWriter::Options options;options.uniformScale=scale;options.objectName=QStringLiteral("%1 ManufacturingMesh %2").arg(manufacturing.partReference,manufacturing.identity);options.partIdentity=manufacturing.partReference;options.modelColor=color;if(!ThreeMfWriter::write(exportMesh,path,options,&failure)){QMessageBox::critical(self,self->tr("Export ManufacturingMesh"),failure);return;}}

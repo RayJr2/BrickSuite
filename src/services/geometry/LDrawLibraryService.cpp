@@ -1,5 +1,6 @@
 #include "LDrawLibraryService.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -69,6 +70,9 @@ bool parseDouble(const QString& s, double& value)
 struct Loader {
     QString root;
     QString canonicalRoot;
+    QString sourcePath(const QString& relative) const {
+        return relative == QStringLiteral("@external/model") ? result.externalFilePath : QDir(root).filePath(relative);
+    }
     QHash<QString,QString> index;
     QSet<QString> ambiguous;
     QSet<QString> active;
@@ -85,9 +89,9 @@ struct Loader {
         const int id=result.sourceModel->files.size();
         result.sourceModel->fileIds.insert(key,id);
         result.sourceModel->files.push_back({id,relative,SourceClassification::Unknown});
-        const QFileInfo info(QDir(root).filePath(relative));
+        const QFileInfo info(sourcePath(relative));
         result.dependencyFingerprint.dependencies.push_back(
-            {relative, info.size(), info.lastModified().toUTC()});
+            {relative == QStringLiteral("@external/model") ? result.externalFilePath : relative, info.size(), info.lastModified().toUTC()});
         return id;
     }
 
@@ -161,12 +165,13 @@ struct Loader {
         if (relative.startsWith("@mpd/")) {
             source=embedded.value(relative.mid(5));
         } else {
-            const QString path=QDir(root).filePath(relative); QFileInfo info(path);
+            const QString path=sourcePath(relative); QFileInfo info(path);
             if (info.size()>MaxFileBytes || ++fileCount>MaxFiles || (totalBytes+=info.size())>MaxTotalBytes) {
                 fail(ErrorCode::ResourceLimitExceeded,"LDraw input exceeded a safety limit.",relative); return false;
             }
             QFile sourceFile(path); if (!sourceFile.open(QIODevice::ReadOnly)) { fail(ErrorCode::DependencyMissing,"The LDraw source could not be opened.",relative); return false; }
             source=sourceFile.readAll();
+            if(relative==QStringLiteral("@external/model"))result.externalContentHash=QCryptographicHash::hash(source,QCryptographicHash::Sha256);
             // MPD container sections are local named subfiles. The first FILE
             // section is the entry point; subsequent sections are resolved
             // before the installed library without touching the filesystem.
@@ -288,4 +293,31 @@ LDrawGeometry::LDrawLoadResult LDrawLibraryService::loadPart(const QString& root
     const QString rel=loader.resolve(id,true); if(rel.isEmpty()) return loader.result;
     loader.result.mesh.sourceRelativePath=rel; loader.result.mesh.sourceProvenance="Installed LDraw library";
     loader.load(rel,Transform{},"16",false,0); return loader.result;
+}
+
+LDrawGeometry::LDrawLoadResult LDrawLibraryService::loadExternalFile(const QString& root, const QString& path)
+{
+    Loader loader;
+    loader.result.sourceModel=std::make_shared<LDrawSourceModel>();
+    const QFileInfo file(path);
+    loader.result.externalFilePath=file.canonicalFilePath();
+    if(!file.isFile() || loader.result.externalFilePath.isEmpty()
+       || (file.suffix().compare("dat",Qt::CaseInsensitive)!=0 && file.suffix().compare("ldr",Qt::CaseInsensitive)!=0)) {
+        loader.fail(ErrorCode::DependencyMissing,"Select an existing local LDraw .dat or .ldr file.",path);
+        return loader.result;
+    }
+    const auto validation=validateLibrary(root);
+    if(!validation.valid) {
+        loader.fail(root.trimmed().isEmpty()?ErrorCode::LibraryNotConfigured:ErrorCode::InvalidLibrary,validation.status);
+        return loader.result;
+    }
+    loader.root=validation.normalizedRoot;
+    loader.canonicalRoot=validation.normalizedRoot;
+    loader.canonicalRoot.replace('\\','/');
+    if(!loader.buildIndex())return loader.result;
+    // A filename is not authoritative semantic or catalog identity.
+    loader.result.mesh.sourceRelativePath=loader.result.externalFilePath;
+    loader.result.mesh.sourceProvenance="External LDraw file";
+    loader.load(QStringLiteral("@external/model"),Transform{},"16",false,0);
+    return loader.result;
 }
