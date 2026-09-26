@@ -2,6 +2,7 @@
 #include "../../services/geometry/fit/FitCalibrationExperiment.h"
 #include "../../services/geometry/fit/FitCalibrationLibrary.h"
 #include "FitCalibrationFamilyCatalog.h"
+#include "../../services/geometry/fit/FitCalibrationGenerationService.h"
 #include <QDialog>
 class QComboBox; class QDoubleSpinBox; class QLabel; class QLineEdit; class QPushButton; class QSpinBox; class QTabWidget; class QTableWidget; class QTimer;
 class FitCalibrationDialog : public QDialog {
@@ -11,8 +12,11 @@ private:
     PrintGeometry::FitCalibrationExperiment* activeExperiment();
     QTableWidget* activeTable() const;
     bool openSession(const QString&); bool saveSession(); bool writeSession(const QString&);
-    void loadSession(); void resumeManagedSession(); void newWorkspace(); void deleteSelectedWorkspace(); void exportSession(); void createFitProfile(); void createSelectedCalibration(); void createCalibration(FitCalibrationFamily); void newTechnicCalibration(); void newStudCalibration(); void newReceivingClutchCalibration(); void newFrictionlessPinCalibration(); void newFrictionPinCalibration(); void newTechnicAxleCalibration(); void newTechnicAxleHoleCalibration(); void newStandardBarCalibration(); void newCClipBarReceiverCalibration(); void newBallJointCalibration(); void refreshLibrary(); void scheduleManagedSave();
+    void loadSession(); void resumeManagedSession(); void newWorkspace(); void deleteSelectedWorkspace(); void exportSession(); void createFitProfile(); void createSelectedCalibration(); void createCalibration(FitCalibrationFamily); void refreshLibrary(); void scheduleManagedSave();
     void addObservation(); void selectPreferred(); void markVerified(); void generateFineSearch();
+    void runGeneration(PrintGeometry::FitCalibrationGenerationService::Request);
+    void recoverPackage();
+    void showGenerationResult(const PrintGeometry::FitCalibrationGenerationService::Result&);
     void readProcess(); void showSession(const PrintGeometry::FitCalibrationSession&,const QString&); void refresh(); void refreshTable(QTableWidget*,const PrintGeometry::FitCalibrationExperiment*); void updateGuidance();
     void showWorkspace(const PrintGeometry::FitCalibrationWorkspace&, const QString& preferredSession = {}); void selectFeature(int);
     PrintGeometry::FitCalibrationSession m_session; QString m_path;

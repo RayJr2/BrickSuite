@@ -1,19 +1,8 @@
 #include "FitCalibrationDialog.h"
 #include "../../services/geometry/fit/FitCalibrationNamingCatalog.h"
 #include "../../services/geometry/fit/FitCalibrationArtifactLocation.h"
-#include "../../services/geometry/fit/FitCalibrationFixtureLabel.h"
-#include "../../services/geometry/ThreeMfWriter.h"
-#include "../../services/geometry/fit/RoundTechnicCalibrationArtifact.h"
-#include "../../services/geometry/fit/StandardStudCalibrationArtifact.h"
-#include "../../services/geometry/fit/StudReceivingCalibrationArtifact.h"
-#include "../../services/geometry/fit/FrictionlessTechnicPinCalibrationArtifact.h"
-#include "../../services/geometry/fit/StandardBarCalibrationArtifact.h"
-#include "../../services/geometry/fit/CClipBarReceiverCalibrationArtifact.h"
-#include "../../services/geometry/fit/BallJointCalibrationArtifact.h"
-#include "../../services/geometry/fit/FrictionTechnicPinCalibrationArtifact.h"
-#include "../../services/geometry/fit/TechnicAxleCalibrationArtifact.h"
-#include "../../services/geometry/fit/TechnicAxleHoleCalibrationArtifact.h"
-#include "../../services/geometry/fit/PlainRoundBoreWheelCalibrationArtifact.h"
+#include "../../services/geometry/fit/FitCalibrationGenerationService.h"
+#include <QFileInfo>
 #include "../../services/geometry/LDrawLibraryService.h"
 #include "../../settings/UserSettings.h"
 #include "../common/SessionFileDialogDirectoryService.h"
@@ -49,32 +38,18 @@ using namespace PrintGeometry;
 namespace {
 QString resultText(FitObservation v){switch(v){case FitObservation::TooTight:return "Too Tight";case FitObservation::Acceptable:return "Acceptable";case FitObservation::Preferred:return "Preferred";case FitObservation::TooLoose:return "Too Loose";case FitObservation::UnableToEvaluate:return "Unable to Evaluate";default:return "Unevaluated";}}
 QTableWidget* makeTable(QWidget*p){auto*t=new QTableWidget(p);t->setColumnCount(7);t->setHorizontalHeaderLabels({"Candidate","Correction (mm)","Diameter (mm)","Observations","Progress","Last Result","Preferred"});t->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);t->setSelectionBehavior(QAbstractItemView::SelectRows);return t;}
-int artifactVersion(const QString& identity){const int marker=identity.lastIndexOf(QStringLiteral("-v"));bool ok=false;const int version=marker<0?0:identity.mid(marker+2).toInt(&ok);return ok&&version>0?version:1;}
-QString fixtureDefault(FitCalibrationNameKey key,const QString& identity,const QString& stage=QStringLiteral("coarse")){QDir().mkpath(FitCalibrationArtifactLocation::directory());return FitCalibrationArtifactLocation::fixturePath(key,stage,artifactVersion(identity));}
-bool writeFixture(const PrintMesh& mesh,FitCalibrationNameKey key,bool alreadyLabeled,const QString& path,
-                  const ThreeMfWriter::Options& options,QString* error){
-    PrintMesh labeled;
-    if(!alreadyLabeled&&!FitCalibrationFixtureLabel::recessStandalone(mesh,key,&labeled,nullptr,error))return false;
-    return ThreeMfWriter::write(alreadyLabeled?mesh:labeled,path,options,error);
-}
-bool writeCompanion(const FitCalibrationLibrary& library,const FitCalibrationSession& session,const QString& modelPath,QString* error){
-    const QString companion=FitCalibrationArtifactLocation::companionPath(modelPath);
-    if(!library.exportSession(session.sessionIdentity,companion,error))return false;
-    SessionFileDialogDirectoryService::instance().rememberSelectedFile(FileDialogDirectoryCategory::OpenImport,companion);
-    return true;
-}
 QString featureName(const FitCalibrationSession&session){const auto*e=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);return e?FitCalibrationLibrary::featureDisplayName(*e,session.process.actualPrintedOrientation):QStringLiteral("Empty feature");}
 }
-FitCalibrationDialog::FitCalibrationDialog(QWidget*p):QDialog(p){setWindowTitle("LEGO Fit Calibration");resize(980,760);auto*root=new QVBoxLayout(this);auto*files=new QHBoxLayout;m_sessions=new QComboBox(this);m_sessions->setMinimumWidth(300);auto*resume=new QPushButton("Resume Workspace",this);auto*workspaceActions=new QPushButton("Workspace...",this);auto*workspaceMenu=new QMenu(workspaceActions);auto*newWorkspaceAction=workspaceMenu->addAction("New Workspace...");auto*deleteWorkspaceAction=workspaceMenu->addAction("Delete Selected Workspace...");workspaceActions->setMenu(workspaceMenu);auto*load=new QPushButton("Import Session...",this);m_newFamily=new QComboBox(this);m_newFamily->setObjectName(QStringLiteral("fitCalibrationNewFamily"));for(const auto&option:FitCalibrationFamilyCatalog::availableFamilies())m_newFamily->addItem(option.label,int(option.family));auto*newCalibration=new QPushButton("New Calibration...",this);newCalibration->setObjectName(QStringLiteral("fitCalibrationNewAction"));m_save=new QPushButton("Save Managed",this);auto*saveAs=new QPushButton("Export Feature...",this);auto*profile=new QPushButton("Create / Update Fit Profile...",this);files->addWidget(new QLabel("Existing Workspaces:",this));files->addWidget(m_sessions,1);files->addWidget(resume);files->addWidget(workspaceActions);files->addWidget(load);files->addWidget(new QLabel("New:",this));files->addWidget(m_newFamily);files->addWidget(newCalibration);files->addWidget(m_save);files->addWidget(saveAs);files->addWidget(profile);root->addLayout(files);m_identity=new QLabel("No calibration workspace loaded",this);QFont identityFont=m_identity->font();identityFont.setBold(true);m_identity->setFont(identityFont);root->addWidget(m_identity);m_autoSave=new QTimer(this);m_autoSave->setSingleShot(true);m_autoSave->setInterval(500);
+FitCalibrationDialog::FitCalibrationDialog(QWidget*p):QDialog(p){setWindowTitle("LEGO Fit Calibration");resize(980,760);auto*root=new QVBoxLayout(this);auto*files=new QHBoxLayout;m_sessions=new QComboBox(this);m_sessions->setMinimumWidth(300);auto*resume=new QPushButton("Resume Workspace",this);auto*workspaceActions=new QPushButton("Workspace...",this);auto*workspaceMenu=new QMenu(workspaceActions);auto*newWorkspaceAction=workspaceMenu->addAction("New Workspace...");auto*deleteWorkspaceAction=workspaceMenu->addAction("Delete Selected Workspace...");workspaceActions->setMenu(workspaceMenu);auto*load=new QPushButton("Import Session...",this);auto*recover=new QPushButton("Recover Package...",this);m_newFamily=new QComboBox(this);m_newFamily->setObjectName(QStringLiteral("fitCalibrationNewFamily"));for(const auto&option:FitCalibrationFamilyCatalog::availableFamilies())m_newFamily->addItem(option.label,int(option.family));auto*newCalibration=new QPushButton("Generate Calibration Fixture...",this);newCalibration->setObjectName(QStringLiteral("fitCalibrationNewAction"));m_save=new QPushButton("Save Managed",this);auto*saveAs=new QPushButton("Export Feature...",this);auto*profile=new QPushButton("Create / Update Fit Profile...",this);files->addWidget(new QLabel("Existing Workspaces:",this));files->addWidget(m_sessions,1);files->addWidget(resume);files->addWidget(workspaceActions);files->addWidget(load);files->addWidget(recover);files->addWidget(new QLabel("New:",this));files->addWidget(m_newFamily);files->addWidget(newCalibration);files->addWidget(m_save);files->addWidget(saveAs);files->addWidget(profile);root->addLayout(files);m_identity=new QLabel("No calibration workspace loaded",this);QFont identityFont=m_identity->font();identityFont.setBold(true);m_identity->setFont(identityFont);root->addWidget(m_identity);m_autoSave=new QTimer(this);m_autoSave->setSingleShot(true);m_autoSave->setInterval(500);
 auto*process=new QGroupBox("Manufacturing Context",this);auto*form=new QFormLayout(process);m_printer=new QLineEdit(process);m_material=new QLineEdit(process);m_profile=new QLineEdit(process);m_nozzle=new QDoubleSpinBox(process);m_nozzle->setRange(.1,2);m_nozzle->setDecimals(2);m_nozzle->setValue(.4);m_nozzle->setSuffix(" mm");m_layer=new QDoubleSpinBox(process);m_layer->setRange(.01,2);m_layer->setDecimals(3);m_layer->setValue(.2);m_layer->setSuffix(" mm");m_compensationNotes=new QLineEdit(process);form->addRow("Printer:",m_printer);form->addRow("Material:",m_material);form->addRow("Nozzle:",m_nozzle);form->addRow("Process/profile:",m_profile);form->addRow("Layer height:",m_layer);form->addRow("Slicer compensation:",m_compensationNotes);root->addWidget(process);
 m_features=new QComboBox(this);root->addWidget(new QLabel("Feature calibration:",this));root->addWidget(m_features);auto*orientationBox=new QGroupBox("Feature Print Orientation",this);auto*orientationForm=new QFormLayout(orientationBox);m_orientation=new QComboBox(orientationBox);m_orientation->addItem("Select actual printed orientation",int(FitPrintedOrientation::Unknown));m_orientation->addItem("Feature axis parallel to build plate",int(FitPrintedOrientation::FeatureAxisParallelToBuildPlate));m_orientation->addItem("Feature axis perpendicular to build plate",int(FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate));m_orientation->addItem("Other / unsupported",int(FitPrintedOrientation::OtherUnsupported));m_orientationNotes=new QLineEdit(orientationBox);orientationForm->addRow("Actual orientation:",m_orientation);orientationForm->addRow("Orientation notes:",m_orientationNotes);root->addWidget(orientationBox);
 m_tabs=new QTabWidget(this);auto*coarse=new QWidget(m_tabs);auto*coarseLayout=new QVBoxLayout(coarse);m_coarseReview=new QComboBox(coarse);m_coarseReview->setObjectName(QStringLiteral("fitCalibrationCoarseHistory"));m_coarseContext=new QLabel(coarse);m_coarseTable=makeTable(coarse);coarseLayout->addWidget(m_coarseReview);coarseLayout->addWidget(m_coarseContext);coarseLayout->addWidget(m_coarseTable);auto*fine=new QWidget(m_tabs);auto*fineLayout=new QVBoxLayout(fine);m_fineContext=new QLabel(fine);m_fineTable=makeTable(fine);fineLayout->addWidget(m_fineContext);fineLayout->addWidget(m_fineTable);m_tabs->addTab(coarse,"Coarse Search");m_tabs->addTab(fine,"Fine Search / Verification");root->addWidget(m_tabs,1);
 auto*entry=new QHBoxLayout;m_result=new QComboBox(this);for(auto v:{FitObservation::TooTight,FitObservation::Acceptable,FitObservation::Preferred,FitObservation::TooLoose,FitObservation::UnableToEvaluate})m_result->addItem(resultText(v),int(v));m_repeat=new QSpinBox(this);m_repeat->setRange(1,99);m_measured=new QDoubleSpinBox(this);m_measured->setRange(0,99);m_measured->setDecimals(3);m_measured->setSpecialValueText("Not measured");m_notes=new QLineEdit(this);m_notes->setPlaceholderText("Observation notes");auto*add=new QPushButton("Add Observation",this);auto*preferred=new QPushButton("Select Preferred",this);m_generate=new QPushButton("Continue Calibration...",this);m_verify=new QPushButton("Mark Verified",this);entry->addWidget(m_result);entry->addWidget(m_repeat);entry->addWidget(m_measured);entry->addWidget(m_notes,1);entry->addWidget(add);entry->addWidget(preferred);entry->addWidget(m_generate);entry->addWidget(m_verify);root->addLayout(entry);
 auto*bottom=new QHBoxLayout;m_guidance=new QLabel(this);m_guidance->setWordWrap(true);m_guidance->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);auto*buttons=new QDialogButtonBox(QDialogButtonBox::Close,this);bottom->addWidget(m_guidance,1);bottom->addWidget(buttons);root->addLayout(bottom);
-connect(buttons,&QDialogButtonBox::rejected,this,[this]{if(m_dirty)saveSession();reject();});connect(resume,&QPushButton::clicked,this,&FitCalibrationDialog::resumeManagedSession);connect(newWorkspaceAction,&QAction::triggered,this,&FitCalibrationDialog::newWorkspace);connect(deleteWorkspaceAction,&QAction::triggered,this,&FitCalibrationDialog::deleteSelectedWorkspace);connect(load,&QPushButton::clicked,this,&FitCalibrationDialog::loadSession);connect(newCalibration,&QPushButton::clicked,this,&FitCalibrationDialog::createSelectedCalibration);connect(m_save,&QPushButton::clicked,this,[this]{saveSession();});connect(saveAs,&QPushButton::clicked,this,&FitCalibrationDialog::exportSession);connect(profile,&QPushButton::clicked,this,&FitCalibrationDialog::createFitProfile);connect(m_autoSave,&QTimer::timeout,this,[this]{if(m_dirty)saveSession();});connect(add,&QPushButton::clicked,this,&FitCalibrationDialog::addObservation);connect(preferred,&QPushButton::clicked,this,&FitCalibrationDialog::selectPreferred);connect(m_generate,&QPushButton::clicked,this,&FitCalibrationDialog::generateFineSearch);connect(m_verify,&QPushButton::clicked,this,&FitCalibrationDialog::markVerified);connect(m_tabs,&QTabWidget::currentChanged,this,[this]{refresh();});connect(m_coarseReview,qOverload<int>(&QComboBox::currentIndexChanged),this,[this]{if(!m_loading)refresh();});connect(m_features,qOverload<int>(&QComboBox::currentIndexChanged),this,&FitCalibrationDialog::selectFeature);auto processChanged=[this]{readProcess();if(!m_loading){m_dirty=true;m_savedConfirmation=false;scheduleManagedSave();}refresh();};connect(m_printer,&QLineEdit::textChanged,this,processChanged);connect(m_material,&QLineEdit::textChanged,this,processChanged);connect(m_profile,&QLineEdit::textChanged,this,processChanged);connect(m_orientationNotes,&QLineEdit::textChanged,this,processChanged);connect(m_compensationNotes,&QLineEdit::textChanged,this,processChanged);connect(m_nozzle,qOverload<double>(&QDoubleSpinBox::valueChanged),this,[processChanged](double){processChanged();});connect(m_layer,qOverload<double>(&QDoubleSpinBox::valueChanged),this,[processChanged](double){processChanged();});connect(m_orientation,qOverload<int>(&QComboBox::currentIndexChanged),this,[processChanged](int){processChanged();});refreshLibrary();refresh();}
+connect(buttons,&QDialogButtonBox::rejected,this,[this]{if(m_dirty)saveSession();reject();});connect(resume,&QPushButton::clicked,this,&FitCalibrationDialog::resumeManagedSession);connect(newWorkspaceAction,&QAction::triggered,this,&FitCalibrationDialog::newWorkspace);connect(deleteWorkspaceAction,&QAction::triggered,this,&FitCalibrationDialog::deleteSelectedWorkspace);connect(load,&QPushButton::clicked,this,&FitCalibrationDialog::loadSession);connect(recover,&QPushButton::clicked,this,&FitCalibrationDialog::recoverPackage);connect(newCalibration,&QPushButton::clicked,this,&FitCalibrationDialog::createSelectedCalibration);connect(m_save,&QPushButton::clicked,this,[this]{saveSession();});connect(saveAs,&QPushButton::clicked,this,&FitCalibrationDialog::exportSession);connect(profile,&QPushButton::clicked,this,&FitCalibrationDialog::createFitProfile);connect(m_autoSave,&QTimer::timeout,this,[this]{if(m_dirty)saveSession();});connect(add,&QPushButton::clicked,this,&FitCalibrationDialog::addObservation);connect(preferred,&QPushButton::clicked,this,&FitCalibrationDialog::selectPreferred);connect(m_generate,&QPushButton::clicked,this,&FitCalibrationDialog::generateFineSearch);connect(m_verify,&QPushButton::clicked,this,&FitCalibrationDialog::markVerified);connect(m_tabs,&QTabWidget::currentChanged,this,[this]{refresh();});connect(m_coarseReview,qOverload<int>(&QComboBox::currentIndexChanged),this,[this]{if(!m_loading)refresh();});connect(m_features,qOverload<int>(&QComboBox::currentIndexChanged),this,&FitCalibrationDialog::selectFeature);auto processChanged=[this]{readProcess();if(!m_loading){m_dirty=true;m_savedConfirmation=false;scheduleManagedSave();}refresh();};connect(m_printer,&QLineEdit::textChanged,this,processChanged);connect(m_material,&QLineEdit::textChanged,this,processChanged);connect(m_profile,&QLineEdit::textChanged,this,processChanged);connect(m_orientationNotes,&QLineEdit::textChanged,this,processChanged);connect(m_compensationNotes,&QLineEdit::textChanged,this,processChanged);connect(m_nozzle,qOverload<double>(&QDoubleSpinBox::valueChanged),this,[processChanged](double){processChanged();});connect(m_layer,qOverload<double>(&QDoubleSpinBox::valueChanged),this,[processChanged](double){processChanged();});connect(m_orientation,qOverload<int>(&QComboBox::currentIndexChanged),this,[processChanged](int){processChanged();});refreshLibrary();refresh();}
 
 void FitCalibrationDialog::createSelectedCalibration(){createCalibration(FitCalibrationFamily(m_newFamily->currentData().toInt()));}
-void FitCalibrationDialog::createCalibration(FitCalibrationFamily family){switch(family){case FitCalibrationFamily::TechnicHole:newTechnicCalibration();break;case FitCalibrationFamily::StandardStud:newStudCalibration();break;case FitCalibrationFamily::StudReceivingClutch:newReceivingClutchCalibration();break;case FitCalibrationFamily::FrictionlessTechnicPin:newFrictionlessPinCalibration();break;case FitCalibrationFamily::FrictionTechnicPin:newFrictionPinCalibration();break;case FitCalibrationFamily::TechnicAxle:newTechnicAxleCalibration();break;case FitCalibrationFamily::TechnicAxleHole:newTechnicAxleHoleCalibration();break;case FitCalibrationFamily::StandardBar:newStandardBarCalibration();break;case FitCalibrationFamily::CClipBarReceiver:newCClipBarReceiverCalibration();break;case FitCalibrationFamily::BallJoint:newBallJointCalibration();break;}}
+
 FitCalibrationExperiment* FitCalibrationDialog::activeExperiment(){if(m_tabs->currentIndex()==0)return m_session.hasCoarseExperiment&&m_coarseReview->currentIndex()==m_coarseReview->count()-1?&m_session.coarseExperiment:nullptr;return m_session.hasFineExperiment?&m_session.fineExperiment:nullptr;}
 QTableWidget* FitCalibrationDialog::activeTable()const{return m_tabs->currentIndex()==0?m_coarseTable:m_fineTable;}
 void FitCalibrationDialog::readProcess(){if(m_loading)return;if(m_featureIndex>=0&&m_featureIndex<m_workspace.featureSessions.size())m_workspace.featureSessions[m_featureIndex]=m_session;const auto orientation=FitPrintedOrientation(m_orientation->currentData().toInt());const QString orientationNotes=m_orientationNotes->text();for(auto& feature:m_workspace.featureSessions){feature.process.printerIdentity=m_printer->text().trimmed();feature.process.materialIdentity=m_material->text().trimmed();feature.process.profileName=m_profile->text().trimmed();feature.process.hasNozzleDiameter=true;feature.process.nozzleDiameterMillimetres=m_nozzle->value();feature.process.hasLayerHeight=true;feature.process.layerHeightMillimetres=m_layer->value();feature.process.dimensionalCompensationNotes=m_compensationNotes->text();if(feature.sessionIdentity==m_session.sessionIdentity){feature.process.actualPrintedOrientation=orientation;feature.process.orientationNotes=orientationNotes;}if(feature.hasCoarseExperiment)feature.coarseExperiment.process=feature.process;if(feature.hasFineExperiment)feature.fineExperiment.process=feature.process;}if(m_featureIndex>=0&&m_featureIndex<m_workspace.featureSessions.size())m_session=m_workspace.featureSessions[m_featureIndex];if(!m_workspace.featureSessions.isEmpty()){m_workspace.process=m_workspace.featureSessions.front().process;m_workspace.process.actualPrintedOrientation=FitPrintedOrientation::Unknown;m_workspace.process.orientationNotes.clear();m_workspace.identity=FitCalibrationLibrary::manufacturingContextFingerprint(m_workspace.process);m_workspace.displayName=FitCalibrationLibrary::workspaceDisplayName(m_workspace.process);}}
@@ -102,27 +77,8 @@ void FitCalibrationDialog::showSession(const FitCalibrationSession&s,const QStri
 void FitCalibrationDialog::showWorkspace(const FitCalibrationWorkspace&workspace,const QString&preferredSession){m_loading=true;m_workspace=workspace;m_path.clear();m_dirty=false;m_savedConfirmation=false;m_printer->setText(workspace.process.printerIdentity);m_material->setText(workspace.process.materialIdentity);m_profile->setText(workspace.process.profileName);if(workspace.process.hasNozzleDiameter)m_nozzle->setValue(workspace.process.nozzleDiameterMillimetres);if(workspace.process.hasLayerHeight)m_layer->setValue(workspace.process.layerHeightMillimetres);m_compensationNotes->setText(workspace.process.dimensionalCompensationNotes);m_features->clear();int selected=0;for(int i=0;i<workspace.featureSessions.size();++i){const auto&s=workspace.featureSessions[i];m_features->addItem(featureName(s),s.sessionIdentity);if(s.sessionIdentity==preferredSession)selected=i;}m_features->setCurrentIndex(workspace.featureSessions.isEmpty()?-1:selected);if(workspace.featureSessions.isEmpty()){m_session={};m_featureIndex=-1;m_coarseHistory.clear();m_coarseReview->clear();m_orientation->setCurrentIndex(0);m_orientationNotes->clear();}const bool empty=workspace.featureSessions.isEmpty();for(auto*edit:{m_printer,m_material,m_profile,m_compensationNotes})edit->setReadOnly(empty);m_nozzle->setReadOnly(empty);m_layer->setReadOnly(empty);m_loading=false;if(workspace.featureSessions.isEmpty())refresh();else selectFeature(selected);}
 void FitCalibrationDialog::selectFeature(int index){if(m_loading||index<0||index>=m_workspace.featureSessions.size())return;if(m_dirty&&!saveSession()){m_features->setCurrentIndex(m_featureIndex);return;}m_loading=true;m_featureIndex=index;m_session=m_workspace.featureSessions[index];m_coarseHistory=m_library.coarseReviewHistory(m_session);m_coarseReview->clear();for(int i=0;i<m_coarseHistory.size();++i)m_coarseReview->addItem(QStringLiteral("%1 — %2").arg(i==m_coarseHistory.size()-1?QStringLiteral("Latest coarse stage"):QStringLiteral("Earlier coarse stage %1").arg(i+1),m_coarseHistory[i].artifactIdentity));m_coarseReview->setCurrentIndex(m_coarseReview->count()-1);m_coarseReview->setVisible(m_coarseReview->count()>1);m_orientation->setCurrentIndex(m_orientation->findData(int(m_session.process.actualPrintedOrientation)));m_orientationNotes->setText(m_session.process.orientationNotes);m_tabs->setCurrentIndex(FitCalibrationEvidencePolicy::preferredSessionStage(m_session)==FitCalibrationStage::Fine?1:0);m_loading=false;refresh();}
 bool FitCalibrationDialog::openSession(const QString&path){FitCalibrationSession s;QString error;const FitCalibrationWorkspace*selected=m_workspace.featureSessions.isEmpty()?nullptr:&m_workspace;if(!m_library.importSessionIntoWorkspace(path,selected,&s,&error)){QMessageBox::warning(this,"Calibration",error);return false;}refreshLibrary();for(const auto&w:m_library.workspaces())if(w.identity==FitCalibrationLibrary::manufacturingContextFingerprint(s.process)){showWorkspace(w,s.sessionIdentity);return true;}showSession(s,QString());return true;}
-void FitCalibrationDialog::newTechnicCalibration()
-{
-    if(m_dirty&&!saveSession())return;
-    if(m_workspace.identity.isEmpty()){QMessageBox::information(this,"Parallel Technic Hole Calibration","Resume the manufacturing workspace that should own this orientation-specific evidence first.");return;}
-    readProcess();
-    for(const auto&feature:m_workspace.featureSessions){const auto*experiment=feature.hasFineExperiment?&feature.fineExperiment:(feature.hasCoarseExperiment?&feature.coarseExperiment:nullptr);if(experiment&&experiment->featureFamily==QStringLiteral("RoundTechnicPassage")&&feature.process.actualPrintedOrientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate){QMessageBox::information(this,"Parallel Technic Hole Calibration","This workspace already contains a parallel Technic Hole calibration. Select it in Feature calibration to continue.");return;}}
-    const auto definition=RoundTechnicCalibrationArtifact::parallelCoarseDefinition();
-    auto&directories=SessionFileDialogDirectoryService::instance();
-    QString path=QFileDialog::getSaveFileName(this,"Save Parallel Technic Hole Calibration 3MF",fixtureDefault(FitCalibrationNameKey::RoundPassageParallel,definition.artifactIdentity),"3MF models (*.3mf)");
-    if(path.isEmpty())return;if(!path.endsWith(QStringLiteral(".3mf"),Qt::CaseInsensitive))path+=QStringLiteral(".3mf");directories.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
-    const auto artifact=RoundTechnicCalibrationArtifact::generate(RoundTechnicCalibrationArtifact::canonicalPrototype(),definition);
-    if(!artifact.ok){QMessageBox::warning(this,"Parallel Technic Hole Calibration",artifact.diagnostic);return;}
-    ThreeMfWriter::Options options;options.objectName=definition.artifactIdentity;options.partIdentity=definition.artifactIdentity;options.modelColor=QColor("#0055BF");QString error;
-    if(!writeFixture(artifact.mesh,FitCalibrationNameKey::RoundPassageParallel,false,path,options,&error)){QMessageBox::warning(this,"Parallel Technic Hole Calibration",error);return;}
-    FitCalibrationSession session;session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();session.hasCoarseExperiment=true;session.coarseExperiment=RoundTechnicCalibrationArtifact::observationTemplate(artifact,definition);session.process=m_workspace.process;session.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisParallelToBuildPlate;session.process.orientationNotes=session.coarseExperiment.process.orientationNotes;session.coarseExperiment.process=session.process;
-    if(!m_library.saveSession(&session,&error)){QMessageBox::warning(this,"Parallel Technic Hole Calibration",error);return;}
-    if(!writeCompanion(m_library,session,path,&error))QMessageBox::warning(this,"Calibration Artifact",QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));
-    auto workspace=m_workspace;workspace.featureSessions.push_back(session);showWorkspace(workspace,session.sessionIdentity);refreshLibrary();
-    QMessageBox::information(this,"Parallel Technic Hole Calibration",QStringLiteral("The seven-candidate coarse artifact was added to this manufacturing workspace. Print its broad flat base at 100% scale so every passage axis remains parallel to the build plate. Test candidates 1–7 left to right with a genuine LEGO Technic pin; diameters are 4.80 through 5.40 mm in 0.10 mm steps. Record new physical observations before selecting or verifying a correction."));
-}
-void FitCalibrationDialog::newStudCalibration(){if(m_dirty&&!saveSession())return;bool accepted=false;const QString choice=QInputDialog::getItem(this,"New Stud Calibration","Calibrate:",{"Stud outside diameter (clutch) first","Stud height (seating) after OD"},0,false,&accepted);if(!accepted)return;readProcess();StandardStudCalibrationArtifactDefinition definition;definition.dimension=choice.startsWith("Stud height")?StandardStudCalibrationDimension::Height:StandardStudCalibrationDimension::Diameter;definition.artifactIdentity=definition.dimension==StandardStudCalibrationDimension::Height?StandardStudCalibrationArtifact::heightArtifactIdentity():StandardStudCalibrationArtifact::diameterArtifactIdentity();int heightSessionIndex=-1;const FitCalibrationExperiment*heightSource=nullptr;if(definition.dimension==StandardStudCalibrationDimension::Height){double verifiedOd=0;bool foundVerifiedOd=false;for(const auto&feature:m_workspace.featureSessions){const auto*experiment=feature.hasFineExperiment?&feature.fineExperiment:(feature.hasCoarseExperiment?&feature.coarseExperiment:nullptr);if(!experiment||experiment->featureFamily!=QStringLiteral("StandardStud")||experiment->correctionDimension!=FitCorrectionDimension::Diameter||experiment->state!=FitEvidenceState::Verified)continue;const auto preferred=std::find_if(experiment->candidates.cbegin(),experiment->candidates.cend(),[&](const auto&candidate){return candidate.index==experiment->preferredCandidateIndex;});if(preferred!=experiment->candidates.cend()){verifiedOd=preferred->diameterCorrectionMillimetres;foundVerifiedOd=true;break;}}if(!foundVerifiedOd){QMessageBox::warning(this,"Stud Height Calibration","Verify Stud OD in this manufacturing workspace before creating a Stud Height experiment.");return;}definition.fixedDiameterCorrectionMillimetres=verifiedOd;for(int i=0;i<m_workspace.featureSessions.size();++i){const auto&feature=m_workspace.featureSessions[i];const auto*experiment=feature.hasFineExperiment?&feature.fineExperiment:(feature.hasCoarseExperiment?&feature.coarseExperiment:nullptr);if(experiment&&experiment->featureFamily==QStringLiteral("StandardStud")&&experiment->correctionDimension==FitCorrectionDimension::Height&&experiment->preferredCandidateIndex>0){heightSessionIndex=i;heightSource=experiment;break;}}QString planningError;if(heightSource&&!StandardStudCalibrationArtifact::heightVerificationDefinition(*heightSource,verifiedOd,&definition,&planningError)){QMessageBox::warning(this,"Stud Height Calibration",planningError);return;}}auto&dirs=SessionFileDialogDirectoryService::instance();QString path=QFileDialog::getSaveFileName(this,"Save Stud Calibration 3MF",fixtureDefault(definition.dimension==StandardStudCalibrationDimension::Height?FitCalibrationNameKey::StudHeight:FitCalibrationNameKey::StudOd,definition.artifactIdentity),"3MF models (*.3mf)");if(path.isEmpty())return;if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);const auto artifact=StandardStudCalibrationArtifact::generate(StandardStudCalibrationArtifact::canonicalPrototype(),definition);if(!artifact.ok){QMessageBox::warning(this,"Stud Calibration",artifact.diagnostic);return;}ThreeMfWriter::Options options;options.objectName=definition.artifactIdentity;options.partIdentity=definition.artifactIdentity;options.modelColor=QColor("#0055BF");QString error;if(!writeFixture(artifact.mesh,definition.dimension==StandardStudCalibrationDimension::Height?FitCalibrationNameKey::StudHeight:FitCalibrationNameKey::StudOd,(definition.artifactIdentity==StandardStudCalibrationArtifact::diameterArtifactIdentity()||definition.artifactIdentity==StandardStudCalibrationArtifact::heightArtifactIdentity()),path,options,&error)){QMessageBox::warning(this,"Stud Calibration",error);return;}const auto experiment=StandardStudCalibrationArtifact::observationTemplate(artifact,definition);FitCalibrationSession session;if(heightSource){const auto&parent=m_workspace.featureSessions[heightSessionIndex];if(parent.hasCoarseExperiment&&!parent.hasFineExperiment){session=parent;session.hasFineExperiment=true;session.fineExperiment=experiment;session.fineExperiment.process=session.process;}else session=FitCalibrationLibrary::continuationSession(parent,*heightSource,experiment);}else{session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();session.hasCoarseExperiment=true;session.coarseExperiment=experiment;const auto featureOrientation=session.coarseExperiment.process;if(!m_workspace.featureSessions.isEmpty()){session.process=m_workspace.featureSessions.front().process;session.process.actualPrintedOrientation=featureOrientation.actualPrintedOrientation;session.process.orientationNotes=featureOrientation.orientationNotes;}else{session.process=m_workspace.process;session.process.actualPrintedOrientation=featureOrientation.actualPrintedOrientation;session.process.orientationNotes=featureOrientation.orientationNotes;}session.coarseExperiment.process=session.process;}if(!m_library.saveSession(&session,&error)){QMessageBox::warning(this,"Stud Calibration",error);return;}if(!writeCompanion(m_library,session,path,&error))QMessageBox::warning(this,"Calibration Artifact",QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));auto workspace=m_workspace;if(workspace.featureSessions.isEmpty()){workspace.identity=FitCalibrationLibrary::manufacturingContextFingerprint(session.process);workspace.process=session.process;}if(heightSessionIndex>=0&&session.sessionIdentity==workspace.featureSessions[heightSessionIndex].sessionIdentity)workspace.featureSessions[heightSessionIndex]=session;else workspace.featureSessions.push_back(session);workspace.displayName=FitCalibrationLibrary::workspaceDisplayName(session.process);showWorkspace(workspace,session.sessionIdentity);refreshLibrary();const QString message=definition.dimension==StandardStudCalibrationDimension::Diameter?QStringLiteral("The OD artifact was added to this manufacturing workspace. Test candidates 1–7 left to right with genuine LEGO receiving geometry."):(heightSource?QStringLiteral("The Stud Height verification artifact holds the Verified %1 mm OD fixed and tests heights %2, %3, and %4 mm. Record fresh seating observations before Mark Verified.").arg(4.8+definition.fixedDiameterCorrectionMillimetres,0,'f',2).arg(1.6+definition.centerCorrectionMillimetres-definition.candidateSpacingMillimetres,0,'f',2).arg(1.6+definition.centerCorrectionMillimetres,0,'f',2).arg(1.6+definition.centerCorrectionMillimetres+definition.candidateSpacingMillimetres,0,'f',2):QStringLiteral("The initial height artifact holds the Verified %1 mm OD fixed. Test complete seating, vertical gap, bottoming, and engagement depth.").arg(4.8+definition.fixedDiameterCorrectionMillimetres,0,'f',2));QMessageBox::information(this,"Stud Calibration",message);}
+
+
 void FitCalibrationDialog::loadSession(){auto&dirs=SessionFileDialogDirectoryService::instance();const auto path=QFileDialog::getOpenFileName(this,"Open Calibration Session",dirs.initialDirectory(FileDialogDirectoryCategory::OpenImport,FitCalibrationArtifactLocation::directory()),"Calibration JSON (*.json)");if(path.isEmpty())return;dirs.rememberSelectedFile(FileDialogDirectoryCategory::OpenImport,path);openSession(path);}
 bool FitCalibrationDialog::writeSession(const QString&path){QSaveFile f(path);if(!f.open(QIODevice::WriteOnly)||f.write(QJsonDocument(FitCalibrationSessionJson::toJson(m_session)).toJson(QJsonDocument::Indented))<0||!f.commit()){QMessageBox::warning(this,"Calibration","The calibration session could not be saved.");return false;}m_dirty=false;m_savedConfirmation=true;updateGuidance();return true;}
 bool FitCalibrationDialog::saveSession(){if(!m_session.hasCoarseExperiment&&!m_session.hasFineExperiment)return false;readProcess();QString error;for(auto&feature:m_workspace.featureSessions)if(!m_library.saveSession(&feature,&error)){QMessageBox::warning(this,"Calibration",error);return false;}if(m_featureIndex>=0&&m_featureIndex<m_workspace.featureSessions.size())m_session=m_workspace.featureSessions[m_featureIndex];m_dirty=false;m_savedConfirmation=true;refreshLibrary();updateGuidance();return true;}
@@ -190,306 +146,119 @@ void FitCalibrationDialog::createFitProfile(){readProcess();if(m_dirty&&!saveSes
 void FitCalibrationDialog::addObservation(){auto*e=activeExperiment();auto*t=activeTable();const int row=t->currentRow();if(!e||row<0){QMessageBox::information(this,"Calibration","Select a candidate first.");return;}FitCalibrationObservation o;o.result=FitObservation(m_result->currentData().toInt());o.repeatNumber=m_repeat->value();o.hasMeasuredDiameter=m_measured->value()>0;o.measuredDiameterMillimetres=m_measured->value();o.notes=m_notes->text();o.performedUtc=QDateTime::currentDateTimeUtc();QString error;if(!FitCalibrationEvidencePolicy::addObservation(e,e->candidates[row].index,o,&error))QMessageBox::warning(this,"Calibration",error);else{m_dirty=true;m_savedConfirmation=false;scheduleManagedSave();refresh();}}
 void FitCalibrationDialog::selectPreferred(){auto*e=activeExperiment();auto*t=activeTable();const int row=t->currentRow();QString error;if(!e||row<0||!FitCalibrationEvidencePolicy::selectPreferredCandidate(e,row<0||!e?0:e->candidates[row].index,&error))QMessageBox::warning(this,"Calibration",error.isEmpty()?"Select a candidate first.":error);else{m_dirty=true;m_savedConfirmation=false;scheduleManagedSave();refresh();}}
 void FitCalibrationDialog::markVerified(){readProcess();auto*e=activeExperiment();QString error;if(!e||e->state==FitEvidenceState::Verified||!FitCalibrationEvidencePolicy::markVerified(e,&error)){if(e&&e->state==FitEvidenceState::Verified)return;QMessageBox::warning(this,"Calibration",error.isEmpty()?"Open the fine-search stage first.":error);}else{m_dirty=true;m_savedConfirmation=false;saveSession();refresh();}}
+
+void FitCalibrationDialog::createCalibration(FitCalibrationFamily family)
+{
+    if(m_dirty&&!saveSession())return;
+    if(m_workspace.identity.isEmpty()){
+        QMessageBox::information(this,"Calibration","Create or resume a manufacturing workspace first.");return;
+    }
+    readProcess();FitCalibrationGenerationService::Request request;request.workspace=m_workspace;
+    switch(family){
+    case FitCalibrationFamily::TechnicHole:request.family="RoundTechnicPassage";break;
+    case FitCalibrationFamily::StandardStud:request.family="StandardStud";break;
+    case FitCalibrationFamily::StudReceivingClutch:request.family="StudReceivingClutch";break;
+    case FitCalibrationFamily::FrictionlessTechnicPin:request.family="FrictionlessTechnicPin";break;
+    case FitCalibrationFamily::FrictionTechnicPin:request.family="FrictionTechnicPin";break;
+    case FitCalibrationFamily::TechnicAxle:request.family="TechnicAxle";break;
+    case FitCalibrationFamily::TechnicAxleHole:request.family="TechnicAxleHole";break;
+    case FitCalibrationFamily::StandardBar:request.family="StandardBar";break;
+    case FitCalibrationFamily::CClipBarReceiver:request.family="CClipBarReceiver";break;
+    case FitCalibrationFamily::BallJoint:request.family="BallJoint";break;
+    }
+    bool accepted=false;
+    if(family==FitCalibrationFamily::StandardStud){
+        const auto choice=QInputDialog::getItem(this,"Stud Calibration","Calibrate:",
+            {"Stud outside diameter (clutch) first","Stud height (seating) after OD"},0,false,&accepted);
+        if(!accepted)return;request.variant=choice.startsWith("Stud height")?"Height":"Diameter";
+    }else if(family==FitCalibrationFamily::StudReceivingClutch){
+        request.variant=QInputDialog::getItem(this,"Receiving Clutch Calibration","Variant:",
+            {"TubeWallCell","PostWallCell","WallPocket","AntiStudBore"},0,false,&accepted);
+        if(!accepted)return;
+    }else if(family==FitCalibrationFamily::CClipBarReceiver||family==FitCalibrationFamily::BallJoint){
+        const auto choice=QInputDialog::getItem(this,"Calibration","Feature print orientation:",
+            {"Perpendicular to build plate","Parallel to build plate"},0,false,&accepted);
+        if(!accepted)return;request.orientation=choice.startsWith("Parallel")?
+            FitPrintedOrientation::FeatureAxisParallelToBuildPlate:FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
+    }
+    runGeneration(request);
+}
+
 void FitCalibrationDialog::generateFineSearch()
 {
-    // Persist observed parent evidence before creating its printable child.
-    if (m_dirty && !saveSession()) return;
-    if (m_tabs->currentIndex() == 0 && m_session.hasFineExperiment) {
-        QMessageBox::information(this, "Calibration",
-            "This session already has a later stage. Continue from Fine Search / Verification so existing evidence is retained.");
-        return;
+    if(m_dirty&&!saveSession())return;
+    if(m_tabs->currentIndex()==0&&m_session.hasFineExperiment){
+        QMessageBox::information(this,"Calibration","Continue from Fine Search / Verification to retain existing later-stage evidence.");return;
     }
-    readProcess();
-    const auto* active=activeExperiment();
-    if(!active||!active->hasRegenerationPrototype||!FitCalibrationEvidencePolicy::continuationAvailable(*active)){QMessageBox::warning(this,"Calibration","Record sufficient directional evidence or select a preferred candidate first.");return;}
-    const FitCalibrationExperiment source=*active;
-    if(source.featureFamily==QStringLiteral("FrictionlessTechnicPin")){QMessageBox::information(this,"Frictionless Pin Calibration","Phase 5A records physical evidence directly on the seven-pin coarse artifact. Record both neighboring candidates and repeat the preferred candidate; Mark Verified becomes available when that evidence is sufficient.");return;}
-    if(source.featureFamily==QStringLiteral("BallSocket")){QMessageBox::information(this,"Ball Socket Calibration","The source-faithful Ball Socket continuation fixture is not available from this dialog yet. Record observations on the printed coarse fixture; do not use a generic cavity fixture for this retaining socket.");return;}
-    auto plan=FitCalibrationEvidencePolicy::nextSearchPlan(source);
-    const bool extension=plan.boundary!=FitPreferredBoundary::None;
-    const bool axleHoleModelCorrection=source.featureFamily==QStringLiteral("TechnicAxleHole")&&source.regenerationPrototype.constructionRecipe==QStringLiteral("technic-axle-hole-cross-profile-v1")&&source.artifactIdentity.contains(QStringLiteral("extension"))&&plan.uniformResult==FitUniformResult::AllTooTight;
-    bool directVerification=false;
-    if(!extension){bool accepted=false;const QString choice=QInputDialog::getItem(this,"Calibration Next Step","Continue with:",{QStringLiteral("Direct repeat / verification"),QStringLiteral("Fine Search")},0,false,&accepted);if(!accepted)return;directVerification=choice.startsWith("Direct");if(directVerification)plan=FitCalibrationEvidencePolicy::directVerificationPlan(source);}
-    const QString title=extension?QStringLiteral("Extend Search"):(directVerification?QStringLiteral("Direct Verification"):QStringLiteral("Fine Search"));
-    bool ok=false;double spacing=axleHoleModelCorrection?.10:plan.candidateSpacingMillimetres;int count=axleHoleModelCorrection?7:plan.candidateCount;
-    if(!directVerification&&!axleHoleModelCorrection){spacing=QInputDialog::getDouble(this,title,"Candidate spacing (mm):",spacing,.001,1,3,&ok);if(!ok)return;count=QInputDialog::getInt(this,title,"Odd candidate count:",count,3,9,2,&ok);if(!ok)return;}
-    const QString suffix=extension?QStringLiteral("-boundary-extension-v2"):(directVerification?QStringLiteral("-direct-verification-v2"):QStringLiteral("-fine-search-v2"));
-    const QString suggestedIdentity=axleHoleModelCorrection?TechnicAxleHoleArmWidthCalibrationArtifact::artifactIdentity():source.artifactIdentity+suffix;
-    const QString identity=QInputDialog::getText(this,title,"Versioned artifact identity:",QLineEdit::Normal,suggestedIdentity,&ok).trimmed();if(!ok||identity.isEmpty())return;
-    const auto nameKey=axleHoleModelCorrection?FitCalibrationNameKey::AxleHoleArmWidth:
-        FitCalibrationNamingCatalog::keyFor(source,m_session.process.actualPrintedOrientation);
-    const QString stage=extension?QStringLiteral("extension"):(directVerification?QStringLiteral("verification"):QStringLiteral("fine-search"));
-    auto&dirs=SessionFileDialogDirectoryService::instance();QString path=QFileDialog::getSaveFileName(this,QStringLiteral("Save %1 3MF").arg(title),fixtureDefault(nameKey,identity,stage),"3MF models (*.3mf)");if(path.isEmpty())return;if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
-    PrintMesh mesh;QVector<ThreeMfWriter::NamedMesh> collection;FitCalibrationExperiment verification;QString diagnostic;
-    if(source.featureFamily==QStringLiteral("StandardStud")){StandardStudCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.dimension=source.correctionDimension==FitCorrectionDimension::Height?StandardStudCalibrationDimension::Height:StandardStudCalibrationDimension::Diameter;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.fixedDiameterCorrectionMillimetres=source.fixedDiameterCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardStudCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StandardStudCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("StandardBar")){StandardBarCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;const auto artifact=StandardBarCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=StandardBarCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("CClipBarReceiver")){CClipBarReceiverCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;d.orientation=source.process.actualPrintedOrientation;const auto artifact=CClipBarReceiverCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=CClipBarReceiverCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("BallJoint")){BallJointCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.spacingMillimetres=spacing;d.candidateCount=count;d.orientation=source.process.actualPrintedOrientation;const auto artifact=BallJointCalibrationArtifact::generate(d);if(artifact.ok){mesh=artifact.mesh;verification=BallJointCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("StudReceivingClutch")){StudReceivingCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerDiameterCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const bool wallPocket=source.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-wall-pocket-square-v1"),antiStud=source.regenerationPrototype.constructionRecipe==QStringLiteral("stud-receiving-antistud-bore-v1");const auto artifact=antiStud?StudReceivingCalibrationArtifact::generateAntiStudBore(source.regenerationPrototype,d):wallPocket?StudReceivingCalibrationArtifact::generateWallPocket(source.regenerationPrototype,d):StudReceivingCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=StudReceivingCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("FrictionTechnicPin")){FrictionTechnicPinCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerRidgeEnvelopeCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=FrictionTechnicPinCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=FrictionTechnicPinCalibrationArtifact::observationTemplate(artifact);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("TechnicAxle")){TechnicAxleCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerTipToTipCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=TechnicAxleCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("TechnicAxleHole")&&(axleHoleModelCorrection||source.regenerationPrototype.constructionRecipe==QStringLiteral("technic-axle-hole-arm-width-clearance-v2"))){auto prototype=source.regenerationPrototype;if(axleHoleModelCorrection){prototype.constructionRecipe=QStringLiteral("technic-axle-hole-arm-width-clearance-v2");prototype.evidenceContract=QStringLiteral("official-ldraw-axlehole-arm-width-clearance-v2");}TechnicAxleHoleArmWidthArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;if(!axleHoleModelCorrection){d.centerArmWidthCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;}const auto artifact=TechnicAxleHoleArmWidthCalibrationArtifact::generate(prototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleHoleArmWidthCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("TechnicAxleHole")){TechnicAxleHoleCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerTipToTipCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=TechnicAxleHoleCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=TechnicAxleHoleCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else if(source.featureFamily==QStringLiteral("PlainRoundBoreWheel")){
-        PlainRoundBoreWheelCalibrationDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;
-        d.centerCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;
-        const QString root=UserSettings::instance().ldrawLibraryPath();
-        QFutureWatcher<PlainRoundBoreWheelCalibrationResult> watcher;
-        QProgressDialog progress(QStringLiteral("Generating source-faithful blind-bore wheels..."),QString(),0,0,this);
-        progress.setWindowModality(Qt::WindowModal);
-        progress.setMinimumDuration(0);
-        connect(&watcher,&QFutureWatcher<PlainRoundBoreWheelCalibrationResult>::finished,
-            &progress,&QProgressDialog::close);
-        watcher.setFuture(QtConcurrent::run([root,prototype=source.regenerationPrototype,d]{
-            return PlainRoundBoreWheelCalibrationArtifact::generate(
-                LDrawLibraryService::loadPart(root,QStringLiteral("30027a")),prototype,d);
-        }));
-        progress.exec();
-        watcher.waitForFinished();
-        const auto artifact=watcher.result();
-        diagnostic=artifact.diagnostic;
-        if(artifact.ok){
-            verification=PlainRoundBoreWheelCalibrationArtifact::observationTemplate(artifact);
-            for(int i=0;i<artifact.candidateMeshes.size();++i)
-                collection.push_back({QStringLiteral("Candidate %1 — %2 mm blind bore")
-                    .arg(i+1).arg(artifact.candidates[i].functionalDiameterMillimetres,0,'f',3),
-                    artifact.candidateMeshes[i],{14.0+26.0*(i%4),12.0+23.0*(i/4),0.0}});
+    readProcess();const auto* source=activeExperiment();
+    if(!source||!FitCalibrationEvidencePolicy::continuationAvailable(*source))return;
+    FitCalibrationGenerationService::Request request;request.hasParent=true;request.parent=m_session;
+    request.workspace=m_workspace;request.stage=FitCalibrationGenerationService::Stage::FineSearch;
+    const auto plan=FitCalibrationEvidencePolicy::nextSearchPlan(*source);
+    if(plan.boundary==FitPreferredBoundary::None){
+        bool accepted=false;const auto choice=QInputDialog::getItem(this,"Continue Calibration","Next step:",
+            {"Direct repeat / verification","Fine Search"},0,false,&accepted);
+        if(!accepted)return;
+        if(choice.startsWith("Direct"))request.stage=FitCalibrationGenerationService::Stage::Verification;
+    }
+    if(request.stage==FitCalibrationGenerationService::Stage::FineSearch){
+        bool accepted=false;
+        request.candidateSpacing=QInputDialog::getDouble(this,"Continue Calibration","Candidate spacing (mm):",
+            plan.candidateSpacingMillimetres,.001,1,3,&accepted);if(!accepted)return;
+        request.candidateCount=QInputDialog::getInt(this,"Continue Calibration","Odd candidate count:",
+            plan.candidateCount,3,9,2,&accepted);if(!accepted)return;
+    }
+    runGeneration(request);
+}
+
+void FitCalibrationDialog::runGeneration(FitCalibrationGenerationService::Request request)
+{
+    request.libraryRoot=UserSettings::instance().ldrawLibraryPath();
+    const QString managedRoot=m_library.storageRoot();
+    QFutureWatcher<FitCalibrationGenerationService::Result> watcher;
+    QProgressDialog progress("Generating and publishing calibration package...",QString(),0,0,this);
+    progress.setWindowModality(Qt::ApplicationModal);progress.setMinimumDuration(0);
+    connect(&watcher,&QFutureWatcher<FitCalibrationGenerationService::Result>::finished,&progress,&QProgressDialog::close);
+    watcher.setFuture(QtConcurrent::run([request,managedRoot]{return FitCalibrationGenerationService({},managedRoot).generate(request);}));
+    progress.exec();watcher.waitForFinished();showGenerationResult(watcher.result());
+}
+
+void FitCalibrationDialog::recoverPackage()
+{
+    if(m_dirty&&!saveSession())return;
+    const auto path=QFileDialog::getOpenFileName(this,"Recover Published Calibration Package",
+        FitCalibrationArtifactLocation::directory(),"Package record (publication.json);;Calibration companion (*-session.json)");
+    if(path.isEmpty())return;
+    const QString directory=QFileInfo(path).absolutePath(),managedRoot=m_library.storageRoot();
+    QFutureWatcher<FitCalibrationGenerationService::Result> watcher;
+    QProgressDialog progress("Checking package and registering managed session...",QString(),0,0,this);
+    progress.setWindowModality(Qt::ApplicationModal);progress.setMinimumDuration(0);
+    connect(&watcher,&QFutureWatcher<FitCalibrationGenerationService::Result>::finished,&progress,&QProgressDialog::close);
+    watcher.setFuture(QtConcurrent::run([directory,managedRoot]{return FitCalibrationGenerationService({},managedRoot).recover(directory);}));
+    progress.exec();watcher.waitForFinished();showGenerationResult(watcher.result());
+}
+
+void FitCalibrationDialog::showGenerationResult(const FitCalibrationGenerationService::Result& result)
+{
+    if(!result.ok()){
+        QMessageBox::warning(this,"Calibration",result.diagnostic+(result.published?
+            tr("\nThe complete package is saved at %1. Use Recover Package to retry managed registration; do not regenerate it.").arg(result.directory):QString()));return;
+    }
+    auto workspace=m_workspace;workspace.identity=FitCalibrationLibrary::manufacturingContextFingerprint(result.session.process);
+    workspace.process=result.session.process;workspace.displayName=FitCalibrationLibrary::workspaceDisplayName(workspace.process);
+    if(!m_workspace.identity.isEmpty()&&m_workspace.identity!=workspace.identity)workspace.featureSessions.clear();
+    bool found=false;for(auto& session:workspace.featureSessions){
+        const auto* previous=session.hasFineExperiment?&session.fineExperiment:session.hasCoarseExperiment?&session.coarseExperiment:nullptr;
+        if(session.sessionIdentity==result.session.sessionIdentity||
+           (result.session.hasFineExperiment&&previous&&previous->artifactIdentity==result.session.coarseExperiment.artifactIdentity)){
+            // Replace only the displayed stage; the parent's managed record is retained.
+            session=result.session;found=true;break;
         }
     }
-    else if(source.featureFamily==QStringLiteral("RoundTechnicPassage")){RoundTechnicCalibrationArtifactDefinition d;d.artifactIdentity=identity;d.parentArtifactIdentity=source.artifactIdentity;d.centerDiameterCorrectionMillimetres=plan.centerCorrectionMillimetres;d.candidateSpacingMillimetres=spacing;d.candidateCount=count;const auto artifact=RoundTechnicCalibrationArtifact::generate(source.regenerationPrototype,d);if(artifact.ok){mesh=artifact.mesh;verification=RoundTechnicCalibrationArtifact::observationTemplate(artifact,d);}diagnostic=artifact.diagnostic;}
-    else diagnostic=QStringLiteral("No source-faithful continuation fixture is available for this calibration contract.");
-    if(mesh.faces.empty()&&collection.isEmpty()){QMessageBox::warning(this,"Calibration",diagnostic);return;}ThreeMfWriter::Options options;options.objectName=identity;options.partIdentity=identity;options.modelColor=QColor("#0055BF");QString error;if(!(collection.isEmpty()?writeFixture(mesh,nameKey,false,path,options,&error):ThreeMfWriter::writeCollection(collection,path,options,&error))){QMessageBox::warning(this,"Calibration",error);return;}
-    verification.process=m_session.process;
-    if(m_tabs->currentIndex()==1){if(m_dirty&&!saveSession())return;m_session=FitCalibrationLibrary::continuationSession(m_session,source,verification);}
-    else{m_session.hasFineExperiment=true;m_session.fineExperiment=verification;if(m_session.sessionIdentity.isEmpty())m_session.sessionIdentity=source.artifactIdentity;}
-    if(m_featureIndex>=0&&m_featureIndex<m_workspace.featureSessions.size())m_workspace.featureSessions[m_featureIndex]=m_session;
-    m_dirty=true;m_savedConfirmation=false;if(!saveSession())return;
-    if(!writeCompanion(m_library,m_session,path,&error))QMessageBox::warning(this,"Calibration Artifact",QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));
-    m_tabs->setCurrentIndex(1);refresh();
-    const QString message=extension?(plan.uniformResult!=FitUniformResult::None?QStringLiteral("The uniform physical results established the search direction without a Preferred candidate. The extended coarse artifact overlaps the prior boundary and starts with fresh observations."):QStringLiteral("The preferred candidate was at the search boundary. The extended artifact overlaps that boundary and continues in the required direction; record fresh observations before verification.")):(directVerification?QStringLiteral("The three-candidate verification artifact repeats the selected correction and its immediate neighbors. Record fresh observations, repeat the preferred candidate, then use Mark Verified when the evidence is complete."):QStringLiteral("The optional fine-search artifact is ready with empty evidence for this new print."));
-    QMessageBox::information(this,title+QStringLiteral(" Generated"),message);
-}
-
-void FitCalibrationDialog::newReceivingClutchCalibration()
-{
-    if(m_dirty&&!saveSession())return;
-    if(m_workspace.identity.isEmpty()){QMessageBox::information(this,"Receiving Clutch Calibration","Resume or import a manufacturing workspace first so the new evidence inherits its manufacturing context.");return;}
-    bool accepted=false;
-    const QString variant=QInputDialog::getItem(this,"Receiving Clutch Calibration","Variant:",
-        {QStringLiteral("TubeWallCell"),QStringLiteral("PostWallCell"),
-         QStringLiteral("WallPocket"),QStringLiteral("AntiStudBore")},0,false,&accepted);
-    if(!accepted)return;
-    const bool postWall=variant==QStringLiteral("PostWallCell");
-    const bool wallPocket=variant.startsWith(QStringLiteral("WallPocket"));
-    const bool antiStud=variant==QStringLiteral("AntiStudBore");
-    const auto key=antiStud?FitCalibrationNameKey::ClutchAntiStudBore:
-        wallPocket?FitCalibrationNameKey::ClutchWallPocketPlate:
-        postWall?FitCalibrationNameKey::ClutchPostWall:FitCalibrationNameKey::ClutchTubeWall;
-    const QString identity=antiStud?StudReceivingCalibrationArtifact::antiStudBoreArtifactIdentity():
-        wallPocket?StudReceivingCalibrationArtifact::wallPocketArtifactIdentity(false):
-        postWall?StudReceivingCalibrationArtifact::postWallArtifactIdentity():StudReceivingCalibrationArtifact::artifactIdentity();
-    auto&dirs=SessionFileDialogDirectoryService::instance();
-    QString path=QFileDialog::getSaveFileName(this,QStringLiteral("Save %1 Calibration 3MF").arg(variant),fixtureDefault(key,identity),"3MF models (*.3mf)");
-    if(path.isEmpty())return;
-    if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";
-    dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
-    const auto artifact=antiStud?StudReceivingCalibrationArtifact::generateAntiStudBore():
-        wallPocket?StudReceivingCalibrationArtifact::generateWallPocket(false):
-        postWall?StudReceivingCalibrationArtifact::generatePostWallCell():StudReceivingCalibrationArtifact::generate();
-    if(!artifact.ok){QMessageBox::warning(this,"Receiving Clutch Calibration",artifact.diagnostic);return;}
-    ThreeMfWriter::Options options;options.objectName=artifact.artifactIdentity;options.partIdentity=artifact.artifactIdentity;options.modelColor=QColor("#0055BF");
-    QString error;
-    if(!writeFixture(artifact.mesh,key,false,path,options,&error)){QMessageBox::warning(this,"Receiving Clutch Calibration",error);return;}
-    auto experiment=StudReceivingCalibrationArtifact::observationTemplate(artifact);
-    FitCalibrationSession session;session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();session.process=m_workspace.process;
-    session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;session.process.orientationNotes=experiment.process.orientationNotes;
-    session.hasCoarseExperiment=true;session.coarseExperiment=experiment;session.coarseExperiment.process=session.process;
-    if(!m_library.saveSession(&session,&error)){QMessageBox::warning(this,"Receiving Clutch Calibration",error);return;}
-    if(!writeCompanion(m_library,session,path,&error))QMessageBox::warning(this,"Calibration Artifact",QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));
-    auto workspace=m_workspace;workspace.featureSessions.push_back(session);showWorkspace(workspace,session.sessionIdentity);refreshLibrary();
-    QMessageBox::information(this,"Receiving Clutch Calibration",antiStud?
-        QStringLiteral("The seven-bore AntiStudBore fixture was added to this workspace. Print flat-base down with bores open upward; Candidate #1 is beside the wall notch. Test centered stud entry, not tube-and-wall clutch."):
-        wallPocket?
-        QStringLiteral("The seven-pocket shallow WallPocket fixture was added to this workspace. Print with pockets open upward; Candidate #1 is beside the wall notch. Its Verified opening correction serves both WallPocket depths."):
-        postWall?QStringLiteral("The seven-cell PostWallCell artifact was added to this manufacturing workspace. Candidate #1 is beside the wall notch; test both bays with genuine LEGO studs."):
-        QStringLiteral("The seven-cell TubeWallCell artifact was added to this manufacturing workspace. Test candidates left to right with a genuine LEGO stud in the normal tube-and-wall receiving position, not in the center bore."));
-}
-
-void FitCalibrationDialog::newFrictionPinCalibration(){if(m_dirty&&!saveSession())return;if(m_workspace.identity.isEmpty()){QMessageBox::information(this,"Friction Pin Calibration","Resume or import a manufacturing workspace first so the new evidence inherits its manufacturing context.");return;}auto&dirs=SessionFileDialogDirectoryService::instance();QString path=QFileDialog::getSaveFileName(this,"Save Friction Technic Pin Calibration 3MF",fixtureDefault(FitCalibrationNameKey::FrictionPin,FrictionTechnicPinCalibrationArtifact::artifactIdentity()),"3MF models (*.3mf)");if(path.isEmpty())return;if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);const auto artifact=FrictionTechnicPinCalibrationArtifact::generate();if(!artifact.ok){QMessageBox::warning(this,"Friction Pin Calibration",artifact.diagnostic);return;}ThreeMfWriter::Options options;options.objectName=artifact.artifactIdentity;options.partIdentity=artifact.artifactIdentity;options.modelColor=QColor("#A0A5A9");QString error;if(!writeFixture(artifact.mesh,FitCalibrationNameKey::FrictionPin,false,path,options,&error)){QMessageBox::warning(this,"Friction Pin Calibration",error);return;}auto experiment=FrictionTechnicPinCalibrationArtifact::observationTemplate(artifact);FitCalibrationSession session;session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();session.process=m_workspace.process;session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;session.process.orientationNotes=experiment.process.orientationNotes;session.hasCoarseExperiment=true;session.coarseExperiment=experiment;session.coarseExperiment.process=session.process;if(!m_library.saveSession(&session,&error)){QMessageBox::warning(this,"Friction Pin Calibration",error);return;}if(!writeCompanion(m_library,session,path,&error))QMessageBox::warning(this,"Calibration Artifact",QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));auto workspace=m_workspace;workspace.featureSessions.push_back(session);showWorkspace(workspace,session.sessionIdentity);refreshLibrary();QMessageBox::information(this,"Friction Pin Calibration","The seven-candidate rib-envelope artifact was added to this manufacturing workspace. Candidate #1 is beside the raised marker. Print at 100%, then test each candidate using two genuine LEGO Technic receiving Parts for insertion, retention, play, removal force, deformation, and repeatability.");}
-void FitCalibrationDialog::newFrictionlessPinCalibration(){if(m_dirty&&!saveSession())return;if(m_workspace.identity.isEmpty()){QMessageBox::information(this,"Frictionless Pin Calibration","Resume or import a manufacturing workspace first so the new evidence inherits its manufacturing context.");return;}auto&dirs=SessionFileDialogDirectoryService::instance();QString path=QFileDialog::getSaveFileName(this,"Save Frictionless Technic Pin Calibration 3MF",fixtureDefault(FitCalibrationNameKey::FrictionlessPin,FrictionlessTechnicPinCalibrationArtifact::artifactIdentity()),"3MF models (*.3mf)");if(path.isEmpty())return;if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);const auto artifact=FrictionlessTechnicPinCalibrationArtifact::generate();if(!artifact.ok){QMessageBox::warning(this,"Frictionless Pin Calibration",artifact.diagnostic);return;}ThreeMfWriter::Options options;options.objectName=artifact.artifactIdentity;options.partIdentity=artifact.artifactIdentity;options.modelColor=QColor("#A0A5A9");QString error;if(!writeFixture(artifact.mesh,FitCalibrationNameKey::FrictionlessPin,false,path,options,&error)){QMessageBox::warning(this,"Frictionless Pin Calibration",error);return;}auto experiment=FrictionlessTechnicPinCalibrationArtifact::observationTemplate(artifact);FitCalibrationSession session;session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();session.process=m_workspace.process;session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;session.process.orientationNotes=experiment.process.orientationNotes;session.hasCoarseExperiment=true;session.coarseExperiment=experiment;session.coarseExperiment.process=session.process;if(!m_library.saveSession(&session,&error)){QMessageBox::warning(this,"Frictionless Pin Calibration",error);return;}if(!writeCompanion(m_library,session,path,&error))QMessageBox::warning(this,"Calibration Artifact",QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));auto workspace=m_workspace;workspace.featureSessions.push_back(session);showWorkspace(workspace,session.sessionIdentity);refreshLibrary();QMessageBox::information(this,"Frictionless Pin Calibration","The seven-pin artifact was added to this manufacturing workspace. Print at 100%, then test candidates left to right in the same genuine LEGO Technic hole for insertion, engagement, retention, play, removal, deformation, and repeatability.");}
-
-void FitCalibrationDialog::newTechnicAxleCalibration(){if(m_dirty&&!saveSession())return;if(m_workspace.identity.isEmpty()){QMessageBox::information(this,"Technic Axle Calibration","Resume or import a manufacturing workspace first so the new evidence inherits its manufacturing context.");return;}auto&dirs=SessionFileDialogDirectoryService::instance();QString path=QFileDialog::getSaveFileName(this,"Save Technic Axle Calibration 3MF",fixtureDefault(FitCalibrationNameKey::AxleTip,TechnicAxleCalibrationArtifact::artifactIdentity()),"3MF models (*.3mf)");if(path.isEmpty())return;if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);const auto artifact=TechnicAxleCalibrationArtifact::generate();if(!artifact.ok){QMessageBox::warning(this,"Technic Axle Calibration",artifact.diagnostic);return;}ThreeMfWriter::Options options;options.objectName=artifact.artifactIdentity;options.partIdentity=artifact.artifactIdentity;options.modelColor=QColor("#A0A5A9");QString error;if(!writeFixture(artifact.mesh,FitCalibrationNameKey::AxleTip,false,path,options,&error)){QMessageBox::warning(this,"Technic Axle Calibration",error);return;}auto experiment=TechnicAxleCalibrationArtifact::observationTemplate(artifact);FitCalibrationSession session;session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();session.process=m_workspace.process;session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;session.process.orientationNotes=experiment.process.orientationNotes;session.hasCoarseExperiment=true;session.coarseExperiment=experiment;session.coarseExperiment.process=session.process;if(!m_library.saveSession(&session,&error)){QMessageBox::warning(this,"Technic Axle Calibration",error);return;}if(!writeCompanion(m_library,session,path,&error))QMessageBox::warning(this,"Calibration Artifact",QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));auto workspace=m_workspace;workspace.featureSessions.push_back(session);showWorkspace(workspace,session.sessionIdentity);refreshLibrary();QMessageBox::information(this,"Technic Axle Calibration","The seven-candidate ordinary axle artifact was added to this manufacturing workspace. Candidate #1 is beside the raised marker. Print at 100%, then test each candidate in ordinary genuine LEGO axle holes such as Parts 11478 and 10095. Record insertion, rotational play, retention, removal, visible stress, and repeatability; do not use reduced, rounded, or sliding axle-hole variants.");}
-
-
-void FitCalibrationDialog::newTechnicAxleHoleCalibration(){if(m_dirty&&!saveSession())return;if(m_workspace.identity.isEmpty()){QMessageBox::information(this,"Technic Axle Hole Calibration","Resume or import a manufacturing workspace first so the new evidence inherits its manufacturing context.");return;}auto&dirs=SessionFileDialogDirectoryService::instance();QString path=QFileDialog::getSaveFileName(this,"Save Technic Axle Hole Arm-Width Calibration 3MF",fixtureDefault(FitCalibrationNameKey::AxleHoleArmWidth,TechnicAxleHoleArmWidthCalibrationArtifact::artifactIdentity()),"3MF models (*.3mf)");if(path.isEmpty())return;if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);const auto artifact=TechnicAxleHoleArmWidthCalibrationArtifact::generate();if(!artifact.ok){QMessageBox::warning(this,"Technic Axle Hole Calibration",artifact.diagnostic);return;}ThreeMfWriter::Options options;options.objectName=artifact.artifactIdentity;options.partIdentity=artifact.artifactIdentity;options.modelColor=QColor("#A0A5A9");QString error;if(!writeFixture(artifact.mesh,FitCalibrationNameKey::AxleHoleArmWidth,false,path,options,&error)){QMessageBox::warning(this,"Technic Axle Hole Calibration",error);return;}auto experiment=TechnicAxleHoleArmWidthCalibrationArtifact::observationTemplate(artifact);FitCalibrationSession session;session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();session.process=m_workspace.process;session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;session.process.orientationNotes=experiment.process.orientationNotes;session.hasCoarseExperiment=true;session.coarseExperiment=experiment;session.coarseExperiment.process=session.process;if(!m_library.saveSession(&session,&error)){QMessageBox::warning(this,"Technic Axle Hole Calibration",error);return;}if(!writeCompanion(m_library,session,path,&error))QMessageBox::warning(this,"Calibration Artifact",QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));auto workspace=m_workspace;workspace.featureSessions.push_back(session);showWorkspace(workspace,session.sessionIdentity);refreshLibrary();QMessageBox::information(this,"Technic Axle Hole Calibration","The corrected seven-candidate arm-width artifact was added to this workspace. Tip-to-tip is fixed at 5.10 mm; arm opening width varies from 1.60 to 2.20 mm. Candidate #1 is beside the raised marker. Test with two ordinary genuine LEGO axles and record insertion, seating, play, retention, removal, stress, and repeatability.");}
-void FitCalibrationDialog::newStandardBarCalibration()
-{
-    if (m_dirty && !saveSession()) return;
-    if (m_workspace.identity.isEmpty()) {
-        QMessageBox::information(this,"Standard Bar Calibration",
-            "Resume or import a manufacturing workspace first so the new evidence inherits its manufacturing context.");
-        return;
-    }
-    auto& dirs=SessionFileDialogDirectoryService::instance();
-    QString path=QFileDialog::getSaveFileName(this,"Save Standard Bar Calibration 3MF",
-        fixtureDefault(FitCalibrationNameKey::BarDiameter,StandardBarCalibrationArtifact::artifactIdentity()),
-        "3MF models (*.3mf)");
-    if(path.isEmpty()) return;
-    if(!path.endsWith(".3mf",Qt::CaseInsensitive)) path+=".3mf";
-    dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
-    const auto artifact=StandardBarCalibrationArtifact::generate();
-    if(!artifact.ok) { QMessageBox::warning(this,"Standard Bar Calibration",artifact.diagnostic); return; }
-    ThreeMfWriter::Options options;
-    options.objectName=artifact.artifactIdentity;
-    options.partIdentity=artifact.artifactIdentity;
-    options.modelColor=QColor("#A0A5A9");
-    QString error;
-    if(!writeFixture(artifact.mesh,FitCalibrationNameKey::BarDiameter,false,path,options,&error)) {
-        QMessageBox::warning(this,"Standard Bar Calibration",error);
-        return;
-    }
-    auto experiment=StandardBarCalibrationArtifact::observationTemplate(artifact);
-    FitCalibrationSession session;
-    session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
-    session.process=m_workspace.process;
-    session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;
-    session.process.orientationNotes=experiment.process.orientationNotes;
-    session.hasCoarseExperiment=true;
-    session.coarseExperiment=experiment;
-    session.coarseExperiment.process=session.process;
-    if(!m_library.saveSession(&session,&error)) {
-        QMessageBox::warning(this,"Standard Bar Calibration",error);
-        return;
-    }
-    if(!writeCompanion(m_library,session,path,&error))
-        QMessageBox::warning(this,"Calibration Artifact",
-            QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));
-    auto workspace=m_workspace;
-    workspace.featureSessions.push_back(session);
-    showWorkspace(workspace,session.sessionIdentity);
-    refreshLibrary();
-    QMessageBox::information(this,"Standard Bar Calibration",
-        "The seven-bar artifact was added to this manufacturing workspace. Print at 100% with bars vertical. Candidate #1 is beside the notch. Test all candidates against the same genuine standard-bar clip or grip; record insertion, retention, removal, play, and repeatability.");
-}
-void FitCalibrationDialog::newCClipBarReceiverCalibration()
-{
-    if(m_dirty && !saveSession()) return;
-    if(m_workspace.identity.isEmpty()) {
-        QMessageBox::information(this,"C-Clip / Bar Receiver Calibration",
-            "Resume or import a manufacturing workspace first so the new evidence inherits its manufacturing context.");
-        return;
-    }
-    bool accepted=false;
-    const QString choice=QInputDialog::getItem(this,"C-Clip / Bar Receiver Calibration","Print orientation:",
-        {QStringLiteral("Perpendicular — clip axis vertical"),QStringLiteral("Parallel — clip axis horizontal")},0,false,&accepted);
-    if(!accepted)return;
-    CClipBarReceiverCalibrationDefinition definition;
-    definition.orientation=choice.startsWith(QStringLiteral("Parallel"))
-        ? FitPrintedOrientation::FeatureAxisParallelToBuildPlate
-        : FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
-    const auto key=definition.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate
-        ? FitCalibrationNameKey::CClipBarReceiverClearanceParallel
-        : FitCalibrationNameKey::CClipBarReceiverClearance;
-    definition.artifactIdentity=definition.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate
-        ? CClipBarReceiverCalibrationArtifact::parallelArtifactIdentity()
-        : CClipBarReceiverCalibrationArtifact::artifactIdentity();
-    auto& dirs=SessionFileDialogDirectoryService::instance();
-    QString path=QFileDialog::getSaveFileName(this,"Save C-Clip / Bar Receiver Calibration 3MF",
-        fixtureDefault(key,definition.artifactIdentity),"3MF models (*.3mf)");
-    if(path.isEmpty()) return;
-    if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";
-    dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
-    const auto artifact=CClipBarReceiverCalibrationArtifact::generate(definition);
-    if(!artifact.ok) {QMessageBox::warning(this,"C-Clip / Bar Receiver Calibration",artifact.diagnostic);return;}
-    ThreeMfWriter::Options options;
-    options.objectName=artifact.artifactIdentity;
-    options.partIdentity=artifact.artifactIdentity;
-    options.modelColor=QColor("#A0A5A9");
-    QString error;
-    if(!writeFixture(artifact.mesh,key,false,path,options,&error)) {
-        QMessageBox::warning(this,"C-Clip / Bar Receiver Calibration",error);return;
-    }
-    auto experiment=CClipBarReceiverCalibrationArtifact::observationTemplate(artifact,definition);
-    FitCalibrationSession session;
-    session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
-    session.process=m_workspace.process;
-    session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;
-    session.process.orientationNotes=experiment.process.orientationNotes;
-    session.hasCoarseExperiment=true;
-    session.coarseExperiment=experiment;
-    session.coarseExperiment.process=session.process;
-    if(!m_library.saveSession(&session,&error)) {
-        QMessageBox::warning(this,"C-Clip / Bar Receiver Calibration",error);return;
-    }
-    if(!writeCompanion(m_library,session,path,&error))
-        QMessageBox::warning(this,"Calibration Artifact",
-            QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));
-    auto workspace=m_workspace;
-    workspace.featureSessions.push_back(session);
-    showWorkspace(workspace,session.sessionIdentity);
-    refreshLibrary();
-    QMessageBox::information(this,"C-Clip / Bar Receiver Calibration",
-        "The seven-clip artifact was added to this workspace. Print flat-base down at 100% in the selected orientation. Candidate #1 is beside the notch. Snap the same genuine 3.20 mm LEGO bar sideways through each throat; record grip, play, removal, stress and repeatability.");
-}
-void FitCalibrationDialog::newBallJointCalibration()
-{
-    if(m_dirty&&!saveSession())return;
-    if(m_workspace.identity.isEmpty()) {
-        QMessageBox::information(this,"Ball Joint Calibration",
-            "Resume or import a manufacturing workspace first so the new evidence inherits its manufacturing context.");
-        return;
-    }
-    bool accepted=false;
-    const QString choice=QInputDialog::getItem(this,"Ball Joint Calibration","Print orientation:",
-        {QStringLiteral("Perpendicular — ball stem vertical"),QStringLiteral("Parallel — ball stem horizontal")},0,false,&accepted);
-    if(!accepted)return;
-    BallJointCalibrationDefinition definition;
-    definition.orientation=choice.startsWith(QStringLiteral("Parallel"))
-        ? FitPrintedOrientation::FeatureAxisParallelToBuildPlate
-        : FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
-    const auto key=definition.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate
-        ? FitCalibrationNameKey::BallJointDiameterParallel : FitCalibrationNameKey::BallJointDiameter;
-    if(definition.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate) {
-        definition.centerCorrectionMillimetres=-.15;
-        definition.spacingMillimetres=.15;
-    }
-    definition.artifactIdentity=definition.orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate
-        ? BallJointCalibrationArtifact::parallelArtifactIdentity() : BallJointCalibrationArtifact::artifactIdentity();
-    auto& dirs=SessionFileDialogDirectoryService::instance();
-    QString path=QFileDialog::getSaveFileName(this,"Save Ball Joint Calibration 3MF",
-        fixtureDefault(key,definition.artifactIdentity),"3MF models (*.3mf)");
-    if(path.isEmpty())return;
-    if(!path.endsWith(".3mf",Qt::CaseInsensitive))path+=".3mf";
-    dirs.rememberSelectedFile(FileDialogDirectoryCategory::SaveExport,path);
-    const auto artifact=BallJointCalibrationArtifact::generate(definition);
-    if(!artifact.ok){QMessageBox::warning(this,"Ball Joint Calibration",artifact.diagnostic);return;}
-    ThreeMfWriter::Options options;
-    options.objectName=artifact.artifactIdentity;
-    options.partIdentity=artifact.artifactIdentity;
-    options.modelColor=QColor("#A0A5A9");
-    QString error;
-    if(!writeFixture(artifact.mesh,key,false,path,options,&error)) {
-        QMessageBox::warning(this,"Ball Joint Calibration",error);return;
-    }
-    auto experiment=BallJointCalibrationArtifact::observationTemplate(artifact,definition);
-    FitCalibrationSession session;
-    session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
-    session.process=m_workspace.process;
-    session.process.actualPrintedOrientation=experiment.process.actualPrintedOrientation;
-    session.process.orientationNotes=experiment.process.orientationNotes;
-    session.hasCoarseExperiment=true;
-    session.coarseExperiment=experiment;
-    session.coarseExperiment.process=session.process;
-    if(!m_library.saveSession(&session,&error)) {
-        QMessageBox::warning(this,"Ball Joint Calibration",error);return;
-    }
-    if(!writeCompanion(m_library,session,path,&error))
-        QMessageBox::warning(this,"Calibration Artifact",
-            QStringLiteral("The printable fixture was saved, but its companion session JSON could not be written: %1").arg(error));
-    auto workspace=m_workspace;
-    workspace.featureSessions.push_back(session);
-    showWorkspace(workspace,session.sessionIdentity);
-    refreshLibrary();
-    QMessageBox::information(this,"Ball Joint Calibration",
-        "The seven-ball fixture was added to this workspace. Print flat-base down at 100% with stems in the selected orientation. Candidate #1 is beside the notch. Keep supports off the spherical fit surfaces. Test all candidates in the same genuine LEGO joint8 socket; record snap-in, articulation, retention, removal, stress and repeatability.");
+    if(!found)workspace.featureSessions.push_back(result.session);
+    showWorkspace(workspace,result.session.sessionIdentity);refreshLibrary();
+    SessionFileDialogDirectoryService::instance().rememberSelectedFile(FileDialogDirectoryCategory::OpenImport,result.companionPath);
+    const auto& experiment=result.session.hasFineExperiment?result.session.fineExperiment:result.session.coarseExperiment;
+    QMessageBox::information(this,"Calibration Package Ready",tr("Printable fixture:\n%1\n\nManaged companion:\n%2\n\nPrint at 100% scale. %3\nRecord new physical observations before verification.")
+        .arg(result.fixturePath,result.companionPath,experiment.process.orientationNotes));
 }

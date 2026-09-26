@@ -462,6 +462,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
     src/services/geometry/fit/FitCalibrationLibrary.cpp src/services/geometry/fit/FitCalibrationLibrary.h
     src/services/geometry/fit/FitCalibrationPackage.cpp src/services/geometry/fit/FitCalibrationPackage.h
+    src/services/geometry/fit/FitCalibrationGenerationService.cpp src/services/geometry/fit/FitCalibrationGenerationService.h
     src/services/geometry/fit/FitCalibrationFixtureLabel.cpp src/services/geometry/fit/FitCalibrationFixtureLabel.h
     src/services/geometry/fit/RoundTechnicCalibrationArtifact.cpp src/services/geometry/fit/RoundTechnicCalibrationArtifact.h
     src/services/geometry/fit/StandardStudCalibrationArtifact.cpp src/services/geometry/fit/StandardStudCalibrationArtifact.h
@@ -820,6 +821,13 @@ if(BUILD_TESTING)
 
     get_target_property(_fitArtifactSources FitCalibrationArtifactTest SOURCES)
     list(REMOVE_ITEM _fitArtifactSources tests/FitCalibrationArtifactTest.cpp)
+    qt_add_executable(FitCalibrationGenerationServiceTest EXCLUDE_FROM_ALL
+        tests/FitCalibrationGenerationServiceTest.cpp
+        src/services/geometry/fit/FitCalibrationGenerationService.cpp ${_fitArtifactSources})
+    target_link_libraries(FitCalibrationGenerationServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
+    bricksuite_stage_mcut_runtime(FitCalibrationGenerationServiceTest)
+    add_test(NAME FitCalibrationGenerationService COMMAND FitCalibrationGenerationServiceTest)
+
     qt_add_executable(PinBarrelHingeCalibrationTest EXCLUDE_FROM_ALL
         tests/PinBarrelHingeCalibrationTest.cpp ${_fitArtifactSources})
     target_link_libraries(PinBarrelHingeCalibrationTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
