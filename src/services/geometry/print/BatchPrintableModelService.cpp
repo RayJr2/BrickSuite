@@ -451,6 +451,7 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         {QStringLiteral("runId"),runId},
         {QStringLiteral("localOverridePolicy"),QStringLiteral("existing-validated-nominal-after-native-preparation-failure-v1")},
         {QStringLiteral("auditPreparationProfile"),QString::fromLatin1(LDrawPrintPreparationProfile::Version)},
+        {QStringLiteral("booleanExecutionPolicy"),QStringLiteral("isolated-v1: 30s / 512MiB / 50000 input faces per operation")},
         {QStringLiteral("maximumSequentialBooleanOperations"),int(LDrawPrintPreparationProfile::MaximumSequentialBooleanOperations)},
         {QStringLiteral("diagnosticMaximumFaces"),50000},
         {QStringLiteral("diagnosticMaximumVertices"),150000},
@@ -575,6 +576,8 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         if(options.partReference)state.insert(QStringLiteral("currentReferenceSequence"),parts[index].referenceSequence);
         state.insert(QStringLiteral("currentPartNumber"),parts[index].partNumber);
         state.insert(QStringLiteral("currentPartStatus"),QStringLiteral("active"));
+        state.insert(QStringLiteral("currentBooleanOperation"),0);
+        state.insert(QStringLiteral("booleanOperations"),0);
         state.insert(QStringLiteral("currentPhase"),QStringLiteral("starting"));
         state.insert(QStringLiteral("phaseTimingsMs"),QJsonObject());
         state.remove(QStringLiteral("nativeResultCategory"));
@@ -655,8 +658,10 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
                 QElapsedTimer preparationTimer;preparationTimer.start();
                 const auto prepared=LDrawPrintPreparationService().prepare(request,cancellation,[&](const PrintPreparationProgress& p){
                     static const char* names[]={"source_analysis","semantic_construction","operand_validation","boolean_composition","final_validation","diagnostic_candidate"};
-                    if(p.phase==PrintPreparationPhase::BooleanComposition)
+                    if(p.phase==PrintPreparationPhase::BooleanComposition){
                         state.insert(QStringLiteral("booleanOperations"),p.totalOperations);
+                        state.insert(QStringLiteral("currentBooleanOperation"),p.currentOperation);
+                    }
                     phase(QStringLiteral("preparing/")+QString::fromLatin1(names[int(p.phase)]));
                 });
                 row.prepareMilliseconds=preparationTimer.elapsed();

@@ -44,6 +44,9 @@ target_compile_definitions(BrickSuiteMcut INTERFACE
 add_library(BrickSuite::Mcut ALIAS BrickSuiteMcut)
 
 function(bricksuite_stage_mcut_runtime target_name)
+    if(TARGET BrickSuiteMeshBooleanWorker AND NOT target_name STREQUAL "BrickSuiteMeshBooleanWorker")
+        add_dependencies("${target_name}" BrickSuiteMeshBooleanWorker)
+    endif()
     if(WIN32)
         add_custom_command(TARGET "${target_name}" POST_BUILD
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different

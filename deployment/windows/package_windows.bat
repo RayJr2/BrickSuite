@@ -164,6 +164,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
+copy /Y "%BUILD_DIR%\BrickSuiteMeshBooleanWorker.exe" "%STAGE_DIR%\BrickSuiteMeshBooleanWorker.exe" >nul
+if errorlevel 1 (
+    echo ERROR: Unable to copy required bounded mesh Boolean worker.
+    exit /b 1
+)
+
 echo Copying LICENSE...
 copy /Y "%LICENSE_SOURCE%" "%STAGE_DIR%\LICENSE" >nul
 if errorlevel 1 (

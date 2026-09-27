@@ -221,12 +221,69 @@ fidelity checks remain mandatory. The seed-8125 stall was actually sequence 21
 roughly 194 GB of private committed memory. The shared policy routes it through
 validated local composition.
 
+Catalog preparation MCUT calls now run in `BrickSuiteMeshBooleanWorker`, shared
+by interactive preparation, the audit, and ManufacturingMesh. Each operation has a 30-second
+parent-enforced deadline, a 512 MiB child memory limit, at most 50,000 input
+faces / 150,000 input vertices, and at most 100,000 output faces / 300,000
+output vertices. Worker startup failure, abnormal exit, timeout, missing or
+malformed output fail closed. Returned meshes are independently validated in
+the parent. The existing Local Printable Override union retains its separate,
+stricter 10-second / 2,000-input-face worker; it does not spawn nested workers.
+Ship the Boolean worker beside the application executable (inside `MacOS` for
+an application bundle). A missing helper produces a diagnostic, never an
+in-process fallback. Trusted calibration generators retain their established
+backend execution path. Non-MCUT preparation work retains its existing bounds.
+
+New run metadata records `booleanExecutionPolicy`. Before each sequential
+Boolean, the durable state records `currentBooleanOperation` (one-based) as
+well as `booleanOperations` (planned total). Both reset for the next Part.
+The `ordinary-brick-bounded-v2` routing decision and corpus identity are
+unchanged, so existing saved plans remain valid for a new continuation chunk.
+
+The 3021 crash investigation found 144 durable rows, active reference sequence
+145, and phase `preparing/boolean_composition`. Windows identified a Debug
+MCUT breakpoint exception (`0x80000003`), not Auto Fit or export. The exact DLL
+offset resolves to `get_connected_component_data_impl_detail`, MCUT
+`source/frontend.cpp:3314`, asserting `cc_uptr->cdt_index_cache.empty()` while
+`cdt_index_cache_initialized` is false. The first face-triangulation size query
+returns error `-1` after leaving a partial cache. BrickSuite previously ignored
+that status and issued the copy query, triggering the Debug assertion (Release
+continued to an invalid mesh). All MCUT extraction statuses are now checked;
+the service immediately returns failure and releases the context without a
+second query. Native assertions elsewhere remain contained by the worker.
+
+The historical checkpoint recorded eight planned operations, not which one
+faulted, and no retained minidump was available. Bounded reproduction isolated
+operation five: 608 accumulated triangles plus a 96-triangle stud operand,
+identical serialized inputs in Debug and Release. Both now return the same
+triangulation-query failure without emitting Ready or crashing either process.
+Installed `parts/3021.dat` has 508 source/stitched triangles, nine groups and
+nine operands, ten source boundary loops (160 edges), and 988 closed-operand
+faces. Recognition finds six stud and two receiving-clutch features. No
+ManufacturingMesh correction or Auto Fit selection is reached. The planar
+composer can represent this source (eight regions, 1,084 faces, 544 vertices),
+but the unchanged routing policy selects the eight-operation sequential route.
+Source analysis is bounded by the existing 20-million candidate-check limit;
+the 508-triangle source has at most 128,778 distinct triangle pairs. The
+operation-count ceiling could not detect this data-dependent triangulation
+failure or contain an assertion inside an individual call.
+
+To continue an interrupted Part Reference audit, load its saved
+`part-reference-plan.json`, set **First unique Part** to the active global
+reference sequence (145 for this crash), and choose a short **Parts in this
+run** count first. A new run folder preserves the original evidence and full
+corpus fingerprint. Chunk CSV `sample_sequence` starts at one;
+`part_reference_sequence` retains the global position. Never append to or edit
+the crashed run's CSV, JSON, or exports. An unavailable or rejected Part still
+gets its own completed failure row in the new chunk.
+
 Diagnostic export is optional. Meshes above 50,000 faces or 150,000 vertices are
 rejected before orientation/copying or lib3mf generation. Stop skips optional
 export/reopen at safe boundaries. Existing bounded diagnostic reconstruction
 keeps its elapsed/output limits and checks cancellation between attempts. None
 of these decisions promote a failed preparation to success. These are workload
-bounds, not a promise to interrupt a native call at a wall-clock deadline.
+bounds; the separate MCUT subprocess deadline described above applies only to
+MCUT operations.
 
 Live phases include loading, preparation subphases, source-coverage classification,
 failure classification, diagnostic candidate/extraction, diagnostic export,

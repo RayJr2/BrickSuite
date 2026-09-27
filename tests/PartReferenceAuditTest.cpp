@@ -15,6 +15,29 @@ bool write(const QString& path,const QByteArray& data){QFile f(path);return f.op
 int main(int argc,char** argv)
 {
     QCoreApplication app(argc,argv);QTemporaryDir temp;bool ok=true;
+    // Opt-in one-Part continuation proof; never runs the full installed corpus.
+    if(argc==5&&app.arguments()[1]==QStringLiteral("--3021-saved-plan-check")){
+        const auto plan=BatchPrintableModelService::readPartReferencePlan(app.arguments()[2],app.arguments()[3]);
+        if(!check(plan.ok()&&plan.parts.size()>=145&&plan.parts[144].partNumber==QStringLiteral("3021"),"saved sequence 145 identifies 3021"))return 1;
+        BatchPrintOptions proof;proof.libraryRoot=app.arguments()[3];proof.outputRoot=app.arguments()[4];
+        proof.localOverrideRoot=temp.filePath("overrides");proof.autoFitEnabled=false;proof.partReference=true;proof.corpusPlan=plan.plan;
+        QString statePath;int lastOperation=0;
+        proof.beforePart=[&](const QString& path,int,const QString&){statePath=path;};
+        proof.phaseProgress=[&](int,const QString&,const QString& phase){
+            if(phase!=QStringLiteral("preparing/boolean_composition"))return;
+            const auto state=QJsonDocument::fromJson(read(statePath)).object();
+            const int current=state.value("currentBooleanOperation").toInt();
+            ok&=check(state.value("currentReferenceSequence").toInt()==145&&state.value("currentPartNumber")=="3021"&&current>=lastOperation,
+                "3021 operation checkpoint is durable before observer/work");lastOperation=current;
+        };
+        const auto run=BatchPrintableModelService().run(plan.parts.mid(144,1),proof);
+        const auto state=QJsonDocument::fromJson(read(run.statePath)).object();
+        ok&=check(run.ok&&run.results.size()==1&&lastOperation==5&&state.value("completedCount").toInt()==1&&
+            state.value("status")=="completed"&&state.value("corpusFingerprint")==plan.plan.value("corpusFingerprint")&&
+            run.results[0].nativeCategory!=BatchPrintCategory::Success,"single 3021 failure row completes with unchanged saved-plan fingerprint");
+        fprintf(stdout,"3021 saved-plan result: %s, folder: %s\n",run.results.isEmpty()?"missing":qPrintable(BatchPrintableModelService::categoryCode(run.results[0].category)),qPrintable(run.runDirectory));
+        return ok?0:1;
+    }
     QDir(temp.path()).mkpath("parts");
     const QByteArray triangle="0 !LDRAW_ORG Part\n0 BFC CERTIFY CCW\n3 16 0 0 0 20 0 0 0 20 0\n";
     ok&=check(write(temp.filePath("parts/1100.dat"),triangle)&&write(temp.filePath("parts/1101pat.dat"),triangle),"model fixtures");
@@ -83,10 +106,17 @@ int main(int argc,char** argv)
     ok&=check(state.value("completedCount").toInt()==1&&state.value("currentSampleSequence").toInt()==2&&
         read(QFileInfo(interruptedPath).dir().filePath("results.csv")).contains("\"1100\""),"completed CSV survives interruption with active next Part");
     const auto frozen=BatchPrintableModelService::readPartReferencePlan(QFileInfo(interruptedPath).dir().filePath("part-reference-plan.json"),temp.path());
+    const auto historicalState=read(interruptedPath);
+    const auto historicalCsv=read(QFileInfo(interruptedPath).dir().filePath("results.csv"));
     options.beforePart={};options.runId="continuation-chunk";options.corpusPlan=frozen.plan;
     const auto chunk=BatchPrintableModelService().run(frozen.parts.mid(1),options);
     ok&=check(chunk.ok&&chunk.results.size()==2&&chunk.results[0].partNumber==b.partNumber&&
         chunk.referenceSummary.value("uniqueParts").toInt()==2,"saved-plan chunk preserves order and measures only selected range");
+    const auto continuedState=QJsonDocument::fromJson(read(QDir(chunk.runDirectory).filePath("run-state.json"))).object();
+    ok&=check(read(interruptedPath)==historicalState&&read(QFileInfo(interruptedPath).dir().filePath("results.csv"))==historicalCsv&&
+        continuedState.value("corpusFingerprint")==state.value("corpusFingerprint")&&
+        continuedState.value("firstReferenceSequence").toInt()==2,
+        "continuation preserves original evidence and fingerprint, starts at interrupted global sequence");
     auto damaged=corpus.plan;damaged.insert("uniquePartCount",99);const auto damagedPath=temp.filePath("damaged.json");
     write(damagedPath,QJsonDocument(damaged).toJson());
     ok&=check(!BatchPrintableModelService::readPartReferencePlan(damagedPath,temp.path()).ok(),"damaged plan refuses continuation");

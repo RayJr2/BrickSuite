@@ -21,6 +21,9 @@ public:
     static const FitProfileCorrection* compatibleCorrection(const FitProfile&,FitPrintedOrientation,QString* reason=nullptr);
     static ManufacturingMeshCorrections compatibleCorrections(const FitProfile&,FitPrintedOrientation,QString* reason=nullptr);
     static FitPrintedOrientation transformedOrientation(const FunctionalFeature&,const PrintOrientation&);
+    // Recognition only: this does not grant profile compatibility or fit ownership.
+    static bool hasRecognizedFitFeatures(const LDrawSemanticOperandBuilder::Result&);
+    static bool hasRecognizedFitFeatures(const LDrawGeometry::LDrawLoadResult&);
     static bool hasApplicableCorrection(const FitProfile&,const LDrawSemanticOperandBuilder::Result&,const PrintOrientation&,QString* reason=nullptr);
     static bool hasApplicableCorrection(const FitProfile&,const LDrawGeometry::LDrawLoadResult&,const PrintOrientation&,QString* reason=nullptr);
     ManufacturingMeshResult generate(const LDrawGeometry::LDrawLoadResult&,const PreparedMesh&,const FitProfile&,const PrintOrientation&)const;

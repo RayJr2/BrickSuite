@@ -698,7 +698,18 @@ target_link_libraries(BrickSuite PRIVATE
     OpenSSL::Crypto
     BrickSuite::Mcut BrickSuite::Lib3mf
 )
+add_executable(BrickSuiteMeshBooleanWorker
+    src/services/geometry/print/McutWorkerMain.cpp
+    src/services/geometry/print/McutWorkerProtocol.h
+    src/services/geometry/print/McutMeshBooleanService.cpp
+    src/services/geometry/print/PrintMeshAnalysis.cpp)
+target_link_libraries(BrickSuiteMeshBooleanWorker PRIVATE Qt6::Core BrickSuite::Mcut)
+bricksuite_stage_mcut_runtime(BrickSuiteMeshBooleanWorker)
 bricksuite_stage_mcut_runtime(BrickSuite)
+if(APPLE)
+    add_custom_command(TARGET BrickSuite POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:BrickSuiteMeshBooleanWorker> $<TARGET_FILE_DIR:BrickSuite>)
+endif()
 
 include(CTest)
 
@@ -1039,6 +1050,9 @@ if(BUILD_TESTING)
     if(BRICKSUITE_CALIBRATION_LDRAW_ROOT)
         add_test(NAME PrintCompositionRouting COMMAND LDrawPrintPreparationServiceTest
             --routing-only "${BRICKSUITE_CALIBRATION_LDRAW_ROOT}")
+        add_test(NAME PrintPreparation3021 COMMAND LDrawPrintPreparationServiceTest
+            --3021-only "${BRICKSUITE_CALIBRATION_LDRAW_ROOT}")
+        set_tests_properties(PrintPreparation3021 PROPERTIES TIMEOUT 180)
     endif()
 
     qt_add_executable(PreparedMeshTest EXCLUDE_FROM_ALL tests/PreparedMeshTest.cpp
@@ -2656,7 +2670,7 @@ if(APPLE)
 endif()
 
 if(UNIX AND NOT APPLE)
-    install(TARGETS BrickSuite
+    install(TARGETS BrickSuite BrickSuiteMeshBooleanWorker
         RUNTIME DESTINATION bin
     )
 endif()

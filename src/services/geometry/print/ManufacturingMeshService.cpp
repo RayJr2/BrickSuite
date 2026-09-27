@@ -206,7 +206,7 @@ bool adjustCertifiedReceivingTube(const LDrawGeometry::LDrawLoadResult& source,
 }
 }
 
-ManufacturingMeshService::ManufacturingMeshService(BooleanServiceFactory f,SemanticBuilderFunction b):m_factory(f?std::move(f):[]{return std::make_unique<McutMeshBooleanService>();}),m_builder(std::move(b)){}
+ManufacturingMeshService::ManufacturingMeshService(BooleanServiceFactory f,SemanticBuilderFunction b):m_factory(f?std::move(f):[]{return std::make_unique<McutMeshBooleanService>(McutMeshBooleanService::Execution::Isolated);}),m_builder(std::move(b)){}
 
 ManufacturingMeshResult ManufacturingMeshService::attemptExperimentalOverride(
     const LDrawGeometry::LDrawLoadResult& source,const PreparedMesh& prepared,
@@ -323,6 +323,31 @@ FitPrintedOrientation ManufacturingMeshService::transformedOrientation(const Fun
     if(z>=1.0-1e-6)return FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
     if(z<=1e-6)return FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
     return FitPrintedOrientation::Unknown;
+}
+
+bool ManufacturingMeshService::hasRecognizedFitFeatures(const LDrawSemanticOperandBuilder::Result& semantic)
+{
+    return std::any_of(semantic.operands.cbegin(),semantic.operands.cend(),[](const auto& operand){return !operand.functionalFeatures.isEmpty();});
+}
+
+bool ManufacturingMeshService::hasRecognizedFitFeatures(const LDrawGeometry::LDrawLoadResult& source)
+{
+    if(hasRecognizedFitFeatures(LDrawSemanticOperandBuilder::build(source)))return true;
+    return !FrictionlessTechnicPinSemantic::recognize(source).isEmpty()||
+        !FrictionTechnicPinSemantic::recognize(source).isEmpty()||
+        !TechnicAxleSemantic::recognizeAxles(source).isEmpty()||
+        !TechnicAxleSemantic::recognizeAxleHoles(source).isEmpty()||
+        !RoundTechnicPassageSemantic::recognize(source).isEmpty()||
+        !StudReceivingPostSemantic::recognize(source).isEmpty()||
+        !certifiedSourceStuds(source).isEmpty()||
+        !CClipBarReceiverSemantic::recognize(source).isEmpty()||
+        !BallJointSemantic::recognize(source).isEmpty()||
+        !BallSocketSemantic::recognize(source).isEmpty()||
+        !PinBarrelHingeSemantic::recognize(source).isEmpty()||
+        !InterleavedFingerHingeSemantic::recognize(source).isEmpty()||
+        !ClickHingeSemantic::recognize(source).isEmpty()||
+        !RetainedRotatingWheelSemantic::recognize(source).isEmpty()||
+        !PlainRoundBoreWheelSemantic::recognize(source).isEmpty();
 }
 
 bool ManufacturingMeshService::hasApplicableCorrection(const FitProfile&profile,const LDrawSemanticOperandBuilder::Result&semantic,const PrintOrientation&printOrientation,QString*reason)
