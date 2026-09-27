@@ -7,7 +7,7 @@
 class QComboBox; class QDoubleSpinBox; class QLabel; class QLineEdit; class QPushButton; class QSpinBox; class QTabWidget; class QTableWidget; class QTimer;
 class FitCalibrationDialog : public QDialog {
     Q_OBJECT
-public: explicit FitCalibrationDialog(QWidget* parent=nullptr);
+public: explicit FitCalibrationDialog(QWidget* parent=nullptr, const QString& managedRoot={});
 private:
     PrintGeometry::FitCalibrationExperiment* activeExperiment();
     QTableWidget* activeTable() const;
@@ -16,6 +16,9 @@ private:
     void addObservation(); void selectPreferred(); void markVerified(); void generateFineSearch();
     void runGeneration(PrintGeometry::FitCalibrationGenerationService::Request);
     void recoverPackage();
+    void createUnifiedPackage(bool recommended);
+    void runUnifiedPackage(const PrintGeometry::FitCalibrationGenerationService::PackageRequest&,const QString& recoveryDirectory={});
+    QComboBox* m_generationMode=nullptr;
     void refreshCapabilities();
     QPushButton* m_newGeneration=nullptr;
     void showGenerationResult(const PrintGeometry::FitCalibrationGenerationService::Result&);

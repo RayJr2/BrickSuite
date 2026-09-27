@@ -27,6 +27,27 @@ public:
         FitCalibrationSession session;
         bool ok() const { return published && registered; }
     };
+    struct PackageRequest { QVector<Request> selections; };
+    struct FixturePlan { QString name, fileName; QVector<int> selections; bool combinedCore=false; };
+    struct PackagePlan {
+        QVector<FixturePlan> fixtures;
+        QString diagnostic;
+        bool ok() const {return diagnostic.isEmpty()&&!fixtures.isEmpty();}
+    };
+    struct PackageResult {
+        bool published=false,registered=false;
+        int registeredCount=0;
+        QString directory,companionPath,diagnostic;
+        QStringList fixturePaths;
+        QVector<FitCalibrationSession> sessions;
+        bool ok() const {return published&&registered;}
+    };
+    using Progress=std::function<void(const QString&)>;
+    static PackageRequest recommended(const FitCalibrationWorkspace&,const QString& libraryRoot={});
+    static PackagePlan planPackage(const PackageRequest&);
+    static bool isPackageCompanion(const QString& path);
+    PackageResult generatePackage(const PackageRequest&,Progress progress={}) const;
+    PackageResult recoverPackage(const QString& directory,Progress progress={}) const;
     enum class Checkpoint { GeometryWritten, BeforeReopen, Published, Registered };
     // Optional fault/observation seam. Normal callers leave this empty.
     using Observer = std::function<bool(Checkpoint,const QString&,QString*)>;

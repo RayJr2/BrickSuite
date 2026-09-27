@@ -51,7 +51,7 @@ it never replaces that session with the original draft. Conflicting definitions
 or unreadable existing records are rejected. Legacy session import remains with
 the unchanged library importer; it does not require a publication record.
 
-## UI and future scope
+## Single-calibration UI
 
 **Generate Calibration Fixture...** and **Continue Calibration...** call the same
 service on a background worker with modal busy feedback. The dialog retains
@@ -65,14 +65,9 @@ Definitions and Help remain application resources; generated packages belong in
 Documents; managed sessions/profiles remain in application data. No repository
 or developer executable is required for supported generation paths.
 
-The generation result already accommodates collections of named meshes (the
-existing Plain Round Bore Wheel continuation). A later version can add multiple
-zone/session members to publication and a versioned companion envelope, while
-retaining this single-session import path. Phase 1 does not expose the unified
-pilot, add families to the selector, or supply missing continuation generators.
-Source-backed family exposure and continuation now use the capability registry
-described below. Unsupported contracts fail explicitly rather than substituting
-generic geometry.
+Single-family generation retains its existing companion and recovery contract.
+Multi-family generation now builds on this pipeline and the existing unified
+pilot as described in Phase 3 below.
 
 `FitCalibrationGenerationServiceTest` uses temporary artifact/library roots and
 publication checkpoints to test paired output, definition agreement, context,
@@ -135,13 +130,137 @@ boundary continuation. Existing family tests retain historical geometry checks.
 
 Before commit, inspect newly exposed fixtures in BrickSuite/Bambu Studio for bed
 placement, candidate identification, and intended orientation. This is wiring
-acceptance, not invalidation of prior physical calibration. Phase 3 remains a
-multi-family package/zone design and unified UI, with independently identified
-sessions and a versioned multi-session envelope; the single-session contract
-must remain supported.
+acceptance, not invalidation of prior physical calibration. The single-session
+contract remains supported alongside the Phase 3 package envelope.
 
 Calibration collections request nine decimal places from the existing 3MF writer
 so translated source vertices survive the unchanged strict reopen comparison.
 Other callers retain the writer default. Detached candidates use a compact
 three-column layout; this translates pieces without rotating or changing their
 geometry, candidate mapping, or physical orientation.
+
+## Phase 3 unified calibration packages
+
+`PackageRequest` contains existing `Request` selections; `planPackage` validates
+all selections through generation preflight before expensive work. Selections
+must share a complete manufacturing context and identify supported variants and
+orientations. Duplicate selections, missing prerequisites/sources, and unsupported
+candidate requests are rejected. Packages are bounded to 32 independent sessions.
+The plan lists physical fixtures and their member selections for UI review.
+
+The Recommended package promotes the unchanged four-zone perpendicular pilot:
+Standard Stud OD, Tube Wall Cell, Post Wall Cell, and Technic Axle Hole Arm Width
+v2. It reuses existing candidate geometry, physical family labels, candidate
+markers, translations, and zone validation. These four new coarse selections
+share `perpendicular-core.3mf`. All other selections, including continuations,
+retain their own physical fixtures. For example, adding Standard Bar creates
+`02-standard-bar-perpendicular.3mf`; five calibrations require two fixtures.
+This conservative grouping does not add a general plate-packing algorithm or
+combine mechanisms whose physical grouping has not been established.
+
+### Companion and identities
+
+A unique `calibration-package-<UUID>` folder under the existing Documents artifact
+root contains:
+
+- one or more descriptively named 3MF files;
+- `package-session.json`, format `BrickSuiteUnifiedCalibrationPackage`, version 1;
+- `calibration-NN-session.json` for each member, using the unchanged single-session
+  format (including retained parent/history evidence for continuations);
+- `publication.json`, version 2, binding the package identity and companion hash.
+
+The envelope records the manufacturing context/fingerprint, fixture identities
+and file hashes, each session and companion hash, family/variant, intended
+orientation, candidate correction/functional-value mapping, and zone membership.
+Each session is embedded as well as provided in its compatible member file.
+Combined fixtures additionally retain the existing zone manifest with geometry
+hashes, bounds, translations, physical labels, and marker witnesses.
+
+Package, fixture, session, and zone are distinct identity roles. Every live package,
+fixture, session, and print artifact receives a fresh identity; deterministic pilot
+identities are rebased, including zone/candidate references. The original pilot
+geometry stays unchanged. Package membership and intended orientation do not
+create physical observations or verification evidence.
+
+### Publication, import, and recovery
+
+`generatePackage` writes into a private `.pending-*` directory. Separate fixtures
+use the existing single-family service inside disposable staging and private
+managed storage; they cannot register partially generated packages in the user's
+library. Combined generation validates the existing zone/session contract and
+reopens the written 3MF against generated named meshes. Before publication, all
+3MFs, file hashes, session definitions, candidate/variant/orientation mappings,
+and complete fixture/zone membership are checked. Only then is the entire folder
+renamed to its unique final destination.
+
+`recoverPackage` performs the same complete file/companion checks before managed
+registration. Under the existing package-registration lock, it preflights every
+existing session for definition conflicts, then imports missing sessions only.
+Matching sessions retain later observations, Preferred/Verified state, process
+edits, and history. Interruption can leave a detectable registered subset; retry
+loads existing identities and registers only missing members. The result reports
+registered count and does not claim completion until every member is registered.
+This is recoverable registration, not a filesystem-wide atomic database transaction
+or a power-loss durability guarantee. Unpublished staging is never recoverable as
+a completed package.
+
+**Import Session / Package...** recognizes the new companion and the historical
+single-session formats. Keep the complete folder together when moving a package:
+package import requires its bound fixtures, member companions, and publication
+record. **Recover Package...** accepts either record or companion. Successful
+import displays all independent members through the existing manufacturing
+workspace's feature selector. It preserves previously managed evidence, rather
+than restoring the original package's draft over newer work.
+
+Continuation remains session-centric: select one member and use **Continue
+Calibration...**. Its new child may be a normal single-family package, with the
+existing parent/child lineage. The service API also accepts continuation requests
+in packages; the Custom UI intentionally starts coarse selections. Siblings are
+not regenerated or mutated. Verified package members use the unchanged profile
+eligibility/merge rules. Package membership grants no additional authority.
+
+### UI and validation
+
+The dialog offers **Single Calibration**, **Recommended Calibration Package**,
+and **Custom Calibration Package**. Custom selection shows family, variant,
+orientation, and capability-derived availability. A plan summary shows selection
+and physical-fixture counts before generation. The existing background/busy model
+reports real fixture `1 of N`, companion-writing, verification, publication, and
+registration stages, with the several-minute explanation. No synthetic percentage
+or unsafe cancellation is added. Failures distinguish unpublished work from a
+complete published package needing registration recovery.
+
+`FitCalibrationUnifiedGenerationTest` covers planning rejection, the four-zone
+fixture plus a separate Standard Bar fixture, distinct identities, serialization,
+legacy session decoding, geometry/hash/label bindings, fault injection before
+publication and during registration, repeated recovery, semantic mismatch
+rejection, Verified sibling preservation, independent continuation, and normal
+profile eligibility. Existing single-family, pilot/zone, capability, library,
+profile, and installed-source integration tests remain part of Release CTest.
+
+For runtime acceptance, select the four Recommended families plus perpendicular
+Standard Bar in Custom mode. Confirm five calibrations/two fixtures, generate,
+open both 3MFs in the slicer at 100% scale, and inspect placement, family labels,
+and candidate identification. Reopen `package-session.json`, select one feature,
+and record a clearly identified software-test observation only if intended; check
+that sibling observations are unchanged. Do not mark software-test evidence
+Verified or use it to create a production profile. Actual physical calibration
+and slicer visual acceptance remain user checks; packaging tests do not replace
+them. No full-package printing is needed to check software wiring.
+
+### Workspace activation and empty-feature state
+
+Creation and resume use `showWorkspace` to populate the manufacturing context,
+select the current workspace, and refresh capability/generation state. An empty
+workspace disables feature orientation and notes: there is no feature evidence
+to edit yet. Process-change signals during hydration or without a feature session
+must not mark a session dirty. Otherwise the generation action can silently stop
+at `saveSession()` because no feature exists to save. The managed workspace is
+already persisted independently of feature sessions.
+
+`FitCalibrationWorkspaceUiTest` drives workspace creation and all three generation
+choices through real Qt widgets using temporary managed/settings storage. It
+checks the empty-feature control failure, A-to-new-B activation, switching back,
+reopening the dialog within the same application, and the five-calibration/two-
+fixture Custom plan. It cancels choosers before generating geometry or recording
+physical evidence.

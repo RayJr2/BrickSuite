@@ -1,6 +1,8 @@
 #include "FitCalibrationGenerationService.h"
 #include "FitCalibrationArtifactLocation.h"
 #include "FitCalibrationCapabilities.h"
+#include "FitCalibrationPackage.h"
+#include <QSet>
 #include "BallSocketCalibrationArtifact.h"
 #include "PinBarrelHingeCalibrationArtifact.h"
 #include "InterleavedFingerHingeCalibrationArtifact.h"
@@ -29,6 +31,7 @@
 #include <QJsonDocument>
 #include <QLockFile>
 #include <QSaveFile>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QUuid>
 #include <algorithm>
@@ -432,6 +435,264 @@ FitCalibrationGenerationService::Result FitCalibrationGenerationService::recover
         if(m_observer&&!m_observer(Checkpoint::Registered,directory,&result.diagnostic)){result.registered=false;return result;}
         result.diagnostic="Calibration package generated and registered.";
         return result;
+    }catch(const std::exception& e){result.diagnostic=QString::fromUtf8(e.what());return result;}
+}
+
+namespace {
+FitPrintedOrientation packageOrientation(const FitCalibrationExperiment& e){
+    return e.modeledOrientationIdentity.contains("perpendicular")?FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate:
+        e.modeledOrientationIdentity.contains("parallel")?FitPrintedOrientation::FeatureAxisParallelToBuildPlate:e.process.actualPrintedOrientation;
+}
+QString packageVariant(const FitCalibrationExperiment& e){
+    switch(FitCalibrationNamingCatalog::keyFor(e,packageOrientation(e))){
+    case FitCalibrationNameKey::StudOd:return "Diameter";
+    case FitCalibrationNameKey::StudHeight:return "Height";
+    case FitCalibrationNameKey::ClutchTubeWall:return "TubeWallCell";
+    case FitCalibrationNameKey::ClutchPostWall:return "PostWallCell";
+    case FitCalibrationNameKey::ClutchWallPocketBrick:
+    case FitCalibrationNameKey::ClutchWallPocketPlate:return "WallPocket";
+    case FitCalibrationNameKey::ClutchAntiStudBore:return "AntiStudBore";
+    default:return {};
+    }
+}
+}
+
+FitCalibrationGenerationService::PackageRequest FitCalibrationGenerationService::recommended(
+    const FitCalibrationWorkspace& workspace,const QString& libraryRoot)
+{
+    PackageRequest result;
+    for(const auto& pair:QVector<QPair<QString,QString>>{{"StandardStud","Diameter"},{"StudReceivingClutch","TubeWallCell"},
+        {"StudReceivingClutch","PostWallCell"},{"TechnicAxleHole",{}}}){
+        Request r;r.family=pair.first;r.variant=pair.second;r.orientation=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
+        r.workspace=workspace;r.libraryRoot=libraryRoot;result.selections.push_back(r);
+    }
+    return result;
+}
+
+FitCalibrationGenerationService::PackagePlan FitCalibrationGenerationService::planPackage(const PackageRequest& request)
+{
+    PackagePlan result;
+    if(request.selections.isEmpty()||request.selections.size()>32){result.diagnostic="Select from 1 to 32 independent calibrations.";return result;}
+    QString context;QSet<QString> unique;QVector<int> core(4,-1);
+    const auto coreRequests=recommended({}).selections;
+    for(int i=0;i<request.selections.size();++i){const auto& r=request.selections[i];
+        const auto reason=unavailableReason(r);if(!reason.isEmpty()){result.diagnostic=reason;return result;}
+        const auto process=r.hasParent?r.parent.process:r.workspace.process;
+        if(process.printerIdentity.trimmed().isEmpty()||process.materialIdentity.trimmed().isEmpty()||process.profileName.trimmed().isEmpty()||
+           !process.hasNozzleDiameter||!process.hasLayerHeight||!std::isfinite(process.nozzleDiameterMillimetres)||process.nozzleDiameterMillimetres<=0||
+           !std::isfinite(process.layerHeightMillimetres)||process.layerHeightMillimetres<=0){result.diagnostic="Complete the manufacturing workspace before planning a package.";return result;}
+        const auto fingerprint=FitCalibrationLibrary::manufacturingContextFingerprint(process);
+        if(context.isEmpty())context=fingerprint;
+        if(context!=fingerprint){result.diagnostic="All package selections must share one manufacturing context.";return result;}
+        if(!r.hasParent&&(r.stage!=Stage::Coarse||r.candidateCount||r.candidateSpacing!=0)){result.diagnostic="New coarse fixtures use their authoritative family candidate definition.";return result;}
+        const auto* e=r.hasParent?active(r.parent):nullptr;
+        const auto capability=FitCalibrationCapabilities::find(e?e->featureFamily:r.family,e?packageVariant(*e):r.variant);
+        if(!e&&!capability.variant.isEmpty()&&r.variant.isEmpty()){result.diagnostic="Select an explicit calibration variant.";return result;}
+        const auto orientation=e?packageOrientation(*e):r.orientation==FitPrintedOrientation::Unknown?capability.orientations.front():r.orientation;
+        if(e&&r.orientation!=FitPrintedOrientation::Unknown&&r.orientation!=orientation){result.diagnostic="Continuation must retain its modeled fixture orientation.";return result;}
+        const QString identity=e?e->artifactIdentity:r.family+"/"+capability.variant+"/"+QString::number(int(orientation));
+        if(unique.contains(identity)){result.diagnostic="Duplicate calibration selections are not allowed.";return result;}unique.insert(identity);
+        for(int c=0;c<4;++c)if(!r.hasParent&&r.stage==Stage::Coarse&&r.family==coreRequests[c].family&&r.variant==coreRequests[c].variant&&
+            (r.orientation==FitPrintedOrientation::Unknown||r.orientation==FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate))core[c]=i;
+    }
+    QSet<int> grouped;
+    if(!core.contains(-1)){
+        result.fixtures.push_back({"Perpendicular Core Calibration","perpendicular-core.3mf",core,true});
+        for(int i:core)grouped.insert(i);
+    }
+    for(int i=0;i<request.selections.size();++i)if(!grouped.contains(i)){
+        const auto& r=request.selections[i];const auto* e=r.hasParent?active(r.parent):nullptr;
+        const auto c=FitCalibrationCapabilities::find(e?e->featureFamily:r.family,e?packageVariant(*e):r.variant);
+        const auto orientation=e?packageOrientation(*e):r.orientation==FitPrintedOrientation::Unknown?c.orientations.front():r.orientation;
+        const QString label=c.name+(c.variantName.isEmpty()?QString():" — "+c.variantName)+
+            (orientation==FitPrintedOrientation::FeatureAxisParallelToBuildPlate?" — Parallel":" — Perpendicular");
+        const QString slug=label.toLower().replace(QRegularExpression("[^a-z0-9]+"),"-");
+        result.fixtures.push_back({label,QString("%1-%2.3mf").arg(result.fixtures.size()+1,2,10,QChar('0')).arg(slug),{i},false});
+    }
+    return result;
+}
+
+bool FitCalibrationGenerationService::isPackageCompanion(const QString& path)
+{
+    return QJsonDocument::fromJson(read(path)).object()["format"].toString()=="BrickSuiteUnifiedCalibrationPackage";
+}
+
+namespace {
+QJsonArray packageCandidates(const FitCalibrationExperiment& e){
+    QJsonArray result;for(const auto& c:e.candidates)result.push_back(QJsonObject{{"index",c.index},
+        {"correction",FitCalibrationEvidencePolicy::candidateCorrection(e,c)},
+        {"functionalValue",FitCalibrationEvidencePolicy::candidateFunctionalDimension(e,c)}});return result;
+}
+// Validate every member before any managed write. Hashes bind the published files;
+// the existing pilot validator additionally binds generated zone meshes/candidates.
+bool readPackage(const QString& directory,QJsonObject* envelope,QVector<FitCalibrationSession>* sessions,QString* error){
+    const QDir dir(directory);const auto record=QJsonDocument::fromJson(read(dir.filePath("publication.json"))).object();
+    if(record["version"].toInt()!=2||record["companion"].toString()!="package-session.json"||
+       digest(dir.filePath("package-session.json")).isEmpty()||digest(dir.filePath("package-session.json"))!=record["companionSha256"].toString())
+        return fail(error,"The package publication record or companion hash is invalid.");
+    const auto json=QJsonDocument::fromJson(read(dir.filePath("package-session.json"))).object();
+    if(json["format"].toString()!="BrickSuiteUnifiedCalibrationPackage"||json["version"].toInt()!=1||
+       json["packageIdentity"]!=record["packageIdentity"]||QUuid(json["packageIdentity"].toString()).isNull())return fail(error,"Unsupported or mismatched package identity/version.");
+    QSet<QString> identities{json["packageIdentity"].toString()},files,fixtures,usedFixtures;
+    const auto fixtureEntries=json["fixtures"].toArray(),sessionEntries=json["sessions"].toArray();
+    if(fixtureEntries.isEmpty()||sessionEntries.isEmpty()||sessionEntries.size()>32)return fail(error,"The package has no complete fixture/session plan.");
+    for(const auto& value:fixtureEntries){const auto f=value.toObject();const auto id=f["identity"].toString(),file=f["file"].toString();
+        if(QUuid(id).isNull()||identities.contains(id)||!leafName(file)||files.contains(file)||digest(dir.filePath(file)).isEmpty()||
+           digest(dir.filePath(file))!=f["sha256"].toString()||!reopen(dir.filePath(file),nullptr,error))return fail(error,"A package fixture is missing, changed, unreadable, or duplicated.");
+        identities.insert(id);fixtures.insert(id);files.insert(file);
+    }
+    QVector<FitCalibrationSession> decoded;
+    for(const auto& value:sessionEntries){const auto entry=value.toObject();const auto id=entry["identity"].toString(),zone=entry["zoneIdentity"].toString();
+        const auto file=entry["file"].toString(),fixture=entry["fixtureIdentity"].toString();
+        if(QUuid(id).isNull()||identities.contains(id)||zone.isEmpty()||zone==id||identities.contains(zone)||!fixtures.contains(fixture)||
+           !leafName(file)||files.contains(file)||digest(dir.filePath(file)).isEmpty()||digest(dir.filePath(file))!=entry["sha256"].toString())return fail(error,"A package session or zone mapping is missing, conflicting, or changed.");
+        FitCalibrationSession session;
+        const auto sessionJson=QJsonDocument::fromJson(read(dir.filePath(file))).object();
+        if(!FitCalibrationSessionJson::fromJson(sessionJson,&session,error)||FitCalibrationSessionJson::toJson(session)!=entry["session"].toObject()||
+           session.sessionIdentity!=id||FitCalibrationLibrary::manufacturingContextFingerprint(session.process)!=json["contextFingerprint"].toString())return fail(error,"Package and session definitions disagree.");
+        const auto* experiment=active(session);
+        if(!experiment||experiment->featureFamily!=entry["family"].toString()||packageVariant(*experiment)!=entry["variant"].toString()||
+           int(packageOrientation(*experiment))!=entry["intendedOrientation"].toInt(-1)||packageCandidates(*experiment)!=entry["candidates"].toArray())return fail(error,"Package variant, orientation, or candidate mapping disagrees with its session.");
+        identities.insert(id);identities.insert(zone);files.insert(file);usedFixtures.insert(fixture);decoded.push_back(session);
+    }
+    if(usedFixtures!=fixtures)return fail(error,"Every fixture must have independent session mappings.");
+    auto contextCarrier=sessionEntries.first().toObject()["session"].toObject();contextCarrier["process"]=json["manufacturingContext"];
+    FitCalibrationSession contextSession;
+    if(!FitCalibrationSessionJson::fromJson(contextCarrier,&contextSession,error)||
+       FitCalibrationLibrary::manufacturingContextFingerprint(contextSession.process)!=json["contextFingerprint"].toString())return fail(error,"Package manufacturing context is inconsistent.");
+    for(const auto& value:fixtureEntries){const auto fixture=value.toObject();QSet<QString> expected,actual;
+        for(const auto& id:fixture["sessionIdentities"].toArray()){if(expected.contains(id.toString()))return fail(error,"Duplicate fixture membership.");expected.insert(id.toString());}
+        for(const auto& entry:sessionEntries)if(entry.toObject()["fixtureIdentity"]==fixture["identity"])actual.insert(entry.toObject()["identity"].toString());
+        if(actual!=expected)return fail(error,"Fixture membership is incomplete.");
+        const auto pilotJson=fixture["zones"].toObject();
+        if(!pilotJson.isEmpty()){
+            FitCalibrationPackageManifest pilot;if(!FitCalibrationPackage::fromJson(pilotJson,&pilot,error)||pilot.identity!=fixture["identity"].toString()||
+                pilot.manufacturingContextFingerprint!=json["contextFingerprint"].toString()||pilot.zones.size()!=actual.size())return fail(error,"Combined zone manifest is inconsistent.");
+            QSet<QString> mapped;
+            for(const auto& zone:pilot.zones){int index=-1;for(int i=0;i<sessionEntries.size();++i)if(sessionEntries[i].toObject()["identity"].toString()==zone.sessionIdentity)index=i;
+                if(index<0||mapped.contains(zone.sessionIdentity))return fail(error,"A combined zone has no unique session.");
+                mapped.insert(zone.sessionIdentity);const auto entry=sessionEntries[index].toObject();const auto* e=active(decoded[index]);
+                if(entry["zoneIdentity"].toString()!=zone.identity||entry["fixtureIdentity"]!=fixture["identity"]||zone.memberFile!=fixture["file"].toString()||
+                   zone.sessionFile!=entry["file"].toString()||zone.artifactIdentity!=e->artifactIdentity||zone.featureFamily!=e->featureFamily||
+                   zone.intendedPrintOrientation!=FitPrintedOrientation(entry["intendedOrientation"].toInt())||zone.semanticContract!=e->regenerationPrototype.evidenceContract||
+                   zone.candidates.size()!=e->candidates.size())return fail(error,"Combined zone/session mapping disagrees.");
+                for(int i=0;i<zone.candidates.size();++i)if(zone.candidates[i].index!=e->candidates[i].index||
+                    std::abs(zone.candidates[i].correctionMillimetres-FitCalibrationEvidencePolicy::candidateCorrection(*e,e->candidates[i]))>1e-8||
+                    std::abs(zone.candidates[i].functionalValueMillimetres-FitCalibrationEvidencePolicy::candidateFunctionalDimension(*e,e->candidates[i]))>1e-8)
+                    return fail(error,"Combined zone candidate values disagree.");
+            }
+        }
+    }
+
+    *envelope=json;*sessions=decoded;return true;
+}
+}
+
+FitCalibrationGenerationService::PackageResult FitCalibrationGenerationService::generatePackage(const PackageRequest& request,Progress progress) const
+{
+    PackageResult result;const auto plan=planPackage(request);if(!plan.ok()){result.diagnostic=plan.diagnostic;return result;}
+    try{
+        if(!QDir().mkpath(m_artifactRoot)){result.diagnostic="Cannot create the calibration artifact folder.";return result;}
+        QTemporaryDir staging(QDir(m_artifactRoot).filePath(".pending-XXXXXX"));if(!staging.isValid()){result.diagnostic="Cannot stage the package.";return result;}
+        const QDir dir(staging.path());const QString packageId=FitCalibrationLibrary::newStableIdentity();
+        QJsonArray fixtureEntries,sessionEntries;int sessionNumber=0;
+        const auto addSession=[&](const FitCalibrationSession& session,const QString& fixtureId,const QString& zoneId){
+            const auto* e=active(session);const auto file=QString("calibration-%1-session.json").arg(++sessionNumber,2,10,QChar('0'));
+            if(!writeJson(dir.filePath(file),FitCalibrationSessionJson::toJson(session),&result.diagnostic))return false;
+            sessionEntries.push_back(QJsonObject{{"identity",session.sessionIdentity},{"zoneIdentity",zoneId},{"fixtureIdentity",fixtureId},
+                {"family",e->featureFamily},{"variant",packageVariant(*e)},{"intendedOrientation",int(packageOrientation(*e))},{"candidates",packageCandidates(*e)},
+                {"file",file},{"sha256",digest(dir.filePath(file))},{"session",FitCalibrationSessionJson::toJson(session)}});
+            return true;
+        };
+        for(int index=0;index<plan.fixtures.size();++index){const auto& fixture=plan.fixtures[index];
+            if(progress)progress(QString("Generating fixture %1 of %2 — %3...").arg(index+1).arg(plan.fixtures.size()).arg(fixture.name));
+            const QString fixtureId=FitCalibrationLibrary::newStableIdentity(),path=dir.filePath(fixture.fileName);QJsonObject pilotJson;
+            if(fixture.combinedCore){
+                auto process=request.selections[fixture.selections.front()].workspace.process;process.actualPrintedOrientation=FitPrintedOrientation::Unknown;
+                FitCalibrationPackageManifest pilot;QVector<FitCalibrationSession> sessions;PrintMesh assembled;
+                if(!FitCalibrationPackage::generateFourZonePilot(process,&pilot,&sessions,&assembled,&result.diagnostic))return result;
+                pilot.identity=fixtureId;QVector<ThreeMfWriter::NamedMesh> meshes;
+                for(int i=0;i<pilot.zones.size();++i){auto& zone=pilot.zones[i];auto& session=sessions[i];
+                    session.sessionIdentity=FitCalibrationLibrary::newStableIdentity();
+                    session.coarseExperiment.artifactIdentity=zone.artifactIdentity+"-print-"+FitCalibrationLibrary::newStableIdentity();
+                    zone.artifactIdentity=session.coarseExperiment.artifactIdentity;zone.identity=zone.artifactIdentity+":zone-v1";
+                    zone.sessionIdentity=session.sessionIdentity;zone.memberFile=fixture.fileName;
+                    zone.sessionFile=QString("calibration-%1-session.json").arg(sessionNumber+1,2,10,QChar('0'));
+                    for(auto& candidate:zone.candidates)candidate.identity=zone.artifactIdentity+QString(":candidate-%1").arg(candidate.index);
+                    meshes.push_back({zone.featureDisplayName,zone.mesh,zone.translation});
+                    if(!addSession(session,fixtureId,zone.identity))return result;
+                }
+                if(!FitCalibrationPackage::validate(pilot,sessions,&result.diagnostic))return result;
+                ThreeMfWriter::Options options;options.collectionDecimalPrecision=9;options.objectName=fixture.name;options.modelColor=QColor("#0055BF");
+                if(!ThreeMfWriter::writeCollection(meshes,path,options,&result.diagnostic)||!reopen(path,&meshes,&result.diagnostic))return result;
+                pilotJson=FitCalibrationPackage::toJson(pilot);
+            }else{
+                // Reuse the entire single-family pipeline in private disposable storage.
+                // It cannot publish or register anything in the user's managed library.
+                // Keep the temporary single-package path short for lib3mf on Windows.
+                // Only validated copies enter the outer publication directory.
+                QTemporaryDir work(QDir::temp().filePath("BrickSuite-cal-XXXXXX"));if(!work.isValid()){result.diagnostic="Cannot stage fixture generation.";return result;}
+                const auto& selection=request.selections[fixture.selections.front()];
+                const auto single=FitCalibrationGenerationService(QDir(work.path()).filePath("a"),QDir(work.path()).filePath("m")).generate(selection);
+                if(!single.ok()){result.diagnostic=single.diagnostic;return result;}
+                if(!QFile::copy(single.fixturePath,path)){result.diagnostic="Cannot assemble package fixture.";return result;}
+                if(!addSession(single.session,fixtureId,FitCalibrationLibrary::newStableIdentity()))return result;
+            }
+            QJsonArray membership;for(const auto& entry:sessionEntries)if(entry.toObject()["fixtureIdentity"].toString()==fixtureId)membership.push_back(entry.toObject()["identity"]);
+            fixtureEntries.push_back(QJsonObject{{"identity",fixtureId},{"name",fixture.name},{"file",fixture.fileName},{"sha256",digest(path)},{"zones",pilotJson},{"sessionIdentities",membership}});
+            if(m_observer&&!m_observer(Checkpoint::GeometryWritten,staging.path(),&result.diagnostic))return result;
+        }
+        if(progress)progress("Writing calibration companions...");
+        const auto& first=request.selections.front();const auto context=first.hasParent?first.parent.process:first.workspace.process;
+        FitCalibrationSession contextSession;contextSession.process=context;
+        const QJsonObject envelope{{"format","BrickSuiteUnifiedCalibrationPackage"},{"version",1},{"packageIdentity",packageId},
+            {"contextFingerprint",FitCalibrationLibrary::manufacturingContextFingerprint(context)},
+            {"manufacturingContext",FitCalibrationSessionJson::toJson(contextSession).value("process")},
+            {"fixtures",fixtureEntries},{"sessions",sessionEntries}};
+        if(!writeJson(dir.filePath("package-session.json"),envelope,&result.diagnostic)||
+           !writeJson(dir.filePath("publication.json"),{{"version",2},{"packageIdentity",packageId},{"companion","package-session.json"},
+                {"companionSha256",digest(dir.filePath("package-session.json"))}},&result.diagnostic))return result;
+        if(progress)progress("Verifying calibration package...");
+        if(m_observer&&!m_observer(Checkpoint::BeforeReopen,staging.path(),&result.diagnostic))return result;
+        QJsonObject verified;QVector<FitCalibrationSession> decoded;
+        if(!readPackage(staging.path(),&verified,&decoded,&result.diagnostic)||verified!=envelope)return result;
+        if(progress)progress("Publishing calibration package...");
+        result.directory=QDir(m_artifactRoot).filePath("calibration-package-"+packageId);
+        if(QFileInfo::exists(result.directory)||!QDir().rename(staging.path(),result.directory)){result.diagnostic="Cannot publish complete package without overwriting a destination.";return result;}
+        staging.setAutoRemove(false);result.published=true;result.companionPath=QDir(result.directory).filePath("package-session.json");
+        if(m_observer&&!m_observer(Checkpoint::Published,result.directory,&result.diagnostic))return result;
+        return recoverPackage(result.directory,progress);
+    }catch(const std::exception& e){result.diagnostic=QString::fromUtf8(e.what());return result;}
+}
+
+FitCalibrationGenerationService::PackageResult FitCalibrationGenerationService::recoverPackage(const QString& directory,Progress progress) const
+{
+    PackageResult result;result.directory=directory;result.companionPath=QDir(directory).filePath("package-session.json");
+    if(QFileInfo(directory).fileName().startsWith(".pending-")){result.diagnostic="This package was never published.";return result;}
+    try{
+        QJsonObject envelope;QVector<FitCalibrationSession> sessions;
+        if(progress)progress("Verifying calibration package...");
+        if(!readPackage(directory,&envelope,&sessions,&result.diagnostic))return result;
+        result.published=true;for(const auto& f:envelope["fixtures"].toArray())result.fixturePaths.push_back(QDir(directory).filePath(f.toObject()["file"].toString()));
+        FitCalibrationLibrary library(m_managedRoot);
+        if(!QDir().mkpath(library.storageRoot())){result.diagnostic="Cannot create managed calibration storage. Recover this package to retry.";return result;}
+        QLockFile lock(QDir(library.storageRoot()).filePath("package-registration.lock"));if(!lock.tryLock(0)){result.diagnostic="Another registration is active. Retry recovery.";return result;}
+        // Detect definition conflicts for all siblings before beginning registration.
+        for(const auto& session:sessions){FitCalibrationSession existing;
+            if(library.loadSession(session.sessionIdentity,&existing,nullptr)){
+                if(definitionOnly(existing)!=definitionOnly(session)){result.diagnostic="Existing managed evidence has a conflicting definition; it was preserved.";return result;}
+            }else if(QFileInfo::exists(QDir(library.sessionsDirectory()).filePath(session.sessionIdentity+".json"))){result.diagnostic="An existing session cannot be read; recovery will not overwrite it.";return result;}
+        }
+        const auto entries=envelope["sessions"].toArray();
+        for(int i=0;i<sessions.size();++i){
+            if(progress)progress(QString("Registering calibration session %1 of %2...").arg(i+1).arg(sessions.size()));
+            FitCalibrationSession registered;
+            if(!library.loadSession(sessions[i].sessionIdentity,&registered,nullptr)&&
+               !library.importSession(QDir(directory).filePath(entries[i].toObject()["file"].toString()),&registered,&result.diagnostic))return result;
+            result.sessions.push_back(registered);++result.registeredCount;
+            if(m_observer&&!m_observer(Checkpoint::Registered,directory,&result.diagnostic))return result;
+        }
+        result.registered=true;result.diagnostic="Calibration package generated and all sessions registered.";return result;
     }catch(const std::exception& e){result.diagnostic=QString::fromUtf8(e.what());return result;}
 }
 } // namespace PrintGeometry

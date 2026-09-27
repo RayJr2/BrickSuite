@@ -827,6 +827,28 @@ if(BUILD_TESTING)
     target_link_libraries(FitCalibrationGenerationServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
     bricksuite_stage_mcut_runtime(FitCalibrationGenerationServiceTest)
     add_test(NAME FitCalibrationGenerationService COMMAND FitCalibrationGenerationServiceTest)
+    qt_add_executable(FitCalibrationUnifiedGenerationTest EXCLUDE_FROM_ALL
+        tests/FitCalibrationUnifiedGenerationTest.cpp
+        src/services/geometry/fit/FitCalibrationGenerationService.cpp ${_fitArtifactSources})
+    target_link_libraries(FitCalibrationUnifiedGenerationTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
+    bricksuite_stage_mcut_runtime(FitCalibrationUnifiedGenerationTest)
+    add_test(NAME FitCalibrationUnifiedGeneration COMMAND FitCalibrationUnifiedGenerationTest)
+    qt_add_executable(FitCalibrationWorkspaceUiTest EXCLUDE_FROM_ALL
+        tests/FitCalibrationWorkspaceUiTest.cpp
+        src/ui/parts/FitCalibrationDialog.cpp src/ui/parts/FitCalibrationDialog.h
+        src/ui/parts/FitCalibrationFamilyCatalog.cpp
+        src/ui/common/SessionFileDialogDirectoryService.cpp
+        src/settings/UserSettings.cpp src/services/CredentialStore.cpp
+        src/services/geometry/fit/FitCalibrationGenerationService.cpp ${_fitArtifactSources})
+    target_link_libraries(FitCalibrationWorkspaceUiTest PRIVATE Qt6::Widgets Qt6::Concurrent BrickSuite::Mcut BrickSuite::Lib3mf)
+    if(WIN32)
+        target_link_libraries(FitCalibrationWorkspaceUiTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(FitCalibrationWorkspaceUiTest PRIVATE "-framework Security")
+    endif()
+    bricksuite_stage_mcut_runtime(FitCalibrationWorkspaceUiTest)
+    add_test(NAME FitCalibrationWorkspaceUi COMMAND FitCalibrationWorkspaceUiTest -platform offscreen)
+    set_tests_properties(FitCalibrationWorkspaceUi PROPERTIES TIMEOUT 30)
     set(BRICKSUITE_CALIBRATION_LDRAW_ROOT "" CACHE PATH "Installed LDraw library for source-backed calibration integration tests")
     if(BRICKSUITE_CALIBRATION_LDRAW_ROOT)
         foreach(_calibrationFamily BallSocket PinBarrelHinge InterleavedFingerHinge ClickHinge RetainedRotatingWheel PlainRoundBoreWheel)
