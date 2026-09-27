@@ -1,6 +1,12 @@
 #include "../src/ui/help/HelpManager.h"
 #include "../src/ui/parts/PrintCapabilityAuditDialog.h"
 #include <QApplication>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QCheckBox>
+#include <QStandardPaths>
+#include "../src/database/DatabaseManager.h"
+#include "../src/services/parts/PartReferenceManifest.h"
 #include <QElapsedTimer>
 #include <QFile>
 #include <QJsonDocument>
@@ -35,6 +41,8 @@ int main(int argc,char** argv)
     QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,temp.path());
     app.setOrganizationName("AuditLifecycleTests");app.setApplicationName("AuditLifecycle");
     QSettings().setValue("printAudit/outputRoot",temp.path());
+    QStandardPaths::setTestModeEnabled(true);
+    if(!DatabaseManager::instance().initialize())return 1;
     bool ok=true;
     {
         PrintCapabilityAuditDialog dialog;dialog.show();
@@ -58,6 +66,27 @@ int main(int argc,char** argv)
             label->text().contains("override-assisted recoveries")&&label->text().contains("practical printable success");
         ok&=check(metrics,"native and practical percentages and recoveries remain visible together");
         button(dialog,"Close")->click();ok&=check(!dialog.isVisible(),"Close after normal completion is immediate");
+    }
+    {
+        bool referenceOptions=false;
+        PrintCapabilityAuditDialog dialog(nullptr,[&](const BatchPrintOptions& options,CancellationState*,
+            const BatchPrintableModelService::Progress&){
+            referenceOptions=options.partReference&&!options.randomSample&&!options.excludeNoModel&&
+                options.corpusPlan.value("manifestPositionCount").toInt()>=PartReferenceManifest::ExpectedEntryCount;
+            BatchPrintRun result;result.ok=true;return result;
+        });
+        dialog.show();auto* mode=dialog.findChild<QComboBox*>();
+        ok&=check(mode->findText("Part Reference")>=0,"Part Reference mode offered");
+        mode->setCurrentIndex(2);
+        ok&=check(until([&]{return button(dialog,"Start")->isEnabled();}),"read-only reference discovery completes before Start");
+        auto* counts=dialog.findChild<QLabel*>("referenceCorpusCounts");
+        ok&=check(counts&&counts->text().contains("positions;")&&counts->text().contains("Fingerprint:"),"pre-Start corpus counts and fingerprint visible");
+        ok&=check(dialog.findChild<QSpinBox*>("referenceFirst")->value()==1&&
+            dialog.findChild<QSpinBox*>("referenceCount")->value()==0,"default range is complete corpus");
+        for(auto* filter:dialog.findChildren<QCheckBox*>())ok&=check(!filter->isEnabled(),"random eligibility controls disabled for full reference corpus");
+        button(dialog,"Start")->click();
+        ok&=check(until([&]{return button(dialog,"Start")->isEnabled();})&&referenceOptions,"Part Reference run receives persisted definition without model filter");
+        dialog.close();
     }
     for(int scenario=0;scenario<3;++scenario){
         QSemaphore entered,release;QString statePath;

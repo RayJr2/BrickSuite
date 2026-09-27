@@ -9,6 +9,7 @@
 
 #include <lib3mf_implicit.hpp>
 #include <QDateTime>
+#include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -44,6 +45,24 @@ bool durableFlush(QFileDevice& file)
 #else
     return ::fsync(file.handle())==0;
 #endif
+}
+
+bool saveJson(const QString& path,const QJsonObject& object,QString* error)
+{
+    QSaveFile file(path);const auto bytes=QJsonDocument(object).toJson(QJsonDocument::Indented);
+    if(file.open(QIODevice::WriteOnly)&&file.write(bytes)==bytes.size()&&durableFlush(file)&&file.commit())return true;
+    if(error)*error=QStringLiteral("Could not persist %1: %2").arg(path,file.errorString());
+    return false;
+}
+
+QStringList eligibilityNotes(const BatchPrintablePart& part)
+{
+    QStringList notes;
+    if(part.noColor)notes.append(QStringLiteral("no_color"));
+    if(BatchPrintableModelService::isStickerCategory(part))notes.append(QStringLiteral("sticker_category"));
+    if(!BatchPrintableModelService::isStandardAuditPartNumber(part.partNumber))notes.append(QStringLiteral("nonstandard_id"));
+    if(!part.catalogPresent)notes.append(QStringLiteral("no_catalog_part"));
+    return notes;
 }
 
 QString csv(QString value)
@@ -180,6 +199,17 @@ bool BatchPrintRunState::requestStop(QString* error)
 
 double BatchPrintTotals::modelAvailabilityPercent() const
 {return eligible?100.0*modelAvailable/eligible:0.0;}
+
+QString BatchPrintableModelService::resolvedModel(const BatchPrintablePart& part,const QString& root)
+{ return modelFor(part,root); }
+
+void BatchPrintableModelService::resolveModels(QVector<BatchPrintablePart>& parts,const QString& root)
+{
+    QHash<QString,QString> names;
+    for(const auto& name:QDir(QDir(root).filePath(QStringLiteral("parts"))).entryList(QDir::Files))
+        names.insert(name.toCaseFolded(),name);
+    for(auto& part:parts)part.resolvedModel=modelFor(part,root,&names);
+}
 double BatchPrintTotals::printServicePercent() const
 {return modelAvailable?100.0*nativeSuccessful/modelAvailable:0.0;}
 double BatchPrintTotals::practicalPrintablePercent() const
@@ -369,14 +399,14 @@ BatchPrintTotals BatchPrintableModelService::summarize(const QVector<BatchPrintR
         if(result.category==BatchPrintCategory::SkippedNoColor){++totals.skippedNoColor;continue;}
         if(result.category==BatchPrintCategory::SkippedStickerCategory){++totals.skippedStickerCategory;continue;}
         if(result.category==BatchPrintCategory::SkippedNonstandardId){++totals.skippedNonstandardIds;continue;}
-        if(result.category==BatchPrintCategory::NoCatalogPart)continue;
+        if(result.category==BatchPrintCategory::NoCatalogPart&&!result.modelAvailabilityKnown)continue;
         ++totals.eligible;
-        if(!result.ldrawModel.isEmpty())++totals.modelAvailable;
+        if(result.modelAvailabilityKnown?result.modelAvailable:!result.ldrawModel.isEmpty())++totals.modelAvailable;
         if(result.category==BatchPrintCategory::Success){++totals.nativeSuccessful;++totals.successful;}
         if(result.category==BatchPrintCategory::StrictOverrideSuccess||result.category==BatchPrintCategory::UserOverrideSuccess){
             ++totals.overrideRecoveries;++totals.successful;
         }
-        if(result.category==BatchPrintCategory::NoLDrawModel)++totals.noModel;
+        if(result.modelAvailabilityKnown?!result.modelAvailable:result.category==BatchPrintCategory::NoLDrawModel)++totals.noModel;
         if(result.category==BatchPrintCategory::ManufacturingFailed)++totals.manufacturingFailures;
         if(result.category==BatchPrintCategory::ExportFailed||result.category==BatchPrintCategory::ReopenFailed)
             ++totals.exportFailures;
@@ -393,6 +423,12 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
 {
     CancellationState localCancellation;if(!cancellation)cancellation=&localCancellation;
     BatchPrintRun run;run.population=options.population;
+    QElapsedTimer elapsed;elapsed.start();
+    const QString mode=options.partReference?QStringLiteral("part_reference"):
+        options.randomSample?QStringLiteral("random"):QStringLiteral("part_list");
+    if(options.partReference&&!validPartReferenceSelection(parts,options.corpusPlan)){
+        run.diagnostic=QStringLiteral("The selected range does not match a compatible fingerprinted Part Reference corpus.");return run;
+    }
     const QString root=options.outputRoot.isEmpty()?QDir(QStandardPaths::writableLocation(
         QStandardPaths::DocumentsLocation)).filePath(QStringLiteral("BrickSuite/Print Capability Audits")):
         options.outputRoot;
@@ -411,14 +447,14 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
     if(!metadataFile.open(QIODevice::WriteOnly|QIODevice::Text)){
         run.diagnostic=metadataFile.errorString();return run;
     }
-    const QJsonObject metadata{
+    QJsonObject metadata{
         {QStringLiteral("runId"),runId},
         {QStringLiteral("localOverridePolicy"),QStringLiteral("existing-validated-nominal-after-native-preparation-failure-v1")},
-        {QStringLiteral("auditPreparationProfile"),QStringLiteral("audit-bounded-v1")},
-        {QStringLiteral("maximumSequentialBooleanOperations"),8},
+        {QStringLiteral("auditPreparationProfile"),QString::fromLatin1(LDrawPrintPreparationProfile::Version)},
+        {QStringLiteral("maximumSequentialBooleanOperations"),int(LDrawPrintPreparationProfile::MaximumSequentialBooleanOperations)},
         {QStringLiteral("diagnosticMaximumFaces"),50000},
         {QStringLiteral("diagnosticMaximumVertices"),150000},
-        {QStringLiteral("sampleMode"),options.randomSample?QStringLiteral("random"):QStringLiteral("part_list")},
+        {QStringLiteral("sampleMode"),mode},
         {QStringLiteral("seed"),static_cast<qint64>(options.seed)},
         {QStringLiteral("requestedEligibleCount"),options.requestedEligibleCount},
         {QStringLiteral("actualSampledCount"),parts.size()},
@@ -428,12 +464,29 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         {QStringLiteral("excludedNonstandardId"),run.population.excludedNonstandardId},
         {QStringLiteral("excludedNoModel"),run.population.excludedNoModel},
         {QStringLiteral("excludeNoModel"),options.randomSample&&options.excludeNoModel},
-        {QStringLiteral("excludeStickerCategory"),true},
+        {QStringLiteral("excludeStickerCategory"),!options.partReference},
         {QStringLiteral("eligiblePopulation"),run.population.eligibleTotal},
-        {QStringLiteral("excludeNoColor"),true},
-        {QStringLiteral("excludeNonstandardIds"),options.excludeNonstandardIds},
+        {QStringLiteral("excludeNoColor"),!options.partReference},
+        {QStringLiteral("excludeNonstandardIds"),!options.partReference&&options.excludeNonstandardIds},
         {QStringLiteral("partIdEligibilityRule"),QStringLiteral("^[0-9]+[A-Za-z]?$")}
     };
+    metadata.insert("auditSchemaVersion",6);
+    metadata.insert("startedUtc",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    metadata.insert("applicationVersion",QCoreApplication::applicationVersion());
+    metadata.insert("qtVersion",QString::fromLatin1(qVersion()));
+    metadata.insert("autoFitEnabled",options.autoFitEnabled);
+    metadata.insert("libraryRoot",options.libraryRoot);
+    if(options.partReference){
+        metadata.insert("corpusFingerprint",options.corpusPlan.value("corpusFingerprint"));
+        metadata.insert("manifestPositionCount",options.corpusPlan.value("manifestPositionCount"));
+        metadata.insert("uniquePartCount",options.corpusPlan.value("uniquePartCount"));
+        metadata.insert("duplicateMembershipCount",options.corpusPlan.value("duplicateMembershipCount"));
+        metadata.insert("structurallyInvalidEntries",options.corpusPlan.value("structurallyInvalidEntries"));
+        metadata.insert("firstReferenceSequence",parts.front().referenceSequence);
+        metadata.insert("lastReferenceSequence",parts.back().referenceSequence);
+        metadata.insert("selectedRange",summarizePartReference(parts,{}));
+        if(!saveJson(QDir(run.runDirectory).filePath("part-reference-plan.json"),options.corpusPlan,&run.diagnostic))return run;
+    }
     const auto metadataBytes=QJsonDocument(metadata).toJson(QJsonDocument::Indented);
     if(metadataFile.write(metadataBytes)!=metadataBytes.size()||!durableFlush(metadataFile)){
         run.diagnostic=metadataFile.errorString();return run;
@@ -444,7 +497,7 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
     for(const auto& part:parts){sample.append(part.partNumber);
         candidates.insert(part.partNumber,QJsonArray::fromStringList(part.ldrawCandidates));}
     QJsonObject state=metadata;
-    state.insert(QStringLiteral("stateSchemaVersion"),1);
+    state.insert(QStringLiteral("stateSchemaVersion"),2);
     state.insert(QStringLiteral("orderedParts"),sample);
     state.insert(QStringLiteral("ldrawCandidates"),candidates);
     state.insert(QStringLiteral("requestedSampleCount"),options.randomSample?options.requestedEligibleCount:parts.size());
@@ -463,13 +516,13 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
     if(!csvFile.open(QIODevice::WriteOnly|QIODevice::Text)){
         run.diagnostic=csvFile.errorString();return run;
     }
-    csvFile.write("csv_schema_version,run_id,seed,sample_mode,requested_eligible_count,exclude_no_color,exclude_nonstandard_ids,part_id_eligibility_rule,sample_sequence,part_number,category_id,rebrickable_category_id,category_name,ldraw_model,result_category,preparation_route,source_triangles,source_groups,coverage_complete,prepare_ms,prepared_vertices,prepared_faces,recognized_features,fit_resolution,profile_identity,corrections,export_path,reopened,diagnostic_export_available,diagnostic_export_path,total_ms,diagnostic,native_result_category,native_diagnostic,local_override_state,local_override_used,local_override_stale,local_override_diagnostic,local_override_route,local_override_identity,export_result,reopen_result\n");
+    csvFile.write("csv_schema_version,run_id,seed,sample_mode,requested_eligible_count,exclude_no_color,exclude_nonstandard_ids,part_id_eligibility_rule,sample_sequence,part_number,category_id,rebrickable_category_id,category_name,ldraw_model,result_category,preparation_route,source_triangles,source_groups,coverage_complete,prepare_ms,prepared_vertices,prepared_faces,recognized_features,fit_resolution,profile_identity,corrections,export_path,reopened,diagnostic_export_available,diagnostic_export_path,total_ms,diagnostic,native_result_category,native_diagnostic,local_override_state,local_override_used,local_override_stale,local_override_diagnostic,local_override_route,local_override_identity,export_result,reopen_result,canonical_part_id,part_reference_sequence,part_reference_memberships,model_state,eligibility_notes\n");
     const auto save=[&](const BatchPrintResult& row){
         const auto& part=parts[row.sequence-1];
-        const QString line=QStringList{QStringLiteral("5"),csv(runId),QString::number(options.seed),
-            csv(options.randomSample?QStringLiteral("random"):QStringLiteral("part_list")),
-            QString::number(options.requestedEligibleCount),QStringLiteral("1"),
-            options.excludeNonstandardIds?QStringLiteral("1"):QStringLiteral("0"),
+        const QString line=QStringList{QStringLiteral("6"),csv(runId),QString::number(options.seed),
+            csv(mode),
+            QString::number(options.requestedEligibleCount),options.partReference?QStringLiteral("0"):QStringLiteral("1"),
+            !options.partReference&&options.excludeNonstandardIds?QStringLiteral("1"):QStringLiteral("0"),
             csv(QStringLiteral("^[0-9]+[A-Za-z]?$")),QString::number(row.sequence),
             csv(row.partNumber),part.categoryId?QString::number(part.categoryId):QString(),
             part.rebrickableCategoryId?QString::number(part.rebrickableCategoryId):QString(),
@@ -488,7 +541,12 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
             csv(row.category==BatchPrintCategory::ExportFailed?QStringLiteral("failed"):
                 row.exportPath.isEmpty()?QStringLiteral("not_attempted"):QStringLiteral("success")),
             csv(row.reopened?QStringLiteral("success"):row.category==BatchPrintCategory::ReopenFailed?
-                QStringLiteral("failed"):QStringLiteral("not_attempted"))}.join(',')+QLatin1Char('\n');
+                QStringLiteral("failed"):QStringLiteral("not_attempted")),
+            QString::number(part.partId),part.referenceSequence?QString::number(part.referenceSequence):QString(),
+            csv(QString::fromUtf8(QJsonDocument(part.referenceMemberships).toJson(QJsonDocument::Compact))),
+            csv(row.modelAvailabilityKnown?(row.modelAvailable?QStringLiteral("model_available"):QStringLiteral("model_unavailable")):
+                (!row.ldrawModel.isEmpty()?QStringLiteral("model_available"):QStringLiteral("not_resolved"))),
+            csv(eligibilityNotes(part).join(';'))}.join(',')+QLatin1Char('\n');
         const auto bytes=line.toUtf8();
         return csvFile.write(bytes)==bytes.size()&&durableFlush(csvFile);
     };
@@ -514,6 +572,7 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
     for(int index=0;index<parts.size();++index){
         if(cancellation&&cancellation->isCancelled()){run.stopped=true;break;}
         state.insert(QStringLiteral("currentSampleSequence"),index+1);
+        if(options.partReference)state.insert(QStringLiteral("currentReferenceSequence"),parts[index].referenceSequence);
         state.insert(QStringLiteral("currentPartNumber"),parts[index].partNumber);
         state.insert(QStringLiteral("currentPartStatus"),QStringLiteral("active"));
         state.insert(QStringLiteral("currentPhase"),QStringLiteral("starting"));
@@ -523,6 +582,11 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         if(options.phaseProgress)options.phaseProgress(index+1,parts[index].partNumber,QStringLiteral("starting"));
         if(options.beforePart)options.beforePart(run.statePath,index+1,parts[index].partNumber);
         const auto&part=parts[index];BatchPrintResult row;row.sequence=index+1;row.partNumber=part.partNumber;
+        if(options.partReference){
+            row.modelAvailabilityKnown=true;
+            row.ldrawModel=modelFor(part,options.libraryRoot);
+            row.modelAvailable=!row.ldrawModel.isEmpty();
+        }
         QElapsedTimer phaseTimer;phaseTimer.start();QString currentPhase=QStringLiteral("starting");
         QJsonObject stageTimes;bool persistenceOk=true;
         const auto phase=[&](const QString& name){
@@ -560,12 +624,15 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
             try{
             do{
                 if(!part.catalogPresent||part.partNumber.isEmpty()){
-                    row.category=BatchPrintCategory::NoCatalogPart;row.diagnostic=QStringLiteral("Empty Part identity.");break;}
-                if(part.noColor){row.category=BatchPrintCategory::SkippedNoColor;
+                    row.category=BatchPrintCategory::NoCatalogPart;
+                    row.diagnostic=part.partNumber.isEmpty()?QStringLiteral("Empty Part identity."):
+                        QStringLiteral("Part was not found in the active canonical catalog.");
+                    break;}
+                if(!options.partReference&&part.noColor){row.category=BatchPrintCategory::SkippedNoColor;
                     row.diagnostic=QStringLiteral("No Color / Sticker catalog Part.");break;}
-                if(isStickerCategory(part)){row.category=BatchPrintCategory::SkippedStickerCategory;
+                if(!options.partReference&&isStickerCategory(part)){row.category=BatchPrintCategory::SkippedStickerCategory;
                     row.diagnostic=QStringLiteral("Sticker catalog category is outside the print audit population.");break;}
-                if(options.excludeNonstandardIds&&!isStandardAuditPartNumber(part.partNumber)){
+                if(!options.partReference&&options.excludeNonstandardIds&&!isStandardAuditPartNumber(part.partNumber)){
                     row.category=BatchPrintCategory::SkippedNonstandardId;
                     row.diagnostic=QStringLiteral("Part ID is outside the standard audit population.");break;}
                 row.ldrawModel=modelFor(part,options.libraryRoot);
@@ -583,8 +650,6 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
                 PrintPreparationRequest request;request.partReference=part.partNumber;
                 request.ldrawIdentity=row.ldrawModel;request.libraryAuthority=options.libraryRoot;
                 request.loadResult=source;
-                request.profile.identity+=QStringLiteral("-audit-bounded-v1");
-                request.profile.maximumBooleanOperations=8;
                 phase(QStringLiteral("preparing"));
                 if(!persistenceOk)break;
                 QElapsedTimer preparationTimer;preparationTimer.start();
@@ -744,6 +809,37 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         if(progress)progress(row,run.totals);
     }
     run.stopped=run.stopped||(cancellation&&cancellation->isCancelled());
+    metadata.insert("elapsedMilliseconds",elapsed.elapsed());
+    metadata.insert("status",run.stopped?"stopped":"completed");
+    metadata.insert("completedCount",run.results.size());
+    if(options.partReference){
+        run.referenceSummary=summarizePartReference(parts,run.results);
+        run.referenceSummary.insert("elapsedMilliseconds",elapsed.elapsed());
+        run.referenceSummary.insert("corpusFingerprint",options.corpusPlan.value("corpusFingerprint"));
+        run.referenceSummary.insert("manifestPositionCount",options.corpusPlan.value("manifestPositionCount"));
+        metadata.insert("summary",run.referenceSummary);
+        QJsonObject failures{{"source_coverage",QJsonArray()},{"resource_limit",QJsonArray()},
+            {"no_model",QJsonArray()},{"unexpected_failures",QJsonArray()}};
+        for(const auto& row:run.results){
+            QStringList groups;
+            if(!row.modelAvailable)groups.append("no_model");
+            if(row.nativeCategory==BatchPrintCategory::SourceCoverage)groups.append("source_coverage");
+            else if(row.nativeCategory==BatchPrintCategory::ResourceLimit)groups.append("resource_limit");
+            else if(row.category!=BatchPrintCategory::Success&&row.category!=BatchPrintCategory::StrictOverrideSuccess&&
+                row.category!=BatchPrintCategory::UserOverrideSuccess&&row.category!=BatchPrintCategory::NoLDrawModel)
+                groups.append("unexpected_failures");
+            for(const auto& group:groups){auto list=failures.value(group).toArray();
+                list.append(QJsonObject{{"partNumber",row.partNumber},{"sampleSequence",row.sequence},
+                    {"referenceSequence",parts[row.sequence-1].referenceSequence},
+                    {"nativeResultCategory",categoryCode(row.nativeCategory)},
+                    {"resultCategory",categoryCode(row.category)},{"diagnostic",row.diagnostic}});
+                failures.insert(group,list);}
+        }
+        failures.insert("note","Review lists are observations, not an automatic recommendation to change geometry.");
+        if(!saveJson(QDir(run.runDirectory).filePath("summary.json"),run.referenceSummary,&run.diagnostic)||
+           !saveJson(QDir(run.runDirectory).filePath("failure-review.json"),failures,&run.diagnostic))return run;
+    }
+    if(!saveJson(run.metadataPath,metadata,&run.diagnostic))return run;
     state.insert(QStringLiteral("status"),run.stopped?QStringLiteral("stopped"):QStringLiteral("completed"));
     if(!checkpoint())return run;
     csvFile.close();run.ok=true;

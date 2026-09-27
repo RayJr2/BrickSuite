@@ -9,6 +9,8 @@
 #include <functional>
 #include <QJsonObject>
 #include <QMutex>
+#include <QJsonArray>
+#include "../../../models/PartReferenceEntry.h"
 
 namespace PrintGeometry {
 
@@ -22,6 +24,16 @@ struct BatchPrintablePart {
     bool catalogPresent = false;
     bool noColor = false;
     int partId = 0;
+    int referenceSequence = 0;
+    QJsonArray referenceMemberships;
+    QString resolvedModel;
+};
+
+struct BatchPrintCorpus {
+    QVector<BatchPrintablePart> parts;
+    QJsonObject plan;
+    QString diagnostic;
+    bool ok() const { return diagnostic.isEmpty()&&!parts.isEmpty(); }
 };
 
 enum class BatchPrintCategory {
@@ -41,6 +53,7 @@ struct BatchPrintResult {
     QString localOverrideState = QStringLiteral("not_checked");
     QString localOverrideDiagnostic, localOverrideRoute, localOverrideIdentity;
     bool localOverrideUsed = false, localOverrideStale = false;
+    bool modelAvailabilityKnown = false, modelAvailable = false;
     QString diagnostic, exportPath;
     QString diagnosticExportPath;
     std::size_t sourceTriangles = 0, sourceGroups = 0;
@@ -95,6 +108,8 @@ struct BatchPrintOptions {
     bool excludeNonstandardIds = true;
     bool excludeNoModel = false;
     bool randomSample = false;
+    bool partReference = false;
+    QJsonObject corpusPlan;
     int requestedEligibleCount = 0;
     BatchPrintPopulation population;
     std::shared_ptr<BatchPrintRunState> runState;
@@ -110,6 +125,7 @@ struct BatchPrintRun {
     QVector<BatchPrintResult> results;
     BatchPrintTotals totals;
     bool ok = false, stopped = false;
+    QJsonObject referenceSummary;
 };
 
 class BatchPrintableModelService {
@@ -123,6 +139,14 @@ public:
                                                      BatchPrintPopulation* population = nullptr,
                                                      bool excludeNoModel = false,const QString& libraryRoot = {});
     static bool isStandardAuditPartNumber(const QString& partNumber);
+    static QString resolvedModel(const BatchPrintablePart& part,const QString& libraryRoot);
+    static void resolveModels(QVector<BatchPrintablePart>& parts,const QString& libraryRoot);
+    static BatchPrintCorpus partReferenceCorpus(const QList<PartReferenceEntry>& entries,
+        const QVector<BatchPrintablePart>& catalog,const QString& libraryRoot);
+    static BatchPrintCorpus readPartReferencePlan(const QString& path,const QString& libraryRoot);
+    static bool validPartReferenceSelection(const QVector<BatchPrintablePart>& parts,const QJsonObject& plan);
+    static QJsonObject summarizePartReference(const QVector<BatchPrintablePart>& parts,
+        const QVector<BatchPrintResult>& results);
     static bool isStickerCategory(const BatchPrintablePart& part);
     static bool writeDiagnosticThreeMf(const PrintMesh& candidate,const QString& path,
                                        const QString& partNumber,const QColor& color,QString* error = nullptr,

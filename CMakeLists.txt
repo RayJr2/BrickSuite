@@ -414,6 +414,7 @@ qt_add_executable(BrickSuite
     src/services/parts/PartReferenceManifest.cpp
     src/services/parts/PartReferenceCustomizationService.h
     src/services/parts/PartReferenceCustomizationService.cpp
+    src/services/parts/PartReferenceAuditSource.cpp src/services/parts/PartReferenceAuditSource.h
     src/services/parts/RebrickablePartAliasLearner.h
     src/services/parts/RebrickablePartAliasLearner.cpp
     src/services/parts/PartExternalIdEnrichmentService.h
@@ -487,6 +488,7 @@ qt_add_executable(BrickSuite
     src/services/geometry/print/PrintPreparationCache.cpp src/services/geometry/print/PrintPreparationCache.h
     src/services/geometry/print/LDrawPrintPreparationService.cpp src/services/geometry/print/LDrawPrintPreparationService.h
     src/services/geometry/print/BatchPrintableModelService.cpp src/services/geometry/print/BatchPrintableModelService.h
+    src/services/geometry/print/PartReferenceAuditCorpus.cpp
     src/services/geometry/print/LDrawPrintGeometryBuilder.cpp src/services/geometry/print/LDrawPrintGeometryBuilder.h
     src/services/geometry/print/LDrawCertifiedInterfaceStitcher.cpp src/services/geometry/print/LDrawCertifiedInterfaceStitcher.h
     src/services/geometry/print/SourceSurfaceSolidifier.cpp src/services/geometry/print/SourceSurfaceSolidifier.h
@@ -921,6 +923,7 @@ if(BUILD_TESTING)
         tests/ManufacturingMeshServiceTest.cpp
         src/services/geometry/print/LocalPrintableOverrideService.cpp src/services/geometry/print/LocalPrintableOverrideUnion.cpp src/services/geometry/print/LocalPrintableOverrideStl.cpp src/services/geometry/print/PrintMeshConversion.cpp
         src/services/geometry/print/BatchPrintableModelService.cpp src/services/geometry/print/BatchPrintableModelService.h
+        src/services/geometry/print/PartReferenceAuditCorpus.cpp
         src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h
         src/services/geometry/LDrawLibraryService.cpp src/services/geometry/LDrawLibraryService.h
         src/services/geometry/fit/FitCalibrationExperiment.cpp src/services/geometry/fit/FitCalibrationExperiment.h
@@ -955,6 +958,12 @@ if(BUILD_TESTING)
     target_link_libraries(BatchPrintableOverrideTest PRIVATE Qt6::Core Qt6::Gui Qt6::Sql BrickSuite::Mcut BrickSuite::Lib3mf)
     bricksuite_stage_mcut_runtime(BatchPrintableOverrideTest)
     add_test(NAME BatchPrintableOverride COMMAND BatchPrintableOverrideTest)
+    qt_add_executable(PartReferenceAuditTest EXCLUDE_FROM_ALL
+        tests/PartReferenceAuditTest.cpp ${_audit_test_geometry_sources})
+    target_link_libraries(PartReferenceAuditTest PRIVATE Qt6::Core Qt6::Gui Qt6::Sql BrickSuite::Mcut BrickSuite::Lib3mf)
+    bricksuite_stage_mcut_runtime(PartReferenceAuditTest)
+    add_test(NAME PartReferenceAudit COMMAND PartReferenceAuditTest)
+
     qt_add_executable(LocalPrintableOverrideServiceTest EXCLUDE_FROM_ALL
         tests/LocalPrintableOverrideServiceTest.cpp
         src/services/geometry/print/LocalPrintableOverrideService.cpp src/services/geometry/print/LocalPrintableOverrideUnion.cpp src/services/geometry/print/LocalPrintableOverrideStl.cpp src/services/geometry/print/PrintMeshConversion.cpp
@@ -966,6 +975,10 @@ if(BUILD_TESTING)
     qt_add_executable(PrintCapabilityAuditDialogTest EXCLUDE_FROM_ALL
         src/ui/help/HelpManager.cpp src/ui/help/HelpDialog.cpp resources/help/help.qrc
         tests/PrintCapabilityAuditDialogTest.cpp
+        resources/resources.qrc
+        src/services/parts/PartReferenceAuditSource.cpp
+        src/services/parts/PartReferenceManifest.cpp src/services/parts/PartReferenceCustomizationService.cpp
+        src/repositories/PartRepository.cpp src/repositories/UserPartReferenceRepository.cpp src/models/Part.cpp
         src/ui/parts/PrintCapabilityAuditDialog.cpp src/ui/parts/PrintCapabilityAuditDialog.h
         src/database/DatabaseManager.cpp src/database/DatabaseSchema.cpp
         src/settings/UserSettings.cpp src/services/CredentialStore.cpp
@@ -1023,6 +1036,10 @@ if(BUILD_TESTING)
     target_link_libraries(LDrawPrintPreparationServiceTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut)
     bricksuite_stage_mcut_runtime(LDrawPrintPreparationServiceTest)
     add_test(NAME LDrawPrintPreparationService COMMAND LDrawPrintPreparationServiceTest)
+    if(BRICKSUITE_CALIBRATION_LDRAW_ROOT)
+        add_test(NAME PrintCompositionRouting COMMAND LDrawPrintPreparationServiceTest
+            --routing-only "${BRICKSUITE_CALIBRATION_LDRAW_ROOT}")
+    endif()
 
     qt_add_executable(PreparedMeshTest EXCLUDE_FROM_ALL tests/PreparedMeshTest.cpp
         src/services/geometry/PartMesh.h src/services/geometry/LDrawSourceModel.h src/services/geometry/LDrawLoadResult.h

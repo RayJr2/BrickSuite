@@ -225,7 +225,12 @@ void LDrawModelViewerWindow::updatePreparationControls()
     m_experimentalFit->setVisible(catalog&&m_preparedMesh&&m_preparedMesh->userAcceptedOverride);
     m_experimentalFit->setEnabled(repairEnabled&&m_preparedMesh&&m_preparedMesh->userAcceptedOverride);
     m_export->setEnabled(!m_mesh.triangles.isEmpty()&&!m_overrideBusy);
-    const bool proofPart=m_request.partNumber==QStringLiteral("3700");m_manufacturingProof->setVisible(proofPart);m_manufacturingProof->setEnabled(proofPart&&ready&&!m_preparing&&!m_overrideBusy&&!m_preparedMesh->localRepairedOverride);
+#ifndef NDEBUG
+    const bool proofPart=m_request.partNumber==QStringLiteral("3700")&&m_request.externalFilePath.isEmpty();
+#else
+    const bool proofPart=false;
+#endif
+    m_manufacturingProof->setVisible(proofPart);m_manufacturingProof->setEnabled(proofPart&&ready&&!m_preparing&&!m_overrideBusy&&!m_preparedMesh->localRepairedOverride);
     if(auto*model=qobject_cast<QStandardItemModel*>(m_geometryView->model()))if(auto*item=model->item(m_geometryView->findData(1)))item->setEnabled(ready);
     m_showMeshIssues->setEnabled(m_sourceReady&&m_geometryView->currentData().toInt()==0);
 }

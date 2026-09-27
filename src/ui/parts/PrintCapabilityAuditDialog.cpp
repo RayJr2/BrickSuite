@@ -2,6 +2,7 @@
 #include "PrintCapabilityAuditDialog.h"
 
 #include "../../database/DatabaseManager.h"
+#include "../../services/parts/PartReferenceAuditSource.h"
 #include "../../services/geometry/print/BatchPrintableModelService.h"
 #include "../../settings/UserSettings.h"
 
@@ -38,7 +39,7 @@ PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent,Runner ru
     HelpManager::setContextTopic(this,HelpTopic::PrintTroubleshooting);
     setWindowTitle(tr("Print Capability Audit"));resize(620,450);
     auto* layout=new QVBoxLayout(this);auto* form=new QFormLayout;
-    m_mode=new QComboBox(this);m_mode->addItems({tr("Random Sample"),tr("Part List")});
+    m_mode=new QComboBox(this);m_mode->addItems({tr("Random Sample"),tr("Part List"),tr("Part Reference")});
     form->addRow(tr("Mode:"),m_mode);
     m_sampleCount=new QSpinBox(this);m_sampleCount->setRange(1,100000);m_sampleCount->setValue(25);
     form->addRow(tr("Sample count:"),m_sampleCount);
@@ -47,14 +48,33 @@ PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent,Runner ru
     form->addRow(tr("Reproducible seed:"),m_seed);
     m_partList=new QPlainTextEdit(this);m_partList->setPlaceholderText(tr("Part IDs, one per line or separated by commas"));
     m_partList->setEnabled(false);form->addRow(tr("Part IDs:"),m_partList);
-    auto* noColor=new QCheckBox(tr("Exclude no-Color / sticker Parts (required)"),this);
-    noColor->setChecked(true);noColor->setEnabled(false);form->addRow(tr("Eligibility:"),noColor);
+    m_noColor=new QCheckBox(tr("Exclude no-Color / sticker Parts"),this);
+    m_noColor->setChecked(true);m_noColor->setEnabled(false);form->addRow(tr("Eligibility:"),m_noColor);
     m_excludeNonstandardIds=new QCheckBox(tr("Exclude composite/decorated Part IDs"),this);
     m_excludeNonstandardIds->setChecked(true);form->addRow(QString(),m_excludeNonstandardIds);
     m_excludeNoModel=new QCheckBox(tr("Exclude Parts without installed LDraw model"),this);
     form->addRow(QString(),m_excludeNoModel);
     auto* load=new QPushButton(tr("Load Part List..."),this);load->setEnabled(false);
     form->addRow(QString(),load);
+    m_referenceCounts=new QLabel(this);m_referenceCounts->setWordWrap(true);
+    m_referenceCounts->setObjectName(QStringLiteral("referenceCorpusCounts"));
+    form->addRow(tr("Part Reference corpus:"),m_referenceCounts);
+    m_referenceFirst=new QSpinBox(this);m_referenceFirst->setRange(1,100000);
+    m_referenceFirst->setObjectName(QStringLiteral("referenceFirst"));
+    m_referenceCount=new QSpinBox(this);m_referenceCount->setRange(0,100000);
+    m_referenceCount->setSpecialValueText(tr("All remaining"));
+    m_referenceCount->setObjectName(QStringLiteral("referenceCount"));
+    form->addRow(tr("First unique Part:"),m_referenceFirst);
+    form->addRow(tr("Parts in this run:"),m_referenceCount);
+    m_refreshCorpus=new QPushButton(tr("Refresh current Part Reference"),this);
+    m_loadPlan=new QPushButton(tr("Load saved Part Reference plan..."),this);
+    form->addRow(QString(),m_refreshCorpus);form->addRow(QString(),m_loadPlan);
+    connect(m_refreshCorpus,&QPushButton::clicked,this,[this]{refreshCorpus();});
+    connect(m_loadPlan,&QPushButton::clicked,this,[this]{
+        const auto path=QFileDialog::getOpenFileName(this,tr("Load saved corpus"),m_output->text(),
+            tr("Part Reference plan (part-reference-plan.json)"));
+        if(!path.isEmpty())refreshCorpus(path);
+    });
     const QString outputRoot=QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
         .filePath(QStringLiteral("BrickSuite/Print Capability Audits"));
     auto* outputRow=new QHBoxLayout;
@@ -73,17 +93,19 @@ PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent,Runner ru
     auto* close=new QPushButton(tr("Close"),this);
     buttons->addWidget(m_start);buttons->addWidget(m_stop);buttons->addStretch();buttons->addWidget(close);
     layout->addLayout(buttons);
+    m_referenceFirst->setToolTip(tr("Global unique-Part sequence in the saved corpus; use a new run folder for each chunk."));
+    m_referenceCount->setToolTip(tr("Zero means all remaining Parts. Explicit ranges allow bounded runs without changing corpus order."));
+    m_loadPlan->setToolTip(tr("Continue in a new run folder using an earlier immutable corpus plan. This does not append to or automatically resume earlier CSV output."));
     m_seed->setToolTip(tr("Reproduce random sample order with the same seed and eligible catalog."));
-    m_mode->setToolTip(tr("Random Sample shuffles eligible Parts; Part List tests explicit IDs in order."));
+    m_mode->setToolTip(tr("Random Sample shuffles eligible Parts; Part List tests explicit IDs; Part Reference audits every unique reference Part in saved order."));
     m_sampleCount->setToolTip(tr("Requested eligible sample size after exclusions; missing models need not consume slots."));
     m_excludeNoModel->setToolTip(tr("Filter missing installed models before random sampling. Explicit Part List IDs are still tested."));
     m_excludeNonstandardIds->setToolTip(tr("Restrict the random population to digits with at most one trailing letter; catalog identities are unchanged."));
     m_output->setToolTip(tr("Each run creates a new folder containing results and durable crash-attribution state."));
     m_stop->setToolTip(tr("Stop before the next Part after the active work finishes or cancels safely."));
     connect(m_mode,qOverload<int>(&QComboBox::currentIndexChanged),this,[this,load](int index){
-        m_excludeNoModel->setEnabled(index==0);
-        m_sampleCount->setEnabled(index==0);m_seed->setEnabled(index==0);
-        m_partList->setEnabled(index==1);load->setEnabled(index==1);
+        updateMode();load->setEnabled(index==1);
+        if(index==2&&m_corpus.parts.isEmpty())refreshCorpus();
     });
     connect(load,&QPushButton::clicked,this,[this]{
         const QString path=QFileDialog::getOpenFileName(this,tr("Load Part IDs"),{},tr("Text or CSV (*.txt *.csv);;All files (*)"));
@@ -97,10 +119,57 @@ PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent,Runner ru
         if(!folder.isEmpty())m_output->setText(folder);
     });
     connect(m_output,&QLineEdit::textChanged,this,[this]{showIncompleteRuns();});
-    showIncompleteRuns();
+    showIncompleteRuns();updateMode();
     connect(m_start,&QPushButton::clicked,this,[this]{start();});
     connect(m_stop,&QPushButton::clicked,this,[this]{stop();});
     connect(close,&QPushButton::clicked,this,[this]{reject();});
+}
+
+void PrintCapabilityAuditDialog::updateMode()
+{
+    const bool reference=m_mode->currentIndex()==2,random=m_mode->currentIndex()==0;
+    m_sampleCount->setEnabled(!m_running&&random);m_seed->setEnabled(!m_running&&random);
+    m_partList->setEnabled(!m_running&&m_mode->currentIndex()==1);
+    m_excludeNoModel->setEnabled(!m_running&&random);
+    m_excludeNonstandardIds->setEnabled(!m_running&&!reference);
+    m_noColor->setChecked(!reference);
+    m_referenceFirst->setEnabled(!m_running&&!m_discovering&&reference);
+    m_referenceCount->setEnabled(!m_running&&!m_discovering&&reference);
+    m_refreshCorpus->setEnabled(!m_running&&!m_discovering&&reference);
+    m_loadPlan->setEnabled(!m_running&&!m_discovering&&reference);
+    m_start->setEnabled(!m_running&&!m_discovering&&(!reference||m_corpus.ok()));
+}
+
+void PrintCapabilityAuditDialog::refreshCorpus(const QString& savedPlan)
+{
+    if(m_running||m_discovering)return;
+    m_discovering=true;updateMode();m_referenceCounts->setText(tr("Discovering Part Reference corpus and installed models..."));
+    const auto database=DatabaseManager::instance().databasePath();
+    const auto library=UserSettings::instance().ldrawLibraryPath();
+    auto* watcher=new QFutureWatcher<BatchPrintCorpus>(this);QPointer<PrintCapabilityAuditDialog> self(this);
+    connect(watcher,&QFutureWatcher<BatchPrintCorpus>::finished,this,[self,watcher,savedPlan]{
+        if(!self){watcher->deleteLater();return;}
+        try{self->m_corpus=watcher->result();}catch(...){self->m_corpus={};self->m_corpus.diagnostic=QStringLiteral("Corpus discovery failed.");}
+        watcher->deleteLater();self->m_discovering=false;
+        if(!self->m_corpus.ok())self->m_referenceCounts->setText(self->m_corpus.diagnostic);
+        else {
+            int models=0;for(const auto& part:self->m_corpus.parts)models+=!part.resolvedModel.isEmpty();
+            const auto& plan=self->m_corpus.plan;
+            self->m_referenceCounts->setText(self->tr("%1 positions; %2 unique Parts; %3 duplicate memberships; %4 with installed models; %5 without models. %6 Fingerprint: %7")
+                .arg(plan.value("manifestPositionCount").toInt()).arg(self->m_corpus.parts.size())
+                .arg(plan.value("duplicateMembershipCount").toInt()).arg(models).arg(self->m_corpus.parts.size()-models)
+                .arg(savedPlan.isEmpty()?self->tr("Current definitions; no eligibility exclusions."):self->tr("Saved ordered corpus; no eligibility exclusions."))
+                .arg(plan.value("corpusFingerprint").toString()));
+            self->m_referenceFirst->setMaximum(self->m_corpus.parts.size());self->m_referenceFirst->setValue(1);
+            self->m_referenceCount->setValue(0);
+        }
+        self->updateMode();
+    });
+    m_discoveryFuture=QtConcurrent::run([database,library,savedPlan]{
+        return savedPlan.isEmpty()?PartReferenceAuditSource::load(database,library):
+            BatchPrintableModelService::readPartReferencePlan(savedPlan,library);
+    });
+    watcher->setFuture(m_discoveryFuture);
 }
 
 void PrintCapabilityAuditDialog::showIncompleteRuns()
@@ -130,10 +199,10 @@ void PrintCapabilityAuditDialog::showIncompleteRuns()
 
 void PrintCapabilityAuditDialog::start()
 {
-    if(m_running)return;
-    const bool random=m_mode->currentIndex()==0;
+    if(m_running||m_discovering)return;
+    const bool random=m_mode->currentIndex()==0,reference=m_mode->currentIndex()==2;
     const QStringList ids=m_partList->toPlainText().split(QRegularExpression(QStringLiteral("[\\s,;]+")),Qt::SkipEmptyParts);
-    if(!random&&ids.isEmpty()){
+    if(!random&&!reference&&ids.isEmpty()){
         QMessageBox::information(this,tr("Print Capability Audit"),tr("Enter or load at least one Part ID."));return;
     }
     if(m_output->text().trimmed().isEmpty()){
@@ -152,6 +221,16 @@ void PrintCapabilityAuditDialog::start()
     options.excludeNonstandardIds=m_excludeNonstandardIds->isChecked();
     options.excludeNoModel=random&&m_excludeNoModel->isChecked();
     options.randomSample=random;options.requestedEligibleCount=random?m_sampleCount->value():0;
+    options.partReference=reference;
+    QVector<BatchPrintablePart> referenceParts;
+    if(reference){
+        if(!m_corpus.ok()){m_running=false;updateMode();return;}
+        options.corpusPlan=m_corpus.plan;
+        const int first=m_referenceFirst->value()-1;
+        const int count=m_referenceCount->value()?m_referenceCount->value():m_corpus.parts.size()-first;
+        referenceParts=m_corpus.parts.mid(first,count);
+    }
+    updateMode();
     options.autoFitEnabled=UserSettings::instance().autoFitEnabled();
     options.runState=m_runState;
     const QString databasePath=DatabaseManager::instance().databasePath();
@@ -168,8 +247,21 @@ void PrintCapabilityAuditDialog::start()
         self->m_excludeNonstandardIds->setEnabled(true);self->m_output->setReadOnly(false);
         self->m_browseOutput->setEnabled(true);
         self->m_excludeNoModel->setEnabled(self->m_mode->currentIndex()==0);
-        self->showIncompleteRuns();
+        self->showIncompleteRuns();self->updateMode();
         if(!result.ok){self->m_counters->setText(self->tr("Audit failed: %1").arg(result.diagnostic));return;}
+        if(!result.referenceSummary.isEmpty()){
+            const auto& summary=result.referenceSummary;
+            self->m_counters->setText(self->tr("%1. Part Reference range: %2 unique Parts; %3 completed; %4 with models; %5 without models. Native successes %6 (%7%); override recoveries %8; practical successes %9 (%10%). Source coverage %11; resource limit %12; other failures %13. Elapsed %14 s. CSV: %15. Global/catalog summaries: %16/summary.json")
+                .arg(result.stopped?self->tr("Stopped"):self->tr("Complete"))
+                .arg(summary.value("uniqueParts").toInt()).arg(summary.value("completedParts").toInt())
+                .arg(summary.value("modelBearingParts").toInt()).arg(summary.value("noModelParts").toInt())
+                .arg(summary.value("nativeSuccesses").toInt()).arg(summary.value("nativeSuccessPercent").toDouble(),0,'f',1)
+                .arg(summary.value("overrideRecoveries").toInt()).arg(summary.value("practicalSuccesses").toInt())
+                .arg(summary.value("practicalSuccessPercent").toDouble(),0,'f',1)
+                .arg(summary.value("sourceCoverageFailures").toInt()).arg(summary.value("resourceLimitFailures").toInt())
+                .arg(summary.value("otherFailures").toInt()).arg(summary.value("elapsedMilliseconds").toDouble()/1000,0,'f',1)
+                .arg(result.csvPath,result.runDirectory));return;
+        }
         const auto& t=result.totals;
         const int noColor=result.population.catalogTotal?result.population.excludedNoColor:t.skippedNoColor;
         const int stickers=result.population.catalogTotal?result.population.excludedStickerCategory:t.skippedStickerCategory;
@@ -192,7 +284,7 @@ void PrintCapabilityAuditDialog::start()
         },Qt::QueuedConnection);
     };
     const auto runner=m_runner;
-    m_future=QtConcurrent::run([databasePath,random,ids,count,options,cancellation,self,runner]{
+    m_future=QtConcurrent::run([databasePath,random,ids,count,options,cancellation,self,runner,referenceParts]{
         const auto progress=[self](const BatchPrintResult& row,const BatchPrintTotals&){
             if(self)QMetaObject::invokeMethod(self,[self,row]{
                 if(self&&self->m_running)self->showPhase(row.sequence,row.partNumber,
@@ -200,6 +292,7 @@ void PrintCapabilityAuditDialog::start()
             },Qt::QueuedConnection);
         };
         if(runner)return runner(options,cancellation.get(),progress);
+        if(options.partReference)return BatchPrintableModelService().run(referenceParts,options,cancellation.get(),progress);
         QString error;const auto catalog=BatchPrintableModelService::loadCatalog(databasePath,&error);
         if(!error.isEmpty()){BatchPrintRun failed;failed.diagnostic=error;return failed;}
         BatchPrintPopulation population;
@@ -218,6 +311,7 @@ PrintCapabilityAuditDialog::~PrintCapabilityAuditDialog()
     // Parent/application teardown is also a safe boundary. Keep the QObject
     // alive until callbacks can no longer be issued by the worker.
     if(m_running&&m_cancellation){m_cancellation->cancel();m_future.waitForFinished();}
+    if(m_discovering)m_discoveryFuture.waitForFinished();
 }
 
 void PrintCapabilityAuditDialog::showPhase(int sequence,const QString& part,const QString& phase)

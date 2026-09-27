@@ -1,5 +1,80 @@
 # Print Capability Audit run persistence
 
+## Part Reference acceptance corpus
+
+Debug builds offer **Test → Print Capability Audit → Part Reference**. This reads
+`PartReferenceManifest` and the existing effective local customization service;
+there is no copied Part list and no geometry-policy override. Discovery runs in
+background and shows positions, unique canonical Parts, duplicate memberships,
+and installed-model availability before Start. The bundled definitions currently
+contain 2,985 positions in 38 catalogs; local customizations can increase these.
+
+Canonical database Part ID is the deduplication key. Unresolved catalog entries
+remain visible under their normalized Part number, with a `no_catalog_part`
+result; they are not silently discarded. Empty identities are separately listed
+as structurally invalid positions. The first occurrence defines processing order.
+Every catalog/section, original entry number, manifest position, and display order
+is retained, including multiple memberships of the same canonical Part.
+
+Random Sample exclusions do not filter this corpus. No-Color, Sticker and
+nonstandard-ID properties are recorded in `eligibility_notes`; supported models
+are still tested through normal validation. Missing installed source is recorded
+as `model_unavailable` / `no_ldraw_model`, separately from native geometry failure.
+Availability means a readable, nonempty root model resolves through the normal
+candidate list; dependency/load failures remain explicit `load_failed` results.
+
+Each run writes the complete `part-reference-plan.json` before Part work. The
+version-1 plan contains canonical identities, candidates, memberships and order;
+its SHA-256 fingerprint covers that ordered definition and its schema/policy.
+The current shared policy is `ordinary-brick-bounded-v2`. This fingerprint does
+not certify that installed LDraw files or Verified profiles remain unchanged.
+Metadata records application/Qt version, start time, library path, Auto Fit setting,
+corpus counts/fingerprint, selected range, elapsed time and completion status.
+Run-state schema 2 also records the active global `currentReferenceSequence`.
+
+CSV schema 6 appends `canonical_part_id`, `part_reference_sequence`,
+`part_reference_memberships` (a JSON array), `model_state`, and `eligibility_notes`.
+`sample_sequence` remains 1..N within the run. Existing native and override result
+semantics and export filenames remain unchanged.
+
+On completion or clean Stop, `summary.json` and `run-metadata.json` contain global
+and per-catalog counts/rates. Native and practical percentages use model-bearing
+Parts in the selected range, excluding no-model Parts. Incomplete ranges are
+explicitly partial measurements. Catalogs are overlapping membership views:
+**do not sum them to reconstruct the global denominator**. Native coverage/resource
+failures remain counted even when an override recovers practical printability.
+`failure-review.json` lists source-coverage, resource-limit, no-model and unexpected
+failures, with their sequence and diagnostics. These lists do not imply that every
+failure needs new geometry engineering.
+
+### Complete run and bounded chunks
+
+1. Choose **Part Reference**, inspect the discovered counts, and choose an output folder.
+2. Leave **First unique Part = 1**, **Parts in this run = All remaining** for the full corpus.
+3. Start; individual failures do not open modal dialogs. Stop and Close retain existing safe behavior.
+4. Review CSV, metadata, run-state, stage timings, summary and failure-review files.
+
+In-place resume is deliberately not implemented. Existing runs do not persist a
+complete execution environment/profile snapshot or an append-recovery journal;
+adding trustworthy reconciliation of partial quoted CSV records and successful
+exports would expand this task beyond corpus measurement. Use saved-plan chunks:
+
+- For planned chunks, choose a first index and count (for example 1/100, 101/100).
+- After the first run, use **Load saved Part Reference plan...** with its
+  `part-reference-plan.json`, then select the next range. This preserves order and
+  fingerprint even if the current manifest changes. Incompatible/damaged plans refuse loading.
+- After Stop/interruption, inspect the last complete CSV row and `run-state.json`.
+  Start a new chunk at the first uncompleted global reference sequence. Rerun a
+  cancelled row or ambiguous active Part; never skip it solely because it was active.
+- Preserve both run folders. If a boundary Part was rerun, count its chosen completed
+  result once by `(corpusFingerprint, canonical_part_id)` (or unresolved Part number).
+  Do not add percentages or count overlapping chunks twice. Do not mix measurements
+  across changed LDraw installations, profiles or settings without identifying them.
+- Output directories are always new. This is explicit chunking, not automatic resume;
+  the tool does not append to, repair, or overwrite earlier evidence.
+
+The historical 100-Part random baseline below remains a separate measurement.
+
 ## Native and local-override results
 
 Every model-bearing Part first attempts the existing native preparation and
@@ -17,7 +92,7 @@ nominal PreparedMesh 3MF export and reopen to count as `strict_override_success`
 or `user_override_success`. Experimental Auto Fit is never invoked. A candidate
 awaiting review is not a stored accepted override and cannot count as success.
 
-CSV schema 5 preserves the existing fields and adds:
+CSV schema 6 retains the schema-5 native/override fields:
 
 - `native_result_category`, `native_diagnostic`: the underlying native outcome;
 - `local_override_state`: `not_checked`, `none`, `strictly_validated`,
@@ -134,15 +209,16 @@ model eligibility and refill, aliases, and distinct Stop/completion states.
 
 ## Bounded work and dialog lifecycle
 
-The audit-specific `audit-bounded-v1` preparation profile permits at most eight
+The shared interactive and audit preparation policy permits at most eight
 sequential Boolean operations. Larger workloads first use the existing exact
 planar local composer; if it cannot establish a valid result, preparation returns
-a resource-limit failure before MCUT. Normal interactive printing retains its
-existing profile. Source coverage, strict mesh validation, and dimensional
+a resource-limit failure before MCUT. The ManufacturingMesh fallback uses the
+same eight-operation ceiling; larger supported composed meshes retain their
+existing localized-correction route. Source coverage, strict mesh validation, and dimensional
 fidelity checks remain mandatory. The seed-8125 stall was actually sequence 21
 (2456), not sequence 20 (23422): the old UI displayed only the last completed row.
 2456 entered sequential Boolean composition and its isolated probe consumed
-roughly 194 GB of private committed memory. The audit profile routes it through
+roughly 194 GB of private committed memory. The shared policy routes it through
 validated local composition.
 
 Diagnostic export is optional. Meshes above 50,000 faces or 150,000 vertices are

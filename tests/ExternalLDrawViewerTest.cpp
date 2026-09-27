@@ -102,6 +102,13 @@ int main(int argc,char** argv)
         viewer.showPart(catalog);
         ok&=check(until([&]{return button(viewer,"Prepare for Printing")->isEnabled();}),"catalog supersedes pending external load");
         ok&=check(!text(viewer,"External LDraw File:")&&text(viewer,"Installed LDraw library"),"catalog session has no external state");
+        catalog.partNumber="3700";catalog.candidates={"3001"};viewer.showPart(catalog);
+        ok&=check(until([&]{return button(viewer,"Prepare for Printing")->isEnabled();}),"3700 viewer loads");
+#ifdef NDEBUG
+        ok&=check(button(viewer,"Manufacturing Proof")->isHidden(),"3700 engineering proof hidden in Release");
+#else
+        ok&=check(!button(viewer,"Manufacturing Proof")->isHidden(),"3700 engineering proof retained in Debug");
+#endif
         viewer.close();
     }
     {
