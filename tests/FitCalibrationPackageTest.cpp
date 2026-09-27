@@ -3,6 +3,7 @@
 #include "../src/services/geometry/fit/FitCalibrationFixtureLabel.h"
 #include "../src/services/geometry/fit/FitCalibrationLibrary.h"
 #include "../src/services/geometry/fit/StandardStudCalibrationArtifact.h"
+#include "../src/services/geometry/fit/StandardBarCalibrationArtifact.h"
 #include "../src/services/geometry/fit/StudReceivingCalibrationArtifact.h"
 #include "../src/services/geometry/fit/TechnicAxleHoleCalibrationArtifact.h"
 #include "../src/services/geometry/fit/RoundTechnicCalibrationArtifact.h"
@@ -99,6 +100,28 @@ int main(int argc, char** argv)
         }
     };
     if (post.ok) checkStandaloneLabel(post.mesh, FitCalibrationNameKey::ClutchPostWall, "Post Wall Cell");
+    for (int count : {3, 5, 7}) {
+        StandardBarCalibrationDefinition definition;
+        definition.candidateCount = count;
+        const auto bar = StandardBarCalibrationArtifact::generate(definition);
+        ok &= require(bar.ok, "Standard Bar fixture for label regression");
+        if (!bar.ok) continue;
+        checkStandaloneLabel(bar.mesh, FitCalibrationNameKey::BarDiameter,
+                             QString("%1-candidate Standard Bar").arg(count));
+        PrintMesh labeled;
+        if (!FitCalibrationFixtureLabel::recessStandalone(bar.mesh, FitCalibrationNameKey::BarDiameter,
+                                                        &labeled, nullptr, &error)) continue;
+        // The label may change only the underside. Preserve every vertex of
+        // the bars and the top-side candidate marker, including their heights.
+        for (const auto& vertex : bar.mesh.vertices) {
+            if (vertex.z < 1) continue;
+            bool retained = false;
+            for (const auto& other : labeled.vertices)
+                retained |= std::abs(vertex.x-other.x)<1e-6 &&
+                            std::abs(vertex.y-other.y)<1e-6 && std::abs(vertex.z-other.z)<1e-6;
+            ok &= require(retained, "Standard Bar labeling preserves functional and marker vertices");
+        }
+    }
     const auto tube = StudReceivingCalibrationArtifact::generate();
     if (tube.ok) checkStandaloneLabel(tube.mesh, FitCalibrationNameKey::ClutchTubeWall, "Tube Wall Cell");
     const auto round = RoundTechnicCalibrationArtifact::generate(RoundTechnicCalibrationArtifact::canonicalPrototype());

@@ -45,8 +45,10 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
+    void updateSearchHighlights();
     void buildContents();
     void applySearch(const QString& searchText);
     void loadTopic(HelpTopic topic, const QString& anchor = {});

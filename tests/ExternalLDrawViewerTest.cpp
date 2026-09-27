@@ -1,3 +1,4 @@
+#include "../src/ui/help/HelpManager.h"
 #include "../src/ui/parts/LDrawModelViewerWindow.h"
 #include "../src/ui/parts/PrintPreparationCoordinator.h"
 #include "../src/settings/UserSettings.h"
@@ -82,6 +83,10 @@ int main(int argc,char** argv)
     bool ok=true;
     {
         LDrawModelViewerWindow viewer(&coordinator);
+        ok&=check(HelpManager::context(&viewer)->topic==HelpTopic::LDrawModels,"viewer Help context");
+        ok&=check(HelpManager::context(button(viewer,"Prepare for Printing"))->topic==HelpTopic::PreparePrinting,"prepare control has focused Help");
+        ok&=check(HelpManager::context(button(viewer,"Import Repaired Mesh"))->topic==HelpTopic::LocalPrintableOverride,"repair control has focused Help");
+
         LDrawModelViewerRequest external;external.externalFilePath=root.filePath("alternate.dat");
         viewer.showPart(external);
         ok&=check(until([&]{return button(viewer,"Prepare for Printing")->isEnabled();}),"external file loads asynchronously");

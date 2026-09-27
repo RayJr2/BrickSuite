@@ -32,6 +32,12 @@ QPointer<HelpDialog> s_helpDialog;
 const QList<HelpTopicInfo>& helpTopics()
 {
     static const QList<HelpTopicInfo> topics = {
+        {HelpTopic::Printing, "3D Printing", ":/help/printing.html"},
+        {HelpTopic::PreparePrinting, "Prepare for Printing", ":/help/prepare_printing.html"},
+        {HelpTopic::FitCalibration, "LEGO Fit Calibration", ":/help/fit_calibration.html"},
+        {HelpTopic::CalibrationPackages, "Calibration Packages & Fit Profiles", ":/help/calibration_packages.html"},
+        {HelpTopic::LocalPrintableOverride, "Local Printable Override / External Repair", ":/help/local_printable_override.html"},
+        {HelpTopic::PrintTroubleshooting, "Print Capability / Troubleshooting", ":/help/print_troubleshooting.html"},
         {HelpTopic::Home, "Help Home", ":/help/index.html"},
         {HelpTopic::GettingStarted, "Getting Started", ":/help/getting_started.html"},
         {HelpTopic::QuickStart, "Quick Start", ":/help/quick_start.html"},
@@ -138,6 +144,7 @@ std::optional<HelpTopic> HelpManager::contextTopic(const QWidget* window)
 
 std::optional<HelpContext> HelpManager::context(const QWidget* window)
 {
+    if (window && !contextTopic(window)) return context(window->parentWidget());
     const auto topic = contextTopic(window);
     if (!topic)
         return std::nullopt;

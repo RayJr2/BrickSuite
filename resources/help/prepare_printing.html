@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Prepare for Printing</title><style>body{font-family:sans-serif;line-height:1.5;margin:22px}h2{margin-top:1.4em}code{font-family:monospace}</style></head><body>
+<h1>Prepare for Printing</h1>
+<p><b>Enable Mesh Repair</b> is on by default. It allows future print workflows to run BrickSuite's built-in preparation automatically. Turning it off preserves the setting locally and does not remove the viewer's explicit <b>Prepare for Printing</b> action. Opening a viewer never starts preparation automatically.</p>
+<h2>Source and Prepared geometry</h2>
+<p><b>Source</b> is the authored LDraw triangle geometry. Solid + Edges uses the model's hard and visible conditional edges; Wireframe also exposes triangle boundaries. <b>Show Mesh Issues</b> highlights Source boundaries and topology issues.</p>
+<p><b>Prepare for Printing</b> explicitly builds a closed, consistently oriented nominal mesh where BrickSuite can determine a safe result. Preparation runs asynchronously; a small busy indicator appears beside the action while it runs. Preparation never changes installed LDraw files. Select <b>Prepared</b> to inspect the result; its edges are derived from prepared topology rather than authored LDraw edge commands.</p>
+<p><b>Prepared Mesh: Ready for Printing</b> means BrickSuite's current topology checks succeeded. It is not a guarantee that every printer, slicer, material, tolerance, or intended use will succeed. Dimensions are nominal geometry dimensions before the displayed uniform Scale is applied.</p>
+<p>Unsupported or ambiguous construction is reported without replacing Source geometry. Preparation failures leave Source available for inspection.</p>
+<h2>Uniform Scale and OBJ export</h2>
+<p><b>Scale</b> changes every displayed dimension uniformly without modifying the installed source or authoritative mesh. At 100%, 1 LDraw unit = 0.4 mm. Scaling is not specialized LEGO fit or tolerance correction.</p>
+<p><b>Export 3D Model...</b> writes OBJ, binary STL, or standards-based 3MF in millimetres at the displayed Scale and Print Orientation. A validated Prepared Mesh is selected by default and identified as Ready for Printing; the authoritative Source Mesh remains selectable. Prepared and ManufacturingMesh exports use the same selected orientation without changing their authoritative geometry. BrickSuite writes a portable model 3MF, not slicer project settings.</p>
+<p>Source export is not a BrickSuite printability guarantee. When preparation is unavailable, unsupported, ambiguous, or fails, Source OBJ and STL remain available for analysis or possible repair by your slicer.</p>
+<p>3MF stores the selected Model Color as the model's base color. Printed decorations and multi-color surface details are not currently reproduced. Filament and printer assignments remain controlled by the slicer.</p>
+<p>For calibrated corrections see <a href="calibration_packages.html">Calibration Packages &amp; Fit Profiles</a>. If native preparation fails, see <a href="local_printable_override.html">Local Printable Override / External Repair</a>.</p>
+<p><a href="printing.html">3D Printing overview</a> | <a href="index.html">Help Home</a></p>
+</body></html>

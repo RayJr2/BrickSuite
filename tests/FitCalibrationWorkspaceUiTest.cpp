@@ -1,3 +1,4 @@
+#include "../src/ui/help/HelpManager.h"
 #include "../src/ui/parts/FitCalibrationDialog.h"
 #include <QApplication>
 #include <QAction>
@@ -12,8 +13,11 @@
 #include <QTimer>
 #include <QPlainTextEdit>
 #include <QTableWidget>
+#include <QTabWidget>
 #include <QProcess>
 #include <QFile>
+#include <QFileDialog>
+#include <QSpinBox>
 #include <cstdio>
 namespace {
 constexpr auto lastWorkspaceKey="LegoFitCalibration/LastWorkspaceIdentity";
@@ -48,6 +52,68 @@ bool openModal(const std::function<void()>& action,const QString& title,const st
         timer.stop();if(seen&&inspect)inspect(d);else d->reject();}});
     timer.start();action();timer.stop();return seen;
 }
+bool importCompanion(FitCalibrationDialog& dialog,const QString& path,bool package=false){
+    bool selected=false,ready=false,failed=false;QTimer timer;timer.setInterval(5);
+    QObject::connect(&timer,&QTimer::timeout,[&]{
+        if(auto* picker=qobject_cast<QFileDialog*>(QApplication::activeModalWidget())){
+            if(!selected){selected=true;auto* name=picker->findChild<QLineEdit*>("fileNameEdit");name->setFocus();name->setText(QDir::toNativeSeparators(path));QMetaObject::invokeMethod(picker,"accept",Qt::DirectConnection);}
+        }else if(auto* box=qobject_cast<QMessageBox*>(QApplication::activeModalWidget())){
+            ready=box->windowTitle()=="Calibration Package Ready";failed|=!ready;if(!ready)fprintf(stderr,"Import error: %s\n",qPrintable(box->text()));box->accept();
+        }
+    });
+    timer.start();button(dialog,"Import Session / Package...")->click();timer.stop();
+    return selected&&!failed&&(!package||ready);
+}
+bool quantityLifecycle(const QString& root,const PrintGeometry::FitCalibrationWorkspace& workspace){
+    using namespace PrintGeometry;
+    // Publish real portable companions independently of the receiving UI library.
+    FitCalibrationGenerationService publisher(root+"/artifacts",root+"/publisher");
+    FitCalibrationGenerationService::Request request;request.family="StandardBar";request.workspace=workspace;
+    const auto first=publisher.generate(request);
+    auto ball=request;ball.family="BallJoint";ball.orientation=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
+    const auto second=publisher.generate(ball);
+    FitCalibrationGenerationService::PackageRequest packageRequest;packageRequest.selections={request,ball};
+    for(auto& member:packageRequest.selections)member.workspace.process.profileName="Package process";
+    const auto package=publisher.generatePackage(packageRequest);
+    if(!check(first.ok()&&second.ok()&&package.ok(),"quantity regression fixtures published")){
+        fprintf(stderr,"Fixture diagnostics: %s / %s / %s\n",qPrintable(first.diagnostic),qPrintable(second.diagnostic),qPrintable(package.diagnostic));return false;
+    }
+    FitCalibrationLibrary receiver(root+"/receiver");FitCalibrationDialog dialog(nullptr,receiver.storageRoot());dialog.show();
+    auto* quantity=dialog.findChild<QSpinBox*>("fitCalibrationObservationQuantity");
+    if(!check(quantity,"observation quantity control found"))return false;
+    bool ok=check(importCompanion(dialog,first.companionPath)&&quantity->value()==1,"first loaded session starts at quantity one");
+    quantity->setValue(2);
+    ok&=check(importCompanion(dialog,second.companionPath)&&quantity->value()==1,"importing another single session resets quantity");
+    auto* features=workspaces(dialog,first.session.sessionIdentity);
+    if(!check(features,"imported single-session siblings present"))return false;
+    quantity->setValue(3);features->setCurrentIndex(features->findData(first.session.sessionIdentity));
+    ok&=check(quantity->value()==1,"selecting another managed feature resets quantity");
+    quantity->setValue(2);
+    // Reopening the same identity exercises showWorkspace/selectFeature without
+    // changing the semantic boundary, and must retain transient entry state.
+    ok&=check(importCompanion(dialog,first.companionPath)&&quantity->value()==2,"same-session reload preserves quantity");
+    auto* tabs=dialog.findChild<QTabWidget*>();auto* table=tabs->widget(0)->findChild<QTableWidget*>();
+    table->selectRow(0);ok&=check(quantity->value()==2,"candidate selection preserves quantity");
+    for(auto* combo:dialog.findChildren<QComboBox*>())if(combo->findText("Acceptable")>=0)combo->setCurrentIndex(combo->findText("Acceptable"));
+    button(dialog,"Add Observation")->click();ok&=check(quantity->value()==2,"observation refresh preserves same-session quantity");
+    button(dialog,"Select Preferred")->click();ok&=check(quantity->value()==2,"Preferred refresh preserves same-session quantity");
+    button(dialog,"Save Managed")->click();ok&=check(quantity->value()==2,"managed save preserves same-session quantity");
+    ok&=check(importCompanion(dialog,package.companionPath,true)&&quantity->value()==1,"package import resets quantity");
+    features=workspaces(dialog,package.sessions.back().sessionIdentity);
+    if(!check(features,"package members available"))return false;
+    quantity->setValue(4);features->setCurrentIndex(features->findData(package.sessions.back().sessionIdentity));
+    ok&=check(quantity->value()==1,"selecting another package member resets quantity");
+    quantity->setValue(5);auto* workspaceSelection=workspaces(dialog,FitCalibrationLibrary::manufacturingContextFingerprint(first.session.process));
+    if(!check(workspaceSelection,"original workspace remains available"))return false;
+    workspaceSelection->setCurrentIndex(workspaceSelection->findData(FitCalibrationLibrary::manufacturingContextFingerprint(first.session.process)));
+    ok&=check(quantity->value()==1,"workspace switch resumes a different managed session at quantity one");
+    FitCalibrationSession observed,sibling;
+    ok&=check(receiver.loadSession(first.session.sessionIdentity,&observed)&&receiver.loadSession(second.session.sessionIdentity,&sibling)&&
+        observed.coarseExperiment.candidates.front().observations.size()==1&&
+        observed.coarseExperiment.candidates.front().observations.front().repeatNumber==2&&
+        sibling.coarseExperiment.candidates.front().observations.isEmpty(),"quantity resets preserve stored observations and independent sibling evidence");
+    return ok;
+}
 bool create(FitCalibrationDialog& dialog,const QString& printer){
     QAction* action=nullptr;for(auto* a:dialog.findChildren<QAction*>())if(a->text()=="New Workspace...")action=a;
     return action&&openModal([&]{action->trigger();},"New Calibration Workspace",[&](QDialog* d){
@@ -81,6 +147,7 @@ bool generationModes(FitCalibrationDialog& dialog){
 }
 }
 int main(int argc,char** argv){
+    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication app(argc,argv);app.setQuitOnLastWindowClosed(false);QTemporaryDir temp;
     QSettings::setDefaultFormat(QSettings::IniFormat);
     const auto args=app.arguments();const int child=args.indexOf("--restore-smoke");
@@ -99,7 +166,7 @@ int main(int argc,char** argv){
     ok&=check(openModal([&]{generate->click();},"Custom Calibration Package"),"custom chooser opens immediately without restart");
     // An empty workspace has no feature evidence to edit. Exercise the controls
     // a user encounters before choosing a calibration package.
-    for(auto* combo:dialog.findChildren<QComboBox*>())if(combo->findText("Select actual printed orientation")>=0&&combo->isEnabled())combo->setCurrentIndex(2);
+    for(auto* combo:dialog.findChildren<QComboBox*>())if(combo->findText("Not yet confirmed")>=0&&combo->isEnabled())combo->setCurrentIndex(2);
     ok&=check(openModal([&]{generate->click();},"Custom Calibration Package"),"empty-workspace feature controls cannot silently block generation");
     ok&=generationModes(dialog);
     PrintGeometry::FitCalibrationLibrary library(temp.path()+"/managed");const auto a=library.workspaces().front();
@@ -135,6 +202,22 @@ int main(int argc,char** argv){
     PrintGeometry::FitCalibrationGenerationService::Request request;request.family="StandardBar";request.workspace=a;
     const auto generated=PrintGeometry::FitCalibrationGenerationService(temp.path()+"/artifacts",library.storageRoot()).generate(request);
     ok&=check(generated.ok(),"temporary editable session generated");if(!generated.ok())return 1;
+    auto unconfirmed=generated.session;
+    unconfirmed.process.actualPrintedOrientation=PrintGeometry::FitPrintedOrientation::Unknown;
+    unconfirmed.coarseExperiment.process=unconfirmed.process;
+    ok&=check(library.saveSession(&unconfirmed),"save unconfirmed imported-style session");
+    const auto beforeDisplay=PrintGeometry::FitCalibrationSessionJson::toJson(unconfirmed);
+    QSettings().setValue(lastWorkspaceKey,a.identity);
+    {FitCalibrationDialog display(nullptr,library.storageRoot());
+        auto* features=workspaces(display,unconfirmed.sessionIdentity);
+        ok&=check(features&&features->currentText().contains("Perpendicular")&&!features->currentText().contains("Orientation Unknown"),"modeled orientation supplies feature label");
+        auto* actual=display.findChild<QComboBox*>("fitCalibrationActualOrientation");
+        ok&=check(actual&&actual->currentData().toInt()==int(PrintGeometry::FitPrintedOrientation::Unknown)&&actual->currentText()=="Not yet confirmed","actual physical orientation remains unconfirmed");
+        ok&=check(HelpManager::context(actual)->topic==HelpTopic::FitCalibration&&!actual->toolTip().isEmpty(),"calibration child control has focused Help and orientation explanation");
+    }
+    PrintGeometry::FitCalibrationSession afterDisplay;
+    ok&=check(library.loadSession(unconfirmed.sessionIdentity,&afterDisplay)&&PrintGeometry::FitCalibrationSessionJson::toJson(afterDisplay)==beforeDisplay,"presentation never rewrites evidence");
+    auto original=generated.session;ok&=check(library.saveSession(&original),"restore confirmed synthetic parent for continuation checks");
     QSettings().setValue(lastWorkspaceKey,a.identity);
     {FitCalibrationDialog dirty(nullptr,library.storageRoot());dirty.show();
         QLineEdit* printer=nullptr;for(auto* edit:dirty.findChildren<QLineEdit*>())if(edit->text()=="Printer A")printer=edit;
@@ -151,6 +234,39 @@ int main(int argc,char** argv){
         printer->setText("Printer A");ok&=check(dirtySwitch(dirty,b,QMessageBox::Save),"pending edits use normal managed save before switching");
         ok&=check(contextVisible(dirty,"Printer B")&&QSettings().value(lastWorkspaceKey).toString()==b,"successful dirty save permits activation");
         button(dirty,"Close")->click();}
+    // Resume a genuinely verified child through the workspace UI, not just JSON.
+    // Distinct candidate counts and observations detect both tabs showing the
+    // latest artifact instead of retaining the original coarse evidence.
+    auto parent=generated.session;
+    PrintGeometry::FitCalibrationObservation observation;observation.result=PrintGeometry::FitObservation::Acceptable;
+    ok&=check(PrintGeometry::FitCalibrationEvidencePolicy::addObservation(&parent.coarseExperiment,4,observation)&&
+        PrintGeometry::FitCalibrationEvidencePolicy::selectPreferredCandidate(&parent.coarseExperiment,4)&&library.saveSession(&parent),"save observed coarse parent");
+    request.hasParent=true;request.parent=parent;request.stage=PrintGeometry::FitCalibrationGenerationService::Stage::Verification;
+    const auto childPackage=PrintGeometry::FitCalibrationGenerationService(temp.path()+"/artifacts",library.storageRoot()).generate(request);
+    if(!childPackage.ok())fprintf(stderr,"Verification generation: %s\n",qPrintable(childPackage.diagnostic));
+    if(!check(childPackage.ok(),"generate independent verification child"))return 1;
+    auto childSession=childPackage.session;
+    for(int index:{1,2,3})ok&=PrintGeometry::FitCalibrationEvidencePolicy::addObservation(&childSession.fineExperiment,index,observation);
+    observation.repeatNumber=2;
+    ok&=check(PrintGeometry::FitCalibrationEvidencePolicy::addObservation(&childSession.fineExperiment,2,observation)&&
+        PrintGeometry::FitCalibrationEvidencePolicy::selectPreferredCandidate(&childSession.fineExperiment,2)&&
+        PrintGeometry::FitCalibrationEvidencePolicy::markVerified(&childSession.fineExperiment)&&library.saveSession(&childSession),"persist explicitly verified child");
+    QSettings().setValue(lastWorkspaceKey,a.identity);
+    {FitCalibrationDialog review(nullptr,library.storageRoot());
+        auto* features=workspaces(review,childSession.sessionIdentity);
+        if(!check(features,"resumed workspace contains verified child"))return 1;
+        features->setCurrentIndex(features->findData(childSession.sessionIdentity));
+        auto* tabs=review.findChild<QTabWidget*>();
+        auto* coarse=tabs->widget(0)->findChild<QTableWidget*>();
+        auto* fine=tabs->widget(1)->findChild<QTableWidget*>();
+        ok&=check(tabs->isTabEnabled(0)&&tabs->isTabEnabled(1)&&tabs->currentIndex()==1&&button(review,"Verified"),"resumed Verified child opens verification with both stages available");
+        ok&=check(coarse->rowCount()==7&&coarse->item(3,3)->text()=="1"&&coarse->item(3,6)->text()=="Yes", "Coarse tab retains original seven candidates and parent observation");
+        ok&=check(fine->rowCount()==3&&fine->item(1,3)->text()=="2"&&fine->item(1,6)->text()=="Yes", "Fine tab retains independent three-candidate verification and repeats");
+        tabs->setCurrentIndex(0);
+        ok&=check(coarse->rowCount()==7&&fine->rowCount()==3,"switching tabs does not collapse evidence onto latest artifact");
+    }
+    ok&=quantityLifecycle(temp.path()+"/quantity",a);
+    QSettings().setValue(lastWorkspaceKey,b);
     {FitCalibrationDialog deleting(nullptr,library.storageRoot());deleting.show();
         ok&=check(removeWorkspace(deleting),"active B deleted through UI");
         ok&=check(contextVisible(deleting,"Printer A")&&QSettings().value(lastWorkspaceKey).toString()==a.identity,"deletion activates and persists fallback A");

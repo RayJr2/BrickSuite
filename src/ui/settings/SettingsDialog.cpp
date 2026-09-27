@@ -360,6 +360,7 @@ void SettingsDialog::loadSettings()
         m_defaultWorkspaceCombo->setCurrentIndex(0);
     }
 
+    m_explanatoryTooltipsCheck->setChecked(settings.explanatoryTooltipsEnabled());
     m_originalThemeValue = static_cast<int>(settings.theme());
 
     const int themeIndex = m_themeCombo->findData(m_originalThemeValue);
@@ -499,6 +500,7 @@ void SettingsDialog::saveSettings()
         settings.setDefaultWorkspaceId(defaultWorkspaceId);
 
     settings.setTheme(theme);
+    settings.setExplanatoryTooltipsEnabled(m_explanatoryTooltipsCheck->isChecked());
     settings.setSharedDataSource(sharedDataSource);
     settings.setBrickSuiteServerEnabled(m_serverEnabledCheck->isChecked());
     settings.setBrickSuiteServerBindAddress(m_serverBindCombo->currentData().toString());
@@ -1454,6 +1456,9 @@ void SettingsDialog::buildAppearanceTab()
             &SettingsDialog::previewTheme);
 
     appearanceLayout->addRow("Theme:", m_themeCombo);
+    m_explanatoryTooltipsCheck = new QCheckBox("Show explanatory tooltips", appearanceGroup);
+    m_explanatoryTooltipsCheck->setToolTip("Show short explanations when hovering over controls. F1 Help remains available when disabled.");
+    appearanceLayout->addRow(m_explanatoryTooltipsCheck);
 
     layout->addWidget(appearanceGroup);
 

@@ -134,6 +134,7 @@ private:
     QCheckBox* m_autoFitEnabledCheck = nullptr;
 
     // Appearance
+    QCheckBox* m_explanatoryTooltipsCheck = nullptr;
     QComboBox* m_themeCombo = nullptr;
     int m_originalThemeValue = 0;
 

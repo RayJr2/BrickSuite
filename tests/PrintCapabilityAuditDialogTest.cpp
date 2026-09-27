@@ -1,3 +1,4 @@
+#include "../src/ui/help/HelpManager.h"
 #include "../src/ui/parts/PrintCapabilityAuditDialog.h"
 #include <QApplication>
 #include <QElapsedTimer>
@@ -37,6 +38,7 @@ int main(int argc,char** argv)
     bool ok=true;
     {
         PrintCapabilityAuditDialog dialog;dialog.show();
+        ok&=check(HelpManager::context(&dialog)->topic==HelpTopic::PrintTroubleshooting,"audit Help context");
         button(dialog,"Close")->click();
         ok&=check(!dialog.isVisible(),"idle Close is immediate");
     }

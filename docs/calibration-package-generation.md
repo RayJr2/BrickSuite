@@ -1,5 +1,8 @@
 # Calibration package generation
 
+For the production-path audit and remaining installed-user checks, see
+[Unified Calibration installed-user acceptance](calibration-installed-user-acceptance.md).
+
 `FitCalibrationGenerationService` is the UI-independent Phase 1 boundary for
 the generation paths previously orchestrated by `FitCalibrationDialog`.
 `Request` selects family/variant, coarse/fine/verification stage, supported

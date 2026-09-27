@@ -186,6 +186,23 @@ bool FitCalibrationFixtureLabel::recessStandalone(const PrintMesh& source, FitCa
 {
     const auto bounds = analyzeSource(source).bounds;
     FitFixtureLabelRegion region{6, bounds.maximum.x - 6, .5, 4.5};
+    // The three-bar verification base is only 27 mm long. Its intact underside
+    // can hold the existing abbreviation on two lines; the coarse fixture's
+    // single-line label does not fit. The shallow underside cuts stay below
+    // both the fit surfaces and the top-side Candidate #1 notch.
+    if (key == FitCalibrationNameKey::BarDiameter && region.maximumX-region.minimumX < 20) {
+        if (!labeled) return fail(error, QStringLiteral("A label output mesh is required."));
+        const QString abbreviation = QString::fromLatin1(FitCalibrationNamingCatalog::forKey(key).abbreviated);
+        const int split = abbreviation.lastIndexOf('-');
+        PrintMesh firstLine;
+        if (!recess(source, abbreviation.left(split), abbreviation.left(split),
+                    {.5, bounds.maximum.x - .5, .5, 4.5}, &firstLine, nullptr, error) ||
+            !recess(firstLine, abbreviation.mid(split+1), abbreviation.mid(split+1),
+                    {.5, bounds.maximum.x - .5, 4.8, 8.5}, labeled, nullptr, error))
+            return false;
+        if (appliedLabel) *appliedLabel = abbreviation;
+        return true;
+    }
     if (key == FitCalibrationNameKey::ClutchTubeWall) region = {6, bounds.maximum.x - 6, 3, 8};
     else if (key == FitCalibrationNameKey::ClutchPostWall) region = {6, bounds.maximum.x - 6, 1, 5};
     const auto name = FitCalibrationNamingCatalog::forKey(key);

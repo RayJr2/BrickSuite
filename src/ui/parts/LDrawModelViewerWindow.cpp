@@ -96,6 +96,14 @@ LDrawModelViewerWindow::LDrawModelViewerWindow(PrintPreparationCoordinator*coord
     m_experimentalFit->setObjectName(QStringLiteral("experimentalOverrideFit"));
     repairRow->addWidget(m_exportRepair);repairRow->addWidget(m_importRepair);repairRow->addWidget(m_removeOverride);repairRow->addStretch();root->addLayout(repairRow);
     auto* reviewRow=new QHBoxLayout;reviewRow->addWidget(m_acceptOverride);reviewRow->addWidget(m_experimentalFit);reviewRow->addStretch();root->addLayout(reviewRow);
+    m_importRepair->setToolTip(tr("Import a repaired 3MF or STL for strict topology and source-fidelity checks. STL coordinates are millimeters."));
+    m_removeOverride->setToolTip(tr("Remove the local repaired override and return to native preparation; Source and catalog remain unchanged."));
+    m_acceptOverride->setToolTip(tr("Explicitly review eligible unresolved source correspondence for nominal use. This does not certify fit ownership."));
+    m_experimentalFit->setToolTip(tr("Warned fit attempt on a user-accepted override. Unproven repaired-surface ownership can reject it safely."));
+    m_geometryView->setToolTip(tr("Compare authored Source with accepted nominal Prepared geometry."));
+    HelpManager::setContextTopic(m_prepare,HelpTopic::PreparePrinting);
+    for(auto* control:{m_exportRepair,m_importRepair,m_removeOverride,m_acceptOverride,m_experimentalFit})
+        HelpManager::setContextTopic(control,HelpTopic::LocalPrintableOverride);
     connect(m_acceptOverride,&QPushButton::clicked,this,&LDrawModelViewerWindow::acceptNominalOverride);
     connect(m_experimentalFit,&QPushButton::clicked,this,&LDrawModelViewerWindow::attemptExperimentalFit);
     connect(m_exportRepair,&QPushButton::clicked,this,&LDrawModelViewerWindow::exportRepairSource);
@@ -103,6 +111,8 @@ LDrawModelViewerWindow::LDrawModelViewerWindow(PrintPreparationCoordinator*coord
     connect(m_removeOverride,&QPushButton::clicked,this,&LDrawModelViewerWindow::removeLocalOverride);
     m_sourceMeshStatus=new QLabel(tr("Source Mesh: Loading…"),this);m_preparedMeshStatus=new QLabel(tr("Prepared Mesh: Not prepared"),this);info->addRow(m_sourceMeshStatus);info->addRow(m_preparedMeshStatus);root->addLayout(info);
     auto*actions=new QHBoxLayout;actions->addWidget(new QLabel(tr("Scale:"),this));m_scale=new QDoubleSpinBox(this);m_scale->setRange(1.0,1000.0);m_scale->setDecimals(2);m_scale->setSingleStep(0.5);m_scale->setSuffix(tr(" %"));m_scale->setValue(100.0);actions->addWidget(m_scale);auto*reset=new QPushButton(tr("Reset"),this);actions->addWidget(reset);actions->addStretch();m_export=new QPushButton(tr("Export 3D Model..."),this);actions->addWidget(m_export);auto*buttons=new QDialogButtonBox(QDialogButtonBox::Help|QDialogButtonBox::Close,this);actions->addWidget(buttons);root->addLayout(actions);
+    m_scale->setToolTip(tr("Uniform export scale. 100% uses nominal millimeters; this is not a fit correction."));
+    m_export->setToolTip(tr("Export Source, accepted nominal Prepared Mesh, or compatible Verified ManufacturingMesh. F1 explains the choices."));
     connect(m_candidate,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int){if(m_candidate->currentIndex()<0)return;startLoad(LoadBehavior::ResetView);});
     connect(m_reload,&QPushButton::clicked,this,[this]{startLoad(LoadBehavior::PreserveView);});
     connect(m_projection,qOverload<int>(&QComboBox::currentIndexChanged),this,[this](int index){m_viewport->setProjection(index==0?PartViewerCamera::Projection::Perspective:PartViewerCamera::Projection::Orthographic);});
@@ -260,7 +270,7 @@ QColor LDrawModelViewerWindow::currentModelColor() const
 void LDrawModelViewerWindow::exportModel()
 {
     const quint64 generation=m_sourceGeneration;
-    QDialog d(this);d.setWindowTitle(tr("Export 3D Model"));auto*l=new QFormLayout(&d);QComboBox geometry(&d),format(&d),profiles(&d);geometry.addItem(tr("Source Mesh"),0);if(m_preparedMesh)geometry.addItem(tr("Prepared Mesh — Nominal / Ready for Printing"),1);const bool manufacturingSupported=bool(m_preparedMesh)&&!m_preparedMesh->localRepairedOverride&&m_request.externalFilePath.isEmpty();if(manufacturingSupported)geometry.addItem(tr("ManufacturingMesh — Verified Fit Profile / Nominal Hinge"),2);if(m_preparedMesh)geometry.setCurrentIndex(1);format.addItems({tr("OBJ"),tr("Binary STL"),tr("3MF")});profiles.addItem(tr("Select a compatible Verified Fit Profile..."),QString());PrintGeometry::FitCalibrationLibrary library;if(manufacturingSupported){for(const auto&summary:library.profiles()){if(!summary.compatible)continue;PrintGeometry::FitProfile profile;QString error;if(library.loadProfile(summary.identity,&profile,&error)&&PrintGeometry::ManufacturingMeshService::hasApplicableCorrection(profile,m_loadResult,m_state.printOrientation()))profiles.addItem(summary.name,summary.identity);}}
+    QDialog d(this);HelpManager::setContextTopic(&d,HelpTopic::PreparePrinting);d.setWindowTitle(tr("Export 3D Model"));auto*l=new QFormLayout(&d);QComboBox geometry(&d),format(&d),profiles(&d);geometry.addItem(tr("Source Mesh"),0);if(m_preparedMesh)geometry.addItem(tr("Prepared Mesh — Nominal / Ready for Printing"),1);const bool manufacturingSupported=bool(m_preparedMesh)&&!m_preparedMesh->localRepairedOverride&&m_request.externalFilePath.isEmpty();if(manufacturingSupported)geometry.addItem(tr("ManufacturingMesh — Verified Fit Profile / Nominal Hinge"),2);if(m_preparedMesh)geometry.setCurrentIndex(1);format.addItems({tr("OBJ"),tr("Binary STL"),tr("3MF")});profiles.addItem(tr("Select a compatible Verified Fit Profile..."),QString());PrintGeometry::FitCalibrationLibrary library;if(manufacturingSupported){for(const auto&summary:library.profiles()){if(!summary.compatible)continue;PrintGeometry::FitProfile profile;QString error;if(library.loadProfile(summary.identity,&profile,&error)&&PrintGeometry::ManufacturingMeshService::hasApplicableCorrection(profile,m_loadResult,m_state.printOrientation()))profiles.addItem(summary.name,summary.identity);}}
     QStringList availableProfiles;
     for(const auto& summary:library.profiles())if(summary.compatible)availableProfiles<<summary.name;
     auto* fitField=new QStackedWidget(&d);
@@ -394,6 +404,7 @@ void LDrawModelViewerWindow::acceptNominalOverride()
     QMessageBox warning(QMessageBox::Warning,tr("Accept as Nominal Local Override"),
         tr("BrickSuite validated this repaired mesh as a printable solid. Some correspondence to the open/overlapping LDraw source cannot be fully proven.\n\nYou are accepting the repaired geometry after your own review. Nominal printing is supported; Auto Fit, if attempted, is experimental."),QMessageBox::Cancel,this);
     auto* accept=warning.addButton(tr("Accept as Nominal Local Override"),QMessageBox::AcceptRole);
+    HelpManager::setContextTopic(&warning,HelpTopic::LocalPrintableOverride);
     warning.setDefaultButton(QMessageBox::Cancel);warning.exec();
     if(warning.clickedButton()!=accept||!m_state.accepts(generation))return;
     const auto context=overrideContext();const auto path=m_pendingOverridePath;
@@ -430,6 +441,7 @@ void LDrawModelViewerWindow::attemptExperimentalFit()
     if(auto* buttons=warning.findChild<QDialogButtonBox*>()){
         grid->removeWidget(buttons);grid->addWidget(buttons,row+2,0,1,grid->columnCount());
     }
+    HelpManager::setContextTopic(&warning,HelpTopic::LocalPrintableOverride);
     warning.setDefaultButton(QMessageBox::Cancel);warning.exec();
     if(warning.clickedButton()!=apply||!m_state.accepts(generation))return;
     const auto source=m_loadResult;const auto prepared=m_preparedMesh;const auto orientation=m_state.printOrientation();

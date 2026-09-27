@@ -7,6 +7,12 @@
         <file>parts_catalog.html</file>
         <file>part_reference.html</file>
         <file>ldraw_models.html</file>
+        <file>printing.html</file>
+        <file>prepare_printing.html</file>
+        <file>fit_calibration.html</file>
+        <file>calibration_packages.html</file>
+        <file>local_printable_override.html</file>
+        <file>print_troubleshooting.html</file>
         <file>sets_catalog.html</file>
         <file>minifigs_catalog.html</file>
         <file>inventory.html</file>

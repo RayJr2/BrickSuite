@@ -28,6 +28,10 @@
 #include <QCloseEvent>
 #include <QDialogButtonBox>
 #include <QFile>
+#include <QEvent>
+#include <QTimer>
+#include <QTextCursor>
+#include <cmath>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -37,6 +41,7 @@
 #include <QTextDocument>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QTreeWidgetItemIterator>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -163,6 +168,7 @@ HelpDialog::HelpDialog(QWidget* parent)
     });
 
     connect(m_browser, &QTextBrowser::sourceChanged, this, [this](const QUrl& source) {
+        updateSearchHighlights();
         syncContentsSelection(source);
         updateNavigationButtons();
     });
@@ -244,7 +250,15 @@ void HelpDialog::buildContents()
     addTopicItem(inventoryGroup, HelpTopic::Storage, "Storage");
     addTopicItem(inventoryGroup, HelpTopic::PartsCatalog, "Parts Catalog");
     addTopicItem(inventoryGroup, HelpTopic::PartReference, "Part Reference");
-    addTopicItem(inventoryGroup, HelpTopic::LDrawModels, "LDraw 3D Models");
+    auto* printingGroup = new QTreeWidgetItem(m_contentsTree);
+    printingGroup->setText(0, "3D Printing");
+    addTopicItem(printingGroup, HelpTopic::Printing, "Overview");
+    addTopicItem(printingGroup, HelpTopic::LDrawModels, "LDraw 3D Models");
+    addTopicItem(printingGroup, HelpTopic::PreparePrinting, "Prepare for Printing");
+    addTopicItem(printingGroup, HelpTopic::FitCalibration, "LEGO Fit Calibration");
+    addTopicItem(printingGroup, HelpTopic::CalibrationPackages, "Calibration Packages & Fit Profiles");
+    addTopicItem(printingGroup, HelpTopic::LocalPrintableOverride, "Local Printable Override / External Repair");
+    addTopicItem(printingGroup, HelpTopic::PrintTroubleshooting, "Print Capability / Troubleshooting");
     addTopicItem(inventoryGroup, HelpTopic::SetsCatalog, "Sets Catalog");
     addTopicItem(inventoryGroup, HelpTopic::MinifigsCatalog, "Minifigs Catalog");
     addTopicItem(inventoryGroup, HelpTopic::Inventory, "My Inventory");
@@ -276,6 +290,7 @@ void HelpDialog::buildContents()
 
 void HelpDialog::applySearch(const QString& searchText)
 {
+    updateSearchHighlights();
     const QString needle = searchText.trimmed();
 
     if (needle.isEmpty()) {
@@ -336,27 +351,22 @@ void HelpDialog::syncContentsSelection(const QUrl& source)
     if (m_syncingSelection || !m_searchEdit->text().isEmpty())
         return;
 
-    QString sourcePath = source.toString();
-
-    if (sourcePath.startsWith("qrc:/"))
-        sourcePath.replace(0, 5, ":/");
-
+    QUrl page(source); page.setFragment({});
+    QString sourcePath = page.toString();
+    if (sourcePath.startsWith("qrc:/")) sourcePath.replace(0, 5, ":/");
     for (const HelpTopicInfo& info : HelpManager::topics()) {
-        if (sourcePath != info.resourcePath)
-            continue;
-
-        const QList<QTreeWidgetItem*> items
-            = m_contentsTree->findItems(info.title,
-                                        Qt::MatchExactly | Qt::MatchRecursive,
-                                        0);
-
-        if (items.isEmpty())
-            return;
-
-        m_syncingSelection = true;
-        m_contentsTree->setCurrentItem(items.first());
-        m_syncingSelection = false;
-        return;
+        if (sourcePath != info.resourcePath) continue;
+        QTreeWidgetItemIterator it(m_contentsTree);
+        while (*it) {
+            const auto topic = (*it)->data(0, TopicRole);
+            if (topic.isValid() && topic.toInt() == static_cast<int>(info.topic)) {
+                m_syncingSelection = true;
+                m_contentsTree->setCurrentItem(*it);
+                m_syncingSelection = false;
+                return;
+            }
+            ++it;
+        }
     }
 }
 
@@ -371,4 +381,35 @@ QString HelpDialog::searchableText(HelpTopic topic) const
     document.setHtml(QString::fromUtf8(file.readAll()));
 
     return document.toPlainText();
+}
+
+
+void HelpDialog::updateSearchHighlights()
+{
+    if (!m_browser || !m_searchEdit) return;
+    QList<QTextEdit::ExtraSelection> selections;
+    const QString needle = m_searchEdit->text().trimmed();
+    const QColor background = m_browser->palette().color(QPalette::Highlight);
+    const auto linear = [](double c) { return c <= .04045 ? c/12.92 : std::pow((c+.055)/1.055,2.4); };
+    const double luminance = .2126*linear(background.redF()) + .7152*linear(background.greenF()) + .0722*linear(background.blueF());
+    // Select the contrasting foreground as a pair, including after theme changes.
+    const QColor foreground = luminance > .179 ? QColor(Qt::black) : QColor(Qt::white);
+    if (!needle.isEmpty()) {
+        QTextCursor cursor(m_browser->document());
+        while (!(cursor = m_browser->document()->find(needle, cursor)).isNull()) {
+            QTextEdit::ExtraSelection selected;
+            selected.cursor = cursor;
+            selected.format.setBackground(background);
+            selected.format.setForeground(foreground);
+            selections.append(selected);
+        }
+    }
+    m_browser->setExtraSelections(selections);
+}
+
+void HelpDialog::changeEvent(QEvent* event)
+{
+    QDialog::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange)
+        QTimer::singleShot(0, this, &HelpDialog::updateSearchHighlights);
 }

@@ -260,7 +260,7 @@ QString FitCalibrationLibrary::workspacesDirectory() const { return QDir(m_root)
 QString FitCalibrationLibrary::newStableIdentity() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 QString FitCalibrationLibrary::currentSemanticContractVersion() { return "official-ldraw-peghole-pair-v1"; }
 QString FitCalibrationLibrary::currentRegeneratorAlgorithmVersion() { return "functional-operand-regenerator-v1"; }
-QString FitCalibrationLibrary::sessionDisplayName(const FitCalibrationSession& session) { const FitCalibrationExperiment* experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(!experiment)return QStringLiteral("Empty calibration session");const QString feature=FitCalibrationNamingCatalog::canonical(*experiment,session.process.actualPrintedOrientation);QString stage;if(experiment->state==FitEvidenceState::Verified)stage=QStringLiteral("Verified");else if(experiment->artifactIdentity.contains(QStringLiteral("direct-verification")))stage=QStringLiteral("Verification");else if(experiment->artifactIdentity.contains(QStringLiteral("extension")))stage=QStringLiteral("Extended Search");else if(!experiment->parentArtifactIdentity.isEmpty())stage=QStringLiteral("Fine Search / Verification");else stage=QStringLiteral("Coarse Search");QString process;if(!session.process.printerIdentity.isEmpty()||!session.process.materialIdentity.isEmpty()){process=QStringLiteral(" — %1 / %2").arg(session.process.printerIdentity.isEmpty()?QStringLiteral("Unknown printer"):session.process.printerIdentity,session.process.materialIdentity.isEmpty()?QStringLiteral("Unknown material"):session.process.materialIdentity);}return QStringLiteral("%1 — %2%3").arg(feature,stage,process);}
+QString FitCalibrationLibrary::sessionDisplayName(const FitCalibrationSession& session) { const FitCalibrationExperiment* experiment=session.hasFineExperiment?&session.fineExperiment:(session.hasCoarseExperiment?&session.coarseExperiment:nullptr);if(!experiment)return QStringLiteral("Empty calibration session");const QString feature=featureDisplayName(*experiment,session.process.actualPrintedOrientation);QString stage;if(experiment->state==FitEvidenceState::Verified)stage=QStringLiteral("Verified");else if(experiment->artifactIdentity.contains(QStringLiteral("direct-verification")))stage=QStringLiteral("Verification");else if(experiment->artifactIdentity.contains(QStringLiteral("extension")))stage=QStringLiteral("Extended Search");else if(!experiment->parentArtifactIdentity.isEmpty())stage=QStringLiteral("Fine Search / Verification");else stage=QStringLiteral("Coarse Search");QString process;if(!session.process.printerIdentity.isEmpty()||!session.process.materialIdentity.isEmpty()){process=QStringLiteral(" — %1 / %2").arg(session.process.printerIdentity.isEmpty()?QStringLiteral("Unknown printer"):session.process.printerIdentity,session.process.materialIdentity.isEmpty()?QStringLiteral("Unknown material"):session.process.materialIdentity);}return QStringLiteral("%1 — %2%3").arg(feature,stage,process);}
 FitCalibrationSession FitCalibrationLibrary::continuationSession(const FitCalibrationSession& parent,
     const FitCalibrationExperiment& source, FitCalibrationExperiment child)
 {
@@ -291,7 +291,21 @@ FitCalibrationSession FitCalibrationLibrary::continuationSession(const FitCalibr
 QString FitCalibrationLibrary::featureDisplayName(const FitCalibrationExperiment& experiment,
                                                   FitPrintedOrientation orientation)
 {
-    return FitCalibrationNamingCatalog::canonical(experiment, orientation);
+    // Presentation only: an intended fixture orientation is not physical evidence.
+    auto displayOrientation = orientation;
+    if (displayOrientation == FitPrintedOrientation::Unknown) {
+        const auto tokens = experiment.modeledOrientationIdentity.split('-');
+        if (tokens.contains("perpendicular")) displayOrientation = FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
+        else if (tokens.contains("parallel")) displayOrientation = FitPrintedOrientation::FeatureAxisParallelToBuildPlate;
+    }
+    QString name = FitCalibrationNamingCatalog::canonical(experiment, displayOrientation);
+    if (displayOrientation == FitPrintedOrientation::Unknown || displayOrientation == FitPrintedOrientation::OtherUnsupported) {
+        name = name.left(name.lastIndexOf(QStringLiteral(" — ")));
+        name += displayOrientation == FitPrintedOrientation::OtherUnsupported
+            ? QStringLiteral(" — Other / unsupported orientation")
+            : QStringLiteral(" — Legacy orientation unspecified");
+    }
+    return name;
 }
 QString FitCalibrationLibrary::processFingerprint(const FitCalibrationProcess& process) {
     return manufacturingContextFingerprint(process);

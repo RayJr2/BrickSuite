@@ -45,5 +45,11 @@ enum class HelpTopic
     Settings,
     BrickSuiteServer,
     Logging,
-    Troubleshooting
+    Troubleshooting,
+    Printing,
+    PreparePrinting,
+    FitCalibration,
+    CalibrationPackages,
+    LocalPrintableOverride,
+    PrintTroubleshooting
 };

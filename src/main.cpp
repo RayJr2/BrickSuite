@@ -39,6 +39,7 @@
 #include "core/AppVersion.h"
 #include "services/Logger.h"
 #include "settings/ThemeManager.h"
+#include "ui/common/TooltipPolicy.h"
 
 namespace {
 
@@ -97,6 +98,7 @@ int main(int argc, char *argv[])
     QApplication::setApplicationVersion(AppVersion::version());
     QApplication::setOrganizationName(AppConstants::OrganizationName());
 
+    new TooltipPolicy(qtApplication);
     qtApplication.setWindowIcon(QIcon(QStringLiteral(":/icons/bricksuite.ico")));
 
     // Check for existing instance of BrickSuite using a lock file in the temporary directory.

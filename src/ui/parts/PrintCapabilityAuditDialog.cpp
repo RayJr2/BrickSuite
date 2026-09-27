@@ -1,3 +1,4 @@
+#include "../help/HelpManager.h"
 #include "PrintCapabilityAuditDialog.h"
 
 #include "../../database/DatabaseManager.h"
@@ -34,6 +35,7 @@ using namespace PrintGeometry;
 
 PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent,Runner runner):QDialog(parent),m_runner(std::move(runner))
 {
+    HelpManager::setContextTopic(this,HelpTopic::PrintTroubleshooting);
     setWindowTitle(tr("Print Capability Audit"));resize(620,450);
     auto* layout=new QVBoxLayout(this);auto* form=new QFormLayout;
     m_mode=new QComboBox(this);m_mode->addItems({tr("Random Sample"),tr("Part List")});
@@ -71,6 +73,13 @@ PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent,Runner ru
     auto* close=new QPushButton(tr("Close"),this);
     buttons->addWidget(m_start);buttons->addWidget(m_stop);buttons->addStretch();buttons->addWidget(close);
     layout->addLayout(buttons);
+    m_seed->setToolTip(tr("Reproduce random sample order with the same seed and eligible catalog."));
+    m_mode->setToolTip(tr("Random Sample shuffles eligible Parts; Part List tests explicit IDs in order."));
+    m_sampleCount->setToolTip(tr("Requested eligible sample size after exclusions; missing models need not consume slots."));
+    m_excludeNoModel->setToolTip(tr("Filter missing installed models before random sampling. Explicit Part List IDs are still tested."));
+    m_excludeNonstandardIds->setToolTip(tr("Restrict the random population to digits with at most one trailing letter; catalog identities are unchanged."));
+    m_output->setToolTip(tr("Each run creates a new folder containing results and durable crash-attribution state."));
+    m_stop->setToolTip(tr("Stop before the next Part after the active work finishes or cancels safely."));
     connect(m_mode,qOverload<int>(&QComboBox::currentIndexChanged),this,[this,load](int index){
         m_excludeNoModel->setEnabled(index==0);
         m_sampleCount->setEnabled(index==0);m_seed->setEnabled(index==0);

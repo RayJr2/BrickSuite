@@ -833,7 +833,20 @@ if(BUILD_TESTING)
     target_link_libraries(FitCalibrationUnifiedGenerationTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
     bricksuite_stage_mcut_runtime(FitCalibrationUnifiedGenerationTest)
     add_test(NAME FitCalibrationUnifiedGeneration COMMAND FitCalibrationUnifiedGenerationTest)
+    qt_add_executable(PrintingHelpUxTest EXCLUDE_FROM_ALL
+        tests/PrintingHelpUxTest.cpp
+        src/ui/help/HelpManager.cpp src/ui/help/HelpDialog.cpp resources/help/help.qrc
+        src/settings/UserSettings.cpp src/settings/ThemeManager.cpp src/services/CredentialStore.cpp)
+    target_link_libraries(PrintingHelpUxTest PRIVATE Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(PrintingHelpUxTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(PrintingHelpUxTest PRIVATE "-framework Security")
+    endif()
+    add_test(NAME PrintingHelpUx COMMAND PrintingHelpUxTest -platform offscreen)
+    set_tests_properties(PrintingHelpUx PROPERTIES TIMEOUT 30)
     qt_add_executable(FitCalibrationWorkspaceUiTest EXCLUDE_FROM_ALL
+        src/ui/help/HelpManager.cpp src/ui/help/HelpDialog.cpp resources/help/help.qrc
         tests/FitCalibrationWorkspaceUiTest.cpp
         src/ui/parts/FitCalibrationDialog.cpp src/ui/parts/FitCalibrationDialog.h
         src/ui/parts/FitCalibrationFamilyCatalog.cpp
@@ -951,6 +964,7 @@ if(BUILD_TESTING)
     add_test(NAME LocalPrintableOverrideService COMMAND LocalPrintableOverrideServiceTest)
 
     qt_add_executable(PrintCapabilityAuditDialogTest EXCLUDE_FROM_ALL
+        src/ui/help/HelpManager.cpp src/ui/help/HelpDialog.cpp resources/help/help.qrc
         tests/PrintCapabilityAuditDialogTest.cpp
         src/ui/parts/PrintCapabilityAuditDialog.cpp src/ui/parts/PrintCapabilityAuditDialog.h
         src/database/DatabaseManager.cpp src/database/DatabaseSchema.cpp

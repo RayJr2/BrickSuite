@@ -46,6 +46,13 @@ int main(int argc,char** argv){
     ok&=check(core.size()==4,"pilot zone manifest retained");
     for(int i=0;i<core.size();++i){const auto z=core[i].toObject();ok&=check(z["sessionIdentity"].toString()==result.sessions[i].sessionIdentity&&
         z["meshSha256"].toString().size()==64&&!z["physicalLabel"].toString().isEmpty(),"zone/session/hash/physical-label binding");}
+    for(const auto& session:result.sessions){
+        const auto& experiment=session.coarseExperiment;
+        const auto snapshot=FitCalibrationSessionJson::toJson(session);
+        ok&=check(FitCalibrationLibrary::featureDisplayName(experiment,session.process.actualPrintedOrientation).contains("Perpendicular"),"package members display intended orientation");
+        ok&=check(FitCalibrationSessionJson::toJson(session)==snapshot,"package display does not manufacture actual orientation");
+    }
+    ok&=check(result.sessions.front().process.actualPrintedOrientation==FitPrintedOrientation::Unknown,"imported core member remains physically unconfirmed");
     auto verified=result.sessions.front();verified.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
     auto& e=verified.coarseExperiment;e.process=verified.process;FitCalibrationObservation o;o.result=FitObservation::Acceptable;
     for(int c:{3,4,5})FitCalibrationEvidencePolicy::addObservation(&e,c,o);o.repeatNumber=2;FitCalibrationEvidencePolicy::addObservation(&e,4,o);

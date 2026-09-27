@@ -554,5 +554,23 @@ int main(int argc, char** argv) {
     hingeEvidence.corrections.back().printedOrientation=QStringLiteral("feature-axis-perpendicular-to-build-plate");
     ok &= require(!FitCalibrationLibrary::profileCompatibility(hingeEvidence,&error),
                   "unsupported hinge orientation cannot substitute for the parallel calibration contract");
+    {
+        auto experiment=verifiedSession().fineExperiment;
+        const auto original=FitCalibrationExperimentJson::toJson(experiment);
+        ok &= require(FitCalibrationLibrary::featureDisplayName(experiment,FitPrintedOrientation::Unknown).endsWith("Perpendicular"),"modeled intended orientation used for display only");
+        ok &= require(FitCalibrationLibrary::featureDisplayName(experiment,FitPrintedOrientation::FeatureAxisParallelToBuildPlate).endsWith("Parallel"),"explicit actual orientation overrides modeled identity");
+        ok &= require(FitCalibrationLibrary::featureDisplayName(experiment,FitPrintedOrientation::OtherUnsupported).endsWith("Other / unsupported orientation"),"unsupported actual evidence is not relabeled as intended");
+        ok &= require(FitCalibrationExperimentJson::toJson(experiment)==original,"display preserves historical experiment bytes");
+        auto legacy=original;legacy["formatVersion"]=1;
+        legacy["orientationIdentity"]=legacy.take("modeledOrientationIdentity");
+        FitCalibrationExperiment imported;
+        ok &= require(FitCalibrationExperimentJson::fromJson(legacy,&imported)&&
+            imported.process.actualPrintedOrientation==FitPrintedOrientation::Unknown&&
+            FitCalibrationLibrary::featureDisplayName(imported,imported.process.actualPrintedOrientation).endsWith("Perpendicular"),"historical single-session experiment uses modeled identity without physical evidence");
+        experiment.modeledOrientationIdentity.clear();
+        ok &= require(FitCalibrationLibrary::featureDisplayName(experiment,FitPrintedOrientation::Unknown).endsWith("Legacy orientation unspecified"),"legacy missing orientation remains neutral");
+        experiment.modeledOrientationIdentity="feature-axis-parallel-to-build-plate";
+        ok &= require(FitCalibrationLibrary::featureDisplayName(experiment,FitPrintedOrientation::Unknown).endsWith("Parallel"),"modeled parallel identity also remains available");
+    }
     return ok ? 0 : 1;
 }

@@ -34,6 +34,9 @@ public:
 
     static UserSettings& instance();
 
+    bool explanatoryTooltipsEnabled() const;
+    void setExplanatoryTooltipsEnabled(bool enabled);
+
     Theme theme() const;
     void setTheme(Theme theme);
 

@@ -1341,3 +1341,14 @@ void UserSettings::clearAutomaticBackupFailure()
     settings.remove(kLastFailureUtcKey);
     settings.remove(kLastFailureSummaryKey);
 }
+
+
+bool UserSettings::explanatoryTooltipsEnabled() const
+{
+    return QSettings().value("Appearance/ExplanatoryTooltips", true).toBool();
+}
+
+void UserSettings::setExplanatoryTooltipsEnabled(bool enabled)
+{
+    QSettings().setValue("Appearance/ExplanatoryTooltips", enabled);
+}
