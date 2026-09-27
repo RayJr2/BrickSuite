@@ -4,12 +4,19 @@
 #include <QStringList>
 
 namespace PrintGeometry {
+// Populated only when a manufacturing route actually applies Verified evidence.
+// Nominal/unverified features are deliberately absent from this ledger.
+struct AppliedFitFeature {
+    FunctionalFeature feature;
+    bool nonzero = false;
+};
 struct ManufacturingMesh {
     PrintMesh mesh;
     MeshAnalysisResult analysis;
     QString identity, partReference, nominalPreparationIdentity;
     QString fitProfileIdentity, sourceSessionIdentity, featureIdentity;
     QStringList featureIdentities;
+    QVector<AppliedFitFeature> appliedFitFeatures;
     QString semanticContractVersion, correctionContractVersion, regeneratorAlgorithmVersion, booleanVersion;
     double nominalDiameterMillimetres=0, diameterCorrectionMillimetres=0, manufacturingDiameterMillimetres=0;
     double nominalHeightMillimetres=0, heightCorrectionMillimetres=0, manufacturingHeightMillimetres=0;

@@ -1,9 +1,11 @@
 #include "../src/services/geometry/print/BatchPrintableModelService.h"
+#include "../src/services/geometry/fit/FitCalibrationLibrary.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
 #include <QTemporaryDir>
+#include <QRegularExpression>
 #include <cstdio>
 #include <stdexcept>
 #include <cerrno>
@@ -66,6 +68,35 @@ bool checkpointTests(const QString& root)
 int main(int argc,char** argv)
 {
     QCoreApplication app(argc,argv);QTemporaryDir temp;bool ok=true;
+    // Explicit opt-in, bounded installed-library acceptance harness. No catalog scan.
+    if(argc==9&&app.arguments()[1]==QStringLiteral("--fit-acceptance")){
+        const auto args=app.arguments();
+        const auto corpus=BatchPrintableModelService::readPartReferencePlan(args[2],args[3]);
+        const auto ids=QString::fromUtf8(read(args[6])).split(QRegularExpression("[\\s,;]+"),Qt::SkipEmptyParts);
+        if(!check(corpus.ok()&&!ids.isEmpty()&&ids.size()<=140,"bounded saved-corpus acceptance list"))return 1;
+        QVector<BatchPrintablePart> parts;
+        for(const auto& id:ids){
+            const auto found=std::find_if(corpus.parts.cbegin(),corpus.parts.cend(),[&](const auto& part){return part.partNumber==id;});
+            if(!check(found!=corpus.parts.cend(),"acceptance Part belongs to original corpus"))return 1;
+            parts.append(*found);
+        }
+        BatchPrintOptions options;options.libraryRoot=args[3];options.fitLibraryRoot=args[4];
+        options.selectedFitProfileIdentity=args[5]=="automatic"?QString():args[5];
+        options.outputRoot=args[7];options.localOverrideRoot=temp.filePath("overrides");
+        options.excludeNonstandardIds=false;
+        if(args[8]=="x")options.printOrientation.rotate(PrintOrientation::Rotation::XPositive);
+        else if(args[8]=="y")options.printOrientation.rotate(PrintOrientation::Rotation::YPositive);
+        else if(args[8]!="nominal")return 1;
+        const auto run=BatchPrintableModelService().run(parts,options,nullptr,[](const auto& row,const auto&){
+            fprintf(stdout,"%s: %s; fit=%s; source=%d recognized=%d applicable=%d applied=%d nonzero=%d zero=%d partial=%d\n",
+                qPrintable(row.partNumber),qPrintable(BatchPrintableModelService::categoryCode(row.category)),
+                qPrintable(row.fitStatus),row.sourceRecognizedFeatureCount,row.recognizedFeatureCount,
+                row.applicableVerifiedFeatureCount,row.correctedFeatureCount,row.nonzeroCorrectedFeatureCount,
+                row.verifiedZeroFeatureCount,row.partialFitCoverage);fflush(stdout);
+        });
+        fprintf(stdout,"Run: %s\n%s\n",qPrintable(run.runDirectory),qPrintable(run.diagnostic));
+        return run.ok&&run.results.size()==parts.size()?0:1;
+    }
     // Opt-in one-Part continuation proof; never runs the full installed corpus.
     if(argc==5&&app.arguments()[1]==QStringLiteral("--3021-saved-plan-check")){
         const auto plan=BatchPrintableModelService::readPartReferencePlan(app.arguments()[2],app.arguments()[3]);
@@ -124,11 +155,56 @@ int main(int argc,char** argv)
         ok&=check(state.value("currentSampleSequence").toInt()==sequence&&state.value("orderedParts").toArray().size()==3,
             "complete order and active checkpoint precede work");
         const auto saved=BatchPrintableModelService::readPartReferencePlan(QFileInfo(path).dir().filePath("part-reference-plan.json"),temp.path());
-        ok&=check(saved.ok()&&saved.plan==corpus.plan,"full fingerprinted corpus persisted before first work");
+        auto savedCorpus=saved.plan;savedCorpus.remove("printingContext");
+        ok&=check(saved.ok()&&savedCorpus==corpus.plan&&saved.plan.contains("printingContext"),
+            "full fingerprinted corpus and printing context persisted before first work");
     };
     auto wrongRange=corpus.parts;wrongRange[0].partNumber="not-the-saved-Part";
     ok&=check(!BatchPrintableModelService().run(wrongRange,options).ok,"mismatched selected identity refuses before output or geometry");
     const auto run=BatchPrintableModelService().run(corpus.parts,options);
+    const auto context=QJsonDocument::fromJson(read(run.metadataPath)).object().value("printingContext").toObject();
+    ok&=check(context.value("selection")=="automatic"&&!context.value("fingerprint").toString().isEmpty()&&
+        QJsonDocument::fromJson(read(QDir(run.runDirectory).filePath("summary.json"))).object().value("printingContext")==context,
+        "printing context persisted identically in metadata and summary");
+    auto mismatch=options;mismatch.beforePart={};mismatch.runId="context-conflict";
+    mismatch.corpusPlan.insert("printingContext",context);
+    mismatch.printOrientation.rotate(PrintOrientation::Rotation::XPositive);
+    const auto refused=BatchPrintableModelService().run(corpus.parts,mismatch);
+    ok&=check(!refused.ok&&refused.diagnostic.contains("printing context differs")&&refused.runDirectory.isEmpty(),
+        "saved-plan orientation conflict refuses before output or geometry");
+    mismatch=options;mismatch.runId="missing-profile";mismatch.selectedFitProfileIdentity="missing";
+    mismatch.fitLibraryRoot=temp.filePath("empty-profile-library");
+    const auto invalid=BatchPrintableModelService().run(corpus.parts,mismatch);
+    ok&=check(!invalid.ok&&invalid.runDirectory.isEmpty(),"invalid explicit profile cannot force fit or create output");
+    FitProfile selected;selected.profileIdentity="phase-a-profile";selected.name="Synthetic printer / PETG";
+    selected.sourceSessionIdentity="verified-test-session";selected.process.printerIdentity="Synthetic printer";
+    selected.process.materialIdentity="PETG";selected.process.hasNozzleDiameter=true;
+    selected.process.nozzleDiameterMillimetres=.4;selected.process.hasLayerHeight=true;
+    selected.process.layerHeightMillimetres=.2;selected.process.profileName="Synthetic process";
+    selected.process.actualPrintedOrientation=FitPrintedOrientation::FeatureAxisPerpendicularToBuildPlate;
+    selected.processFingerprint=FitCalibrationLibrary::processFingerprint(selected.process);
+    FitProfileCorrection correction;correction.featureFamily="RoundTechnicPassage";correction.featureRole="female";
+    correction.printedOrientation="feature-axis-perpendicular-to-build-plate";correction.valueMillimetres=.2;
+    correction.semanticContractVersion=FitCalibrationLibrary::currentSemanticContractVersion();
+    correction.calibrationArtifactIdentity="verified-synthetic-fixture";selected.corrections.append(correction);
+    FitCalibrationLibrary profiles(temp.filePath("managed-profiles"));QString profileError;
+    ok&=check(profiles.saveProfile(&selected,&profileError),"synthetic managed Verified profile persists");
+    auto explicitOptions=options;explicitOptions.beforePart={};explicitOptions.runId="explicit-profile";
+    explicitOptions.fitLibraryRoot=profiles.storageRoot();explicitOptions.selectedFitProfileIdentity=selected.profileIdentity;
+    const auto selectedRun=BatchPrintableModelService().run(corpus.parts,explicitOptions);
+    const auto selectedContext=QJsonDocument::fromJson(read(selectedRun.metadataPath)).object().value("printingContext").toObject();
+    ok&=check(selectedRun.ok&&selectedContext.value("selectedProfileIdentity")==selected.profileIdentity&&
+        selectedContext.value("selectedProfileName")==selected.name&&selectedContext.value("profiles").toArray().size()==1,
+        "explicit managed profile and complete process snapshot persist without requiring compatible geometry");
+    const auto bound=BatchPrintableModelService::readPartReferencePlan(QDir(selectedRun.runDirectory).filePath("part-reference-plan.json"),temp.path());
+    explicitOptions.corpusPlan=bound.plan;explicitOptions.runId="changed-profile";
+    selected.corrections[0].valueMillimetres=.3;
+    ok&=check(profiles.saveProfile(&selected,&profileError),"synthetic profile revision persists");
+    const auto revised=BatchPrintableModelService().run(corpus.parts,explicitOptions);
+    ok&=check(!revised.ok&&revised.diagnostic.contains("printing context differs")&&revised.runDirectory.isEmpty(),
+        "same profile identity with changed evidence refuses continuation");
+    ok&=check(QDir(QDir(run.runDirectory).filePath("exports/success")).exists()&&
+        QDir(QDir(run.runDirectory).filePath("exports/diagnostic")).exists(),"success and diagnostic exports separated");
     ok&=check(run.ok&&started==3&&run.results.size()==3&&run.results[1].modelAvailable&&
         run.results[1].category!=BatchPrintCategory::SkippedNoColor&&run.results[1].category!=BatchPrintCategory::SkippedNonstandardId&&
         run.results[1].category!=BatchPrintCategory::SkippedStickerCategory&&run.results[2].category==BatchPrintCategory::NoLDrawModel,
@@ -143,6 +219,19 @@ int main(int argc,char** argv)
     rows[0].category=rows[0].nativeCategory=BatchPrintCategory::Success;
     rows[1].nativeCategory=BatchPrintCategory::SourceCoverage;rows[1].category=BatchPrintCategory::UserOverrideSuccess;
     rows[2].category=rows[2].nativeCategory=BatchPrintCategory::NoLDrawModel;
+    auto fittedRows=rows;fittedRows[0].reopened=true;fittedRows[0].nominalPreparedReady=true;
+    fittedRows[0].sourceRecognizedFeatureCount=2;fittedRows[0].sourceApplicableVerifiedFeatureCount=1;
+    fittedRows[0].recognizedFeatureCount=2;fittedRows[0].applicableVerifiedFeatureCount=1;
+    fittedRows[0].correctedFeatureCount=1;fittedRows[0].verifiedZeroFeatureCount=1;fittedRows[0].partialFitCoverage=true;
+    fittedRows[1].category=BatchPrintCategory::ManufacturingFailed;fittedRows[1].nominalPreparedReady=true;
+    fittedRows[1].sourceRecognizedFeatureCount=1;fittedRows[1].sourceApplicableVerifiedFeatureCount=1;
+    fittedRows[1].applicableVerifiedFeatureCount=1;fittedRows[1].fitStatus="fitted_manufacturing_failed";
+    const auto funnel=BatchPrintableModelService::summarizeFit(fittedRows);
+    ok&=check(funnel.value("fittedPrintSuccess").toObject().value("numerator").toInt()==1&&
+        funnel.value("fittedPrintSuccess").toObject().value("denominator").toInt()==2&&
+        funnel.value("verifiedZeroSuccess").toInt()==1&&funnel.value("partialFittedSuccess").toInt()==1&&
+        funnel.value("fittedManufacturingFailures").toInt()==1&&funnel.value("nominalPreparedReady").toInt()==2,
+        "funnel separates Verified-zero partial success, nominal readiness and failed ManufacturingMesh");
     const auto summary=BatchPrintableModelService::summarizePartReference(corpus.parts,rows);
     ok&=check(summary.value("nativeSuccesses").toInt()==1&&summary.value("nativeSuccessPercent").toDouble()==50&&
         summary.value("overrideRecoveries").toInt()==1&&summary.value("practicalSuccessPercent").toDouble()==100&&

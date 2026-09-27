@@ -9,7 +9,9 @@ namespace PrintGeometry {
 namespace {
 QString fingerprint(const QJsonObject& plan)
 {
-    return QString::fromLatin1(QCryptographicHash::hash(QJsonDocument(plan).toJson(QJsonDocument::Compact),
+    // Printing intent is bound separately; it must not change the corpus identity.
+    auto corpus=plan;corpus.remove("printingContext");
+    return QString::fromLatin1(QCryptographicHash::hash(QJsonDocument(corpus).toJson(QJsonDocument::Compact),
         QCryptographicHash::Sha256).toHex());
 }
 QJsonObject partJson(const BatchPrintablePart& part)

@@ -5,6 +5,7 @@
 #include "../../services/parts/PartReferenceAuditSource.h"
 #include "../../services/geometry/print/BatchPrintableModelService.h"
 #include "../../settings/UserSettings.h"
+#include "../../services/geometry/fit/FitCalibrationLibrary.h"
 
 #include <QComboBox>
 #include <QCloseEvent>
@@ -41,6 +42,16 @@ PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent,Runner ru
     auto* layout=new QVBoxLayout(this);auto* form=new QFormLayout;
     m_mode=new QComboBox(this);m_mode->addItems({tr("Random Sample"),tr("Part List"),tr("Part Reference")});
     form->addRow(tr("Mode:"),m_mode);
+    m_fitProfile=new QComboBox(this);m_fitProfile->setObjectName(QStringLiteral("auditFitProfile"));
+    m_fitProfile->addItem(tr("Automatic / No explicit selection"),QString());
+    for(const auto& profile:FitCalibrationLibrary().profiles())
+        if(profile.compatible)m_fitProfile->addItem(profile.name,profile.identity);
+    m_fitProfile->setToolTip(tr("An explicit Verified profile selects printing intent. Only evidence compatible with each source feature, role and Print Orientation applies. Automatic never guesses between profiles."));
+    form->addRow(tr("Fit Profile:"),m_fitProfile);
+    m_printOrientation=new QComboBox(this);m_printOrientation->setObjectName(QStringLiteral("auditPrintOrientation"));
+    m_printOrientation->addItems({tr("Nominal"),tr("X +90 degrees"),tr("Y +90 degrees"),tr("Z +90 degrees")});
+    m_printOrientation->setToolTip(tr("Explicit orthogonal rotation in print coordinates. Evidence must match the transformed feature axis; no automatic rotation is performed."));
+    form->addRow(tr("Print Orientation:"),m_printOrientation);
     m_sampleCount=new QSpinBox(this);m_sampleCount->setRange(1,100000);m_sampleCount->setValue(25);
     form->addRow(tr("Sample count:"),m_sampleCount);
     m_seed=new QSpinBox(this);m_seed->setRange(0,2147483647);
@@ -127,6 +138,8 @@ PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent,Runner ru
 
 void PrintCapabilityAuditDialog::updateMode()
 {
+    m_fitProfile->setEnabled(!m_running&&!m_discovering);
+    m_printOrientation->setEnabled(!m_running&&!m_discovering);
     const bool reference=m_mode->currentIndex()==2,random=m_mode->currentIndex()==0;
     m_sampleCount->setEnabled(!m_running&&random);m_seed->setEnabled(!m_running&&random);
     m_partList->setEnabled(!m_running&&m_mode->currentIndex()==1);
@@ -151,6 +164,7 @@ void PrintCapabilityAuditDialog::refreshCorpus(const QString& savedPlan)
         if(!self){watcher->deleteLater();return;}
         try{self->m_corpus=watcher->result();}catch(...){self->m_corpus={};self->m_corpus.diagnostic=QStringLiteral("Corpus discovery failed.");}
         watcher->deleteLater();self->m_discovering=false;
+        self->m_continuationPlan=!savedPlan.isEmpty();
         if(!self->m_corpus.ok())self->m_referenceCounts->setText(self->m_corpus.diagnostic);
         else {
             int models=0;for(const auto& part:self->m_corpus.parts)models+=!part.resolvedModel.isEmpty();
@@ -222,6 +236,14 @@ void PrintCapabilityAuditDialog::start()
     options.excludeNoModel=random&&m_excludeNoModel->isChecked();
     options.randomSample=random;options.requestedEligibleCount=random?m_sampleCount->value():0;
     options.partReference=reference;
+    options.continuationPlan=reference&&m_continuationPlan;
+    options.selectedFitProfileIdentity=m_fitProfile->currentData().toString();
+    switch(m_printOrientation->currentIndex()){
+    case 1:options.printOrientation.rotate(PrintOrientation::Rotation::XPositive);break;
+    case 2:options.printOrientation.rotate(PrintOrientation::Rotation::YPositive);break;
+    case 3:options.printOrientation.rotate(PrintOrientation::Rotation::ZPositive);break;
+    default:break;
+    }
     QVector<BatchPrintablePart> referenceParts;
     if(reference){
         if(!m_corpus.ok()){m_running=false;updateMode();return;}
@@ -249,6 +271,12 @@ void PrintCapabilityAuditDialog::start()
         self->m_excludeNoModel->setEnabled(self->m_mode->currentIndex()==0);
         self->showIncompleteRuns();self->updateMode();
         if(!result.ok){self->m_counters->setText(self->tr("Audit failed: %1").arg(result.diagnostic));return;}
+        const auto fits=BatchPrintableModelService::summarizeFit(result.results);
+        const QString fitSummary=self->tr(" Fit results: %1 validated fitted exports, %2 partial; %3 Verified-zero, %4 nonzero; %5 nominal fallbacks; %6 ManufacturingMesh failures. Details: %7/summary.json")
+            .arg(fits.value("fittedPrintSuccess").toObject().value("numerator").toInt())
+            .arg(fits.value("partialFittedSuccess").toInt()).arg(fits.value("verifiedZeroSuccess").toInt())
+            .arg(fits.value("nonzeroFittedSuccess").toInt()).arg(fits.value("nominalFallback").toInt())
+            .arg(fits.value("fittedManufacturingFailures").toInt()).arg(result.runDirectory);
         if(!result.referenceSummary.isEmpty()){
             const auto& summary=result.referenceSummary;
             self->m_counters->setText(self->tr("%1. Part Reference range: %2 unique Parts; %3 completed; %4 with models; %5 without models. Native successes %6 (%7%); override recoveries %8; practical successes %9 (%10%). Source coverage %11; resource limit %12; other failures %13. Elapsed %14 s. CSV: %15. Global/catalog summaries: %16/summary.json")
@@ -260,7 +288,8 @@ void PrintCapabilityAuditDialog::start()
                 .arg(summary.value("practicalSuccessPercent").toDouble(),0,'f',1)
                 .arg(summary.value("sourceCoverageFailures").toInt()).arg(summary.value("resourceLimitFailures").toInt())
                 .arg(summary.value("otherFailures").toInt()).arg(summary.value("elapsedMilliseconds").toDouble()/1000,0,'f',1)
-                .arg(result.csvPath,result.runDirectory));return;
+                .arg(result.csvPath,result.runDirectory));
+            self->m_counters->setText(self->m_counters->text()+fitSummary);return;
         }
         const auto& t=result.totals;
         const int noColor=result.population.catalogTotal?result.population.excludedNoColor:t.skippedNoColor;
@@ -277,6 +306,7 @@ void PrintCapabilityAuditDialog::start()
             .arg(t.catalogToPrintablePercent(),0,'f',1).arg(result.csvPath)
             .arg(t.nativeSuccessful).arg(t.overrideRecoveries)
             .arg(t.practicalPrintablePercent(),0,'f',1).arg(t.modelAvailable));
+        self->m_counters->setText(self->m_counters->text()+fitSummary);
     });
     options.phaseProgress=[self](int sequence,const QString& part,const QString& phase){
         if(self)QMetaObject::invokeMethod(self,[self,sequence,part,phase]{

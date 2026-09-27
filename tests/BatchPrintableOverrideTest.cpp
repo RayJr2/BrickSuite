@@ -85,6 +85,7 @@ int main(int argc,char** argv)
     ok&=check(run.results[0].category==run.results[0].nativeCategory&&!run.results[0].localOverrideUsed,"uncertified synthetic source retains native result");
     ok&=check(run.results[1].category==BatchPrintCategory::StrictOverrideSuccess&&run.results[1].reopened,"strict override rescues native failure");
     const auto& rescued=run.results[2];
+    ok&=check(rescued.exportPath.contains("exports/success/"),"reopened override publishes to success directory");
     ok&=check(rescued.category==BatchPrintCategory::UserOverrideSuccess&&rescued.nativeCategory!=BatchPrintCategory::Success&&
         rescued.reopened&&rescued.localOverrideUsed&&!rescued.nativeDiagnostic.isEmpty()&&rescued.profileIdentity.isEmpty()&&
         rescued.correctionSummary.isEmpty()&&rescued.exportPath.endsWith("7002-user_override_success.3mf"),"accepted override exports nominal without fit and retains native failure");
@@ -102,10 +103,14 @@ int main(int argc,char** argv)
     const auto csv=read(run.csvPath);
     ok&=check(csv.contains("native_result_category,native_diagnostic,local_override_state,local_override_used,local_override_stale")&&
         csv.contains("export_result,reopen_result")&&csv.contains("\"user_override_success\"")&&csv.contains("\"strict_override_success\""),"CSV records native and final results with override and export outcomes");
-    options.reopenValidator=[](const QString&,std::size_t,QString* error){*error="simulated reopen failure";return false;};
+    bool diagnosticBeforeReopen=false;
+    options.reopenValidator=[&](const QString& path,std::size_t,QString* error){
+        diagnosticBeforeReopen=path.contains("exports/diagnostic/");*error="simulated reopen failure";return false;};
     const auto failed=BatchPrintableModelService().run({user},options).results.front();
     ok&=check(failed.category==BatchPrintCategory::ReopenFailed&&failed.localOverrideUsed&&!failed.reopened&&
         failed.nativeCategory==rescued.nativeCategory&&failed.exportPath.endsWith("7002-reopen_failed.3mf"),"override reopen failure is not success and preserves native category");
+    ok&=check(diagnosticBeforeReopen&&failed.exportPath.contains("exports/diagnostic/"),
+        "failed reopen never presents a file in the accepted directory");
     options.reopenValidator={};
     auto meshStale=QJsonDocument::fromJson(before).object();meshStale["meshFingerprint"]="changed";
     ok&=check(write(store.storagePath(context(user)),QJsonDocument(meshStale).toJson()),"tamper synthetic repaired fingerprint");

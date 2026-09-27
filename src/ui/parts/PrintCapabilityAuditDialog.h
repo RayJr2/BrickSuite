@@ -32,6 +32,9 @@ private:
     void refreshCorpus(const QString& savedPlan = {});
     void updateMode();
     QComboBox* m_mode = nullptr;
+    QComboBox* m_fitProfile = nullptr;
+    QComboBox* m_printOrientation = nullptr;
+    bool m_continuationPlan = false;
     QSpinBox* m_sampleCount = nullptr;
     QSpinBox* m_seed = nullptr;
     QSpinBox* m_referenceFirst = nullptr;

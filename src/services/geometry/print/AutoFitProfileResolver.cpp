@@ -45,6 +45,18 @@ AutoFitProfileResolution AutoFitProfileResolver::resolve(bool enabled,const QStr
     return {AutoFitResolutionState::Resolved,compatible.front(),QStringLiteral("Auto Fit uniquely resolved %1.").arg(compatible.front().name)};
 }
 
+AutoFitProfileResolution AutoFitProfileResolver::resolveExplicit(const FitProfile& profile,
+    const QString& partReference,const LDrawGeometry::LDrawLoadResult& source,
+    const PrintOrientation& orientation)
+{
+    auto result=resolve(true,partReference,{profile},source,orientation);
+    result.diagnostic=result.resolved()
+        ?QStringLiteral("Explicit Verified Fit Profile: %1. Only compatible source features and orientation evidence apply.").arg(profile.name)
+        :QStringLiteral("Selected profile %1 has no applicable Verified evidence for this source/orientation; nominal Prepared Mesh remains available. %2")
+            .arg(profile.name,result.diagnostic);
+    return result;
+}
+
 AutoFitProfileResolution AutoFitProfileResolver::resolveManaged(bool enabled, const QString& partReference,
                                                                 const FitCalibrationLibrary& library,
                                                                 const LDrawGeometry::LDrawLoadResult& source,

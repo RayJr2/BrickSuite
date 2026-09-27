@@ -16,6 +16,9 @@ struct AutoFitProfileResolution {
 };
 class AutoFitProfileResolver {
 public:
+    static AutoFitProfileResolution resolveExplicit(const FitProfile&,
+        const QString& partReference,const LDrawGeometry::LDrawLoadResult&,
+        const PrintOrientation&);
     static AutoFitProfileResolution resolve(bool enabled, const QString& partReference,
                                             const QVector<FitProfile>& candidates,
                                             const LDrawSemanticOperandBuilder::Result& semantics,

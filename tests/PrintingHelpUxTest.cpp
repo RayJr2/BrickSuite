@@ -69,6 +69,12 @@ int main(int argc,char** argv){
         overview.contains("Source-dependent printing and calibration require the necessary LDraw files to be available.")&&
         overview.indexOf("installed LDraw parts library")<overview.indexOf("BrickSuite prepares")&&
         browser->toHtml().contains("href=\"ldraw_models.html\""),"overview leads with installed LDraw prerequisite, settings path, and setup link");
+    help.showTopic(HelpTopic::PrintTroubleshooting);
+    const auto auditHelp=browser->toPlainText();
+    ok&=check(auditHelp.contains("Automatic / No explicit selection")&&auditHelp.contains("partial fit")&&
+        auditHelp.contains("exports/success/")&&auditHelp.contains("exports/diagnostic/"),
+        "audit Help explains explicit intent, partial fit and diagnostic separation");
+    help.showTopic(HelpTopic::Printing);
     search->setText("printing");
     for(auto theme:{UserSettings::Theme::Dark,UserSettings::Theme::Light}){
         ThemeManager::applyTheme(app,theme);QApplication::processEvents();

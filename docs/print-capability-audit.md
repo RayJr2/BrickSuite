@@ -1,5 +1,8 @@
 # Print Capability Audit run persistence
 
+For current explicit profile/orientation selection, CSV schema 7, fitted-print metrics,
+and targeted acceptance results, see [M37 Phase A](m37-fitted-print-phase-a.md).
+
 ## Part Reference acceptance corpus
 
 Debug builds offer **Test → Print Capability Audit → Part Reference**. This reads

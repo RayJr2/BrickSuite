@@ -21,6 +21,10 @@ public:
     static const FitProfileCorrection* compatibleCorrection(const FitProfile&,FitPrintedOrientation,QString* reason=nullptr);
     static ManufacturingMeshCorrections compatibleCorrections(const FitProfile&,FitPrintedOrientation,QString* reason=nullptr);
     static FitPrintedOrientation transformedOrientation(const FunctionalFeature&,const PrintOrientation&);
+    // Source-only recognizers: no operand closure, repair, Boolean or PreparedMesh.
+    static QVector<FunctionalFeature> inspectSourceFitFeatures(const LDrawGeometry::LDrawLoadResult&);
+    static QVector<const FitProfileCorrection*> featureCorrections(const FitProfile&,
+        const FunctionalFeature&,const PrintOrientation&);
     // Recognition only: this does not grant profile compatibility or fit ownership.
     static bool hasRecognizedFitFeatures(const LDrawSemanticOperandBuilder::Result&);
     static bool hasRecognizedFitFeatures(const LDrawGeometry::LDrawLoadResult&);

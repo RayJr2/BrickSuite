@@ -47,6 +47,13 @@ struct BatchPrintResult {
     int sequence = 0;
     QString partNumber, ldrawModel, preparationRoute, recognizedFeatures;
     QString fitResolution, profileIdentity, correctionSummary;
+    QString geometryResult = QStringLiteral("not_tested"), fitStatus = QStringLiteral("not_inspected");
+    QString selectedFitProfile, printOrientation;
+    QJsonArray sourceFitFeatures;
+    int sourceRecognizedFeatureCount = 0, recognizedFeatureCount = 0, applicableVerifiedFeatureCount = 0;
+    int sourceApplicableVerifiedFeatureCount = 0;
+    int correctedFeatureCount = 0, nonzeroCorrectedFeatureCount = 0, verifiedZeroFeatureCount = 0;
+    bool partialFitCoverage = false, nominalPreparedReady = false;
     BatchPrintCategory category = BatchPrintCategory::NotStarted;
     BatchPrintCategory nativeCategory = BatchPrintCategory::NotStarted;
     QString nativeDiagnostic;
@@ -109,6 +116,8 @@ struct BatchPrintOptions {
     QString libraryRoot, outputRoot, runId;
     // Empty uses the normal application override store. Load-only during audits.
     QString localOverrideRoot;
+    // Empty selection preserves Automatic. Managed profiles are snapshotted once per run.
+    QString selectedFitProfileIdentity, fitLibraryRoot;
     quint32 seed = 0;
     PrintOrientation printOrientation;
     QColor modelColor = QColor(QStringLiteral("#A0A5A9"));
@@ -117,6 +126,7 @@ struct BatchPrintOptions {
     bool excludeNoModel = false;
     bool randomSample = false;
     bool partReference = false;
+    bool continuationPlan = false;
     QJsonObject corpusPlan;
     int requestedEligibleCount = 0;
     BatchPrintPopulation population;
@@ -155,6 +165,7 @@ public:
     static bool validPartReferenceSelection(const QVector<BatchPrintablePart>& parts,const QJsonObject& plan);
     static QJsonObject summarizePartReference(const QVector<BatchPrintablePart>& parts,
         const QVector<BatchPrintResult>& results);
+    static QJsonObject summarizeFit(const QVector<BatchPrintResult>& results);
     static bool isStickerCategory(const BatchPrintablePart& part);
     static bool writeDiagnosticThreeMf(const PrintMesh& candidate,const QString& path,
                                        const QString& partNumber,const QColor& color,QString* error = nullptr,

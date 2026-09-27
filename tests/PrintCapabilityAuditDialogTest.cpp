@@ -46,6 +46,11 @@ int main(int argc,char** argv)
     bool ok=true;
     {
         PrintCapabilityAuditDialog dialog;dialog.show();
+        auto* profiles=dialog.findChild<QComboBox*>("auditFitProfile");
+        auto* orientation=dialog.findChild<QComboBox*>("auditPrintOrientation");
+        ok&=check(profiles&&profiles->currentData().toString().isEmpty()&&
+            orientation&&orientation->currentIndex()==0&&orientation->count()==4,
+            "audit defaults to Automatic and nominal with explicit orthogonal orientation choices");
         ok&=check(HelpManager::context(&dialog)->topic==HelpTopic::PrintTroubleshooting,"audit Help context");
         button(dialog,"Close")->click();
         ok&=check(!dialog.isVisible(),"idle Close is immediate");
