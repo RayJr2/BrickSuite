@@ -12,7 +12,7 @@ private:
     PrintGeometry::FitCalibrationExperiment* activeExperiment();
     QTableWidget* activeTable() const;
     bool openSession(const QString&); bool saveSession(); bool writeSession(const QString&);
-    void loadSession(); void resumeManagedSession(); void newWorkspace(); void deleteSelectedWorkspace(); void exportSession(); void createFitProfile(); void createSelectedCalibration(); void createCalibration(FitCalibrationFamily); void refreshLibrary(); void scheduleManagedSave();
+    void loadSession(); void activateWorkspace(const QString&); void rememberWorkspace(); void newWorkspace(); void deleteSelectedWorkspace(); void exportSession(); void createFitProfile(); void createSelectedCalibration(); void createCalibration(FitCalibrationFamily); void refreshLibrary(); void scheduleManagedSave();
     void addObservation(); void selectPreferred(); void markVerified(); void generateFineSearch();
     void runGeneration(PrintGeometry::FitCalibrationGenerationService::Request);
     void recoverPackage();
@@ -25,7 +25,7 @@ private:
     void readProcess(); void showSession(const PrintGeometry::FitCalibrationSession&,const QString&); void refresh(); void refreshTable(QTableWidget*,const PrintGeometry::FitCalibrationExperiment*); void updateGuidance();
     void showWorkspace(const PrintGeometry::FitCalibrationWorkspace&, const QString& preferredSession = {}); void selectFeature(int);
     PrintGeometry::FitCalibrationSession m_session; QString m_path;
-    PrintGeometry::FitCalibrationWorkspace m_workspace; int m_featureIndex=-1;
+    PrintGeometry::FitCalibrationWorkspace m_workspace; QString m_activeWorkspaceIdentity; int m_featureIndex=-1;
     QVector<PrintGeometry::FitCalibrationExperiment> m_coarseHistory;
     PrintGeometry::FitCalibrationLibrary m_library;
     bool m_loading=false, m_dirty=false, m_savedConfirmation=false;

@@ -250,8 +250,16 @@ them. No full-package printing is needed to check software wiring.
 
 ### Workspace activation and empty-feature state
 
-Creation and resume use `showWorkspace` to populate the manufacturing context,
-select the current workspace, and refresh capability/generation state. An empty
+Startup restoration, combo selection, New, and Delete fallback use
+`activateWorkspace`. It saves pending session edits through the existing managed
+save path before loading the destination. Clean switches are immediate; pending
+edits offer Save/Cancel. Cancellation or save failure restores the previous combo
+selection under `QSignalBlocker`, retains pending edits, and preserves the saved
+preference. The completed-activation identity is held separately from an edited
+manufacturing-context fingerprint. List repopulation blocks selection signals.
+
+`showWorkspace` populates the manufacturing context, current workspace selection,
+and capability/generation state. An empty
 workspace disables feature orientation and notes: there is no feature evidence
 to edit yet. Process-change signals during hydration or without a feature session
 must not mark a session dirty. Otherwise the generation action can silently stop
@@ -264,3 +272,18 @@ checks the empty-feature control failure, A-to-new-B activation, switching back,
 reopening the dialog within the same application, and the five-calibration/two-
 fixture Custom plan. It cancels choosers before generating geometry or recording
 physical evidence.
+
+The former Resume Workspace button only looked up the selected workspace and
+called `showWorkspace`; it had no generation/recovery responsibilities and did
+not itself guard dirty edits. It is removed. QSettings key
+`LegoFitCalibration/LastWorkspaceIdentity` stores the successfully active stable
+identity, not display text. It is updated on successful activation/managed save,
+restored on dialog open, and removed for the empty state. Missing or invalid
+records fall back to the first valid entry in the library's existing deterministic
+ordering. Deletion retains its existing confirmation/backup behavior and then
+activates that fallback. No database migration is involved.
+
+Workspace UI coverage additionally verifies automatic combo activation, context
+refresh, last-used New/Delete behavior, empty and invalid/stale fallbacks,
+cancelled and failed dirty saves, and restoration by a separate application
+process sharing temporary QSettings and managed-library paths.
