@@ -18,10 +18,16 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
-#include <QSaveFile>
+#include <QTemporaryFile>
+#include <QThread>
+#include <QDebug>
+#include <QScopeGuard>
 #include <QMutexLocker>
+#include <cerrno>
+#include <cstdio>
 #ifdef Q_OS_WIN
 #include <io.h>
+#include <qt_windows.h>
 #else
 #include <unistd.h>
 #endif
@@ -47,11 +53,77 @@ bool durableFlush(QFileDevice& file)
 #endif
 }
 
-bool saveJson(const QString& path,const QJsonObject& object,QString* error)
+bool saveJson(const QString& path,const QJsonObject& object,QString* error,
+              const BatchPrintRunState::TestHooks& hooks = {})
 {
-    QSaveFile file(path);const auto bytes=QJsonDocument(object).toJson(QJsonDocument::Indented);
-    if(file.open(QIODevice::WriteOnly)&&file.write(bytes)==bytes.size()&&durableFlush(file)&&file.commit())return true;
-    if(error)*error=QStringLiteral("Could not persist %1: %2").arg(path,file.errorString());
+    // Same-directory temporary file, fully flushed and closed before replacement.
+    // Never remove the destination or fall back to a direct/partial overwrite.
+    QElapsedTimer elapsed;elapsed.start();
+    auto file=std::make_unique<QTemporaryFile>(path+QStringLiteral(".XXXXXX"));
+    QString temporary=file->fileTemplate();
+    const auto nativeFileError=[](){
+#ifdef Q_OS_WIN
+        return int(::GetLastError());
+#else
+        return errno;
+#endif
+    };
+    const auto failure=[&](const QString& operation,int native,int attempt,const QString& detail){
+        const QString message=QStringLiteral("Could not persist audit JSON: operation=%1; temp=%2; destination=%3; "
+            "nativeError=%4; QtError=%5 (%6); attempt=%7/6; elapsedMs=%8; %9")
+            .arg(operation,temporary,path)
+            .arg(native).arg(file?int(file->error()):0).arg(file?file->errorString():QStringLiteral("native replacement"))
+            .arg(attempt).arg(elapsed.elapsed()).arg(detail);
+        if(error)*error=message;
+        qWarning().noquote()<<message;
+        return false;
+    };
+    if(!file->open())return failure(QStringLiteral("open temporary"),nativeFileError(),1,QStringLiteral("No replacement attempted."));
+    temporary=file->fileName();
+    const auto bytes=QJsonDocument(object).toJson(QJsonDocument::Indented);
+    if(file->write(bytes)!=bytes.size())return failure(QStringLiteral("write temporary"),nativeFileError(),1,{});
+    if(!file->flush())return failure(QStringLiteral("Qt flush temporary"),nativeFileError(),1,{});
+#ifdef Q_OS_WIN
+    if(::_commit(file->handle())!=0)return failure(QStringLiteral("sync temporary (_commit; errno)"),errno,1,{});
+#else
+    if(::fsync(file->handle())!=0)return failure(QStringLiteral("sync temporary (fsync; errno)"),errno,1,{});
+#endif
+    // QTemporaryFile::close() retains its native handle for reopening. Destroy
+    // the object to release that handle before a Windows native replacement.
+    file->setAutoRemove(false);
+    file.reset();
+    const auto cleanup=qScopeGuard([&]{QFile::remove(temporary);});
+    for(int attempt=1;attempt<=6;++attempt){
+        int native=hooks.replacementError?hooks.replacementError(path,object,attempt):0;
+        if(!native){
+#ifdef Q_OS_WIN
+            if(!::MoveFileExW(reinterpret_cast<LPCWSTR>(temporary.utf16()),reinterpret_cast<LPCWSTR>(path.utf16()),
+                             MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))native=int(::GetLastError());
+#else
+            if(::rename(QFile::encodeName(temporary).constData(),QFile::encodeName(path).constData())!=0)native=errno;
+#endif
+        }
+        if(!native){
+            if(attempt>1)qWarning().noquote()<<QStringLiteral("Audit JSON atomic replacement recovered: destination=%1; attempt=%2/6; elapsedMs=%3")
+                .arg(path).arg(attempt).arg(elapsed.elapsed());
+            return true;
+        }
+#ifdef Q_OS_WIN
+        const bool retryable=native==ERROR_ACCESS_DENIED||native==ERROR_SHARING_VIOLATION||native==ERROR_LOCK_VIOLATION;
+#else
+        const bool retryable=native==EBUSY||native==EINTR;
+#endif
+        // Access denied can also mean a permanent ACL/read-only restriction. The
+        // bounded policy does not identify a particular process or assume AV.
+        if(!retryable||attempt==6||elapsed.elapsed()>=1500)
+            return failure(QStringLiteral("atomic replace"),native,attempt,
+                QStringLiteral("Replacement denied or retry limit reached; previous checkpoint preserved. Check destination permissions/sharing."));
+        qWarning().noquote()<<QStringLiteral("Audit JSON replacement retry: operation=atomic replace; temp=%1; destination=%2; "
+            "nativeError=%3; QtError=%4; attempt=%5/6; elapsedMs=%6")
+            .arg(temporary,path).arg(native).arg(0).arg(attempt).arg(elapsed.elapsed());
+        const auto delay=static_cast<unsigned long>(25u<<(attempt-1));
+        if(hooks.wait)hooks.wait(delay);else QThread::msleep(delay);
+    }
     return false;
 }
 
@@ -169,14 +241,7 @@ QString familyName(FunctionalInterfaceFamily family)
 bool BatchPrintRunState::write(QString* error)
 {
     if(m_path.isEmpty())return true;
-    QSaveFile file(m_path);
-    const auto bytes=QJsonDocument(m_state).toJson(QJsonDocument::Indented);
-    if(!file.open(QIODevice::WriteOnly)||file.write(bytes)!=bytes.size()||
-       !durableFlush(file)||!file.commit()){
-        if(error)*error=QStringLiteral("Could not persist audit run state: %1").arg(file.errorString());
-        return false;
-    }
-    return true;
+    return saveJson(m_path,m_state,error,m_testHooks);
 }
 
 bool BatchPrintRunState::save(const QString& path,const QJsonObject& state,QString* error)
@@ -443,10 +508,6 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         run.diagnostic=QStringLiteral("Could not create the audit output directory.");return run;
     }
     run.metadataPath=QDir(run.runDirectory).filePath(QStringLiteral("run-metadata.json"));
-    QFile metadataFile(run.metadataPath);
-    if(!metadataFile.open(QIODevice::WriteOnly|QIODevice::Text)){
-        run.diagnostic=metadataFile.errorString();return run;
-    }
     QJsonObject metadata{
         {QStringLiteral("runId"),runId},
         {QStringLiteral("localOverridePolicy"),QStringLiteral("existing-validated-nominal-after-native-preparation-failure-v1")},
@@ -488,11 +549,7 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         metadata.insert("selectedRange",summarizePartReference(parts,{}));
         if(!saveJson(QDir(run.runDirectory).filePath("part-reference-plan.json"),options.corpusPlan,&run.diagnostic))return run;
     }
-    const auto metadataBytes=QJsonDocument(metadata).toJson(QJsonDocument::Indented);
-    if(metadataFile.write(metadataBytes)!=metadataBytes.size()||!durableFlush(metadataFile)){
-        run.diagnostic=metadataFile.errorString();return run;
-    }
-    metadataFile.close();
+    if(!saveJson(run.metadataPath,metadata,&run.diagnostic))return run;
     run.statePath=QDir(run.runDirectory).filePath(QStringLiteral("run-state.json"));
     QJsonArray sample;QJsonObject candidates;
     for(const auto& part:parts){sample.append(part.partNumber);
@@ -593,6 +650,7 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
         QElapsedTimer phaseTimer;phaseTimer.start();QString currentPhase=QStringLiteral("starting");
         QJsonObject stageTimes;bool persistenceOk=true;
         const auto phase=[&](const QString& name){
+            if(!persistenceOk)return; // Preserve the first failure and durable recovery point.
             stageTimes.insert(currentPhase,stageTimes.value(currentPhase).toInteger()+phaseTimer.elapsed());
             currentPhase=name;
             state.insert(QStringLiteral("currentPhase"),name);
@@ -794,12 +852,14 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
             row.nativeCategory=row.category;row.nativeDiagnostic=row.diagnostic;
         }
         phase(QStringLiteral("persisting"));
+        if(!persistenceOk)return run;
         run.results.push_back(row);
         if(!save(row)){
             run.diagnostic=QStringLiteral("The audit CSV could not be flushed: %1").arg(csvFile.errorString());
             csvFile.close();return run;
         }
         phase(QStringLiteral("run_state"));
+        if(!persistenceOk)return run;
         state.insert(QStringLiteral("completedCount"),run.results.size());
         state.insert(QStringLiteral("currentPartStatus"),QStringLiteral("finished"));
         if(!checkpoint())return run;

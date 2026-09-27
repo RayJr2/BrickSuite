@@ -6,11 +6,62 @@
 #include <QTemporaryDir>
 #include <cstdio>
 #include <stdexcept>
+#include <cerrno>
 using namespace PrintGeometry;
 namespace {
 bool check(bool value,const char* text){if(!value)fprintf(stderr,"FAIL: %s\n",text);return value;}
 QByteArray read(const QString& path){QFile f(path);return f.open(QIODevice::ReadOnly)?f.readAll():QByteArray();}
 bool write(const QString& path,const QByteArray& data){QFile f(path);return f.open(QIODevice::WriteOnly)&&f.write(data)==data.size();}
+int sharingError(){
+#ifdef Q_OS_WIN
+    return 32; // ERROR_SHARING_VIOLATION, injected without a timing-dependent file lock.
+#else
+    return EBUSY;
+#endif
+}
+bool checkpointTests(const QString& root)
+{
+    bool ok=true;QString error;
+    for(int failures:{0,1,3,6}){
+        const QString path=QDir(root).filePath(QStringLiteral("checkpoint-%1.json").arg(failures));
+        BatchPrintRunState initial;
+        ok&=check(initial.save(path,{{"completedCount",7}},&error),"normal durable checkpoint");
+        const auto previous=read(path);int attempts=0;unsigned long waited=0;
+        BatchPrintRunState::TestHooks hooks;
+        hooks.wait=[&](unsigned long delay){waited+=delay;};
+        hooks.replacementError=[&](const QString& destination,const QJsonObject&,int attempt){
+            attempts=attempt;
+            ok&=check(read(destination)==previous,"previous complete checkpoint survives every failed replacement");
+            return attempt<=failures?sharingError():0;
+        };
+        BatchPrintRunState writer(hooks);
+        const bool saved=writer.save(path,{{"completedCount",8}},&error);
+        ok&=check(saved==(failures<6)&&attempts==std::min(failures+1,6)&&waited<=775,
+            "normal, one/several transient, or exhausted replacement has bounded attempts/backoff");
+        ok&=check(saved?QJsonDocument::fromJson(read(path)).object().value("completedCount").toInt()==8:read(path)==previous,
+            "only committed replacement changes checkpoint");
+        if(!saved)ok&=check(error.contains("operation=atomic replace")&&error.contains("temp=")&&
+            error.contains(path)&&error.contains("nativeError=")&&error.contains("QtError=")&&
+            error.contains("attempt=6/6")&&error.contains("elapsedMs="),"failure has actionable filesystem diagnostics");
+        ok&=check(QDir(root).entryList({QFileInfo(path).fileName()+".??????"},QDir::Files).isEmpty(),"failed temporaries cleaned without removing destination");
+    }
+    BatchPrintRunState denied;
+    ok&=check(!denied.save(QDir(root).filePath("missing-directory/state.json"),{},&error)&&
+        error.contains("open temporary")&&error.contains("attempt=1/6"),"unwritable/missing directory stops without replacement retries");
+#ifdef Q_OS_WIN
+    for(int native:{5,33,87}){ // access denied, lock violation, non-retryable invalid parameter
+        const auto path=QDir(root).filePath(QStringLiteral("native-%1.json").arg(native));
+        ok&=check(denied.save(path,{{"completedCount",1}},&error),"native-error baseline checkpoint");
+        const auto previous=read(path);int attempts=0;
+        BatchPrintRunState::TestHooks hooks;hooks.wait=[](unsigned long){};
+        hooks.replacementError=[&](const QString&,const QJsonObject&,int attempt){attempts=attempt;return native;};
+        BatchPrintRunState blocked(hooks);
+        ok&=check(!blocked.save(path,{{"completedCount",2}},&error)&&read(path)==previous&&attempts==(native==87?1:6),
+            "persistent access/lock denial bounded, unrelated native error immediate, checkpoint intact");
+    }
+#endif
+    return ok;
+}
 }
 int main(int argc,char** argv)
 {
@@ -38,6 +89,7 @@ int main(int argc,char** argv)
         fprintf(stdout,"3021 saved-plan result: %s, folder: %s\n",run.results.isEmpty()?"missing":qPrintable(BatchPrintableModelService::categoryCode(run.results[0].category)),qPrintable(run.runDirectory));
         return ok?0:1;
     }
+    ok&=checkpointTests(temp.path());
     QDir(temp.path()).mkpath("parts");
     const QByteArray triangle="0 !LDRAW_ORG Part\n0 BFC CERTIFY CCW\n3 16 0 0 0 20 0 0 0 20 0\n";
     ok&=check(write(temp.filePath("parts/1100.dat"),triangle)&&write(temp.filePath("parts/1101pat.dat"),triangle),"model fixtures");
@@ -134,5 +186,46 @@ int main(int argc,char** argv)
     const auto explicitRun=BatchPrintableModelService().run(BatchPrintableModelService::explicitParts({a,b,c},{c.partNumber}),options);
     ok&=check(explicitRun.ok&&explicitRun.results.size()==1&&explicitRun.results[0].category==BatchPrintCategory::NoLDrawModel,
         "Part List still reports explicitly requested missing model");
+    // Checkpoint failure after a durable CSV row: that row is ambiguous until
+    // completedCount commits. Rerun it in a separate saved-plan continuation.
+    for(bool persistent:{false,true}){
+        BatchPrintOptions retry;retry.libraryRoot=temp.path();retry.outputRoot=temp.filePath("retry-runs");
+        retry.runId=persistent?"persistent":"transient";retry.partReference=true;retry.corpusPlan=corpus.plan;
+        retry.autoFitEnabled=false;retry.localOverrideRoot=temp.filePath("overrides");
+        int begun=0,attempts=0;QByteArray beforeReplacement;
+        BatchPrintRunState::TestHooks hooks;hooks.wait=[](unsigned long){};
+        hooks.replacementError=[&](const QString& path,const QJsonObject& proposed,int attempt){
+            if(proposed.value("currentSampleSequence").toInt()!=2||proposed.value("currentPhase")!="run_state"||
+               proposed.value("completedCount").toInt()!=1)return 0;
+            if(attempt==1)beforeReplacement=read(path);
+            attempts=attempt;
+            ok&=check(begun==2&&read(path)==beforeReplacement,"next Part cannot begin during replacement retries");
+            return persistent||attempt<3?sharingError():0;
+        };
+        retry.runState=std::make_shared<BatchPrintRunState>(hooks);
+        retry.beforePart=[&](const QString& path,int sequence,const QString&){
+            ++begun;const auto s=QJsonDocument::fromJson(read(path)).object();
+            ok&=check(s.value("completedCount").toInt()==sequence-1,"every next Part follows durable completion");
+        };
+        const auto result=BatchPrintableModelService().run(corpus.parts,retry);
+        const auto savedState=QJsonDocument::fromJson(read(result.statePath)).object();
+        if(!persistent){
+            ok&=check(result.ok&&begun==3&&attempts==3&&savedState.value("status")=="completed",
+                "transient error recovers and completes without skipped Parts");
+            continue;
+        }
+        ok&=check(!result.ok&&!result.stopped&&begun==2&&attempts==6&&savedState.value("status")=="running"&&
+            savedState.value("completedCount").toInt()==1&&savedState.value("currentReferenceSequence").toInt()==2&&
+            result.diagnostic.contains("atomic replace"),"persistent failure stops with last valid active checkpoint, never claims clean completion");
+        const auto oldState=read(result.statePath),oldCsv=read(result.csvPath);
+        ok&=check(oldCsv.split('\n').size()==4,"header and two flushed rows survive checkpoint interruption");
+        const auto savedPlan=BatchPrintableModelService::readPartReferencePlan(QDir(result.runDirectory).filePath("part-reference-plan.json"),temp.path());
+        const int next=savedState.value("firstReferenceSequence").toInt()+savedState.value("completedCount").toInt();
+        retry.runId="ambiguous-continuation";retry.runState={};retry.beforePart={};retry.corpusPlan=savedPlan.plan;
+        const auto resumed=BatchPrintableModelService().run(savedPlan.parts.mid(next-1),retry);
+        ok&=check(next==2&&resumed.ok&&resumed.results.size()==2&&resumed.results[0].partNumber==b.partNumber&&
+            resumed.results[1].partNumber==c.partNumber,"ambiguous row rerun, durable first row not duplicated, final Part not skipped");
+        ok&=check(oldState==read(result.statePath)&&oldCsv==read(result.csvPath),"continuation leaves failed-run evidence unchanged");
+    }
     return ok?0:1;
 }

@@ -187,14 +187,51 @@ synced, the completed count advances and the phase becomes `finished` (including
 failed or safely cancelled results). CSV rows are never added for pending Parts.
 Stop before loading can leave phase `not_started`; an untouched plan is `pending`.
 
-State updates use QSaveFile atomic replacement, with Qt flush and native `_commit`
-on Windows or `fsync` on POSIX before commit. CSV rows use the same flush/sync.
+State and related audit JSON updates share a same-directory temporary-file helper.
+It performs Qt flush and native `_commit` on Windows or `fsync` on POSIX, releases
+the temporary file's native handle, then atomically replaces the destination
+(`MoveFileExW` with replace/write-through on Windows; `rename` on POSIX).
+It never removes the old checkpoint first or falls back to direct overwrite.
+CSV rows use the same flush/sync.
 Persistence failure aborts the run before the next Part. A crash leaves the last
 committed state intact. CSV and JSON are separate files: interruption between a
 row flush and its state update can leave one additional completed CSV row; inspect
 that row alongside the active checkpoint. No later Part can start in that window.
 This supports process-crash attribution, not automatic resume or a filesystem
 power-loss guarantee.
+
+Windows replacement errors 5 (access denied), 32 (sharing violation), and 33
+(lock violation) receive at most six attempts, with 25/50/100/200/400 ms backoffs
+(775 ms total sleep) and a 1500 ms elapsed-time retry cutoff. POSIX retries only
+`EBUSY`/`EINTR`. Temporary-file open/write/sync failures and other replacement
+errors fail immediately. Persistent access denial can mean permissions or a
+longer-lived sharing restriction; the diagnostic does not attribute it to AV.
+Failures/retries identify operation, temporary/destination paths, native and Qt
+errors, attempt and elapsed time. The worker preserves the first exhausted
+failure and starts no later Part. A failed run remains incomplete, not a clean
+Stop or successful completion. Fault hooks are explicitly supplied by tests only.
+
+For saved-plan continuation, use `firstReferenceSequence + completedCount` after
+checking the CSV's contiguous completed prefix against the checkpoint. A row
+ahead of that count is ambiguous and must be rerun; never skip it. Keep the old
+folder unchanged and publish the continuation to a new run folder.
+
+The 2026-09-27 persistence incident at local sequence 83 / reference sequence 252
+(30144) had 83 flushed rows and `completedCount=83`, `currentPartStatus=finished`,
+`currentPhase=run_state`. The next `completed` phase checkpoint failed, before its
+timing row or any next Part. Continue that saved plan at **253 (2453b)**. The old
+combined QSaveFile error and application log did not identify open/write/sync vs
+commit or the native error/handle owner; its exact filesystem cause is unproven.
+No temporary remained, and the destination checkpoint remained valid. Existing
+UI readers close on scope exit and do not poll during their own active run;
+worker and Stop writes share a mutex. A Windows reader without delete-sharing
+can still prevent atomic replacement, which the bounded retry now tolerates.
+The saved corpus accounts for 2985 built-in plus five user memberships, 2990
+unique Parts, and zero duplicate memberships; it is not a 2985-Part corpus.
+
+`PartReferenceAuditTest` injects replacement failures (no antivirus/timing race),
+checks old-checkpoint preservation, bounded recovery/exhaustion, next-Part gating,
+and a CSV-ahead continuation that reruns only the ambiguous and remaining Parts.
 
 Normal completion sets `status` to `completed`. Safe Stop sets `stopped` after
 preserving the last/current checkpoint. An interrupted run remains `running`.

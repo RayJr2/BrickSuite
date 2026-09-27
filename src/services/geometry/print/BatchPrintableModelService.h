@@ -87,6 +87,13 @@ struct BatchPrintPopulation {
 // Serializes worker checkpoints and immediate UI Stop requests to the same file.
 class BatchPrintRunState {
 public:
+    // Fault injection only: return a native replacement error, or zero to perform
+    // the real atomic replacement. Empty hooks are the production behavior.
+    struct TestHooks {
+        std::function<int(const QString&,const QJsonObject&,int)> replacementError;
+        std::function<void(unsigned long)> wait;
+    };
+    explicit BatchPrintRunState(TestHooks hooks = {}) : m_testHooks(std::move(hooks)) {}
     bool save(const QString& path,const QJsonObject& state,QString* error);
     bool requestStop(QString* error = nullptr);
 private:
@@ -95,6 +102,7 @@ private:
     QString m_path;
     QJsonObject m_state;
     bool m_stopRequested = false;
+    TestHooks m_testHooks;
 };
 
 struct BatchPrintOptions {
