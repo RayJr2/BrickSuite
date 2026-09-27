@@ -69,7 +69,7 @@ int main(int argc,char** argv)
 {
     QCoreApplication app(argc,argv);QTemporaryDir temp;bool ok=true;
     // Explicit opt-in, bounded installed-library acceptance harness. No catalog scan.
-    if(argc==9&&app.arguments()[1]==QStringLiteral("--fit-acceptance")){
+    if(argc==9&&(app.arguments()[1]==QStringLiteral("--fit-acceptance")||app.arguments()[1]==QStringLiteral("--fit-reporting"))){
         const auto args=app.arguments();
         const auto corpus=BatchPrintableModelService::readPartReferencePlan(args[2],args[3]);
         const auto ids=QString::fromUtf8(read(args[6])).split(QRegularExpression("[\\s,;]+"),Qt::SkipEmptyParts);
@@ -95,7 +95,24 @@ int main(int argc,char** argv)
                 row.verifiedZeroFeatureCount,row.partialFitCoverage);fflush(stdout);
         });
         fprintf(stdout,"Run: %s\n%s\n",qPrintable(run.runDirectory),qPrintable(run.diagnostic));
-        return run.ok&&run.results.size()==parts.size()?0:1;
+        if(args[1]==QStringLiteral("--fit-reporting")){
+            ok&=check(run.results.size()==4,"reporting proof contains exactly four controls");
+            for(const auto& row:run.results){
+                ok&=check(row.category==BatchPrintCategory::Success&&row.reopened&&row.nominalPreparedReady,
+                    "reporting controls retain nominal readiness and successful export/reopen");
+                if(row.partNumber=="4275b")ok&=check(!row.profileIdentity.isEmpty()&&row.correctedFeatureCount==0&&
+                    row.fitStatus=="nominal_no_verified_application"&&row.diagnostic.contains("no compatible Verified corrections were applied")&&
+                    !row.diagnostic.contains("Verified ManufacturingMesh"),"4275b resolved profile is not an application");
+                else if(row.partNumber=="30374")ok&=check(row.verifiedZeroFeatureCount>0&&row.nonzeroCorrectedFeatureCount==0&&
+                    row.fitStatus=="verified_zero_applied"&&row.diagnostic.contains("zero dimensional adjustment"),"genuine Standard Bar Verified-zero");
+                else if(row.partNumber=="98138")ok&=check(row.nonzeroCorrectedFeatureCount>0&&
+                    row.diagnostic.contains("Verified Fit corrections applied"),"actual AntiStudBore nonzero application");
+                else if(row.partNumber=="3666")ok&=check(row.correctedFeatureCount==6&&row.recognizedFeatureCount==11&&
+                    row.partialFitCoverage&&row.diagnostic.contains("Partial Verified Fit applied. 6 of 11"),"actual partial stud/post coverage");
+                else ok&=check(false,"unexpected reporting control");
+            }
+        }
+        return ok&&run.ok&&run.results.size()==parts.size()?0:1;
     }
     // Opt-in one-Part continuation proof; never runs the full installed corpus.
     if(argc==5&&app.arguments()[1]==QStringLiteral("--3021-saved-plan-check")){

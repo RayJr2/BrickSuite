@@ -241,19 +241,7 @@ QString familyName(FunctionalInterfaceFamily family)
 
 void appendFitFeatures(QVector<FunctionalFeature>& features,const QVector<FunctionalFeature>& additions)
 {
-    for(const auto& candidate:additions){
-        const auto equivalent=[&](const FunctionalFeature& feature){
-            if(feature.stableIdentity==candidate.stableIdentity)return true;
-            const auto& a=feature.frame;const auto& b=candidate.frame;
-            // The existing source and operand recognizers can name the same interface differently.
-            return feature.family==candidate.family&&feature.role==candidate.role&&
-                feature.evidenceContract==candidate.evidenceContract&&
-                std::abs(a.origin.x-b.origin.x)<=1e-6&&std::abs(a.origin.y-b.origin.y)<=1e-6&&
-                std::abs(a.origin.z-b.origin.z)<=1e-6&&
-                std::abs(a.axis.x*b.axis.x+a.axis.y*b.axis.y+a.axis.z*b.axis.z)>=1.0-1e-6;
-        };
-        if(std::none_of(features.cbegin(),features.cend(),equivalent))features.append(candidate);
-    }
+    ManufacturingFitSummary::appendRecognized(features,additions);
 }
 
 QJsonArray sourceFeatureJson(const QVector<FunctionalFeature>& features,const PrintOrientation& orientation)
@@ -948,6 +936,7 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
                 if(cancellation&&cancellation->isCancelled()){row.category=BatchPrintCategory::Cancelled;break;}
                 phase(QStringLiteral("manufacturing"));
                 PrintMesh output=prepared.preparedMesh->mesh;
+                ManufacturingFitSummary fitSummary;
                 const auto fit=explicitProfile
                     ?AutoFitProfileResolver::resolveExplicit(selectedProfile,part.partNumber,source,options.printOrientation)
                     :AutoFitProfileResolver::resolve(options.autoFitEnabled,part.partNumber,fitProfiles,source,options.printOrientation);
@@ -959,18 +948,15 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
                     if(!manufacturing.ok()||!manufacturing.manufacturingMesh){
                         row.category=BatchPrintCategory::ManufacturingFailed;
                         row.fitStatus=QStringLiteral("fitted_manufacturing_failed");
-                        row.diagnostic=manufacturing.diagnostic;
+                        row.diagnostic=QStringLiteral("Fitted manufacturing failed; nominal PreparedMesh remains available. ")+manufacturing.diagnostic;
                         diagnosticExport(&prepared.preparedMesh->mesh);break;
                     }
-                    for(const auto& applied:manufacturing.manufacturingMesh->appliedFitFeatures){
-                        ++row.correctedFeatureCount;
-                        if(applied.nonzero)++row.nonzeroCorrectedFeatureCount;else ++row.verifiedZeroFeatureCount;
-                    }
-                    row.partialFitCoverage=row.correctedFeatureCount>0&&row.correctedFeatureCount<row.recognizedFeatureCount;
-                    row.fitStatus=row.partialFitCoverage?QStringLiteral("partial_verified_fit"):
-                        row.nonzeroCorrectedFeatureCount>0?QStringLiteral("verified_nonzero_applied"):
-                        row.verifiedZeroFeatureCount>0?QStringLiteral("verified_zero_applied"):
-                        QStringLiteral("nominal_no_verified_application");
+                    fitSummary=ManufacturingFitSummary::fromLedger(manufacturing.manufacturingMesh->appliedFitFeatures,row.recognizedFeatureCount);
+                    row.correctedFeatureCount=fitSummary.applied;
+                    row.nonzeroCorrectedFeatureCount=fitSummary.nonzero;
+                    row.verifiedZeroFeatureCount=fitSummary.verifiedZero;
+                    row.partialFitCoverage=fitSummary.partial();
+                    row.fitStatus=fitSummary.status();
                     output=manufacturing.manufacturingMesh->mesh;
                     row.correctionSummary=manufacturing.manufacturingMesh->provenance.join(';');
                 }
@@ -996,8 +982,7 @@ BatchPrintRun BatchPrintableModelService::run(const QVector<BatchPrintablePart>&
                     break;
                 }
                 row.reopened=true;row.category=BatchPrintCategory::Success;
-                row.diagnostic=fit.resolved()?QStringLiteral("Verified ManufacturingMesh exported and reopened."):
-                    QStringLiteral("Nominal PreparedMesh exported and reopened.");
+                row.diagnostic=fitSummary.exportCompletion(true);
             }while(false);
             }catch(const std::exception&exception){
                 row.category=BatchPrintCategory::PrepareNotReady;

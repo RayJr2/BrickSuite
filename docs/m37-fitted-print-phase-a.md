@@ -147,3 +147,27 @@ saved corpus. It does not mutate catalog, calibration, overrides or historical o
   success/diagnostic paths, and opportunity-denominator funnel values.
 - Schema **35**, Protocol **1.5**, geometry policy and recognizer contracts unchanged.
 - GUI workflow acceptance remains Ray's separate step. No commit or push.
+
+## Ledger-authoritative completion reporting
+
+Service, audit and native viewer completion messages use the shared
+`ManufacturingFitSummary`. Selected profile identity does not establish an applied
+correction. Empty application ledgers report nominal output; Verified-zero entries
+explicitly report zero dimensional adjustment; nonzero and partial application
+report applied/recognized counts. Source/operand reporting equivalence and CSV
+schema 7 classification are unchanged. The viewer reports export success only;
+the audit additionally reports its existing successful reopen check. Failed fitted
+manufacturing explicitly retains nominal PreparedMesh availability.
+
+The bounded `PartReferenceAuditTest --fit-reporting` acceptance harness uses the
+same arguments as `--fit-acceptance` with exactly four controls: 4275b, 30374,
+98138 and 3666. It checks nominal/no application, genuine Verified-zero, nonzero
+and partial reporting respectively, including successful export/reopen.
+
+Reporting correction validation: Qt 6.10.3 MinGW Release application and all 115
+configured test targets built; four focused tests passed; full CTest passed
+123/123 (161.25 seconds). The four installed-source controls exported/reopened
+with counts 0/3, 1/1 Verified-zero, 1/1 nonzero and 6/11 partial respectively.
+Their exported vertex/triangle arrays exactly matched the prior Phase A outputs.
+Schema 35 and Protocol 1.5 remain unchanged. Ray's final display spot-check is
+limited to those four Parts; no physical print or full-corpus rerun is required.

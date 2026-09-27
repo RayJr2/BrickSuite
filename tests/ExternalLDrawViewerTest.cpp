@@ -5,6 +5,7 @@
 #include "../src/database/DatabaseManager.h"
 #include "../src/services/geometry/LDrawLibraryService.h"
 #include "../src/services/geometry/ThreeMfWriter.h"
+#include "../src/services/geometry/print/ManufacturingFitSummary.h"
 #include "../src/services/geometry/print/PrintMeshConversion.h"
 #include <QStandardPaths>
 #include <QApplication>
@@ -81,6 +82,16 @@ int main(int argc,char** argv)
     UserSettings::instance().setMeshRepairEnabled(true);
     PrintPreparationCoordinator coordinator;
     bool ok=true;
+    // The native export callback uses this shared formatter with reopened=false:
+    // a viewer export must not claim a reopen or infer application from profile selection.
+    const auto nominalReport=ManufacturingFitSummary::fromLedger({},3).exportCompletion(false);
+    ok&=check(nominalReport.contains("Nominal output")&&nominalReport.contains("no compatible Verified corrections were applied")&&
+        !nominalReport.contains("reopened"),"viewer zero-ledger export wording");
+    FunctionalFeature reportingFeature;
+    const auto zeroReport=ManufacturingFitSummary::fromLedger({{reportingFeature,false}},1).exportCompletion(false);
+    const auto partialReport=ManufacturingFitSummary::fromLedger({{reportingFeature,true}},2).exportCompletion(false);
+    ok&=check(zeroReport.contains("zero dimensional adjustment")&&partialReport.contains("Partial Verified Fit applied. 1 of 2"),
+        "viewer Verified-zero and partial export wording");
     {
         LDrawModelViewerWindow viewer(&coordinator);
         ok&=check(HelpManager::context(&viewer)->topic==HelpTopic::LDrawModels,"viewer Help context");
