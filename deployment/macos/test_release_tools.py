@@ -147,7 +147,7 @@ class SigningOrder(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == 'darwin', 'Native macOS codesign integration')
 class NativeSigning(unittest.TestCase):
-    def fixture(self, root, arch, dependencies=False):
+    def fixture(self, root, arch, dependencies=False, probe=False):
         bundle = root/arch/'BrickSuite.app'
         executable = bundle/'Contents/MacOS'
         executable.mkdir(parents=True)
@@ -156,7 +156,10 @@ class NativeSigning(unittest.TestCase):
         info = dict(CFBundleExecutable='BrickSuite', CFBundleIdentifier='com.rfstateside.signingfixture',
                     CFBundlePackageType='APPL', CFBundleVersion='1')
         (bundle/'Contents/Info.plist').write_bytes(plistlib.dumps(info))
-        for name in ('BrickSuite', 'BrickSuiteMeshBooleanWorker', 'BrickSuitePackageProbe'):
+        executables = ['BrickSuite', 'BrickSuiteMeshBooleanWorker']
+        if probe:
+            executables.append('BrickSuitePackageProbe')
+        for name in executables:
             subprocess.run(['/usr/bin/clang', '-arch', arch, '-mmacosx-version-min=13.0',
                             str(source), '-o', str(executable/name)], check=True)
         if dependencies:
@@ -188,10 +191,17 @@ class NativeSigning(unittest.TestCase):
                     bundle = self.fixture(Path(temp).resolve(), arch)
                     main = bundle/'Contents/MacOS/BrickSuite'
                     helper = bundle/'Contents/MacOS/BrickSuiteMeshBooleanWorker'
+                    self.assertEqual({p.name for p in main.parent.iterdir()},
+                                     {'BrickSuite', 'BrickSuiteMeshBooleanWorker'})
                     self.assertNotEqual(subprocess.run(['codesign', '-d', str(helper)], capture_output=True).returncode, 0)
                     old = subprocess.run(['codesign', '--force', '--sign', '-', str(main)], capture_output=True, text=True)
-                    self.assertNotEqual(old.returncode, 0)
-                    self.assertIn('BrickSuiteMeshBooleanWorker', old.stderr)
+                    self.assertNotEqual(old.returncode, 0, old.stderr)
+                    # Diagnostic wording/first-reported subcomponent is not a
+                    # codesign contract. Assert the signature and bundle states.
+                    self.assertNotEqual(subprocess.run(['codesign', '-d', str(helper)], capture_output=True).returncode, 0)
+                    invalid = subprocess.run(['codesign', '--verify', '--deep', '--strict', str(bundle)],
+                                             capture_output=True, text=True)
+                    self.assertNotEqual(invalid.returncode, 0, invalid.stderr)
                     sign_bundle(bundle)  # Includes the production deep/strict gate.
                     subprocess.run(['codesign', '--remove-signature', str(helper)], check=True)
                     self.assertNotEqual(subprocess.run(['codesign', '--verify', '--deep', '--strict', str(bundle)],
@@ -206,7 +216,8 @@ class NativeSigning(unittest.TestCase):
             orders = []
             for arch in ('arm64', 'x86_64'):
                 with self.subTest(architecture=arch):
-                    bundle = self.fixture(Path(temp).resolve(), arch, dependencies=True)
+                    bundle = self.fixture(Path(temp).resolve(), arch, dependencies=True, probe=True)
+                    self.assertTrue((bundle/'Contents/MacOS/BrickSuitePackageProbe').is_file())
                     orders.append([str(p.relative_to(bundle)) for p in signing_order(bundle)])
                     sign_bundle(bundle)
                     sign_bundle(bundle)  # Already-signed inputs follow exactly the same algorithm.

@@ -103,3 +103,25 @@ separate from the codesign failure and action versions are unchanged here.
 After reviewing and pushing the local correction commit, Ray should dispatch
 the existing workflow with **both matrix entries**. No push or GitHub rerun is
 performed by this task. Real Intel/macOS 13 runtime acceptance remains M39.4 work.
+
+## Follow-up: regression diagnostic portability
+
+Job `109020217414` was reported to fail in both architecture subtests at the
+assertion requiring the old main-first signing diagnostic to contain the worker's
+filename. The preceding unsigned-helper and nonzero signing-result assertions
+had passed. That fixture also contained an unsigned package probe, so expecting
+codesign to identify one particular nested component was unnecessarily brittle.
+The exact runner stderr was not supplied with the failure report; no claim is
+made about which alternative diagnostic it printed.
+
+The helper regression now contains only main and worker. It asserts the helper
+is unsigned before and after the rejected main-first attempt, and that the app
+fails deep/strict verification before applying the corrected signer. It then
+retains successful signing, tamper detection, recovery and missing-helper checks.
+The separate framework/plugin/dylib/probe test explicitly includes the probe and
+still checks identical signing order for both architectures. Assertions no longer
+depend on codesign's diagnostic wording or traversal order.
+
+All 13 tests pass locally, including native ARM64 and x86_64 fixtures. The shared
+signer, workflow and release gates are unchanged. Both GitHub jobs require another
+run to confirm behavior on their macOS 15 hosts.
