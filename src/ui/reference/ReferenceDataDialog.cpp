@@ -44,9 +44,10 @@ ReferenceDataDialog::ReferenceDataDialog(QWidget* parent) : QDialog(parent)
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(buttons->button(QDialogButtonBox::Help), &QPushButton::clicked, this,
             [this]() { HelpManager::showTopic(HelpTopic::ReferenceData, this); });
-    new QShortcut(QKeySequence::HelpContents, this, [this]() {
+    auto* helpShortcut = new QShortcut(QKeySequence::HelpContents, this, [this]() {
         HelpManager::showTopic(HelpTopic::ReferenceData, this);
     });
+    helpShortcut->setKeys(HelpManager::shortcuts());
     connect(add, &QPushButton::clicked, this, &ReferenceDataDialog::addManufacturer);
     connect(m_edit, &QPushButton::clicked, this, &ReferenceDataDialog::editManufacturer);
     connect(m_activate, &QPushButton::clicked, this, [this]() { changeActiveState(true); });

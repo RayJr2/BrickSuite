@@ -40,6 +40,7 @@
 #include "services/Logger.h"
 #include "settings/ThemeManager.h"
 #include "ui/common/TooltipPolicy.h"
+#include "ui/parts/PartViewerSurfaceFormat.h"
 
 namespace {
 
@@ -92,6 +93,7 @@ int main(int argc, char *argv[])
     if(const auto worker=PrintGeometry::LocalPrintableOverrideService::runUnionWorker(argc,argv))return *worker;
     QElapsedTimer startupTimer;
     startupTimer.start();
+    configurePartViewerSurfaceFormat();
     QApplication qtApplication(argc, argv);
 
     QApplication::setApplicationName(AppConstants::name());

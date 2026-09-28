@@ -94,7 +94,7 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
     // any Settings control (combo box, edit, checkbox, button, etc.).
     //
     auto* helpAction = new QAction(this);
-    helpAction->setShortcut(QKeySequence::HelpContents);
+    helpAction->setShortcuts(HelpManager::shortcuts());
     helpAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
 
     connect(helpAction, &QAction::triggered, this, [this]() {

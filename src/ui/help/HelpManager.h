@@ -23,6 +23,7 @@
 #include "HelpTopic.h"
 
 #include <QList>
+#include <QKeySequence>
 #include <QString>
 #include <QWidget>
 #include <QVariant>
@@ -46,6 +47,12 @@ struct HelpContext
 class HelpManager
 {
 public:
+    static QList<QKeySequence> shortcuts() {
+        auto keys = QKeySequence::keyBindings(QKeySequence::HelpContents);
+        const QKeySequence f1(Qt::Key_F1);
+        if (!keys.contains(f1)) keys.append(f1);
+        return keys;
+    }
     static void showTopic(HelpTopic topic, QWidget* parent = nullptr);
     static void showTopic(HelpTopic topic, const QString& anchor,
                           QWidget* parent = nullptr);

@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 
+# Set before project() so compiler checks and every dependency inherit it.
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum supported macOS version" FORCE)
+endif()
+
 project(BrickSuite
     VERSION 0.4.0
     LANGUAGES CXX
@@ -1111,6 +1116,15 @@ if(BUILD_TESTING)
         src/ui/parts/LDrawModelViewerSelection.h)
     target_link_libraries(LDrawIdentityResolutionTest PRIVATE Qt6::Core)
     add_test(NAME LDrawIdentityResolutionTest COMMAND LDrawIdentityResolutionTest)
+
+    # Run manually on a native desktop: offscreen cannot verify GL texture sharing.
+    qt_add_executable(LDrawViewportRenderTest EXCLUDE_FROM_ALL
+        tests/LDrawViewportRenderTest.cpp
+        src/ui/parts/LDrawViewportWidget.cpp src/ui/parts/LDrawViewportWidget.h
+        src/ui/parts/PartViewerSurfaceFormat.h src/ui/parts/PreparedMeshRenderAdapter.cpp
+        src/services/geometry/ConditionalEdgeVisibility.cpp
+        src/services/geometry/LDrawColorResolver.cpp src/services/geometry/PartViewerCamera.cpp)
+    target_link_libraries(LDrawViewportRenderTest PRIVATE Qt6::Widgets Qt6::OpenGLWidgets)
 
     qt_add_executable(PartViewerMathTest EXCLUDE_FROM_ALL
         tests/PartViewerMathTest.cpp
@@ -2675,6 +2689,10 @@ if(APPLE)
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "BrickSuite"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.rfstateside.bricksuite"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_COPYRIGHT "Copyright 2026 RF StateSide, LLC"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/deployment/macos/Info.plist.in"
     )
 
     target_link_libraries(BrickSuite PRIVATE

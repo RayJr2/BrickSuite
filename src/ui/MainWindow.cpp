@@ -1167,7 +1167,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     auto* helpMenu = menuBar()->addMenu("Help");
 
     auto* helpContentsAction = helpMenu->addAction("BrickSuite Help");
-    helpContentsAction->setShortcut(QKeySequence::HelpContents);
+    helpContentsAction->setShortcuts(HelpManager::shortcuts());
     helpContentsAction->setShortcutContext(Qt::ApplicationShortcut);
 
     connect(helpContentsAction, &QAction::triggered, this, [this]() {

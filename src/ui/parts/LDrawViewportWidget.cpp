@@ -1,4 +1,5 @@
 #include "LDrawViewportWidget.h"
+#include "PartViewerSurfaceFormat.h"
 
 #include "../../services/geometry/ConditionalEdgeVisibility.h"
 #include "../../services/geometry/LDrawColorResolver.h"
@@ -37,8 +38,7 @@ void main(){vec4 baseColor=overrideColor?inspectionColor:vertexColor;float value
 
 LDrawViewportWidget::LDrawViewportWidget(QWidget* parent):QOpenGLWidget(parent)
 {
-    QSurfaceFormat format;format.setVersion(3,3);format.setProfile(QSurfaceFormat::CoreProfile);
-    format.setDepthBufferSize(24);format.setSamples(4);setFormat(format);setMinimumSize(500,350);
+    setFormat(partViewerSurfaceFormat());setMinimumSize(500,350);
     setFocusPolicy(Qt::StrongFocus);
 }
 

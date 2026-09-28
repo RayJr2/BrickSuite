@@ -149,3 +149,23 @@ All other trademarks, product names, company names, services, and third-party
 content referenced by BrickSuite are the property of their respective owners.
 Their use does not imply sponsorship, affiliation, authorization, or
 endorsement.
+
+## macOS runtime packaging
+
+The macOS bundle also deploys Qt Concurrent, Network, WebSockets, OpenGL,
+OpenGLWidgets, and the Qt DBus dependency pulled in by Qt Gui. The source-built
+Qt plugins include Cocoa, macOS style/network information, QSQLITE, OpenSSL TLS,
+SVG/icon support, and GIF/ICO/JPEG/WebP image readers. PNG support is built into
+Qt Gui. Qt's bundled third-party source notices accompany these modules.
+
+OpenSSL 3.6.4 provides `libssl.3.dylib` and `libcrypto.3.dylib` under the Apache
+License 2.0. Source and license information: https://openssl-library.org/source/.
+The statically linked lib3mf sources also include their pinned LibreSSL code;
+its `COPYING` file is included with the lib3mf notices, alongside zlib, libzip,
+cpp-base64, and fast_float notices.
+
+`deployment/macos/package_macos.py` collects license files and Qt attribution
+metadata into `Contents/Resources/Licenses`, preserving source-relative paths.
+The local ad-hoc signed acceptance bundle is not a public release. Public
+packaging must also satisfy applicable source/relinking distribution obligations;
+including license texts alone does not establish distribution compliance.
