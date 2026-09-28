@@ -31,16 +31,16 @@ bool removeWorkspace(FitCalibrationDialog& dialog){
     if(!action)return false;
     bool confirmed=false,completed=false;QTimer timer;timer.setInterval(5);
     QObject::connect(&timer,&QTimer::timeout,[&]{if(auto* box=qobject_cast<QMessageBox*>(QApplication::activeModalWidget())){
-        if(box->windowTitle()=="Delete Calibration Workspace"){confirmed=true;box->button(QMessageBox::Yes)->click();}
-        else {completed=box->windowTitle()=="Calibration Workspace Deleted";box->accept();}
+        if(box->text().startsWith("Delete the selected workspace")&&box->standardButtons()==(QMessageBox::Yes|QMessageBox::Cancel)){confirmed=true;box->button(QMessageBox::Yes)->click();}
+        else {completed=box->text().startsWith("The selected workspace was removed from the active library.")&&box->standardButtons()==QMessageBox::Ok;box->accept();}
     }});
     timer.start();action->trigger();timer.stop();return confirmed&&completed;
 }
 bool dirtySwitch(FitCalibrationDialog& dialog,const QString& destination,QMessageBox::StandardButton decision,bool expectFailure=false){
     bool prompted=false,failed=false;QTimer timer;timer.setInterval(5);
     QObject::connect(&timer,&QTimer::timeout,[&]{if(auto* box=qobject_cast<QMessageBox*>(QApplication::activeModalWidget())){
-        if(box->windowTitle()=="Unsaved Calibration Changes"){prompted=true;box->button(decision)->click();}
-        else {failed=box->windowTitle()=="Calibration";box->reject();}
+        if(box->text()=="Save pending calibration edits before changing workspaces?"&&box->standardButtons()==(QMessageBox::Save|QMessageBox::Cancel)){prompted=true;box->button(decision)->click();}
+        else {failed=box->icon()==QMessageBox::Warning&&box->standardButtons()==QMessageBox::Ok&&box->text().startsWith("Could not atomically write ");box->reject();}
     }});
     auto* combo=workspaces(dialog,destination);timer.start();combo->setCurrentIndex(combo->findData(destination));timer.stop();
     return prompted&&failed==expectFailure;
@@ -48,7 +48,9 @@ bool dirtySwitch(FitCalibrationDialog& dialog,const QString& destination,QMessag
 bool openModal(const std::function<void()>& action,const QString& title,const std::function<void(QDialog*)>& inspect={}){
     bool seen=false;QTimer timer;timer.setInterval(5);
     QObject::connect(&timer,&QTimer::timeout,[&]{if(auto* d=qobject_cast<QDialog*>(QApplication::activeModalWidget())){
-        seen=d->windowTitle()==title;if(!seen)fprintf(stderr,"Unexpected modal: %s\n",qPrintable(d->windowTitle()));
+        if(auto* box=qobject_cast<QMessageBox*>(d))
+            seen=title=="Recommended Calibration Package"&&box->text().contains("Generate this package?")&&box->standardButtons()==(QMessageBox::Yes|QMessageBox::No);
+        else seen=d->windowTitle()==title;if(!seen)fprintf(stderr,"Unexpected modal: %s\n",qPrintable(d->windowTitle()));
         timer.stop();if(seen&&inspect)inspect(d);else d->reject();}});
     timer.start();action();timer.stop();return seen;
 }
@@ -58,7 +60,7 @@ bool importCompanion(FitCalibrationDialog& dialog,const QString& path,bool packa
         if(auto* picker=qobject_cast<QFileDialog*>(QApplication::activeModalWidget())){
             if(!selected){selected=true;auto* name=picker->findChild<QLineEdit*>("fileNameEdit");name->setFocus();name->setText(QDir::toNativeSeparators(path));QMetaObject::invokeMethod(picker,"accept",Qt::DirectConnection);}
         }else if(auto* box=qobject_cast<QMessageBox*>(QApplication::activeModalWidget())){
-            ready=box->windowTitle()=="Calibration Package Ready";failed|=!ready;if(!ready)fprintf(stderr,"Import error: %s\n",qPrintable(box->text()));box->accept();
+            ready=box->text().contains("independent calibrations registered.")&&box->text().contains("Package companion:")&&box->standardButtons()==QMessageBox::Ok;failed|=!ready;if(!ready)fprintf(stderr,"Import error: %s\n",qPrintable(box->text()));box->accept();
         }
     });
     timer.start();button(dialog,"Import Session / Package...")->click();timer.stop();

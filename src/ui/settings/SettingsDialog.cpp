@@ -840,6 +840,8 @@ void SettingsDialog::buildServerTab()
 
     auto* serverGroup = new QGroupBox(tr("BrickSuite Server (This Computer)"), thisComputerPage);
     auto* serverForm = new QFormLayout(serverGroup);
+    // Native macOS forms otherwise keep wrapped labels at a narrow size hint.
+    serverForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     m_serverEnabledCheck = new QCheckBox(tr("Enable BrickSuite Server"), serverGroup);
     TooltipPolicy::explain(m_serverEnabledCheck, tr("Allow authorized Remote devices to use this computer as their BrickSuite Host."));
     m_serverBindCombo = new QComboBox(serverGroup);
@@ -909,7 +911,13 @@ void SettingsDialog::buildServerTab()
         tr("Listening locally does not confirm that your router or firewall permits remote "
            "connections. BrickSuite does not configure port forwarding or firewall rules."), serverGroup);
     reachability->setWordWrap(true);
-    serverForm->addRow(QString(), reachability);
+    for (auto* label : {m_serverStatusLabel, m_serverFingerprintLabel,
+                        m_serverIdentityStatusLabel, m_pairingStatusLabel, reachability}) {
+        auto policy = label->sizePolicy();
+        policy.setHorizontalPolicy(QSizePolicy::Expanding);
+        label->setSizePolicy(policy);
+    }
+    serverForm->addRow(reachability);
     thisComputerLayout->addWidget(serverGroup);
     thisComputerLayout->addStretch();
     sections->addTab(thisComputerPage, tr("This Computer"));

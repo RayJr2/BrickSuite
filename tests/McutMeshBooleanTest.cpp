@@ -6,11 +6,40 @@
 #include <QFile>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QTemporaryDir>
+#include "../src/services/geometry/print/BoundedGeometryWorker.h"
+#include "../src/services/geometry/print/McutWorkerProtocol.h"
+#ifdef Q_OS_MACOS
+#include <signal.h>
+#include <cerrno>
+#endif
 using namespace PrintGeometry;
 namespace {
 int simulatedWorker(const QString& directory)
 {
+    if(!BoundedGeometryWorker::constrainChild())return 19;
+    QFile record(QString::fromLocal8Bit(qgetenv("BRICKSUITE_TEST_WORKER_RECORD")));
+    if(!record.open(QIODevice::WriteOnly))return 20;
+    record.write(directory.toUtf8()+"\n"+QByteArray::number(QCoreApplication::applicationPid()));record.close();
     const auto mode=qgetenv("BRICKSUITE_TEST_BOOLEAN_WORKER");
+    if(mode=="memory"){
+        // At most 64 MiB, touched page-by-page, against a 32 MiB test budget.
+        // Keep the allocation alive so the watchdog can deterministically sample it.
+        std::vector<unsigned char> memory(64*1024*1024);
+        for(std::size_t i=0;i<memory.size();i+=4096)reinterpret_cast<volatile unsigned char*>(memory.data())[i]=static_cast<unsigned char>(i/4096);
+        QThread::sleep(5);return memory.front();
+    }
+    if(mode=="missing")return 0;
+    if(mode=="success"){
+        QFile input(QDir(directory).filePath("input.bin"));if(!input.open(QIODevice::ReadOnly))return 21;
+        QDataStream in(&input);in.setVersion(QDataStream::Qt_6_0);quint32 version;bool subtract;PrintMesh a,b;
+        in>>version>>subtract;
+        if(!McutWorkerProtocol::readMesh(in,a,100)||!McutWorkerProtocol::readMesh(in,b,100))return 22;
+        QFile output(QDir(directory).filePath("output.bin"));if(!output.open(QIODevice::WriteOnly))return 23;
+        QDataStream out(&output);out.setVersion(QDataStream::Qt_6_0);
+        out<<McutWorkerProtocol::Version<<qint32(MeshBooleanError::None)<<QStringLiteral("transport cleanup fixture");
+        McutWorkerProtocol::writeMesh(out,a);return 0;
+    }
     if(mode=="failed")return 17;
     if(mode=="timeout"){QThread::sleep(5);return 0;}
     QFile output(QDir(directory).filePath("output.bin"));
@@ -19,14 +48,32 @@ int simulatedWorker(const QString& directory)
 }
 bool workerFailureTests(const PrintMesh& a,const PrintMesh& b)
 {
-    bool ok=true;
-    for(const auto& mode:{"failed","timeout","malformed"}){
-        qputenv("BRICKSUITE_TEST_BOOLEAN_WORKER",mode);
+    bool ok=true;QTemporaryDir records;
+    QStringList modes{"success","failed","timeout","malformed","missing"};
+#ifdef Q_OS_MACOS
+    modes<<"memory";
+#endif
+    for(const auto& mode:modes){
+        const auto path=records.filePath(mode);qputenv("BRICKSUITE_TEST_WORKER_RECORD",path.toUtf8());
+        qputenv("BRICKSUITE_TEST_BOOLEAN_WORKER",mode.toUtf8());
         QElapsedTimer timer;timer.start();
-        const auto result=McutMeshBooleanService(QCoreApplication::applicationFilePath(),200).unite(a,b);
-        ok&=!result.ok()&&result.mesh.faces.empty()&&timer.elapsed()<4000;
-        ok&=result.error==(QByteArray(mode)=="timeout"?MeshBooleanError::ResourceLimitExceeded:MeshBooleanError::BackendFailure);
+        const auto result=McutMeshBooleanService(QCoreApplication::applicationFilePath(),mode=="timeout"?200:3000,
+            mode=="memory"?32ULL*1024*1024:BoundedGeometryWorker::MemoryBudgetBytes).unite(a,b);
+        const auto expected=mode=="success"?MeshBooleanError::None:
+            (mode=="timeout"||mode=="memory"?MeshBooleanError::ResourceLimitExceeded:MeshBooleanError::BackendFailure);
+        bool passed=result.error==expected&&timer.elapsed()<4000;
+        if(mode!="success")passed&=result.mesh.faces.empty();
+        QFile record(path);passed&=record.open(QIODevice::ReadOnly);
+        const auto lines=record.readAll().split('\n');
+        passed&=lines.size()==2&&!QDir(QString::fromUtf8(lines.value(0))).exists();
+#ifdef Q_OS_MACOS
+        errno=0;passed&=::kill(lines.value(1).toLongLong(),0)==-1&&errno==ESRCH;
+#endif
+        QTextStream(stdout)<<"Worker mode "<<mode<<": elapsed="<<timer.elapsed()<<" ms, cleanup="<<passed<<Qt::endl;
+        if(!passed)QTextStream(stderr)<<"FAIL worker mode "<<mode<<": "<<QString::fromStdString(result.message)<<Qt::endl;
+        ok&=passed;
     }
+    qunsetenv("BRICKSUITE_TEST_WORKER_RECORD");
     qunsetenv("BRICKSUITE_TEST_BOOLEAN_WORKER");
     ok&=!McutMeshBooleanService("missing-worker-executable").unite(a,b).ok();
     return ok;

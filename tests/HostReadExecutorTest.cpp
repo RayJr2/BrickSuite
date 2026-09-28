@@ -76,11 +76,11 @@ bool requestClient(BrickSuiteWebSocketClient& client, const QString& operation,
     return waitFor([&](QEventLoop& loop) {
         const QString id = client.sendRequest(operation, payload);
         QObject::connect(&client, &BrickSuiteWebSocketClient::requestCompleted, &loop,
-            [&](const QString& resultId, const QJsonObject& result) {
+            [&, id](const QString& resultId, const QJsonObject& result) {
                 if (resultId != id) return; *response = result; success = true; loop.quit();
             });
         QObject::connect(&client, &BrickSuiteWebSocketClient::requestFailed, &loop,
-            [&](const QString& resultId, const auto& error) {
+            [&, id](const QString& resultId, const auto& error) {
                 if (resultId != id) return;
                 std::fprintf(stderr, "Request %s failed: %s — %s\n",
                              qPrintable(operation), qPrintable(error.code),

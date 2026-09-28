@@ -12,11 +12,7 @@
 #include <queue>
 #include <cstring>
 #include <algorithm>
-#ifdef Q_OS_WIN
-#include <windows.h>
-#else
-#include <sys/resource.h>
-#endif
+#include "BoundedGeometryWorker.h"
 
 namespace PrintGeometry {
 namespace {
@@ -41,26 +37,6 @@ bool readMesh(QDataStream& s,PrintMesh* m,std::size_t maximumFaces)
     for(auto& f:m->faces)for(auto& v:f)s>>v;
     return s.status()==QDataStream::Ok;
 }
-bool constrainWorkerMemory()
-{
-    constexpr std::size_t bytes=512*1024*1024;
-#ifdef Q_OS_WIN
-    // The handle lives until process exit. No shared/application process joins it.
-    const HANDLE job=CreateJobObjectW(nullptr,nullptr);
-    if(!job)return false;
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-    limits.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_PROCESS_MEMORY;
-    limits.ProcessMemoryLimit=bytes;
-    if(!SetInformationJobObject(job,JobObjectExtendedLimitInformation,&limits,sizeof(limits))||
-       !AssignProcessToJobObject(job,GetCurrentProcess())){CloseHandle(job);return false;}
-    return true;
-#else
-    rlimit limit{};
-    if(getrlimit(RLIMIT_AS,&limit)!=0)return false;
-    limit.rlim_cur=std::min<rlim_t>(limit.rlim_cur,bytes);
-    return setrlimit(RLIMIT_AS,&limit)==0;
-#endif
-}
 QString summary(std::size_t i,const MeshAnalysisResult& a)
 {
     return QStringLiteral("Component %1: %2 vertices, %3 faces, %4 boundaries, %5 non-manifold edges, %6 non-manifold vertices, %7 degenerates, %8 duplicate faces, %9 self-intersections, oriented=%10, signed volume=%11 mm³.")
@@ -74,7 +50,7 @@ std::optional<int> LocalPrintableOverrideService::runUnionWorker(int argc,char**
     if(argc<2||std::strcmp(argv[1],WorkerArgument)!=0)return std::nullopt;
     if(argc!=3)return 2;
     QCoreApplication application(argc,argv);
-    if(!constrainWorkerMemory())return 3;
+    if(!BoundedGeometryWorker::constrainChild())return 3;
     try {
         const QDir directory(QString::fromLocal8Bit(argv[2]));
         QFile input(directory.filePath(QStringLiteral("input.bin")));
@@ -142,8 +118,15 @@ LocalPrintableOverrideService::NormalizationResult LocalPrintableOverrideService
     if(out.status()!=QDataStream::Ok||!input.flush()){result.diagnostic+=QStringLiteral(" Cannot flush union operands.");return finish();}input.close();
     QProcess process;process.setProgram(QCoreApplication::applicationFilePath());process.setArguments({QString::fromLatin1(WorkerArgument),directory.path()});
     process.setStandardOutputFile(QProcess::nullDevice());process.setStandardErrorFile(QProcess::nullDevice());
-    process.start();
-    if(!process.waitForFinished(DeadlineMilliseconds)){process.kill();process.waitForFinished(3000);result.diagnostic+=QStringLiteral(" Union worker failed to finish within 10 seconds; terminated, no override accepted.");return finish();}
+    const auto outcome=BoundedGeometryWorker::run(process,DeadlineMilliseconds);
+    if(outcome!=BoundedGeometryWorker::Outcome::Finished){
+        result.diagnostic+=outcome==BoundedGeometryWorker::Outcome::MemoryLimit
+            ?QStringLiteral(" Union worker exceeded its memory budget; resource-limited, no override accepted.")
+            :outcome==BoundedGeometryWorker::Outcome::TimedOut
+                ?QStringLiteral(" Union worker exceeded its 10-second deadline; terminated, no override accepted.")
+                :QStringLiteral(" Union worker could not start or establish memory supervision; no override accepted.");
+        return finish();
+    }
     result.elapsedMilliseconds=timer.elapsed();
     if(process.exitStatus()!=QProcess::NormalExit||process.exitCode()!=0){result.diagnostic+=QStringLiteral(" Union worker failed (exit %1); possible resource limit or backend failure; no override accepted.").arg(process.exitCode());return finish();}
     QFile output(QDir(directory.path()).filePath(QStringLiteral("output.bin")));

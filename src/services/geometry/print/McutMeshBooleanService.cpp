@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <vector>
 #include "McutWorkerProtocol.h"
+#include "BoundedGeometryWorker.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -124,12 +125,13 @@ MeshBooleanResult McutMeshBooleanService::runWorker(const PrintMesh& a,const Pri
     );
     QProcess process;process.setProgram(executable);process.setArguments({directory.path()});
     process.setStandardOutputFile(QProcess::nullDevice());process.setStandardErrorFile(QProcess::nullDevice());
-    process.start();
-    if(!process.waitForStarted(3000))return fail(MeshBooleanError::BackendFailure,QStringLiteral("MCUT worker unavailable: ")+process.errorString());
-    if(!process.waitForFinished(std::clamp(m_deadlineMilliseconds,1,DeadlineMilliseconds))){
-        process.kill();process.waitForFinished(3000);
+    const auto outcome=BoundedGeometryWorker::run(process,std::clamp(m_deadlineMilliseconds,1,DeadlineMilliseconds),m_memoryBudgetBytes);
+    if(outcome==BoundedGeometryWorker::Outcome::MemoryLimit)
+        return fail(MeshBooleanError::ResourceLimitExceeded,QStringLiteral("MCUT worker exceeded its memory budget; terminated without a result."));
+    if(outcome==BoundedGeometryWorker::Outcome::TimedOut)
         return fail(MeshBooleanError::ResourceLimitExceeded,QStringLiteral("MCUT worker exceeded its bounded deadline; terminated without a result."));
-    }
+    if(outcome!=BoundedGeometryWorker::Outcome::Finished)
+        return fail(MeshBooleanError::BackendFailure,QStringLiteral("MCUT worker unavailable or memory supervision failed: ")+process.errorString());
     if(process.exitStatus()!=QProcess::NormalExit||process.exitCode()!=0)
         return fail(MeshBooleanError::BackendFailure,QStringLiteral("MCUT worker failed (exit %1); backend crash or resource limit contained; no result accepted.").arg(process.exitCode()));
     QFile output(QDir(directory.path()).filePath(QStringLiteral("output.bin")));

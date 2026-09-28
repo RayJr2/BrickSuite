@@ -95,6 +95,7 @@
 #include "../common/SessionFileDialogDirectoryService.h"
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -241,6 +242,8 @@ BuildsWidget::BuildsWidget(
     m_buildTabs = new QTabWidget(this);
     auto* myBuildsPage = new QWidget(m_buildTabs);
     auto* mainLayout = new QVBoxLayout(myBuildsPage);
+    mainLayout->setContentsMargins(9, 9, 9, 9);
+    mainLayout->setSpacing(6);
     m_buildTabs->addTab(myBuildsPage, QStringLiteral("My Builds"));
     outerLayout->addWidget(m_buildTabs);
 
@@ -252,10 +255,25 @@ BuildsWidget::BuildsWidget(
     m_newBuildGroup->setChecked(true);
 
     auto* newBuildGroupLayout = new QVBoxLayout(m_newBuildGroup);
+    newBuildGroupLayout->setContentsMargins(8, 8, 8, 8);
 
     m_newBuildContent = new QWidget(m_newBuildGroup);
 
-    auto* formLayout = new QFormLayout(m_newBuildContent);
+    auto* newBuildColumns = new QHBoxLayout(m_newBuildContent);
+    newBuildColumns->setContentsMargins(0, 0, 0, 0);
+    auto* formLayout = new QFormLayout();
+    auto* detailsLayout = new QFormLayout();
+    formLayout->setVerticalSpacing(6);
+    detailsLayout->setVerticalSpacing(6);
+    // Native macOS forms otherwise center a narrow, non-growing field column.
+    formLayout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+    formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    formLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    detailsLayout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+    detailsLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    detailsLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    newBuildColumns->addLayout(formLayout, 1);
+    newBuildColumns->addLayout(detailsLayout, 1);
 
     m_typeCombo = new QComboBox(m_newBuildContent);
     TooltipPolicy::explain(m_typeCombo, tr("A Set uses catalog requirements; a MOC uses requirements you enter or import."));
@@ -291,10 +309,13 @@ BuildsWidget::BuildsWidget(
 
     formLayout->addRow("Inventory Mode:", m_inventoryModeCombo);
     formLayout->addRow("Manufacturer:", m_manufacturerCombo);
-    formLayout->addRow("Name:", m_nameEdit);
-    formLayout->addRow("Status:", m_statusCombo);
-    formLayout->addRow("Notes:", m_notesEdit);
-    formLayout->addRow(QString(), m_addButton);
+    detailsLayout->addRow("Name:", m_nameEdit);
+    detailsLayout->addRow("Status:", m_statusCombo);
+    detailsLayout->addRow("Notes:", m_notesEdit);
+    auto* addBuildLayout = new QHBoxLayout();
+    addBuildLayout->addWidget(m_addButton);
+    addBuildLayout->addStretch();
+    detailsLayout->addRow(QString(), addBuildLayout);
 
     newBuildGroupLayout->addWidget(m_newBuildContent);
     mainLayout->addWidget(m_newBuildGroup);
@@ -303,6 +324,8 @@ BuildsWidget::BuildsWidget(
 
     auto* existingGroup = new QGroupBox("Builds", this);
     auto* existingLayout = new QVBoxLayout(existingGroup);
+    existingLayout->setContentsMargins(8, 8, 8, 8);
+    existingLayout->setSpacing(6);
     auto* existingHeaderLayout = new QHBoxLayout();
 
     existingHeaderLayout->addStretch(1);
@@ -330,6 +353,7 @@ BuildsWidget::BuildsWidget(
     m_buildsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_buildsTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_buildsTable->verticalHeader()->setVisible(false);
+    m_buildsTable->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
 
     m_buildsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_buildsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
@@ -344,7 +368,10 @@ BuildsWidget::BuildsWidget(
 
     auto* requirementsGroup = new QGroupBox("Build Requirements", this);
     auto* requirementsLayout = new QVBoxLayout(requirementsGroup);
-    auto* requirementsHeaderLayout = new QHBoxLayout();
+    requirementsLayout->setContentsMargins(8, 8, 8, 8);
+    requirementsLayout->setSpacing(6);
+    auto* requirementsHeaderLayout = new QGridLayout();
+    requirementsHeaderLayout->setVerticalSpacing(6);
 
     m_requirementsLabel = new QLabel("Select a build to view its requirements.", requirementsGroup);
     m_loadSetFromRebrickableButton = new QPushButton("Load Set from Rebrickable", requirementsGroup);
@@ -362,15 +389,17 @@ BuildsWidget::BuildsWidget(
     m_interactivePullButton = new QPushButton("Pull Build...", requirementsGroup);
     TooltipPolicy::explain(m_interactivePullButton, tr("Record pieces physically pulled for this Build against their allocations."));
 
-    requirementsHeaderLayout->addWidget(m_requirementsLabel, 1);
-    requirementsHeaderLayout->addWidget(m_loadSetFromRebrickableButton);
-    requirementsHeaderLayout->addWidget(m_importMocPartsButton);
-    requirementsHeaderLayout->addWidget(m_allocateAvailableButton);
-    requirementsHeaderLayout->addWidget(m_exportMissingPartsButton);
-    requirementsHeaderLayout->addWidget(m_procureMissingPartsButton);
-    requirementsHeaderLayout->addWidget(m_exportPullListButton);
-    requirementsHeaderLayout->addWidget(m_importPullListButton);
-    requirementsHeaderLayout->addWidget(m_interactivePullButton);
+    m_requirementsLabel->setWordWrap(true);
+    requirementsLayout->addWidget(m_requirementsLabel);
+    // Keep action text at its native size hint without requiring a desktop-wide row.
+    requirementsHeaderLayout->addWidget(m_loadSetFromRebrickableButton, 0, 0);
+    requirementsHeaderLayout->addWidget(m_importMocPartsButton, 0, 1);
+    requirementsHeaderLayout->addWidget(m_allocateAvailableButton, 0, 2);
+    requirementsHeaderLayout->addWidget(m_exportMissingPartsButton, 0, 3);
+    requirementsHeaderLayout->addWidget(m_procureMissingPartsButton, 1, 0);
+    requirementsHeaderLayout->addWidget(m_exportPullListButton, 1, 1);
+    requirementsHeaderLayout->addWidget(m_importPullListButton, 1, 2);
+    requirementsHeaderLayout->addWidget(m_interactivePullButton, 1, 3);
 
     requirementsLayout->addLayout(requirementsHeaderLayout);
 
@@ -427,6 +456,7 @@ BuildsWidget::BuildsWidget(
     m_requirementsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_requirementsTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_requirementsTable->verticalHeader()->setVisible(false);
+    m_requirementsTable->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
 
     m_requirementsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_requirementsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);

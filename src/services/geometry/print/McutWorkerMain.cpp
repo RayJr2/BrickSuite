@@ -3,41 +3,14 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
-#include <algorithm>
-#ifdef Q_OS_WIN
-#include <windows.h>
-#else
-#include <sys/resource.h>
-#endif
+#include "BoundedGeometryWorker.h"
 
-namespace {
-bool constrainMemory()
-{
-    constexpr std::size_t bytes=512*1024*1024;
-#ifdef Q_OS_WIN
-    SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX);
-    const HANDLE job=CreateJobObjectW(nullptr,nullptr);
-    if(!job)return false;
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-    limits.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_PROCESS_MEMORY;
-    limits.ProcessMemoryLimit=bytes;
-    if(!SetInformationJobObject(job,JobObjectExtendedLimitInformation,&limits,sizeof(limits))||
-       !AssignProcessToJobObject(job,GetCurrentProcess())){CloseHandle(job);return false;}
-    return true; // Keep the job handle alive until process exit.
-#else
-    rlimit limit{};
-    if(getrlimit(RLIMIT_AS,&limit)!=0)return false;
-    limit.rlim_cur=std::min<rlim_t>(limit.rlim_cur,bytes);
-    return setrlimit(RLIMIT_AS,&limit)==0;
-#endif
-}
-}
 int main(int argc,char** argv)
 {
     using namespace PrintGeometry;
     using namespace McutWorkerProtocol;
     QCoreApplication application(argc,argv);
-    if(argc!=2||!constrainMemory())return 2;
+    if(argc!=2||!BoundedGeometryWorker::constrainChild())return 2;
     try {
         const QDir directory(QString::fromLocal8Bit(argv[1]));
         QFile input(directory.filePath(QStringLiteral("input.bin")));

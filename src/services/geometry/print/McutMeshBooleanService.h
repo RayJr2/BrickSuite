@@ -9,8 +9,8 @@ public:
     explicit McutMeshBooleanService(Execution execution=Execution::InProcess)
         : m_isolated(execution==Execution::Isolated) {}
     // Optional executable/deadline seam for bounded worker transport tests.
-    explicit McutMeshBooleanService(QString workerExecutable,int deadlineMilliseconds=30000)
-        : m_workerExecutable(std::move(workerExecutable)),m_deadlineMilliseconds(deadlineMilliseconds),m_isolated(true) {}
+    explicit McutMeshBooleanService(QString workerExecutable,int deadlineMilliseconds=30000,quint64 memoryBudgetBytes=512ULL*1024*1024)
+        : m_workerExecutable(std::move(workerExecutable)),m_deadlineMilliseconds(deadlineMilliseconds),m_memoryBudgetBytes(memoryBudgetBytes),m_isolated(true) {}
     MeshBooleanResult unite(const PrintMesh& source,const PrintMesh& additive) override;
     MeshBooleanResult subtract(const PrintMesh& source,const PrintMesh& passage) override;
     QString versionIdentity() const override;
@@ -22,6 +22,7 @@ private:
     MeshBooleanResult runWorker(const PrintMesh&,const PrintMesh&,bool subtract) const;
     QString m_workerExecutable;
     int m_deadlineMilliseconds=30000;
+    quint64 m_memoryBudgetBytes=512ULL*1024*1024;
     bool m_isolated=false;
 };
 }
