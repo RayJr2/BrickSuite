@@ -6,6 +6,7 @@
  * This file is part of BrickSuite.
  */
 
+#include "../common/TooltipPolicy.h"
 #include "PartReferenceDialog.h"
 #include "AddPartReferenceDialog.h"
 
@@ -281,9 +282,13 @@ void PartReferenceDialog::initializeUi()
 
     m_copyButton = new QPushButton(tr("Copy Part #"), this);
     m_sendButton = new QPushButton(tr("Send to Add Inventory"), this);
+    TooltipPolicy::explain(m_sendButton, tr("Send the selected Part to Add Inventory. No Inventory is added until you save there."));
     m_findSetsButton = new QPushButton(tr("Find Sets Using This Part"), this);
+    TooltipPolicy::explain(m_findSetsButton, tr("Find catalog Sets containing the selected Part."));
     m_addReferenceButton = new QPushButton(tr("Add Part to Reference..."), this);
+    TooltipPolicy::explain(m_addReferenceButton, tr("Add a user customization to Part Reference without changing catalog Part identities."));
     m_removeReferenceButton = new QPushButton(tr("Remove from Part Reference"), this);
+    TooltipPolicy::explain(m_removeReferenceButton, tr("Remove a user customization; built-in references and catalog Parts are preserved."));
     m_copyButton->setEnabled(false);
     m_sendButton->setEnabled(false);
     m_findSetsButton->setEnabled(false);
@@ -292,8 +297,8 @@ void PartReferenceDialog::initializeUi()
         m_addReferenceButton->setEnabled(m_remoteMutations && m_remoteMutations->isAvailableFor(
             QStringLiteral("partReference.customizations.add")));
         m_removeReferenceButton->setEnabled(false);
-        m_addReferenceButton->setToolTip(tr("Add a shared user customization stored by the BrickSuite Host."));
-        m_removeReferenceButton->setToolTip(tr("Only Host-backed user customizations can be removed."));
+        TooltipPolicy::explain(m_addReferenceButton, tr("Add a shared user customization stored by the BrickSuite Host."));
+        TooltipPolicy::explain(m_removeReferenceButton, tr("Only Host-backed user customizations can be removed."));
     }
 
     selectedRow->addWidget(m_selectedLabel, 1);
@@ -833,7 +838,8 @@ QToolButton* PartReferenceDialog::createPartCard(QWidget* parent, const PartRefe
     button->setMinimumSize(145, 135);
     button->setMaximumWidth(175);
     button->setText(QString("%1\n%2").arg(partNumber, partName));
-    button->setToolTip(QString("%1 — %2").arg(partNumber, partName));
+    button->setAccessibleName(QString("%1 — %2").arg(partNumber, partName));
+    button->setToolTip(button->accessibleName());
     button->setProperty("partNumber", partNumber);
     button->setProperty("partName", partName);
     button->setProperty("userEntryId", entry.userEntryId);

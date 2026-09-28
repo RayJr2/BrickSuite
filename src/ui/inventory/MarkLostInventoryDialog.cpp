@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "MarkLostInventoryDialog.h"
 
 #include "../../models/Color.h"
@@ -43,6 +44,7 @@ MarkLostInventoryDialog::MarkLostInventoryDialog(int inventoryRecordId, QWidget*
     : QDialog(parent)
     , m_inventoryRecordId(inventoryRecordId)
 {
+    HelpManager::setContextTopic(this, HelpTopic::LostFound);
     setWindowTitle("Mark Inventory Lost");
 
     resize(500, 300);

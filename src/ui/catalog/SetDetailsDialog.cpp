@@ -18,6 +18,8 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "SetDetailsDialog.h"
 #include "../collection/CatalogCollectionDialog.h"
 #include "../collection/RemoteCollectionMutationDialog.h"
@@ -64,6 +66,7 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
     , m_setCatalogId(setCatalogId)
     , m_workspaceContext(workspaceContext), m_remoteReads(remoteReads), m_remoteMutations(remoteMutations)
 {
+    HelpManager::setContextTopic(this, HelpTopic::SetsCatalog);
     setWindowTitle("Set Details");
 
     resize(960, 850);
@@ -548,7 +551,7 @@ void SetDetailsDialog::loadComposition()
                 .arg(composition.parts.size()).arg(m_requiredPieces).arg(m_sparePieces));
     }
     m_createBuildButton->setEnabled(m_requiredPieces > 0);
-    m_createBuildButton->setToolTip(m_requiredPieces > 0
+    TooltipPolicy::explain(m_createBuildButton, m_requiredPieces > 0
         ? QString() : QStringLiteral("Get or import a parts list containing required pieces first."));
 }
 

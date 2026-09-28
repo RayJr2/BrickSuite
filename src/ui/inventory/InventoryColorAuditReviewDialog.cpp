@@ -1,3 +1,4 @@
+#include "../help/HelpManager.h"
 #include "InventoryColorAuditReviewDialog.h"
 
 #include "EditInventoryDialog.h"
@@ -28,6 +29,7 @@ InventoryColorAuditReviewDialog::InventoryColorAuditReviewDialog(
     const QString& fileName, WorkspaceContext& workspaceContext, QWidget* parent)
     : QDialog(parent), m_workspaceContext(workspaceContext)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Inventory);
     setWindowTitle(QStringLiteral("Inventory Color Audit Review"));
     setWindowModality(Qt::NonModal);
     resize(820, 650);

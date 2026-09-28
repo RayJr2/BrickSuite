@@ -4,6 +4,8 @@
  * Copyright (C) 2026 RF StateSide, LLC
  */
 
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "MoveInventoryDialog.h"
 
 #include "../../app/WorkspaceContext.h"
@@ -39,6 +41,7 @@ MoveInventoryDialog::MoveInventoryDialog(int inventoryRecordId,
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Inventory);
     setWindowTitle("Move Inventory");
     resize(550, 300);
 
@@ -48,6 +51,7 @@ MoveInventoryDialog::MoveInventoryDialog(int inventoryRecordId,
     m_currentStorageLabel = new QLabel(this);
     m_availableLabel = new QLabel(this);
     m_destinationCombo = new QComboBox(this);
+    TooltipPolicy::explain(m_destinationCombo, tr("Move the selected quantity to an active leaf Storage location. Movement history is retained."));
     m_quantitySpin = new QSpinBox(this);
     m_quantitySpin->setMinimum(1);
 

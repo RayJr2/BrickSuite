@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2026 RF StateSide, LLC
  */
+#include "../help/HelpManager.h"
 #include "BrickLinkWantedListResultDialog.h"
 
 #include <QApplication>
@@ -35,6 +36,7 @@ BrickLinkWantedListResultDialog::BrickLinkWantedListResultDialog(
     , m_buildNumber(buildNumber)
     , m_buildName(buildName)
 {
+    HelpManager::setContextTopic(this, HelpTopic::MissingParts);
     setWindowTitle(QStringLiteral("BrickLink Wanted List XML"));
     resize(900, 680);
 

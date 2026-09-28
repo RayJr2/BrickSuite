@@ -1,3 +1,5 @@
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "WhatCanIBuildWidget.h"
 
 #include "../../app/WorkspaceContext.h"
@@ -40,6 +42,7 @@ WhatCanIBuildWidget::WhatCanIBuildWidget(WorkspaceContext& workspaceContext, QWi
     : QWidget(parent), m_workspaceContext(workspaceContext), m_remoteReads(remoteReads),
       m_remoteCollection(remoteCollection)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Builds);
     m_service = new PartUsageDiscoveryService(DatabaseManager::instance().databasePath(), this);
     m_inventoryService = new InventoryBuildabilityService(DatabaseManager::instance().databasePath(), this);
     m_images = new SetImageService(this);
@@ -48,25 +51,28 @@ WhatCanIBuildWidget::WhatCanIBuildWidget(WorkspaceContext& workspaceContext, QWi
     intro->setWordWrap(true); layout->addWidget(intro);
 
     auto* modeRow=new QHBoxLayout;
-    m_modeCombo=new QComboBox(this);m_modeCombo->addItem(QStringLiteral("From My Inventory"));m_modeCombo->addItem(QStringLiteral("Using Selected Parts"));
+    m_modeCombo=new QComboBox(this);
+    TooltipPolicy::explain(m_modeCombo, tr("Evaluate available pieces, or discover Sets containing selected Parts. Results are advisory and do not reserve Inventory."));m_modeCombo->addItem(QStringLiteral("From My Inventory"));m_modeCombo->addItem(QStringLiteral("Using Selected Parts"));
     modeRow->addWidget(new QLabel(QStringLiteral("Mode:"),this));modeRow->addWidget(m_modeCombo);modeRow->addStretch();layout->addLayout(modeRow);
     m_remoteInventoryNotice=new QLabel(QStringLiteral("Inventory buildability is currently available on the Host. Selected Parts discovery remains available on this Remote."),this);m_remoteInventoryNotice->setWordWrap(true);m_remoteInventoryNotice->setVisible(m_remoteReads!=nullptr);layout->addWidget(m_remoteInventoryNotice);
     m_modeStack=new QStackedWidget(this);layout->addWidget(m_modeStack);
 
     auto* inventoryPage=new QWidget(this);auto* inventoryLayout=new QVBoxLayout(inventoryPage);inventoryLayout->setContentsMargins(0,0,0,0);
     auto* inventoryFilters=new QHBoxLayout;
-    m_minimumSpin=new QSpinBox(this);m_minimumSpin->setRange(0,100);m_minimumSpin->setSuffix(QStringLiteral("%"));m_minimumSpin->setValue(UserSettings::instance().whatCanIBuildMinimumBuildability());
+    m_minimumSpin=new QSpinBox(this);
+    TooltipPolicy::explain(m_minimumSpin, tr("Minimum percentage of required pieces available for a Set. This is advisory, not an allocation."));m_minimumSpin->setRange(0,100);m_minimumSpin->setSuffix(QStringLiteral("%"));m_minimumSpin->setValue(UserSettings::instance().whatCanIBuildMinimumBuildability());
     m_minimumSetPartsSpin=new QSpinBox(this);m_minimumSetPartsSpin->setRange(1,10000);m_minimumSetPartsSpin->setValue(UserSettings::instance().whatCanIBuildMinimumSetParts());
     m_yearFromSpin=new QSpinBox(this);m_yearFromSpin->setRange(0,3000);m_yearFromSpin->setSpecialValueText(QStringLiteral("Any"));
     m_yearToSpin=new QSpinBox(this);m_yearToSpin->setRange(0,3000);m_yearToSpin->setSpecialValueText(QStringLiteral("Any"));
     m_themeCombo=new QComboBox(this);loadThemes();
     m_fullyOnly=new QCheckBox(QStringLiteral("Fully buildable only"),this);
-    m_includeCollection=new QCheckBox(QStringLiteral("Include eligible Collection Sets"),this);m_includeCollection->setChecked(true);
+    m_includeCollection=new QCheckBox(QStringLiteral("Include eligible Collection Sets"),this);
+    TooltipPolicy::explain(m_includeCollection, tr("Include active, complete, opted-in Collection Sets with local composition as advisory piece sources. They are not reserved or consumed."));m_includeCollection->setChecked(true);
     m_fullyFirst=new QCheckBox(QStringLiteral("Fully buildable first"),this);m_fullyFirst->setChecked(UserSettings::instance().whatCanIBuildFullyBuildableFirst());
     inventoryFilters->addWidget(new QLabel(QStringLiteral("Minimum:"),this));inventoryFilters->addWidget(m_minimumSpin);inventoryFilters->addWidget(new QLabel(QStringLiteral("Minimum Set Parts:"),this));inventoryFilters->addWidget(m_minimumSetPartsSpin);inventoryFilters->addWidget(new QLabel(QStringLiteral("Year From:"),this));inventoryFilters->addWidget(m_yearFromSpin);inventoryFilters->addWidget(new QLabel(QStringLiteral("To:"),this));inventoryFilters->addWidget(m_yearToSpin);inventoryFilters->addWidget(new QLabel(QStringLiteral("Theme:"),this));inventoryFilters->addWidget(m_themeCombo,1);inventoryLayout->addLayout(inventoryFilters);
     auto* inventoryOptions=new QHBoxLayout;inventoryOptions->addWidget(m_fullyOnly);inventoryOptions->addWidget(m_includeCollection);inventoryOptions->addWidget(m_fullyFirst);inventoryOptions->addStretch();inventoryLayout->addLayout(inventoryOptions);
     auto* inventorySearchRow=new QHBoxLayout;m_inventorySearchEdit=new QLineEdit(this);m_inventorySearchEdit->setPlaceholderText(QStringLiteral("Optional Set number or name"));m_inventorySearchButton=new QPushButton(QStringLiteral("Evaluate Buildability"),this);inventorySearchRow->addWidget(new QLabel(QStringLiteral("Search:"),this));inventorySearchRow->addWidget(m_inventorySearchEdit,1);inventorySearchRow->addWidget(m_inventorySearchButton);inventoryLayout->addLayout(inventorySearchRow);
-    m_collectionStatus=new QLabel(QStringLiteral("Collection sources are evaluated from active, complete, opted-in Set items."),this);m_collectionStatus->setToolTip(QStringLiteral("Collection Sets must be active, Complete, opted in, and have local composition to contribute advisory pieces."));inventoryLayout->addWidget(m_collectionStatus);
+    m_collectionStatus=new QLabel(QStringLiteral("Collection sources are evaluated from active, complete, opted-in Set items."),this);TooltipPolicy::explain(m_collectionStatus, QStringLiteral("Collection Sets must be active, Complete, opted in, and have local composition to contribute advisory pieces."));inventoryLayout->addWidget(m_collectionStatus);
     m_modeStack->addWidget(inventoryPage);
 
     auto* selectedPage=new QWidget(this);auto* selectedLayout=new QVBoxLayout(selectedPage);selectedLayout->setContentsMargins(0,0,0,0);
@@ -90,7 +96,8 @@ WhatCanIBuildWidget::WhatCanIBuildWidget(WorkspaceContext& workspaceContext, QWi
 
     auto* filters = new QHBoxLayout;
     m_searchEdit = new QLineEdit(this); m_searchEdit->setPlaceholderText(QStringLiteral("Set number or name"));
-    m_matchCombo = new QComboBox(this); m_matchCombo->addItem(QStringLiteral("All Selected Parts"),int(PartUsageMatchMode::All)); m_matchCombo->addItem(QStringLiteral("Any Selected Part"),int(PartUsageMatchMode::Any));
+    m_matchCombo = new QComboBox(this);
+    TooltipPolicy::explain(m_matchCombo, tr("Require all selected Part criteria, or accept Sets matching any selected criterion.")); m_matchCombo->addItem(QStringLiteral("All Selected Parts"),int(PartUsageMatchMode::All)); m_matchCombo->addItem(QStringLiteral("Any Selected Part"),int(PartUsageMatchMode::Any));
     if (!UserSettings::instance().whatCanIBuildRequireAllParts()) m_matchCombo->setCurrentIndex(1);
     m_pageSizeCombo = new QComboBox(this); for(int n:{100,250,500})m_pageSizeCombo->addItem(QString::number(n),n);
     m_pageSizeCombo->setCurrentIndex(m_pageSizeCombo->findData(UserSettings::instance().whatCanIBuildRowsPerPage()));

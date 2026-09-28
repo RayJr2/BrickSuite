@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "SetsCatalogWidget.h"
 #include "SetDetailsDialog.h"
 #include "../helpers/LargeViewLoadingGuard.h"
@@ -52,6 +53,7 @@ SetsCatalogWidget::SetsCatalogWidget(WorkspaceContext& workspaceContext, QWidget
     : QWidget(parent), m_workspaceContext(workspaceContext), m_remoteReads(remoteReads),
       m_remoteMutations(remoteMutations)
 {
+    HelpManager::setContextTopic(this, HelpTopic::SetsCatalog);
     auto* mainLayout = new QVBoxLayout(this);
 
     auto* titleLayout = new QHBoxLayout();
@@ -274,6 +276,7 @@ void SetsCatalogWidget::searchSets(const QString& loadingMessage)
         auto* partsItem = new QTableWidgetItem(QString::number(set.numberOfParts()));
 
         auto* actionCombo = new QComboBox(m_resultsTable);
+        actionCombo->setAccessibleName(tr("Actions for this row"));
 
         actionCombo->addItem("Actions...", QString());
 

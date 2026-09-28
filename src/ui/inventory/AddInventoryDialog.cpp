@@ -18,6 +18,8 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "AddInventoryDialog.h"
 #include "AddInventoryDialogButtonState.h"
 #include "AddInventoryColorSelection.h"
@@ -86,6 +88,7 @@ AddInventoryDialog::AddInventoryDialog(int partId,
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Inventory);
     m_quickEntryMode = false;
 
     initializeUi();
@@ -199,6 +202,7 @@ void AddInventoryDialog::initializeUi()
         m_partSearchEdit->setCompleter(m_partCompleter);
 
         m_rememberPartCheck = new QCheckBox("Remember Part", this);
+        TooltipPolicy::explain(m_rememberPartCheck, tr("Keep the resolved Part selected after saving, for another Color or Condition of the same Part."));
 
         auto* partRowWidget = new QWidget(this);
         auto* partRowLayout = new QHBoxLayout(partRowWidget);
@@ -217,7 +221,7 @@ void AddInventoryDialog::initializeUi()
         m_tryBrickLinkIdCheck = new QCheckBox("Try BrickLink ID", this);
         m_tryBrickLinkIdCheck->setChecked(
             UserSettings::instance().addInventoryTryBrickLinkId());
-        m_tryBrickLinkIdCheck->setToolTip(
+        TooltipPolicy::explain(m_tryBrickLinkIdCheck,
             "If normal resolution fails, try the entered value as a BrickLink "
             "external part ID and cross-reference it to the local Rebrickable part.");
 
@@ -243,10 +247,13 @@ void AddInventoryDialog::initializeUi()
     m_colorCombo = new QComboBox(this);
 
     m_showAllColorsCheck = new QCheckBox("Show all colors", this);
+    TooltipPolicy::explain(m_showAllColorsCheck, tr("Show all catalog Colors instead of only Colors known for this Part. This does not confirm that the combination was produced."));
 
     m_storageCombo = new QComboBox(this);
+    TooltipPolicy::explain(m_storageCombo, tr("Choose an active leaf Storage location for these physical Parts."));
 
     m_manufacturerCombo = new QComboBox(this);
+    TooltipPolicy::explain(m_manufacturerCombo, tr("Record who made these physical Parts; this does not change their catalog identity."));
 
     m_conditionCombo = new QComboBox(this);
 
@@ -264,6 +271,7 @@ void AddInventoryDialog::initializeUi()
     m_ownershipCombo->addItem("Owned");
 
     m_keepOpenCheck = new QCheckBox("Keep Open", this);
+    TooltipPolicy::explain(m_keepOpenCheck, tr("Keep this window open after a successful add so you can enter another Part."));
 
     m_keepOpenCheck->setVisible(m_quickEntryMode);
 

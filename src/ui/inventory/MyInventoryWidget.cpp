@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "MyInventoryWidget.h"
 #include "AddInventoryDialog.h"
 #include "EditInventoryDialog.h"
@@ -109,6 +110,7 @@ MyInventoryWidget::MyInventoryWidget(
           [this] { searchInventory(); },
           [this] { emit inventoryChanged(); })
 {
+    HelpManager::setContextTopic(this, HelpTopic::Inventory);
     auto* mainLayout =
         new QVBoxLayout(this);
 
@@ -1036,6 +1038,7 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
         const int colorId = result.colorId;
         const int manufacturerId = result.manufacturerId;
         auto* actionCombo = new QComboBox(m_resultsTable);
+        actionCombo->setAccessibleName(tr("Actions for this row"));
 
         actionCombo->addItem("Actions...");
         if (m_remoteReads)

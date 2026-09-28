@@ -1,4 +1,5 @@
 /* BrickSuite - The Digital Twin Platform for Your Brick Workshop */
+#include "../help/HelpManager.h"
 #include "AddPartReferenceDialog.h"
 #include "../../repositories/PartRepository.h"
 #include "../../services/parts/PartReferenceCustomizationService.h"
@@ -26,6 +27,7 @@ AddPartReferenceDialog::AddPartReferenceDialog(
       m_customizationService(customizationService), m_remoteMutations(remoteMutations),
       m_remoteSession(remoteSession)
 {
+    HelpManager::setContextTopic(this, HelpTopic::PartReference);
     if (m_remoteSession) {
         const auto snapshot=m_remoteSession->snapshot();
         m_sessionGeneration=snapshot.sessionGeneration;

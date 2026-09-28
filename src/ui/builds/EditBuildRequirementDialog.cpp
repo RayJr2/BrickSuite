@@ -10,6 +10,7 @@
  * published by the Free Software Foundation, version 3 of the License.
  */
 
+#include "../help/HelpManager.h"
 #include "EditBuildRequirementDialog.h"
 
 #include "../../models/Build.h"
@@ -44,6 +45,7 @@ EditBuildRequirementDialog::EditBuildRequirementDialog(int requirementId, QWidge
     : QDialog(parent)
     , m_requirementId(requirementId)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Builds);
     setWindowTitle("Edit Build Requirement");
     setModal(true);
     resize(520, 360);

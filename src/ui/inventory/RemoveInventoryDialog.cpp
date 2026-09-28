@@ -4,6 +4,7 @@
  * Copyright (C) 2026 RF StateSide, LLC
  */
 
+#include "../help/HelpManager.h"
 #include "RemoveInventoryDialog.h"
 
 #include "../../models/Color.h"
@@ -30,6 +31,7 @@ RemoveInventoryDialog::RemoveInventoryDialog(int inventoryRecordId, QWidget* par
     : QDialog(parent)
     , m_inventoryRecordId(inventoryRecordId)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Inventory);
     setWindowTitle("Remove Inventory Entry");
     resize(560, 220);
 

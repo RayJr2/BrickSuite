@@ -4,6 +4,8 @@
  * Copyright (C) 2026 RF StateSide, LLC
  */
 
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "CorrectInventoryDialog.h"
 
 #include "../../app/WorkspaceContext.h"
@@ -39,6 +41,7 @@ CorrectInventoryDialog::CorrectInventoryDialog(int inventoryRecordId,
     , m_inventoryRecordId(inventoryRecordId)
     , m_workspaceContext(workspaceContext)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Inventory);
     setWindowTitle("Correct Inventory Entry");
     resize(640, 280);
 
@@ -49,6 +52,7 @@ CorrectInventoryDialog::CorrectInventoryDialog(int inventoryRecordId,
     m_contextLabel->setWordWrap(true);
 
     m_partSearchEdit = new QLineEdit(this);
+    TooltipPolicy::explain(m_partSearchEdit, tr("Resolve the correct catalog Part for this Inventory entry. This corrects its identity rather than moving it."));
     m_partSearchEdit->setPlaceholderText("Search by Part Number or Name");
 
     m_searchModel = new QStandardItemModel(this);

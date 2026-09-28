@@ -116,15 +116,6 @@ QString HelpManager::title(HelpTopic topic)
     return topicInfo(topic).title;
 }
 
-void HelpManager::setContextTopic(QWidget* window, HelpTopic topic,
-                                  const QString& anchor)
-{
-    if (window) {
-        window->setProperty("brickSuiteHelpTopic", static_cast<int>(topic));
-        window->setProperty("brickSuiteHelpAnchor", anchor);
-    }
-}
-
 std::optional<HelpTopic> HelpManager::contextTopic(const QWidget* window)
 {
     if (!window)

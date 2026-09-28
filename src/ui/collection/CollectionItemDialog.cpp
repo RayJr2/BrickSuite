@@ -1,3 +1,4 @@
+#include "../common/TooltipPolicy.h"
 #include "CollectionItemDialog.h"
 
 #include "../help/HelpManager.h"
@@ -116,7 +117,7 @@ CollectionItemDialog::CollectionItemDialog(int collectionItemId, QWidget* parent
     if (item.type == CollectionItemType::Set) {
         m_allowPartsSourceCheck = new QCheckBox(QStringLiteral("Consider for What Can I Build"), this);
         m_allowPartsSourceCheck->setChecked(item.allowPartsSource);
-        m_allowPartsSourceCheck->setToolTip(QStringLiteral("Use this complete Set as an advisory piece source. BrickSuite will not reserve or consume it."));
+        TooltipPolicy::explain(m_allowPartsSourceCheck, QStringLiteral("Use this complete Set as an advisory piece source. BrickSuite will not reserve or consume it."));
         form->addRow("Buildability:", m_allowPartsSourceCheck);
     }
     form->addRow("Collection Location:", m_locationCombo);

@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../common/TooltipPolicy.h"
 #include "SettingsDialog.h"
 
 #include "../../app/WorkspaceContext.h"
@@ -82,6 +83,7 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
     , m_networkManager(networkManager)
     , m_automaticBackupService(automaticBackupService)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Settings);
     setWindowTitle("BrickSuite Settings");
 
     resize(600, 500);
@@ -96,9 +98,11 @@ SettingsDialog::SettingsDialog(WorkspaceContext& workspaceContext,
     helpAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
 
     connect(helpAction, &QAction::triggered, this, [this]() {
-        const bool modelsTab = m_tabWidget
-            && m_tabWidget->tabText(m_tabWidget->currentIndex()) == QStringLiteral("3D Models");
-        HelpManager::showTopic(modelsTab ? HelpTopic::LDrawModels : HelpTopic::Settings, this);
+        auto context = HelpManager::context(QApplication::focusWidget());
+        if (!context || context->topic == HelpTopic::Settings)
+            context = HelpManager::context(m_tabWidget->currentWidget());
+        HelpManager::showTopic(context ? context->topic : HelpTopic::Settings,
+                               context ? context->anchor : QString(), this);
     });
 
     addAction(helpAction);
@@ -501,6 +505,7 @@ void SettingsDialog::saveSettings()
 
     settings.setTheme(theme);
     settings.setExplanatoryTooltipsEnabled(m_explanatoryTooltipsCheck->isChecked());
+    TooltipPolicy::preferenceChanged();
     settings.setSharedDataSource(sharedDataSource);
     settings.setBrickSuiteServerEnabled(m_serverEnabledCheck->isChecked());
     settings.setBrickSuiteServerBindAddress(m_serverBindCombo->currentData().toString());
@@ -616,6 +621,7 @@ void SettingsDialog::buildDatabaseBackupTab()
     auto* form = new QFormLayout(group);
 
     m_automaticBackupEnabledCheck = new QCheckBox("Enable automatic database backups", group);
+    TooltipPolicy::explain(m_automaticBackupEnabledCheck, tr("Create scheduled backups while BrickSuite is running. Review the destination and retention settings below."));
     m_automaticBackupEnabledCheck->setObjectName("automaticBackupEnabledCheck");
     form->addRow(m_automaticBackupEnabledCheck);
 
@@ -645,7 +651,7 @@ void SettingsDialog::buildDatabaseBackupTab()
     m_backupRetentionSpin = new QSpinBox(group);
     m_backupRetentionSpin->setRange(1, 365);
     m_backupRetentionSpin->setObjectName("automaticBackupRetentionSpin");
-    m_backupRetentionSpin->setToolTip(
+    TooltipPolicy::explain(m_backupRetentionSpin,
         "Applies only to automatic backups in the current schema-version folder. "
         "Manual backups and previous schema-version folders are never deleted.");
     form->addRow("Retain last:", m_backupRetentionSpin);
@@ -671,6 +677,7 @@ void SettingsDialog::buildDatabaseBackupTab()
     form->addRow(m_backupNowButton);
     layout->addWidget(group);
     layout->addStretch();
+    HelpManager::setContextTopic(tab, HelpTopic::BackupRestore);
     m_tabWidget->addTab(tab, "Database Backup");
 
     connect(browseButton, &QPushButton::clicked, this, &SettingsDialog::browseBackupRoot);
@@ -798,7 +805,7 @@ void SettingsDialog::buildGeneralTab()
                                      static_cast<int>(SharedDataSource::ThisComputer));
     m_sharedDataSourceCombo->addItem("BrickSuite Host",
                                      static_cast<int>(SharedDataSource::BrickSuiteHost));
-    m_sharedDataSourceCombo->setToolTip(
+    TooltipPolicy::explain(m_sharedDataSourceCombo,
         "Select where shared workshop data comes from. Changes take effect after restart.");
 
     auto* sharedDataDescription = new QLabel(
@@ -834,6 +841,7 @@ void SettingsDialog::buildServerTab()
     auto* serverGroup = new QGroupBox(tr("BrickSuite Server (This Computer)"), thisComputerPage);
     auto* serverForm = new QFormLayout(serverGroup);
     m_serverEnabledCheck = new QCheckBox(tr("Enable BrickSuite Server"), serverGroup);
+    TooltipPolicy::explain(m_serverEnabledCheck, tr("Allow authorized Remote devices to use this computer as their BrickSuite Host."));
     m_serverBindCombo = new QComboBox(serverGroup);
     m_serverBindCombo->addItem(tr("Loopback only — 127.0.0.1"), QStringLiteral("127.0.0.1"));
     m_serverBindCombo->addItem(tr("Loopback only — ::1"), QStringLiteral("::1"));
@@ -885,7 +893,9 @@ void SettingsDialog::buildServerTab()
     m_maintenanceStateLabel = new QLabel(serverGroup);
     m_maintenanceCountersLabel = new QLabel(serverGroup);
     m_enterMaintenanceButton = new QPushButton(tr("Enter Maintenance..."), serverGroup);
+    TooltipPolicy::explain(m_enterMaintenanceButton, tr("Ask the Host to enter maintenance before protected maintenance work. Connected users may temporarily lose access to operations."));
     m_leaveMaintenanceButton = new QPushButton(tr("Exit Maintenance"), serverGroup);
+    TooltipPolicy::explain(m_leaveMaintenanceButton, tr("Leave Host maintenance and restore normal access to supported operations."));
     auto* maintenanceButtons = new QWidget(serverGroup);
     auto* maintenanceButtonsLayout = new QHBoxLayout(maintenanceButtons);
     maintenanceButtonsLayout->setContentsMargins(0, 0, 0, 0);
@@ -911,14 +921,18 @@ void SettingsDialog::buildServerTab()
     m_hostEndpointEdit = new QLineEdit(clientGroup);
     m_hostEndpointEdit->setPlaceholderText(QStringLiteral("wss://host.example:47826"));
     m_hostFingerprintEdit = new QLineEdit(clientGroup);
+    TooltipPolicy::explain(m_hostFingerprintEdit, tr("Verify the Host identity using a trusted source before connecting. Do not accept an unexpected identity change."));
     m_hostFingerprintEdit->setPlaceholderText(tr("SHA-256 fingerprint from the Host"));
     m_hostTokenEdit = new QLineEdit(clientGroup);
+    TooltipPolicy::explain(m_hostTokenEdit, tr("Credential used to access the Host. Keep it private; pairing can supply device-specific access."));
     m_hostTokenEdit->setEchoMode(QLineEdit::Password);
     m_hostReconnectCheck = new QCheckBox(tr("Reconnect automatically"), clientGroup);
+    TooltipPolicy::explain(m_hostReconnectCheck, tr("Try to reconnect to the configured Host after the connection is lost."));
     m_hostConnectionStatusLabel = new QLabel(tr("Not tested"), clientGroup);
     m_hostConnectionStatusLabel->setWordWrap(true);
     m_hostTestButton = new QPushButton(tr("Test Connection"), clientGroup);
     m_forgetHostButton = new QPushButton(tr("Forget Host..."), clientGroup);
+    TooltipPolicy::explain(m_forgetHostButton, tr("Forget this device's saved Host connection and trust settings. This does not erase the Host's data."));
     m_pairingCodeEdit = new QLineEdit(clientGroup);
     m_pairingCodeEdit->setPlaceholderText(tr("XXXX-XXXX-XXXX-XXXX"));
     m_pairingDeviceNameEdit = new QLineEdit(clientGroup);
@@ -933,6 +947,7 @@ void SettingsDialog::buildServerTab()
     m_remotePairingStatusLabel = new QLabel(clientGroup);
     m_remotePairingStatusLabel->setWordWrap(true);
     m_pairDeviceButton = new QPushButton(tr("Pair This Device"), clientGroup);
+    TooltipPolicy::explain(m_pairDeviceButton, tr("Use the Host's active pairing code to authorize this device. Confirm the intended Host before pairing."));
     clientForm->addRow(tr("Secure endpoint:"), m_hostEndpointEdit);
     clientForm->addRow(tr("Trusted fingerprint:"), m_hostFingerprintEdit);
     clientForm->addRow(tr("Legacy 1.2 access token:"), m_hostTokenEdit);
@@ -971,7 +986,9 @@ void SettingsDialog::buildServerTab()
     auto* refreshDevicesButton = new QPushButton(tr("Refresh"), devicesPage);
     m_renameDeviceButton = new QPushButton(tr("Rename Device..."), devicesPage);
     m_revokeDeviceButton = new QPushButton(tr("Revoke Device..."), devicesPage);
+    TooltipPolicy::explain(m_revokeDeviceButton, tr("Revoke the selected device's Host access. It must be paired again to regain access."));
     m_revokeAllDevicesButton = new QPushButton(tr("Revoke All Devices..."), devicesPage);
+    TooltipPolicy::explain(m_revokeAllDevicesButton, tr("Revoke all paired devices' Host access. They must be paired again to regain access."));
     deviceButtons->addWidget(refreshDevicesButton);
     deviceButtons->addStretch();
     deviceButtons->addWidget(m_renameDeviceButton);
@@ -979,6 +996,7 @@ void SettingsDialog::buildServerTab()
     deviceButtons->addWidget(m_revokeAllDevicesButton);
     devicesLayout->addLayout(deviceButtons);
     sections->addTab(devicesPage, tr("Devices"));
+    HelpManager::setContextTopic(tab, HelpTopic::BrickSuiteServer);
     m_tabWidget->addTab(tab, tr("Server"));
 
     connect(m_serverTokenButton, &QPushButton::clicked,
@@ -1046,6 +1064,7 @@ void SettingsDialog::buildBuildsTab()
     auto* note = new QLabel(QStringLiteral("These values initialize What Can I Build discovery. Changes made on the discovery page are temporary."), group);
     note->setWordWrap(true); form->addRow(QString(), note);
     layout->addWidget(group); layout->addStretch();
+    HelpManager::setContextTopic(tab, HelpTopic::Builds);
     m_tabWidget->addTab(tab, QStringLiteral("Builds"));
 }
 
@@ -1385,6 +1404,7 @@ void SettingsDialog::build3DModelsTab()
 
     auto* pathLayout = new QHBoxLayout;
     m_ldrawLibraryEdit = new QLineEdit(group);
+    TooltipPolicy::explain(m_ldrawLibraryEdit, tr("Select the installed LDraw library used for source models and source-dependent printing. Use Validate to check the folder."));
     m_ldrawLibraryEdit->setPlaceholderText(tr("LDraw library folder"));
     auto* browse = new QPushButton(tr("Browse..."), group);
     auto* validate = new QPushButton(tr("Validate"), group);
@@ -1400,13 +1420,13 @@ void SettingsDialog::build3DModelsTab()
     auto* preparationLayout = new QVBoxLayout(preparationGroup);
     m_meshRepairEnabledCheck = new QCheckBox(tr("Enable Mesh Repair"), preparationGroup);
     m_meshRepairEnabledCheck->setObjectName(QStringLiteral("enableMeshRepairCheck"));
-    m_meshRepairEnabledCheck->setToolTip(
+    TooltipPolicy::explain(m_meshRepairEnabledCheck,
         tr("Allow future print workflows to prepare geometry automatically. "
            "The 3D viewer's Prepare for Printing action remains available when this is off."));
     preparationLayout->addWidget(m_meshRepairEnabledCheck);
     m_autoFitEnabledCheck = new QCheckBox(tr("Auto Fit"), preparationGroup);
     m_autoFitEnabledCheck->setObjectName(QStringLiteral("autoFitEnabledCheck"));
-    m_autoFitEnabledCheck->setToolTip(tr("Automatically use a ManufacturingMesh only when exactly one compatible managed Verified Fit Profile can be resolved. Explicit per-export selection remains available."));
+    TooltipPolicy::explain(m_autoFitEnabledCheck, tr("Automatically use a ManufacturingMesh only when exactly one compatible managed Verified Fit Profile can be resolved. Explicit per-export selection remains available."));
     preparationLayout->addWidget(m_autoFitEnabledCheck);
     auto* preparationExplanation = new QLabel(
         tr("Mesh Repair controls automatic built-in preparation. Auto Fit is disabled by default and may derive compensated export geometry only from a uniquely compatible Verified Fit Profile. Source and nominal Prepared geometry are never modified."),
@@ -1415,6 +1435,7 @@ void SettingsDialog::build3DModelsTab()
     preparationLayout->addWidget(preparationExplanation);
     layout->addWidget(preparationGroup);
     layout->addStretch();
+    HelpManager::setContextTopic(tab, HelpTopic::LDrawModels);
     m_tabWidget->addTab(tab, tr("3D Models"));
 
     auto updateStatus = [this]() {
@@ -1457,7 +1478,7 @@ void SettingsDialog::buildAppearanceTab()
 
     appearanceLayout->addRow("Theme:", m_themeCombo);
     m_explanatoryTooltipsCheck = new QCheckBox("Show explanatory tooltips", appearanceGroup);
-    m_explanatoryTooltipsCheck->setToolTip("Show short explanations when hovering over controls. F1 Help remains available when disabled.");
+    TooltipPolicy::explain(m_explanatoryTooltipsCheck, "Show short explanations when hovering over controls. F1 Help remains available when disabled.");
     appearanceLayout->addRow(m_explanatoryTooltipsCheck);
 
     layout->addWidget(appearanceGroup);
@@ -1496,6 +1517,7 @@ QWidget* SettingsDialog::buildRebrickableApiPage(QWidget* parent)
     auto* apiLayout = new QFormLayout(apiGroup);
 
     m_apiKeyEdit = new QLineEdit(apiGroup);
+    TooltipPolicy::explain(m_apiKeyEdit, tr("Use your Rebrickable API key for catalog requests. This does not grant undocumented Custom List or WishList access."));
     m_apiKeyEdit->setEchoMode(QLineEdit::Password);
     m_apiKeyEdit->setPlaceholderText("Enter Rebrickable API key");
 
@@ -1531,9 +1553,10 @@ QWidget* SettingsDialog::buildRebrickableApiPage(QWidget* parent)
                                                UserSettings::MaximumRebrickableRequestIntervalMs);
     m_rebrickableRequestIntervalSpin->setSingleStep(250);
     m_rebrickableRequestIntervalSpin->setSuffix(" ms");
-    m_rebrickableRequestIntervalSpin->setToolTip("Minimum time between Rebrickable API requests.");
+    TooltipPolicy::explain(m_rebrickableRequestIntervalSpin, "Minimum time between Rebrickable API requests.");
 
     m_testConnectionButton = new QPushButton("Test Connection", apiGroup);
+    TooltipPolicy::explain(m_testConnectionButton, tr("Make a Rebrickable request to check the configured credentials and connection."));
 
     connect(m_testConnectionButton,
             &QPushButton::clicked,
@@ -1577,7 +1600,7 @@ void SettingsDialog::updateRebrickableCoordinationPresentation()
     const bool localIntervalEditable =
         RebrickableCoordinationService::localIntervalEditable(state.participantCount);
     m_rebrickableRequestIntervalSpin->setEnabled(localIntervalEditable);
-    m_rebrickableRequestIntervalSpin->setToolTip(localIntervalEditable
+    TooltipPolicy::explain(m_rebrickableRequestIntervalSpin, localIntervalEditable
         ? tr("Minimum time between Rebrickable API requests.")
         : tr("The local interval is locked while multiple BrickSuite installations "
              "are sharing API coordination."));
@@ -1599,6 +1622,7 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
     auto* apiLayout = new QFormLayout(apiGroup);
 
     m_bricksetApiKeyEdit = new QLineEdit(apiGroup);
+    TooltipPolicy::explain(m_bricksetApiKeyEdit, tr("Use your Brickset API key for supported catalog and instruction requests."));
     m_bricksetApiKeyEdit->setEchoMode(QLineEdit::Password);
     m_bricksetApiKeyEdit->setPlaceholderText("Enter Brickset API key");
 
@@ -1620,7 +1644,7 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
     m_bricksetDailyThresholdSpin->setValue(
         UserSettings::DefaultBricksetDailyGetSetsThreshold);
     m_bricksetDailyThresholdSpin->setSuffix(" calls/day");
-    m_bricksetDailyThresholdSpin->setToolTip(
+    TooltipPolicy::explain(m_bricksetDailyThresholdSpin,
         "When today's effective Brickset getSets usage reaches this threshold, "
         "BrickSuite uses Rebrickable for Set Details instead.");
 
@@ -1651,6 +1675,7 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
     });
 
     m_testBricksetConnectionButton = new QPushButton("Test Connection", apiGroup);
+    TooltipPolicy::explain(m_testBricksetConnectionButton, tr("Make a Brickset request to check the configured credentials and connection."));
 
     connect(m_bricksetDailyThresholdSpin, qOverload<int>(&QSpinBox::valueChanged),
             this, [this](int) { updateBricksetUsagePresentation(); });

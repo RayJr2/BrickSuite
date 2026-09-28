@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "SetImportPreviewDialog.h"
 
 #include "../../models/BuildRequirement.h"
@@ -49,6 +50,7 @@ SetImportPreviewDialog::SetImportPreviewDialog(int buildId,
     , m_buildId(buildId)
     , m_setNumber(setNumber.trimmed())
 {
+    HelpManager::setContextTopic(this, HelpTopic::Builds);
     setWindowTitle("Set Import Preview");
 
     resize(1100, 700);

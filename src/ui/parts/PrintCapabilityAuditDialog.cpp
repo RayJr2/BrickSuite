@@ -1,3 +1,4 @@
+#include "../common/TooltipPolicy.h"
 #include "../help/HelpManager.h"
 #include "PrintCapabilityAuditDialog.h"
 
@@ -46,11 +47,11 @@ PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent,Runner ru
     m_fitProfile->addItem(tr("Automatic / No explicit selection"),QString());
     for(const auto& profile:FitCalibrationLibrary().profiles())
         if(profile.compatible)m_fitProfile->addItem(profile.name,profile.identity);
-    m_fitProfile->setToolTip(tr("An explicit Verified profile selects printing intent. Only evidence compatible with each source feature, role and Print Orientation applies. Automatic never guesses between profiles."));
+    TooltipPolicy::explain(m_fitProfile, tr("An explicit Verified profile selects printing intent. Only evidence compatible with each source feature, role and Print Orientation applies. Automatic never guesses between profiles."));
     form->addRow(tr("Fit Profile:"),m_fitProfile);
     m_printOrientation=new QComboBox(this);m_printOrientation->setObjectName(QStringLiteral("auditPrintOrientation"));
     m_printOrientation->addItems({tr("Nominal"),tr("X +90 degrees"),tr("Y +90 degrees"),tr("Z +90 degrees")});
-    m_printOrientation->setToolTip(tr("Explicit orthogonal rotation in print coordinates. Evidence must match the transformed feature axis; no automatic rotation is performed."));
+    TooltipPolicy::explain(m_printOrientation, tr("Explicit orthogonal rotation in print coordinates. Evidence must match the transformed feature axis; no automatic rotation is performed."));
     form->addRow(tr("Print Orientation:"),m_printOrientation);
     m_sampleCount=new QSpinBox(this);m_sampleCount->setRange(1,100000);m_sampleCount->setValue(25);
     form->addRow(tr("Sample count:"),m_sampleCount);
@@ -104,16 +105,16 @@ PrintCapabilityAuditDialog::PrintCapabilityAuditDialog(QWidget* parent,Runner ru
     auto* close=new QPushButton(tr("Close"),this);
     buttons->addWidget(m_start);buttons->addWidget(m_stop);buttons->addStretch();buttons->addWidget(close);
     layout->addLayout(buttons);
-    m_referenceFirst->setToolTip(tr("Global unique-Part sequence in the saved corpus; use a new run folder for each chunk."));
-    m_referenceCount->setToolTip(tr("Zero means all remaining Parts. Explicit ranges allow bounded runs without changing corpus order."));
-    m_loadPlan->setToolTip(tr("Continue in a new run folder using an earlier immutable corpus plan. This does not append to or automatically resume earlier CSV output."));
-    m_seed->setToolTip(tr("Reproduce random sample order with the same seed and eligible catalog."));
-    m_mode->setToolTip(tr("Random Sample shuffles eligible Parts; Part List tests explicit IDs; Part Reference audits every unique reference Part in saved order."));
-    m_sampleCount->setToolTip(tr("Requested eligible sample size after exclusions; missing models need not consume slots."));
-    m_excludeNoModel->setToolTip(tr("Filter missing installed models before random sampling. Explicit Part List IDs are still tested."));
-    m_excludeNonstandardIds->setToolTip(tr("Restrict the random population to digits with at most one trailing letter; catalog identities are unchanged."));
-    m_output->setToolTip(tr("Each run creates a new folder containing results and durable crash-attribution state."));
-    m_stop->setToolTip(tr("Stop before the next Part after the active work finishes or cancels safely."));
+    TooltipPolicy::explain(m_referenceFirst, tr("Global unique-Part sequence in the saved corpus; use a new run folder for each chunk."));
+    TooltipPolicy::explain(m_referenceCount, tr("Zero means all remaining Parts. Explicit ranges allow bounded runs without changing corpus order."));
+    TooltipPolicy::explain(m_loadPlan, tr("Continue in a new run folder using an earlier immutable corpus plan. This does not append to or automatically resume earlier CSV output."));
+    TooltipPolicy::explain(m_seed, tr("Reproduce random sample order with the same seed and eligible catalog."));
+    TooltipPolicy::explain(m_mode, tr("Random Sample shuffles eligible Parts; Part List tests explicit IDs; Part Reference audits every unique reference Part in saved order."));
+    TooltipPolicy::explain(m_sampleCount, tr("Requested eligible sample size after exclusions; missing models need not consume slots."));
+    TooltipPolicy::explain(m_excludeNoModel, tr("Filter missing installed models before random sampling. Explicit Part List IDs are still tested."));
+    TooltipPolicy::explain(m_excludeNonstandardIds, tr("Restrict the random population to digits with at most one trailing letter; catalog identities are unchanged."));
+    TooltipPolicy::explain(m_output, tr("Each run creates a new folder containing results and durable crash-attribution state."));
+    TooltipPolicy::explain(m_stop, tr("Stop before the next Part after the active work finishes or cancels safely."));
     connect(m_mode,qOverload<int>(&QComboBox::currentIndexChanged),this,[this,load](int index){
         updateMode();load->setEnabled(index==1);
         if(index==2&&m_corpus.parts.isEmpty())refreshCorpus();

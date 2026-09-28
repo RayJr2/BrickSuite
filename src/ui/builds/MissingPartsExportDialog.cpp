@@ -1,3 +1,5 @@
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "MissingPartsExportDialog.h"
 
 #include "../../services/builds/MissingPartsCsvWriter.h"
@@ -37,6 +39,7 @@ MissingPartsExportDialog::MissingPartsExportDialog(
       m_defaultFileName(std::move(defaultFileName)),
       m_partOverrideResolver(std::move(partOverrideResolver))
 {
+    HelpManager::setContextTopic(this, HelpTopic::MissingParts);
     setWindowTitle(QStringLiteral("Missing Parts Export"));
     resize(1050, 650);
 
@@ -229,7 +232,7 @@ void MissingPartsExportDialog::updatePickABrickPreview()
         auto& row = m_pickABrickRows[rowIndex];
         auto* include = new QCheckBox(m_preview);
         include->setChecked(row.included);
-        include->setToolTip(QStringLiteral(
+        TooltipPolicy::explain(include, QStringLiteral(
             "Excluded rows are deliberately omitted from the Pick a Brick file."));
         m_preview->setCellWidget(rowIndex, 0, include);
         auto* partNumber = new QLineEdit(m_preview);

@@ -18,6 +18,8 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "EditInventoryDialog.h"
 #include "EditInventorySaveState.h"
 
@@ -59,6 +61,7 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
     , m_inventoryRecordId(inventoryRecordId)
     , m_workspaceContext(workspaceContext)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Inventory);
     setWindowTitle("Edit Inventory");
 
     resize(520, 320);
@@ -70,14 +73,17 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
     m_colorCombo = new QComboBox(this);
 
     m_manufacturerCombo = new QComboBox(this);
+    TooltipPolicy::explain(m_manufacturerCombo, tr("Record the manufacturer of these physical Parts without changing their catalog identity."));
 
     m_showAllColorsCheck = new QCheckBox("Show all colors", this);
+    TooltipPolicy::explain(m_showAllColorsCheck, tr("Show all catalog Colors, including combinations not known for this Part."));
 
     m_conditionCombo = new QComboBox(this);
 
     m_ownershipCombo = new QComboBox(this);
 
     m_quantitySpin = new QSpinBox(this);
+    TooltipPolicy::explain(m_quantitySpin, tr("Set the total quantity for this Inventory entry, not an amount to add."));
 
     m_quantitySpin->setMinimum(0);
     m_quantitySpin->setMaximum(1000000);

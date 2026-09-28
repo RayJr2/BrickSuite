@@ -3,6 +3,8 @@
  *
  * Copyright (C) 2026 RF StateSide, LLC
  */
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "ProcurementPreviewDialog.h"
 
 #include "../../api/ApiProvider.h"
@@ -60,6 +62,7 @@ ProcurementPreviewDialog::ProcurementPreviewDialog(
     , m_draft(draft)
     , m_enrichmentService(enrichmentService)
 {
+    HelpManager::setContextTopic(this, HelpTopic::MissingParts);
     setWindowTitle(QStringLiteral("Missing Parts Procurement Preview"));
     resize(1220, 720);
 
@@ -240,6 +243,7 @@ void ProcurementPreviewDialog::buildUi()
 
     m_generateButton =
         new QPushButton(QStringLiteral("Generate BrickLink XML"), this);
+    TooltipPolicy::explain(m_generateButton, tr("Generate XML for the reviewed BrickLink items. Unresolved or excluded items are not exported; no order is placed."));
     buttons->addButton(m_generateButton, QDialogButtonBox::ActionRole);
 
     connect(m_generateButton,
@@ -321,13 +325,16 @@ void ProcurementPreviewDialog::populateRows()
             new QTableWidgetItem(item.partName));
 
         auto* itemIdEdit = new QLineEdit(m_table);
+        itemIdEdit->setAccessibleName(tr("BrickLink ITEMID"));
+        TooltipPolicy::explain(itemIdEdit, tr("Enter the exact BrickLink ITEMID for this item. An edit applies to this export unless Remember is selected."));
         itemIdEdit->setText(item.resolvedItemId);
         itemIdEdit->setPlaceholderText(
             QStringLiteral("Enter BrickLink ITEMID"));
         m_table->setCellWidget(row, ItemIdColumn, itemIdEdit);
 
         auto* rememberCheck = new QCheckBox(m_table);
-        rememberCheck->setToolTip(
+        rememberCheck->setAccessibleName(tr("Remember BrickLink mapping"));
+        TooltipPolicy::explain(rememberCheck,
             QStringLiteral("Save an edited ITEMID as a user-confirmed BrickLink mapping "
                            "when XML is generated."));
         rememberCheck->setEnabled(false);
@@ -348,6 +355,8 @@ void ProcurementPreviewDialog::populateRows()
             new QTableWidgetItem(item.colorName));
 
         auto* colorCombo = new QComboBox(m_table);
+        colorCombo->setAccessibleName(tr("BrickLink Color"));
+        TooltipPolicy::explain(colorCombo, tr("Choose a mapped BrickLink Color for this export; the source requirement is unchanged."));
         colorCombo->addItem(
             QStringLiteral("Unknown — Select BrickLink Color..."),
             QString());

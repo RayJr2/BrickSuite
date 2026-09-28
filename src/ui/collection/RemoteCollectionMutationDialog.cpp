@@ -1,3 +1,4 @@
+#include "../common/TooltipPolicy.h"
 #include "RemoteCollectionMutationDialog.h"
 #include "RemoteCollectionStorageFilter.h"
 
@@ -74,7 +75,7 @@ RemoteCollectionMutationDialog::RemoteCollectionMutationDialog(
             && service.isAvailableFor(QStringLiteral("collection.partsSource.set"))) {
             m_allowPartsSource = new QCheckBox(QStringLiteral("Consider for What Can I Build"), this);
             m_allowPartsSource->setChecked(seed.expected.allowPartsSource);
-            m_allowPartsSource->setToolTip(QStringLiteral("Use this complete Set as an advisory piece source. BrickSuite will not reserve or consume it."));
+            TooltipPolicy::explain(m_allowPartsSource, QStringLiteral("Use this complete Set as an advisory piece source. BrickSuite will not reserve or consume it."));
             form->addRow(QStringLiteral("Buildability:"), m_allowPartsSource);
         }
     } else {

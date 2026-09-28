@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "LogViewerDialog.h"
 
 #include "../../services/Logger.h"
@@ -40,6 +41,7 @@
 LogViewerDialog::LogViewerDialog(QWidget* parent)
     : QDialog(parent)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Logging);
     setWindowTitle("BrickSuite Application Log");
     resize(950, 650);
 

@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "common/TooltipPolicy.h"
 #include "MainWindow.h"
 
 #include "about/AboutDialog.h"
@@ -816,8 +817,10 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
 
     m_backupDatabaseAction = fileMenu->addAction(
         sharedStatus.isAvailable() ? "Backup Database..." : "Back Up This Device Database...");
+    TooltipPolicy::explain(m_backupDatabaseAction, tr("Save a backup of the current BrickSuite data for later recovery."));
 
     m_restoreDatabaseAction = fileMenu->addAction("Restore Database...");
+    TooltipPolicy::explain(m_restoreDatabaseAction, tr("Replace current data from a selected backup after confirmation. Review Backup and Restore Help before continuing."));
 
     connect(m_backupDatabaseAction, &QAction::triggered, this, [this]() {
         const QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
@@ -980,6 +983,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     auto* toolsMenu = menuBar()->addMenu("Tools");
     auto* modelViewerMenu = toolsMenu->addMenu(tr("3D Model Viewer"));
     auto* openLDrawAction = modelViewerMenu->addAction(tr("Open LDraw File..."));
+    TooltipPolicy::explain(openLDrawAction, tr("Open a local LDraw file for viewing and printing without associating it with a catalog Part."));
     connect(openLDrawAction, &QAction::triggered, this, [this] {
         auto& directories = SessionFileDialogDirectoryService::instance();
         const QString path = QFileDialog::getOpenFileName(this, tr("Open External LDraw File"),
@@ -1103,6 +1107,7 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
     toolsMenu->addSeparator();
 
     auto* partReferenceAction = toolsMenu->addAction("Part Reference...");
+    TooltipPolicy::explain(partReferenceAction, tr("Browse reference Parts and send a selection to Add Inventory."));
 
     connect(partReferenceAction, &QAction::triggered, this, [this]() {
         if (!m_partReferenceDialog) {

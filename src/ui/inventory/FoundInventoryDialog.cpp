@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "FoundInventoryDialog.h"
 
 #include "../../models/LostInventoryItem.h"
@@ -49,6 +50,7 @@ FoundInventoryDialog::FoundInventoryDialog(
     , m_colorId(colorId)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
+    HelpManager::setContextTopic(this, HelpTopic::LostFound);
     setWindowTitle("Found / Return Inventory");
 
     resize(525, 340);

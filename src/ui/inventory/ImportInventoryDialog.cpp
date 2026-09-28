@@ -18,6 +18,8 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "ImportInventoryDialog.h"
 #include "InventoryImportPreviewDialog.h"
 
@@ -62,6 +64,7 @@ ImportInventoryDialog::ImportInventoryDialog(
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Inventory);
     setWindowTitle("Import Inventory");
     resize(620, 340);
 
@@ -117,7 +120,7 @@ ImportInventoryDialog::ImportInventoryDialog(
         QStringLiteral("Compare Only"),
         static_cast<int>(InventoryCsvOperation::CompareOnly));
 
-    m_operationCombo->setToolTip(
+    TooltipPolicy::explain(m_operationCombo,
         QStringLiteral("Append adds CSV quantities. Replace makes the selected storage "
                        "match the CSV exactly, including reducing parts absent from the CSV "
                        "to zero. Subtract removes CSV quantities. Compare Only makes no "
@@ -501,11 +504,11 @@ void ImportInventoryDialog::suggestStorageFromFileName(const QString& filePath)
     if (matchCount == 1 && matchingIndex >= 0) {
         m_storageCombo->setCurrentIndex(matchingIndex);
 
-        m_storageCombo->setToolTip(
+        TooltipPolicy::explain(m_storageCombo,
             QString("Suggested from CSV filename: %1")
                 .arg(fileInfo.fileName()));
     } else {
-        m_storageCombo->setToolTip(QString());
+        TooltipPolicy::explain(m_storageCombo, QString());
     }
 }
 

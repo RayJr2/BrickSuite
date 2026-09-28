@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "StorageWidget.h"
 #include "StorageLocationDialog.h"
 #include "RemoteStorageActionEligibility.h"
@@ -76,6 +77,7 @@ StorageWidget::StorageWidget(
       m_workspaceContext(workspaceContext),
       m_remoteReads(remoteReads),m_remoteMutations(remoteMutations)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Storage);
     auto* layout = new QVBoxLayout(this);
 
     auto* titleLabel = new QLabel("Storage", this);

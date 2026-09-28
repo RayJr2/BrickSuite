@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2026 RF StateSide, LLC
  */
+#include "../help/HelpManager.h"
 #include "BricksetInstructionsDialog.h"
 
 #include <QAbstractItemView>
@@ -25,6 +26,7 @@ BricksetInstructionsDialog::BricksetInstructionsDialog(
     : QDialog(parent)
     , m_setNumber(setNumber)
 {
+    HelpManager::setContextTopic(this, HelpTopic::SetsCatalog);
     setWindowTitle(QString("Instructions — %1").arg(setNumber));
     resize(820, 440);
 

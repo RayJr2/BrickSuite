@@ -1,3 +1,4 @@
+#include "../help/HelpManager.h"
 #include "GlobalRebrickableImportDialog.h"
 
 #include "../../import/global/RebrickableDatasetRegistry.h"
@@ -28,6 +29,7 @@
 GlobalRebrickableImportDialog::GlobalRebrickableImportDialog(QWidget* parent)
     : QDialog(parent)
 {
+    HelpManager::setContextTopic(this, HelpTopic::RebrickableImport);
     setWindowTitle(QStringLiteral("Import Rebrickable Data Files"));
     resize(900, 560);
 

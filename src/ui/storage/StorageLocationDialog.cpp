@@ -1,3 +1,5 @@
+#include "../common/TooltipPolicy.h"
+#include "../help/HelpManager.h"
 #include "StorageLocationDialog.h"
 
 #include <QCheckBox>
@@ -13,13 +15,16 @@ StorageLocationDialog::StorageLocationDialog(Mode mode,const Values&initial,
     const QList<Choice>&types,const QList<Choice>&parents,QWidget*parent)
     :QDialog(parent),m_mode(mode)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Storage);
     setAttribute(Qt::WA_DeleteOnClose);setModal(true);
     setWindowTitle(mode==Mode::Add?QStringLiteral("Add Storage Location"):QStringLiteral("Edit Storage Location"));
     auto*form=new QFormLayout(this);m_name=new QLineEdit(initial.name,this);m_name->setObjectName("storageNameEdit");
     m_description=new QTextEdit(initial.description,this);m_description->setObjectName("storageDescriptionEdit");m_description->setMaximumHeight(90);
-    m_parent=new QComboBox(this);m_parent->setObjectName("storageParentCombo");m_parent->addItem(QStringLiteral("(Top Level)"),QVariant::fromValue<qint64>(0));
+    m_parent=new QComboBox(this);
+    TooltipPolicy::explain(m_parent, tr("Place this location under a container, or choose Top Level. Operational destinations must be active leaf locations."));m_parent->setObjectName("storageParentCombo");m_parent->addItem(QStringLiteral("(Top Level)"),QVariant::fromValue<qint64>(0));
     for(const auto&choice:parents)m_parent->addItem(choice.name,QVariant::fromValue(choice.id));
-    m_type=new QComboBox(this);m_type->setObjectName("storageTypeCombo");for(const auto&choice:types)m_type->addItem(choice.name,QVariant::fromValue(choice.id));
+    m_type=new QComboBox(this);
+    TooltipPolicy::explain(m_type, tr("Describe the kind of Storage location; this does not change its parent or contents."));m_type->setObjectName("storageTypeCombo");for(const auto&choice:types)m_type->addItem(choice.name,QVariant::fromValue(choice.id));
     m_inventory=new QCheckBox(QStringLiteral("Allow Inventory"),this);m_inventory->setObjectName("storageAllowsInventory");m_inventory->setChecked(initial.allowsInventory);
     m_collection=new QCheckBox(QStringLiteral("Allow Collection"),this);m_collection->setObjectName("storageAllowsCollection");m_collection->setChecked(initial.allowsCollection);
     const int parentIndex=m_parent->findData(QVariant::fromValue(initial.parentStorageId));if(parentIndex>=0)m_parent->setCurrentIndex(parentIndex);

@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "ImportPullListDialog.h"
 
 #include "../../models/Build.h"
@@ -54,6 +55,7 @@ ImportPullListDialog::ImportPullListDialog(int buildId, const QString& fileName,
     , m_buildId(buildId)
     , m_fileName(fileName)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Builds);
     setWindowTitle("Import Pull List Preview");
 
     resize(1200, 700);

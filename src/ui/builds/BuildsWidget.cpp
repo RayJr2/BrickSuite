@@ -18,6 +18,8 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "BuildsWidget.h"
 #include "BuildActionEligibility.h"
 
@@ -233,6 +235,7 @@ BuildsWidget::BuildsWidget(
     , m_remoteBuildMutations(remoteBuildMutations)
     , m_remoteMode(remoteReads != nullptr)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Builds);
     auto* outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(0, 0, 0, 0);
     m_buildTabs = new QTabWidget(this);
@@ -255,6 +258,7 @@ BuildsWidget::BuildsWidget(
     auto* formLayout = new QFormLayout(m_newBuildContent);
 
     m_typeCombo = new QComboBox(m_newBuildContent);
+    TooltipPolicy::explain(m_typeCombo, tr("A Set uses catalog requirements; a MOC uses requirements you enter or import."));
     m_typeCombo->addItem("Set", "Set");
     m_typeCombo->addItem("MOC", "MOC");
 
@@ -262,6 +266,7 @@ BuildsWidget::BuildsWidget(
     m_setNumberEdit->setPlaceholderText("Example: 1234-1");
 
     m_inventoryModeCombo = new QComboBox(m_newBuildContent);
+    TooltipPolicy::explain(m_inventoryModeCombo, tr("Build from Stock allocates and pulls loose Inventory. Complete Set represents an intact physical Set and does not consume loose stock through that workflow."));
     m_inventoryModeCombo->addItem("Build from Stock", "Stock");
     m_inventoryModeCombo->addItem("Complete Set", "CompleteSet");
 
@@ -303,6 +308,7 @@ BuildsWidget::BuildsWidget(
     existingHeaderLayout->addStretch(1);
 
     m_showArchivedBuildsCheck = new QCheckBox("Show Archived", existingGroup);
+    TooltipPolicy::explain(m_showArchivedBuildsCheck, tr("Include archived Builds without reactivating them or changing their history."));
     m_showArchivedBuildsCheck->setChecked(UserSettings::instance().showArchivedBuilds());
 
     existingHeaderLayout->addWidget(m_showArchivedBuildsCheck);
@@ -342,13 +348,19 @@ BuildsWidget::BuildsWidget(
 
     m_requirementsLabel = new QLabel("Select a build to view its requirements.", requirementsGroup);
     m_loadSetFromRebrickableButton = new QPushButton("Load Set from Rebrickable", requirementsGroup);
+    TooltipPolicy::explain(m_loadSetFromRebrickableButton, tr("Load catalog requirements for the selected Set Build. Review the import before applying it."));
     m_importMocPartsButton = new QPushButton("Import MOC Parts CSV", requirementsGroup);
+    TooltipPolicy::explain(m_importMocPartsButton, tr("Import Part, Color and quantity requirements for the selected MOC. This does not add owned Inventory."));
     m_allocateAvailableButton = new QPushButton("Allocate Available", requirementsGroup);
+    TooltipPolicy::explain(m_allocateAvailableButton, tr("Reserve eligible available Inventory against this Build's requirements. Allocation does not mean the pieces have been physically pulled."));
     m_exportMissingPartsButton = new QPushButton("Export Missing Parts CSV", requirementsGroup);
     m_procureMissingPartsButton = new QPushButton("Procure Missing Parts...", requirementsGroup);
+    TooltipPolicy::explain(m_procureMissingPartsButton, tr("Review unresolved identities and purchase quantities before generating BrickLink XML. This does not place an order."));
     m_exportPullListButton = new QPushButton("Export Pull List CSV", requirementsGroup);
     m_importPullListButton = new QPushButton("Import Pull List CSV", requirementsGroup);
+    TooltipPolicy::explain(m_importPullListButton, tr("Reconcile recorded pulling with the selected Build. Review differences before applying them."));
     m_interactivePullButton = new QPushButton("Pull Build...", requirementsGroup);
+    TooltipPolicy::explain(m_interactivePullButton, tr("Record pieces physically pulled for this Build against their allocations."));
 
     requirementsHeaderLayout->addWidget(m_requirementsLabel, 1);
     requirementsHeaderLayout->addWidget(m_loadSetFromRebrickableButton);
@@ -380,6 +392,7 @@ BuildsWidget::BuildsWidget(
             this, &BuildsWidget::updateRequirementUiState);
 
     m_spareCheck = new QCheckBox("Spare", requirementsGroup);
+    TooltipPolicy::explain(m_spareCheck, tr("Mark this requirement as a spare rather than a required piece."));
     m_addRequirementButton = new QPushButton("Add Requirement", requirementsGroup);
 
     requirementEntryLayout->addWidget(new QLabel("Part #:", requirementsGroup));
@@ -842,6 +855,7 @@ void BuildsWidget::loadBuilds()
         auto* notesItem = new QTableWidgetItem(build.notes());
 
         auto* actionCombo = new QComboBox(m_buildsTable);
+        actionCombo->setAccessibleName(tr("Actions for this row"));
         actionCombo->addItem("Actions...", QString());
 
         const auto linkedCollection = CollectionRepository().getBySourceBuild(build.id());
@@ -2273,6 +2287,7 @@ void BuildsWidget::loadRequirements()
             new QTableWidgetItem(requirement.isSpare() ? "Yes" : "No");
 
         auto* actionCombo = new QComboBox(m_requirementsTable);
+        actionCombo->setAccessibleName(tr("Actions for this row"));
 
         actionCombo->addItem("Actions...");
 

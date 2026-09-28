@@ -24,10 +24,11 @@
 
 #include <QList>
 #include <QString>
+#include <QWidget>
+#include <QVariant>
 
 #include <optional>
 
-class QWidget;
 
 struct HelpTopicInfo
 {
@@ -56,7 +57,12 @@ public:
     static QString title(HelpTopic topic);
 
     static void setContextTopic(QWidget* window, HelpTopic topic,
-                                const QString& anchor = {});
+                                const QString& anchor = {}) {
+        if (window) {
+            window->setProperty("brickSuiteHelpTopic", static_cast<int>(topic));
+            window->setProperty("brickSuiteHelpAnchor", anchor);
+        }
+    }
     static std::optional<HelpTopic> contextTopic(const QWidget* window);
     static std::optional<HelpContext> context(const QWidget* window);
 };

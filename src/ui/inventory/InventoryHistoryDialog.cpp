@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "InventoryHistoryDialog.h"
 
 #include "../../app/WorkspaceContext.h"
@@ -57,6 +58,7 @@ InventoryHistoryDialog::InventoryHistoryDialog(int partId,
     , m_partNumber(partNumber)
     , m_rebrickableColorId(rebrickableColorId)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Inventory);
     setWindowTitle("Inventory History");
     resize(1100, 500);
 

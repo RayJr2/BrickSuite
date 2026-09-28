@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "AllocateBuildRequirementDialog.h"
 
 #include "../../database/DatabaseManager.h"
@@ -58,6 +59,7 @@ AllocateBuildRequirementDialog::AllocateBuildRequirementDialog(int workspaceId,
     , m_buildId(buildId)
     , m_requirementId(requirementId)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Builds);
     setWindowTitle("Allocate Build Requirement");
 
     resize(850, 500);

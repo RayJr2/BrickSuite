@@ -5,6 +5,9 @@
 #include <QApplication>
 #include <QAction>
 #include <QFile>
+#include <QDir>
+#include <QPushButton>
+#include <QRegularExpression>
 #include <QHelpEvent>
 #include <QKeyEvent>
 #include <QLineEdit>
@@ -42,16 +45,66 @@ int main(int argc,char** argv){
     auto& settings=UserSettings::instance();
     if(child>=0)return check(!settings.explanatoryTooltipsEnabled(),"tooltip preference survives process restart")?0:1;
     bool ok=check(settings.explanatoryTooltipsEnabled(),"tooltips enabled by default");
-    TooltipPolicy policy(app);TooltipProbe probe;probe.setToolTip("Useful explanation");
+    TooltipPolicy policy(app);TooltipProbe probe;TooltipPolicy::explain(&probe,"Useful explanation");
     QHelpEvent hover(QEvent::ToolTip,QPoint(1,1),QPoint(1,1));
     QApplication::sendEvent(&probe,&hover);ok&=check(probe.delivered==1,"enabled tooltip event reaches control");
     settings.setExplanatoryTooltipsEnabled(false);QSettings().sync();
     QApplication::sendEvent(&probe,&hover);ok&=check(probe.delivered==1&&!probe.toolTip().isEmpty(),"disabled tooltip suppressed without deleting text or disabling control");
+    TooltipPolicy::preferenceChanged();
+    TooltipProbe data;data.setToolTip("Full diagnostic text");
+    QApplication::sendEvent(&data,&hover);
+    ok&=check(data.delivered==1,"data and diagnostic tooltips remain available");
+    TooltipProbe createdLater;TooltipPolicy::explain(&createdLater,"New dialog explanation");
+    QApplication::sendEvent(&createdLater,&hover);
+    ok&=check(createdLater.delivered==0,"newly created controls honor disabled preference");
+    probe.setToolTip("Dynamic error replacing generic help");
+    QApplication::sendEvent(&probe,&hover);
+    ok&=check(probe.delivered==2,"dynamic diagnostic replacing help is not hidden");
+    TooltipPolicy::explain(&probe,"Useful explanation");
+    QLineEdit editable;TooltipPolicy::explain(&editable,"Entry explanation");
+    QKeyEvent typing(QEvent::KeyPress,Qt::Key_A,Qt::NoModifier,"a");
+    QApplication::sendEvent(&editable,&typing);
+    ok&=check(editable.text()=="a","policy leaves keyboard entry usable");
+    QPushButton cancel("Cancel");
+    ok&=check(cancel.toolTip().isEmpty()&&!cancel.property("brickSuiteExplanatoryTooltip").isValid(),"obvious controls receive no automatic help");
     QProcess restart;restart.start(app.applicationFilePath(),{"-platform","offscreen","--preference-child",temp.path()});
     const bool finished=restart.waitForFinished(10000);if(!finished){restart.kill();restart.waitForFinished();}
     ok&=check(finished&&restart.exitStatus()==QProcess::NormalExit&&restart.exitCode()==0,"persisted preference restored by new process");
     settings.setExplanatoryTooltipsEnabled(true);QApplication::sendEvent(&probe,&hover);
-    ok&=check(probe.delivered==2,"re-enabled preference applies to existing controls");
+    ok&=check(probe.delivered==3,"re-enabled preference applies to existing controls");
+
+    // Structural integration coverage: registrations are explicit at creation, not
+    // dependent on widget labels or a preference snapshot in individual dialogs.
+    const QDir repository(QFileInfo(QString::fromUtf8(__FILE__)).absoluteDir().absoluteFilePath(".."));
+    const auto source=[&](const QString& path){QFile file(repository.filePath(path));
+        if(!file.open(QIODevice::ReadOnly)){ok&=check(false,"UI integration source readable");return QString();}
+        return QString::fromUtf8(file.readAll());};
+    struct Registration {const char* file;const char* control;const char* topic;};
+    for(const auto& entry:{
+        Registration{"inventory/AddInventoryDialog.cpp","m_rememberPartCheck","Inventory"},
+        Registration{"builds/BuildsWidget.cpp","m_inventoryModeCombo","Builds"},
+        Registration{"procurement/ProcurementPreviewDialog.cpp","rememberCheck","MissingParts"},
+        Registration{"settings/SettingsDialog.cpp","m_apiKeyEdit","Settings"},
+        Registration{"settings/SettingsDialog.cpp","m_forgetHostButton","BrickSuiteServer"},
+        Registration{"parts/PartReferenceDialog.cpp","m_sendButton","PartReference"},
+        Registration{"parts/LDrawModelViewerWindow.cpp","m_prepare","LDrawModels"},
+        Registration{"parts/FitCalibrationDialog.cpp","m_features","FitCalibration"}}){
+        const auto text=source(QString("src/ui/%1").arg(entry.file));
+        ok&=check(text.contains(QString("TooltipPolicy::explain(%1,").arg(entry.control)),"representative control registers explanatory help");
+        ok&=check(text.contains(QString("HelpTopic::%1").arg(entry.topic)),"representative surface has appropriate F1 topic");
+    }
+    const auto inventory=source("src/ui/inventory/AddInventoryDialog.cpp");
+    ok&=check(!inventory.contains("TooltipPolicy::explain(m_quantitySpin,")&&!inventory.contains("TooltipPolicy::explain(m_partSearchEdit,"),"ordinary quantity/search controls stay uncluttered");
+    ok&=check(source("src/ui/parts/PartReferenceDialog.cpp").contains("button->setAccessibleName("),"Part Reference cards have an explicit accessible name");
+    ok&=check(source("src/ui/procurement/ProcurementPreviewDialog.cpp").contains("rememberCheck->setAccessibleName("),"unlabeled Remember checkbox has an accessible name");
+    settings.setExplanatoryTooltipsEnabled(false);
+    for(auto topic:{HelpTopic::Inventory,HelpTopic::Builds,HelpTopic::Settings,HelpTopic::PreparePrinting,HelpTopic::FitCalibration}){
+        QWidget parent;QLineEdit child(&parent);HelpManager::setContextTopic(&parent,topic);
+        const auto context=HelpManager::context(&child);
+        ok&=check(context&&context->topic==topic,"focused child inherits its surface F1 context regardless of tooltip setting");
+    }
+    QAction action(nullptr);TooltipPolicy::explain(&action,"Action explanation");
+    ok&=check(action.statusTip()==action.toolTip(),"menu action status tip agrees with explanatory help");
 
     HelpDialog help;help.show();
     auto* tree=help.findChild<QTreeWidget*>();auto* search=help.findChild<QLineEdit*>();auto* browser=help.findChild<QTextBrowser*>();
@@ -78,6 +131,10 @@ int main(int argc,char** argv){
     search->setText("printing");
     for(auto theme:{UserSettings::Theme::Dark,UserSettings::Theme::Light}){
         ThemeManager::applyTheme(app,theme);QApplication::processEvents();
+        const auto tooltipPalette=QToolTip::palette();
+        const double tipText=luminance(tooltipPalette.color(QPalette::ToolTipText));
+        const double tipBase=luminance(tooltipPalette.color(QPalette::ToolTipBase));
+        ok&=check((std::max(tipText,tipBase)+.05)/(std::min(tipText,tipBase)+.05)>=4.5,"theme tooltip palette has readable contrast");
         // Theme switches must refresh an existing search, not just a new one.
         if(browser->source().path().endsWith("printing.html")){
             ok&=check(!browser->extraSelections().isEmpty()&&browser->extraSelections().front().format.background().color()==browser->palette().color(QPalette::Highlight),"active search follows theme palette");

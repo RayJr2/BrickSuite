@@ -1,3 +1,5 @@
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "MinifigDetailsDialog.h"
 #include "../collection/CatalogCollectionDialog.h"
 #include "../collection/RemoteCollectionMutationDialog.h"
@@ -47,6 +49,7 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId,
     , m_partImageService(new PartImageService(this))
     , m_rebrickablePartsService(new RebrickableMinifigPartsService(this))
 {
+    HelpManager::setContextTopic(this, HelpTopic::MinifigsCatalog);
     setWindowTitle("Minifig Details");
     resize(900, 720);
 
@@ -125,7 +128,7 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId,
     m_createBuildButton = buttons->addButton("Create Build From Stock...",
                                              QDialogButtonBox::ActionRole);
     m_createBuildButton->setEnabled(false);
-    m_createBuildButton->setToolTip("Import a Minifig parts list first.");
+    TooltipPolicy::explain(m_createBuildButton, "Import a Minifig parts list first.");
     m_addToCollectionButton = buttons->addButton("Add to Collection...",
                                                   QDialogButtonBox::ActionRole);
     m_addToCollectionButton->setEnabled(false);
@@ -274,7 +277,7 @@ void MinifigDetailsDialog::loadComposition()
             "Parts list has not been imported for this Minifig.");
         m_compositionSourceLabel->setText("Source: No local parts list");
         m_createBuildButton->setEnabled(false);
-        m_createBuildButton->setToolTip("Import a Minifig parts list first.");
+        TooltipPolicy::explain(m_createBuildButton, "Import a Minifig parts list first.");
         return;
     }
 
@@ -332,7 +335,7 @@ void MinifigDetailsDialog::loadComposition()
     m_requiredPieces = static_cast<int>(requiredQuantity);
     m_sparePieces = static_cast<int>(spareQuantity);
     m_createBuildButton->setEnabled(m_requiredPieces > 0);
-    m_createBuildButton->setToolTip(m_requiredPieces > 0
+    TooltipPolicy::explain(m_createBuildButton, m_requiredPieces > 0
                                         ? QString()
                                         : "Import a parts list containing required parts first.");
 }

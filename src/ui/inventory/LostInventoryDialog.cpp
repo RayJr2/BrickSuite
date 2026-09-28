@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "LostInventoryDialog.h"
 
 #include "FoundInventoryDialog.h"
@@ -52,6 +53,7 @@ LostInventoryDialog::LostInventoryDialog(
     , m_workspaceContext(workspaceContext)
     , m_sessionStorageSelectionService(sessionStorageSelectionService)
 {
+    HelpManager::setContextTopic(this, HelpTopic::LostFound);
     initializeUi();
     loadLostInventory();
 }

@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "PartsCatalogWidget.h"
 
 #include "../../import/RebrickablePartCatalogImporter.h"
@@ -59,6 +60,7 @@ PartsCatalogWidget::PartsCatalogWidget(PartExternalIdEnrichmentService* enrichme
                                        QWidget* parent)
     : QWidget(parent), m_enrichmentService(enrichmentService)
 {
+    HelpManager::setContextTopic(this, HelpTopic::PartsCatalog);
     auto* mainLayout = new QVBoxLayout(this);
 
     auto* titleLayout = new QHBoxLayout();
@@ -445,6 +447,7 @@ void PartsCatalogWidget::searchParts(const QString& loadingMessage)
 
         rowPhaseTimer.restart();
         auto* actionCombo = new QComboBox(m_resultsTable);
+        actionCombo->setAccessibleName(tr("Actions for this row"));
 
         actionCombo->addItem("Actions...");
 

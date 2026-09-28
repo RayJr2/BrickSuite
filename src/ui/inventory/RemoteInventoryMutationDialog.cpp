@@ -1,3 +1,4 @@
+#include "../help/HelpManager.h"
 #include "RemoteInventoryMutationDialog.h"
 #include "../../models/Color.h"
 #include "../../repositories/ColorRepository.h"
@@ -35,6 +36,7 @@ RemoteInventoryMutationDialog::RemoteInventoryMutationDialog(int workspaceId,Rem
 
 void RemoteInventoryMutationDialog::initialize(const QHash<int,QString>& paths)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Inventory);
     const bool edit=m_operation=="inventory.edit",move=m_operation=="inventory.move",correct=m_operation=="inventory.correct";
     const bool remove=m_operation=="inventory.remove",lost=m_operation=="inventory.markLost",found=m_operation=="inventory.markFound";
     setWindowTitle(edit?"Edit Inventory":move?"Move Inventory":correct?"Correct Inventory Entry":remove?"Remove Inventory Entry":lost?"Mark Inventory Lost":"Found / Return Inventory");

@@ -18,6 +18,7 @@
  * License along with BrickSuite. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "../help/HelpManager.h"
 #include "PartDetailsDialog.h"
 #include "LDrawModelViewerManager.h"
 
@@ -58,6 +59,7 @@ PartDetailsDialog::PartDetailsDialog(
     : QDialog(parent)
     , m_partId(partId)
 {
+    HelpManager::setContextTopic(this, HelpTopic::PartsCatalog);
     setWindowTitle("Part Details");
 
     resize(850, 650);

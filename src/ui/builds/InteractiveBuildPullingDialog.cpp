@@ -10,6 +10,8 @@
  * published by the Free Software Foundation, version 3 of the License.
  */
 
+#include "../help/HelpManager.h"
+#include "../common/TooltipPolicy.h"
 #include "InteractiveBuildPullingDialog.h"
 
 #include "../../services/RebrickableApiClient.h"
@@ -54,6 +56,7 @@ InteractiveBuildPullingDialog::InteractiveBuildPullingDialog(int buildId,
     : QDialog(parent),
       m_buildId(buildId)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Builds);
     setWindowTitle(tr("Interactive Build Pulling"));
     resize(1180, 760);
 
@@ -333,7 +336,7 @@ void InteractiveBuildPullingDialog::populateTable(
         pulledSpin->setValue(0);
         pulledSpin->setAlignment(Qt::AlignCenter);
         pulledSpin->setKeyboardTracking(false);
-        pulledSpin->setToolTip(
+        TooltipPolicy::explain(pulledSpin,
             tr("Enter how many pieces you physically pulled from this storage location."));
         m_table->setCellWidget(row, PulledColumn, pulledSpin);
 

@@ -10,6 +10,7 @@
  * published by the Free Software Foundation, version 3 of the License.
  */
 
+#include "../help/HelpManager.h"
 #include "InventoryImportPreviewDialog.h"
 
 #include "../../models/ExternalPartIdentifier.h"
@@ -115,6 +116,7 @@ InventoryImportPreviewDialog::InventoryImportPreviewDialog(
     : QDialog(parent)
     , m_preview(preview)
 {
+    HelpManager::setContextTopic(this, HelpTopic::Inventory);
     const bool brickOwl =
         m_preview.source == InventoryImportSource::BrickOwlOrderCsv;
 
