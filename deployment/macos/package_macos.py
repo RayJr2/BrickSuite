@@ -11,6 +11,16 @@ from pathlib import Path
 from audit_bundle import audit, binaries
 
 
+PLUGINS = (
+    'platforms/libqcocoa.dylib', 'sqldrivers/libqsqlite.dylib',
+    'tls/libqopensslbackend.dylib', 'networkinformation/libqapplenetworkinformation.dylib',
+    'styles/libqmacstyle.dylib', 'iconengines/libqsvgicon.dylib',
+    'imageformats/libqgif.dylib', 'imageformats/libqico.dylib',
+    'imageformats/libqjpeg.dylib', 'imageformats/libqsvg.dylib',
+    'imageformats/libqwebp.dylib',
+)
+
+
 def run(*args):
     subprocess.run([str(a) for a in args], check=True)
 
@@ -37,10 +47,37 @@ def notices(source, destination):
                     copy(license_file, destination / license_file.relative_to(source))
 
 
+def normalize_binary(binary, frameworks):
+    """Make one Mach-O self-contained using the bundle framework directory."""
+    load = subprocess.check_output(['otool', '-l', str(binary)], text=True)
+    import re
+    for rpath in re.findall(r'cmd LC_RPATH\s+cmdsize \d+\s+path (.*?) \(offset', load):
+        run('install_name_tool', '-delete_rpath', rpath, binary)
+    relative = os.path.relpath(frameworks, binary.parent)
+    run('install_name_tool', '-add_rpath', '@loader_path/' + relative, binary)
+    deps = subprocess.check_output(['otool', '-L', str(binary)], text=True).splitlines()[1:]
+    for line in deps:
+        dep = line.strip().split(' (compatibility')[0]
+        if dep.startswith(('/System/Library/', '/usr/lib/')):
+            continue
+        if '.framework/' in dep:
+            name = dep.split('/')
+            index = next(i for i, part in enumerate(name) if part.endswith('.framework'))
+            target = '/'.join(name[index:])
+        else:
+            target = Path(dep).name
+        if not (frameworks / target).exists():
+            raise RuntimeError(f'Missing dependency {dep} for {binary}')
+        run('install_name_tool', '-change', dep, '@rpath/' + target, binary)
+    if binary.suffix == '.dylib':
+        run('install_name_tool', '-id', '@rpath/' + binary.name, binary)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('build', 'qt', 'qt-source', 'openssl', 'openssl-source', 'lib3mf-source', 'output'):
         parser.add_argument('--' + name, required=True, type=Path)
+    parser.add_argument('--source-sha', help='Immutable source commit recorded in bundle metadata')
     parser.add_argument('--probe', type=Path, help='Optional disposable acceptance executable; omit for release staging')
     parser.add_argument('--arch', required=True, choices=('arm64', 'x86_64'))
     args = parser.parse_args()
@@ -56,16 +93,8 @@ def main():
     helper_source = args.build / 'BrickSuiteMeshBooleanWorker'
     if not helper.exists():
         copy(helper_source, helper)
-    plugins = (
-        'platforms/libqcocoa.dylib', 'sqldrivers/libqsqlite.dylib',
-        'tls/libqopensslbackend.dylib', 'networkinformation/libqapplenetworkinformation.dylib',
-        'styles/libqmacstyle.dylib', 'iconengines/libqsvgicon.dylib',
-        'imageformats/libqgif.dylib', 'imageformats/libqico.dylib',
-        'imageformats/libqjpeg.dylib', 'imageformats/libqsvg.dylib',
-        'imageformats/libqwebp.dylib',
-    )
     deployed = []
-    for plugin in plugins:
+    for plugin in PLUGINS:
         target = contents / 'PlugIns' / plugin
         copy(args.qt / 'plugins' / plugin, target)
         deployed.append(target)
@@ -79,31 +108,8 @@ def main():
         extras.append(probe)
     run(args.qt / 'bin/macdeployqt', bundle, '-no-plugins', '-no-strip', '-always-overwrite',
         *('-executable=' + str(p) for p in extras))
-    # Normalize all dependency edges and remove build-time run paths, including
-    # those in the helper and runtime-loaded libraries/plugins.
     for binary in binaries(bundle):
-        load = subprocess.check_output(['otool', '-l', str(binary)], text=True)
-        import re
-        for rpath in re.findall(r'cmd LC_RPATH\s+cmdsize \d+\s+path (.*?) \(offset', load):
-            run('install_name_tool', '-delete_rpath', rpath, binary)
-        relative = os.path.relpath(frameworks, binary.parent)
-        run('install_name_tool', '-add_rpath', '@loader_path/' + relative, binary)
-        deps = subprocess.check_output(['otool', '-L', str(binary)], text=True).splitlines()[1:]
-        for line in deps:
-            dep = line.strip().split(' (compatibility')[0]
-            if dep.startswith(('/System/Library/', '/usr/lib/')):
-                continue
-            if '.framework/' in dep:
-                name = dep.split('/')
-                index = next(i for i, part in enumerate(name) if part.endswith('.framework'))
-                target = '/'.join(name[index:])
-            else:
-                target = Path(dep).name
-            if not (frameworks / target).exists():
-                raise RuntimeError(f'Missing dependency {dep} for {binary}')
-            run('install_name_tool', '-change', dep, '@rpath/' + target, binary)
-        if binary.suffix == '.dylib':
-            run('install_name_tool', '-id', '@rpath/' + binary.name, binary)
+        normalize_binary(binary, frameworks)
     resources = contents / 'Resources'
     resources.mkdir(exist_ok=True)
     (resources / 'qt.conf').write_text('[Paths]\nPlugins = PlugIns\n')
@@ -120,6 +126,12 @@ def main():
     plist_path = contents / 'Info.plist'
     with plist_path.open('rb') as stream:
         plist = plistlib.load(stream)
+    if args.source_sha:
+        import re
+        if not re.fullmatch(r'[0-9a-f]{40}', args.source_sha):
+            raise ValueError('Expected a full Git commit SHA')
+        plist['BrickSuiteSourceCommit'] = args.source_sha
+        plist['BrickSuiteArchitecture'] = args.arch
     plist['CFBundleIconFile'] = 'BrickSuite.icns'
     # Qt 6.10 widgets retain the established appearance when built using SDK 26.
     plist['UIDesignRequiresCompatibility'] = True

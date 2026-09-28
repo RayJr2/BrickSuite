@@ -1,5 +1,6 @@
 // Disposable packaging acceptance tool, never compiled into the product.
 #include "src/network/BrickSuiteHostIdentity.h"
+#include "src/network/BrickSuiteProtocol.h"
 #include "src/services/CredentialStore.h"
 #include "src/services/geometry/print/McutMeshBooleanService.h"
 #include "src/services/geometry/print/McutWorkerProtocol.h"
@@ -8,7 +9,9 @@
 #include "src/api/rebrickable/RebrickableService.h"
 #include "src/api/brickset/BricksetService.h"
 #include "src/database/DatabaseManager.h"
-#include <QCoreApplication>
+#include "src/ui/help/HelpManager.h"
+#include <QApplication>
+#include <QImageReader>
 #include <QDir>
 #include <QFile>
 #include <QEventLoop>
@@ -156,14 +159,22 @@ bool credentialsAndApis(bool allowWrite = true, const QString& onlyName = {})
 }
 int main(int argc,char** argv)
 {
-    QCoreApplication app(argc,argv);
+    QApplication app(argc,argv);
     app.setOrganizationName("RFStateSidePackageAcceptance");
     app.setApplicationName("BrickSuiteM392");
     QStandardPaths::setTestModeEnabled(true);
+    bool protocolOk=check(BrickSuiteProtocol::Major==1 && BrickSuiteProtocol::Minor==5, "Protocol 1.5");
     bool ok=check(QSslSocket::activeBackend()=="openssl", "OpenSSL selected without environment override");
+    ok &= protocolOk;
     qInfo()<<"TLS VERSION"<<QSslSocket::sslLibraryVersionString();
+    ok &= check(QSslSocket::sslLibraryVersionString().startsWith("OpenSSL 3.6.4 "), "expected OpenSSL 3.6.4 runtime");
     const auto identity=BrickSuiteHostIdentity::generateEphemeral();
-    ok &= check(identity.success && tls(identity,true) && tls(identity,false),"ephemeral P-256 TLS and fingerprint rejection");
+    ok &= check(identity.success && identity.privateKey.algorithm()==QSsl::Ec && identity.privateKey.length()==256
+                && BrickSuiteHostIdentity::validate(identity.certificate,identity.privateKey).success
+                && tls(identity,true) && tls(identity,false),"ephemeral P-256 TLS and fingerprint rejection");
+    RebrickableService rebrickable;
+    BricksetService brickset;
+    ok &= check(rebrickable.metaObject() && brickset.metaObject(), "provider services construct without credentials");
     ok &= workers();
     auto& db=DatabaseManager::instance();
     ok &= check(db.initialize(),"isolated SQLite database initializes");
@@ -175,6 +186,9 @@ int main(int argc,char** argv)
     db.close();
     for(const auto path : {":/help/index.html",":/help/printing.html",":/icons/bricksuite.ico"})
         ok &= check(QFile::exists(QString::fromLatin1(path)),path);
+    ok &= check(HelpManager::shortcuts().contains(QKeySequence(Qt::Key_F1)), "F1 Help mapping");
+    QImageReader icon(QStringLiteral(":/icons/bricksuite.ico"));
+    ok &= check(!icon.read().isNull(), "embedded application icon decodes");
     if(app.arguments().contains("--credentials")) ok &= credentialsAndApis();
     if(app.arguments().contains("--brickset-read-only")) ok &= credentialsAndApis(false, QStringLiteral("BricksetApiKey"));
     const QString bundle=QDir(QCoreApplication::applicationDirPath()+"/../..").canonicalPath()+"/";

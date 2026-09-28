@@ -15,6 +15,8 @@ case "$ARCH" in
 esac
 export PATH="$(dirname "$CMAKE"):$(dirname "$NINJA"):/usr/bin:/bin:/usr/sbin:/sbin"
 export MACOSX_DEPLOYMENT_TARGET=13.0
+export CC=/usr/bin/clang CXX=/usr/bin/clang++
+export SDKROOT="$(/usr/bin/xcrun --sdk macosx --show-sdk-path)"
 mkdir -p "$DEPS_ROOT/qt-build"
 (
     cd "$OPENSSL_SOURCE"
@@ -35,7 +37,8 @@ mkdir -p "$DEPS_ROOT/qt-build"
         -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
         -DOPENSSL_ROOT_DIR="$DEPS_ROOT/openssl" -DFEATURE_system_webp=OFF \
         -DFEATURE_system_tiff=OFF -DFEATURE_system_freetype=OFF \
-        -DFEATURE_system_harfbuzz=OFF -DCMAKE_IGNORE_PREFIX_PATH=/opt/homebrew
+        -DFEATURE_system_harfbuzz=OFF '-DCMAKE_IGNORE_PREFIX_PATH=/opt/homebrew;/usr/local' \
+        -DCMAKE_MAKE_PROGRAM="$NINJA"
     "$CMAKE" --build . --parallel "$JOBS"
     "$CMAKE" --install .
 )

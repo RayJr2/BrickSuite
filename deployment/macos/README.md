@@ -196,3 +196,71 @@ This variable is for development tests only. It is absent from all packaged
 runtime acceptance commands. The final Mach-O audit JSON is suitable input for
 M39.3's architecture/dependency gate, but the x86_64 artifact and its native
 runtime acceptance have not been performed by this phase.
+
+## M39.3 GitHub architecture artifacts
+
+`.github/workflows/macos-artifacts.yml` is a manual `workflow_dispatch` workflow
+with `macos-15`/`arm64` and `macos-15-intel`/`x86_64` matrix entries. Both check
+out the same immutable `github.sha`; Xcode 16.4 is selected explicitly using
+`DEVELOPER_DIR`. Nothing publishes a GitHub Release or pushes repository changes.
+
+CI uses Python 3.12, CMake 3.31.6 and Ninja 1.11.1.3. It fetches the official
+Qt 6.10.3 and OpenSSL 3.6.4 source archives from `source-lock.json`, verifies
+SHA-256 before extraction, and invokes the same `build_dependencies.sh` used
+locally. Qt's supported source configure/build/install method produces a native
+single-architecture prefix for macOS 13.0. Only required modules are extracted
+from the Qt source archive to limit disk usage. No installed Qt binaries or
+Homebrew runtime libraries are release inputs. MCUT/mio/lib3mf pins remain
+authoritative in the existing CMake files, including lib3mf's pinned submodules.
+
+`ci_release.py` builds the app/helper and every executable referenced by the
+configured CTest declarations, including EXCLUDE_FROM_ALL targets. It runs the
+full configured suite serially, retaining existing per-test deadlines and using
+180 seconds as the default for tests without one. It records actual configured,
+passed, failed and skipped counts from CTest JSON/JUnit, with conditional LDraw
+tests listed separately as **unregistered**. An initial failure is never hidden
+by an automatic retry. The native viewport test remains manual UI acceptance.
+
+The existing MCUT test's bounded 64 MiB allocation against a 32 MiB test budget
+must report termination, parent survival and temporary-directory cleanup, as must
+its deadline fixture. This exercises the shared sampled macOS watchdog on each
+architecture; it does not establish an instantaneous kernel memory ceiling.
+
+After the normal suite, the shared packager stages a production app without
+probes. Metadata, exact plugin allowlist, every Mach-O architecture/minimum,
+dependency closure and deep strict ad-hoc signatures are gates. A disposable
+copy gets `PackageProbe.cpp`, compiled from the actual Release objects. In a
+clean environment with isolated HOME it checks bundled OpenSSL 3.6.4, ephemeral
+P-256 identity/TLS, matching/wrong fingerprints, both real bundled worker paths,
+SQLite/schema/backup, Protocol 1.5, Help/F1/icon resources and provider construction.
+No credentials, credential flags, external provider requests or DYLD paths are
+used in this CI probe. The production app is unchanged by the probe.
+
+Archives use `ditto -c -k --sequesterRsrc --keepParent`. Extraction is tested for
+byte identity, executable permissions, framework symlinks, dependency closure
+and codesign verification. Only after all gates pass does upload-artifact publish:
+
+| GitHub artifact | Archive inside it |
+| --- | --- |
+| `bricksuite-macos-arm64` | `BrickSuite-v0.4.0-macOS-arm64.zip` |
+| `bricksuite-macos-x86_64` | `BrickSuite-v0.4.0-macOS-x86_64.zip` |
+
+Each includes a SHA-256 file, build metadata (source SHA, runner/OS/toolchain,
+architecture, Qt prefix/version, deployment target, pins and gate results),
+bundle audit, JUnit and packaged-probe log. The job summary records the archive
+size/hash and GitHub artifact link. Failed jobs may upload diagnostics only.
+These are **non-notarized, ad-hoc-signed development/release-candidate artifacts**.
+Insert any future Developer ID signing/notarization step before final archive
+creation and verification, using intentionally provisioned secrets.
+
+Run local release-script regression checks with Python 3.12:
+
+```sh
+python3 -m unittest discover -s deployment/macos -p test_release_tools.py -v
+```
+
+Ray must review and push the implementation commit before dispatching this
+workflow from GitHub's Actions page. Select the reviewed branch; both matrix
+entries use its dispatch SHA, even if that branch advances while jobs run.
+GitHub does not execute a workflow file present only in a local checkout.
+See `docs/m39-3-macos-ci.md` for validation evidence and the M39.4 handoff.
