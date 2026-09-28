@@ -125,3 +125,21 @@ depend on codesign's diagnostic wording or traversal order.
 All 13 tests pass locally, including native ARM64 and x86_64 fixtures. The shared
 signer, workflow and release gates are unchanged. Both GitHub jobs require another
 run to confirm behavior on their macOS 15 hosts.
+
+## Follow-up: Xcode version check broken pipe
+
+A subsequent runner log shows `xcodebuild -version` aborting with
+`NSFileHandleOperationException` while writing to `head -1`. The reader exits
+after the first line, so the producer can encounter a broken pipe when writing
+the build-version line. With `set -euo pipefail`, that abort fails the toolchain
+step before build or packaging.
+
+The shared workflow now captures the complete output from one invocation, prints
+it, and compares its first line using Bash parameter expansion. Xcode 16.4 remains
+required, and a failed invocation still fails the step. Both matrix entries use
+the same check. Signing and all release gates remain unchanged.
+
+Local actionlint validation passes. Checks using the exact workflow snippet pass
+for matching output with a delayed second line and correctly reject a wrong
+version, empty output, and a producer that prints the expected version but exits
+with status 42. The GitHub Xcode 16.4 runner still requires a fresh workflow run.
