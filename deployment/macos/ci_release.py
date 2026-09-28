@@ -16,6 +16,7 @@ from pathlib import Path
 
 from audit_bundle import audit
 from package_macos import PLUGINS, normalize_binary
+from sign_bundle import sign_bundle
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO / 'deployment/macos'
@@ -122,12 +123,10 @@ def packaged_probe(bundle, probe, arch, reports):
         target = copy/'Contents/MacOS/BrickSuitePackageProbe'
         shutil.copy2(probe, target)
         normalize_binary(target, copy/'Contents/Frameworks')
-        run('codesign', '--force', '--sign', '-', target)
-        run('codesign', '--force', '--sign', '-', copy)
         result = audit(copy, arch, '13.0')
         if result['errors']:
             raise RuntimeError('\n'.join(result['errors']))
-        run('codesign', '--verify', '--deep', '--strict', copy)
+        sign_bundle(copy)
         home = root/'home'
         home.mkdir()
         environment = dict(PATH='/usr/bin:/bin:/usr/sbin:/sbin', HOME=str(home),

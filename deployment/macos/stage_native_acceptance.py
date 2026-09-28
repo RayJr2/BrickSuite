@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from audit_bundle import audit
+from sign_bundle import sign_bundle
 
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('bundle',type=Path)
@@ -36,6 +37,4 @@ info['CFBundleName']='BrickSuite Native Acceptance'
 p.write_bytes(plistlib.dumps(info))
 result=audit(bundle,'arm64','13.0')
 if result['errors']: raise SystemExit('\n'.join(result['errors']))
-run('codesign','--force','--sign','-',exe)
-run('codesign','--force','--sign','-',bundle)
-run('codesign','--verify','--deep','--strict',bundle)
+sign_bundle(bundle)

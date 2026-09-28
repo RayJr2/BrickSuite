@@ -95,8 +95,12 @@ The packager:
    development run paths. It fails if an expected bundled dependency is absent.
 5. Converts existing ICO artwork to ICNS, writes `qt.conf`, gathers notices,
    and audits all Mach-O architectures, minimum OS values, and dependency paths.
-6. Signs nested code/frameworks first, then the app, using an ad-hoc signature;
-   verifies with `codesign --verify --deep --strict`.
+6. Calls the shared `sign_bundle.py` implementation: real framework binaries,
+   enclosing frameworks (deepest first), standalone dylibs/plugins, all nested
+   helpers/probes, main executable, then app bundle. Every signing call uses
+   `--force --sign - --timestamp=none`; no pre-existing signature is required.
+   The final gate remains `codesign --verify --deep --strict`. The same signer
+   handles CI probe copies and local native acceptance copies.
 
 Final allowlist: Cocoa; QSQLITE; OpenSSL TLS; Apple network information; macOS
 style; SVG icon engine; GIF, ICO, JPEG, SVG, WebP image readers. PNG is built
@@ -264,3 +268,5 @@ workflow from GitHub's Actions page. Select the reviewed branch; both matrix
 entries use its dispatch SHA, even if that branch advances while jobs run.
 GitHub does not execute a workflow file present only in a local checkout.
 See `docs/m39-3-macos-ci.md` for validation evidence and the M39.4 handoff.
+The M39.3A correction and unsigned ARM64/x86_64 signing regressions are documented
+in `docs/m39-3a-signing-closure.md`.

@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from audit_bundle import audit, binaries
+from sign_bundle import sign_bundle
 
 
 PLUGINS = (
@@ -151,13 +152,7 @@ def main():
     report.write_text(json.dumps(result, indent=2) + '\n')
     if result['errors']:
         raise RuntimeError('\n'.join(result['errors']))
-    for binary in binaries(bundle):
-        if '.framework/' not in str(binary):
-            run('codesign', '--force', '--sign', '-', binary)
-    for framework in sorted(frameworks.glob('*.framework')):
-        run('codesign', '--force', '--sign', '-', framework)
-    run('codesign', '--force', '--sign', '-', bundle)
-    run('codesign', '--verify', '--deep', '--strict', '--verbose=2', bundle)
+    sign_bundle(bundle)
     print(f'Packaged {len(result["binaries"])} {args.arch} Mach-O files; audit: {report}')
 
 
