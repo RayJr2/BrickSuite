@@ -1,0 +1,90 @@
+{
+  "ubuntu": {
+    "version": "22.04.5",
+    "snapshot": "20260928T000000Z",
+    "url": "https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04.5-base-amd64.tar.gz",
+    "sha256": "242cd8898b33ea806ef5f13b1076ed7c76f9f989d18384452f7166692438ff1a"
+  },
+  "qt": {
+    "version": "6.10.3",
+    "archives": [
+      {
+        "file": "qtimageformats-Linux-RHEL_9_4-GCC-Linux-RHEL_9_4-X86_64.7z",
+        "url": "https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/qt.qt6.6103.addons.qtimageformats.linux_gcc_64/6.10.3-0-202603310406qtimageformats-Linux-RHEL_9_4-GCC-Linux-RHEL_9_4-X86_64.7z",
+        "sha256": "23390e2ad1d985de0065df6f06d0f99dfa8cac440703b0166f5f011aa5cc25db",
+        "sha1": "56551b020dc840b7fb4e69fec40cce2909111f39",
+        "bytes": 291039
+      },
+      {
+        "file": "qtwebsockets-Linux-RHEL_9_4-GCC-Linux-RHEL_9_4-X86_64.7z",
+        "url": "https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/qt.qt6.6103.addons.qtwebsockets.linux_gcc_64/6.10.3-0-202603310406qtwebsockets-Linux-RHEL_9_4-GCC-Linux-RHEL_9_4-X86_64.7z",
+        "sha256": "011460c7ee31de9c0ec4d2f6fed19fe40452e3bd71c0d37823153709682d6653",
+        "sha1": "ef6a20ca449139ae856b21ed32c8e698f1cfa3ea",
+        "bytes": 108865
+      },
+      {
+        "file": "qtbase-Linux-RHEL_9_4-GCC-Linux-RHEL_9_4-X86_64.7z",
+        "url": "https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/qt.qt6.6103.linux_gcc_64/6.10.3-0-202603310406qtbase-Linux-RHEL_9_4-GCC-Linux-RHEL_9_4-X86_64.7z",
+        "sha256": "3c12871c69f5350c82a9f04e9a064fc78953008dfa93278a58ebcc622cf401a8",
+        "sha1": "88448ff31dbacb33f14ecfe78a28a0ebcb29dbfd",
+        "bytes": 26106261
+      },
+      {
+        "file": "qtsvg-Linux-RHEL_9_4-GCC-Linux-RHEL_9_4-X86_64.7z",
+        "url": "https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/qt.qt6.6103.linux_gcc_64/6.10.3-0-202603310406qtsvg-Linux-RHEL_9_4-GCC-Linux-RHEL_9_4-X86_64.7z",
+        "sha256": "0993f77ab7efe07df87857cdaefd313759d0fef2949b076b88e92a300d3c6742",
+        "sha1": "99ac26a1d735967f824221373d179c77f6faa2b6",
+        "bytes": 292176
+      },
+      {
+        "file": "qtwayland-Linux-RHEL_9_4-GCC-Linux-RHEL_9_4-X86_64.7z",
+        "url": "https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/qt.qt6.6103.linux_gcc_64/6.10.3-0-202603310406qtwayland-Linux-RHEL_9_4-GCC-Linux-RHEL_9_4-X86_64.7z",
+        "sha256": "e1b74b283d0f810e852526018c883d98869e8f48a6e66d8d3296039d5f704c17",
+        "sha1": "a8bccaa044c3505d59e7adc4906f03f85e3ad785",
+        "bytes": 129591
+      },
+      {
+        "file": "icu-linux-Rhel8.6-x86_64.7z",
+        "url": "https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_6103/qt6_6103/qt.qt6.6103.linux_gcc_64/6.10.3-0-202603310406icu-linux-Rhel8.6-x86_64.7z",
+        "sha256": "513830e56495b5a5d4b74e7b9ec861906cf0938fa5a8b79d08e097d41011eb6c",
+        "sha1": "cda990c8cf6f997e89e67925de8fc0e065f1b208",
+        "bytes": 9660627
+      }
+    ],
+    "source": {
+      "version": "6.10.3",
+      "url": "https://download.qt.io/official_releases/qt/6.10/6.10.3/single/qt-everywhere-src-6.10.3.tar.xz",
+      "sha256": "cbc81e726b0ff3c0cdb0219bf74545e91cec013c4a8503c20f93f83d73dff5d2",
+      "directory": "qt-everywhere-src-6.10.3"
+    }
+  },
+  "openssl": {
+    "version": "3.5.8",
+    "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz",
+    "sha256": "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2"
+  },
+  "mcut": {
+    "repository": "https://github.com/cutdigital/mcut.git",
+    "revision": "047d75ffe6e33ede572cb25217047a4756188401",
+    "overlay": "cmake/BrickSuiteMcutLinuxQueue.cmake"
+  },
+  "lib3mf": {
+    "repository": "https://github.com/3MFConsortium/lib3mf.git",
+    "revision": "64bb454d1fcb53effa57d3cef752a10d740d41a2",
+    "version": "2.5.0"
+  },
+  "ldraw": {
+    "url": "https://library.ldraw.org/library/updates/complete.zip",
+    "sha256": "d2a695868ed2b3957c45b022a6451908edab22cc043179dd61d18dd382b35e11",
+    "bytes": 145316175,
+    "directory": "ldraw"
+  },
+  "icu_license": {
+    "url": "https://raw.githubusercontent.com/unicode-org/icu/release-73-2/icu4c/LICENSE",
+    "sha256": "f3005e195ff74d8812cc1f182a1c446fab678d70a10e3dada497585befee5416"
+  },
+  "mio": {
+    "repository": "https://github.com/cutdigital/mio.git",
+    "revision": "474d060bddd1d9a3e69c439e31ae6f3dae3d55ad"
+  }
+}
