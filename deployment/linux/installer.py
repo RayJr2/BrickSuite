@@ -121,6 +121,10 @@ def verify_bundle(bundle, resolve=True):
     report=json.loads((bundle/'share/abi-audit.json').read_text())
     if report['source_sha']!=meta['source_sha']:raise RuntimeError('Source SHA mismatch')
     if meta['architecture']!='x86_64':raise RuntimeError('Wrong bundle architecture')
+    # Native developer packages declare their measured host policy explicitly;
+    # ordinary/baseline archives keep the unchanged Ubuntu 22.04 ceiling.
+    ceilings={'GLIBC':'2.35','GLIBCXX':'3.4.30','CXXABI':'1.3.13'}
+    if meta.get('package_kind')=='local-development':ceilings=meta['abi_policy']
     rows={r['path']:r for r in report['elf']}
     for name in ['bin/BrickSuite','bin/BrickSuiteMeshBooleanWorker','BrickSuite','install.sh','uninstall.sh']:
         if not (bundle/name).is_file() or not os.access(bundle/name,os.X_OK):raise RuntimeError('Missing executable: '+name)
@@ -139,7 +143,7 @@ def verify_bundle(bundle, resolve=True):
         if not path.resolve().is_relative_to(bundle) or digest(path)!=row['sha256']:raise RuntimeError('ELF integrity mismatch: '+name)
         expected='$ORIGIN'+('/'+os.path.relpath(bundle/'lib',path.parent) if path.parent!=bundle/'lib' else '')
         if row['rpaths']!=[expected]:raise RuntimeError('Non-relative audited RUNPATH: '+name)
-        for family,ceiling in [('GLIBC','2.35'),('GLIBCXX','3.4.30'),('CXXABI','1.3.13')]:
+        for family,ceiling in ceilings.items():
             if tuple(map(int,row['requires'][family].split('.')))>tuple(map(int,ceiling.split('.'))):raise RuntimeError('ABI ceiling exceeded: '+name)
         raw=path.read_bytes()
         if has_developer_path(raw):raise RuntimeError('Development path in '+name)

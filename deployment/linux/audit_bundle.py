@@ -48,17 +48,17 @@ def inspect(path):
             'requires':needs}
 
 
-def check_info(info, relative, expected_rpath):
+def check_info(info, relative, expected_rpath, ceilings=None):
     if info['machine'] != POLICY['architecture'] or info['class'] != 'ELF64':
         raise ValueError(f'Wrong architecture: {relative}')
-    for name, ceiling in POLICY['ceilings'].items():
+    for name, ceiling in (ceilings or POLICY['ceilings']).items():
         if version(info['requires'][name]) > version(ceiling):
             raise ValueError(f'{relative}: {name}_{info["requires"][name]} exceeds {ceiling}')
     if info['rpaths'] != [expected_rpath]:
         raise ValueError(f'Non-relative or unexpected RUNPATH: {relative}: {info["rpaths"]}')
 
 
-def audit(bundle, expected_sha, resolve=True):
+def audit(bundle, expected_sha, resolve=True, ceilings=None, forbidden_prefixes=()):
     bundle = Path(bundle).resolve()
     metadata = json.loads((bundle/'share/build-metadata.json').read_text())
     if metadata['source_sha'] != expected_sha or not re.fullmatch('[0-9a-f]{40}', expected_sha):
@@ -90,9 +90,9 @@ def audit(bundle, expected_sha, resolve=True):
         relative=str(binary.relative_to(bundle)); info=inspect(binary)
         librel=os.path.relpath(bundle/'lib',binary.parent)
         rpath='$ORIGIN' + ('/'+librel if librel != '.' else '')
-        check_info(info,relative,rpath)
+        check_info(info,relative,rpath,ceilings)
         raw=binary.read_bytes()
-        for prefix in [b'/home/ray/',b'/home/qt/',b'/work/build/',b'/src/',b'/opt/qt/',b'/tmp/bricksuite-build']:
+        for prefix in [b'/home/ray/',b'/home/qt/',b'/work/build/',b'/src/',b'/opt/qt/',b'/tmp/bricksuite-build',*forbidden_prefixes]:
             # An interior component of a relative diagnostic path is not an
             # absolute development prefix (e.g. qtbase/src/widgets).
             if re.search(rb'(?<![A-Za-z0-9_./-])'+re.escape(prefix),raw):
@@ -104,7 +104,7 @@ def audit(bundle, expected_sha, resolve=True):
         if resolve:
             result=subprocess.run(['ldd',str(binary)],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
             if result.returncode or 'not found' in result.stdout: raise ValueError('Unresolved dependency: '+relative+'\n'+result.stdout)
-            for location in re.findall(r'=>\s+(/\S+)',result.stdout):
+            for location in re.findall(r'=>\s+(/[^\n]+?)\s+\(0x[0-9a-f]+\)',result.stdout):
                 if not (location.startswith(str(bundle)+'/') or location.startswith(('/lib/','/usr/lib/','/lib64/'))):
                     raise ValueError('Developer library resolved: '+location)
         for name,val in info['requires'].items(): maxima[name]=max(maxima[name],val,key=version)
@@ -114,7 +114,13 @@ def audit(bundle, expected_sha, resolve=True):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('bundle',type=Path);p.add_argument('--source-sha',required=True);p.add_argument('--output',type=Path)
-    args=p.parse_args();result=audit(args.bundle,args.source_sha)
+    p.add_argument('--local',action='store_true',help='Explicitly audit a local-development package against its recorded build-host policy')
+    args=p.parse_args();ceilings=None
+    if args.local:
+        metadata=json.loads((args.bundle/'share/build-metadata.json').read_text())
+        if metadata.get('package_kind')!='local-development':raise ValueError('Not a local-development package')
+        ceilings=metadata['abi_policy']
+    result=audit(args.bundle,args.source_sha,ceilings=ceilings)
     if args.output:args.output.write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps({k:v for k,v in result.items() if k!='elf'},indent=2))
 

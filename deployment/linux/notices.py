@@ -5,7 +5,7 @@ import re
 import shutil
 
 
-def stage(bundle, source, build, qt, sources, openssl):
+def stage(bundle, source, build, qt, sources, openssl, openssl_license=None):
     dest = bundle/'share/licenses'
     required = []
     def copy(src, name):
@@ -19,7 +19,7 @@ def stage(bundle, source, build, qt, sources, openssl):
     copy(source/'cmake/BrickSuiteMcutLinuxQueue.cmake','MCUT/BrickSuiteMcutLinuxQueue.cmake')
     for name in ['LICENSE','Libraries/libressl/COPYING','submodules/zlib/LICENSE','submodules/libzip/LICENSE','submodules/cpp-base64/LICENSE','submodules/fast_float/LICENSE-MIT']:
         copy(build/'_deps/lib3mf-src'/name,'lib3mf/'+name)
-    copy(sources/'openssl-3.5.8/LICENSE.txt','OpenSSL/LICENSE.txt')
+    copy(openssl_license or sources/'openssl-3.5.8/LICENSE.txt','OpenSSL/LICENSE.txt')
     copy(sources/'icu-73.2-LICENSE','ICU/LICENSE')
     for package in ['zlib1g','libzstd1','libbrotli1']:
         copy(Path('/usr/share/doc')/package/'copyright',package+'/copyright')

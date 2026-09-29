@@ -2721,6 +2721,9 @@ if(UNIX AND NOT APPLE)
     install(TARGETS BrickSuite BrickSuiteMeshBooleanWorker
         RUNTIME DESTINATION bin
     )
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        include(cmake/BrickSuiteLinuxDeploy.cmake)
+    endif()
 endif()
 
 

@@ -1,0 +1,6 @@
+if(MISSING_PYTHON)
+    message(FATAL_ERROR "Linux Deploy requires Python 3. Install python3 and refresh CMake.")
+endif()
+if(NOT CONFIG STREQUAL "Release")
+    message(FATAL_ERROR "Linux Deploy requires a Release configuration. Select Desktop Qt Release in Qt Creator, run CMake, then build Deploy.")
+endif()

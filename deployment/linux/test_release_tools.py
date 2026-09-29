@@ -49,6 +49,14 @@ class GateTests(unittest.TestCase):
     def test_valid_relocated_closure(self):
         target=Path(self.run.name)/'path with spaces/BrickSuite';target.parent.mkdir();self.bundle.rename(target)
         self.assertGreater(audit(target,SHA)['elf_count'],2)
+    def test_private_library_resolution_with_spaces(self):
+        source=Path(self.run.name)/'lib.c';source.write_text('int package_fixture(void) { return 0; }\n')
+        library=self.bundle/'lib/libfixture.so'
+        subprocess.run(['cc','-shared','-fPIC',str(source),'-o',str(library)],check=True)
+        subprocess.run(['patchelf','--set-rpath','$ORIGIN',str(library)],check=True)
+        subprocess.run(['patchelf','--add-needed','libfixture.so',str(self.bundle/'bin/BrickSuite')],check=True)
+        target=Path(self.run.name)/'path with spaces/BrickSuite';target.parent.mkdir();self.bundle.rename(target)
+        self.assertGreater(audit(target,SHA)['elf_count'],2)
     def test_glibc_ceiling(self):
         info=copy.deepcopy(self.info);info['requires']['GLIBC']='2.36'
         with self.assertRaisesRegex(ValueError,'exceeds'):check_info(info,'app','$ORIGIN/../lib')

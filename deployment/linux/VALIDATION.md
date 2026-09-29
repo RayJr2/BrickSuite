@@ -1,3 +1,179 @@
+# M39.L2B Qt Creator Deploy validation
+
+Implementation and command-line target validation passed. Final visible Qt Creator
+acceptance remains Ray's step. No application C++ source, schema, protocol,
+Windows packaging or macOS packaging was changed. No commit or push was made.
+
+## 1. Existing Windows convention
+
+`deployment/windows/package_windows.bat <Release-build-dir>` is the checked-in
+Windows packaging entry point. It discovers Qt/OpenSSL from CMakeCache, invokes
+`windeployqt --release` and Inno Setup, stages under `<build-dir>/deploy/BrickSuite`
+and reports installer output under `<build-dir>/deploy/installer`. It checks
+required binaries and metadata; its Release option is supplied to windeployqt.
+There is no checked-in Windows CMake Deploy target or Windows Qt Creator custom
+step configuration to copy. That script and Windows metadata generation remain
+unchanged. The Linux target adopts the Deploy name and build-tree output convention.
+
+## 2. Linux target
+
+**Deploy**, a Linux-only CMake custom target, visible to Qt Creator's build-target
+selector after CMake refresh. It depends on BrickSuite and
+BrickSuiteMeshBooleanWorker for Release builds. Tests are not target prerequisites.
+
+## 3. Files changed
+
+- `CMakeLists.txt`: Linux-only deployment include.
+- `cmake/BrickSuiteLinuxDeploy.cmake`: target, production dependencies, optional
+  notice-source cache and discovery of configured Qt/compiler/OpenSSL inputs.
+- `cmake/RequireLinuxDeployRelease.cmake`: actionable configuration/tool failures.
+- `deployment/linux/local_deploy.py`: native-input adapter, source notice cache,
+  host ABI policy, safe build-tree publication and Compile Output summary.
+- `deployment/linux/package_linux.py`: explicit local profile of the authoritative
+  packager; common staging/plugins/RPATH/archive/checksum remain shared.
+- `deployment/linux/audit_bundle.py`: explicit local ceiling option and correct
+  `ldd` path parsing when directories contain spaces; default release ceiling is unchanged.
+- `deployment/linux/notices.py`: license attribution for the actual native OpenSSL.
+- `deployment/linux/installer.py`: accepts the explicitly labeled local ABI policy;
+  baseline policy and installer UX/actions are unchanged.
+- `deployment/linux/test_local_deploy.py`, `test_release_tools.py`,
+  `test_installer.py`: local/baseline separation and path/installer regressions.
+- `deployment/linux/README.md` and this record: workflow and validation.
+
+## 4. Release and Debug behavior
+
+Release builds production dependencies and packages them. Debug fails immediately
+with “Linux Deploy requires a Release configuration” and instructions to select
+Release and run CMake. The single-config Debug rejection was verified without
+building Debug application dependencies. Multi-config generators check the selected
+configuration at execution time. Missing Python/packaging tools produce a nonzero,
+actionable failure. No environment variables need manual editing.
+
+## 5. Exact Qt Creator steps
+
+1. Select **Desktop Qt 6.10.3 Release**.
+2. Run CMake to refresh the target list.
+3. Open **Projects → Build Settings → Build Steps → Details**.
+4. Select the CMake build target **Deploy** instead of `all`, then build it.
+   Qt Creator's build-target selector may also expose the same target directly.
+5. Read **BrickSuite Linux deployment package created** in Compile Output for
+   the archive path, byte size, checksum, architecture, commit, OS, ABI and Qt.
+
+This is the CMake build target; no IDE-specific parallel packaging workflow or
+edited `.user` file is required. The project was initially on Debug, so the
+Release selection matters.
+
+## 6. Exact artifact location
+
+`/home/ray/Programming/Qt/BrickSuite/build/Desktop_Qt_6_10_3_Release/deploy/BrickSuite-v0.4.0-Linux-x86_64.tar.gz`
+
+Checksum, build metadata, dependency manifest and ABI report are adjacent.
+Implementation paths derive from the selected build directory and configured kit;
+no developer home path is hard-coded in implementation. A failed package run
+preserves the preceding managed local artifact. Official archives elsewhere are
+not overwritten.
+
+## 7. Size and SHA-256
+
+**46,383,445 bytes**.
+
+```text
+2417059c6348d9adedc97437ebdd33779956b503653e412f511cb21cdbf8d054
+```
+
+Checksum was verified after creation. Installer/uninstaller executable modes,
+main/helper, all 19 plugins, private libraries and notices are included.
+
+## 8. Source commit and architecture
+
+Source commit **81348fa29ef3dbd1cd0bee784073640fcf3e01ae**, **x86_64**.
+The package records `source_dirty: true` for this uncommitted deployment work,
+plus packaging-tool and CMake-integration hashes. Qt **6.10.3**, GCC **15.2.0**,
+native OpenSSL **3.5.5 (27 January 2026)**, Ubuntu **26.04.1 LTS**.
+Matching Qt/ICU notice sources were reused through the optional CMake cache entry;
+no baseline application or runtime binaries were substituted for native inputs.
+
+## 9. Local ABI floor
+
+All **43 ELF files** were recursively audited. Observed maximum requirements:
+**GLIBC 2.43 / GLIBCXX 3.4.32 / CXXABI 1.3.15**.
+Build-host runtime policy: GLIBC 2.43 / GLIBCXX 3.4.35 / CXXABI 1.3.17.
+The observed requirements, rather than a guessed compiler/distro label, are reported.
+This is explicitly a **local development package**, not an Ubuntu 22.04 release.
+The unmodified default release gate correctly rejects this artifact as exceeding
+GLIBC 2.35. The official Ubuntu 22.04 policy remains 2.35 / 3.4.30 / 1.3.13.
+
+## 10. One authoritative packaging implementation
+
+`Deploy → local_deploy.py → package_linux.stage`.
+The adapter supplies native build inputs and a declared local policy; it does not
+implement a second runtime collector, plugin installer, RPATH editor, ELF auditor,
+installer generator or archive/checksum writer. Baseline packaging retains its
+Ubuntu 22.04 environment requirement, source checks and exhaustive test gate.
+Local Deploy skips only that full-suite gate and records that fact in metadata.
+Installer behavior remains `/opt/BrickSuite`, desktop/icon/command integration,
+consent before sudo, safe replacement and preserved user data/credentials.
+
+## 11. Regression and package validation
+
+- **19/19 packaging regressions passed**, including actual private-library
+  resolution from a path containing spaces.
+- **30/30 installer regressions passed**, including explicit local-policy handling
+  while a non-local archive cannot silently widen the baseline ceiling.
+- **10/10 local-deploy regressions passed**: Debug/tools failures, strict baseline
+  default, explicit local policy, architecture/RPATH rejection, notice-cache
+  errors, repeat publication and failure recovery.
+- The 19 packaging and 30 installer tests also passed under Ubuntu 22.04.
+- Real final-archive install/reinstall/uninstall/reinstall passed in a temporary
+  synthetic root with spaces; user data survived. The laptop's real `/opt` was
+  not changed.
+- Recursive local ABI/closure/RPATH audit passed after relocation outside the
+  checkout, including a path with spaces. The source/build/SDK prefixes are
+  rejected during packaging. Actual packaged startup and loaded-library mappings
+  passed in a namespace with development SDK paths hidden and private data/keyring.
+- The final package has the same 43 ELF hashes as the runtime-tested candidate;
+  the repeated target run refreshed only the shared audit/tool provenance.
+- The full 125-test application suite was not rerun, as requested: no production
+  C++ or runtime behavior changed.
+
+Evidence is retained under
+`build/Desktop_Qt_6_10_3_Release/deploy-validation/`.
+
+## 12. Command-line target validation
+
+Using the CMake executable selected by the existing Qt Creator kit:
+
+```sh
+/home/ray/Qt/Tools/CMake/bin/cmake --build   /home/ray/Programming/Qt/BrickSuite/build/Desktop_Qt_6_10_3_Release   --target Deploy --parallel 6
+```
+
+**Passed twice**, including replacing an existing local deployment. Compile Output
+contains the requested summary. Release CMake configure passed. Debug CMake
+configure passed, and its Deploy invocation failed with the expected Release-only
+message. No separate Qt Creator-only code path is used.
+
+## 13. Diff checks
+
+`git diff --check`, Python syntax, shell installer regressions, artifact checksum,
+packaging-tool provenance and CMake integration hash checks passed. Initial tree
+was clean at 81348fa; changes are limited to CMake/Linux deployment integration.
+
+## 14. Preserved invariants
+
+Schema **35**, protocol **1.5**, M37/M38, MCUT **512 MiB** production limit,
+user-data locations, credential design, Windows and macOS packaging are unchanged.
+No production C++ edits, commit, push or CI workflow were introduced.
+
+## 15. Remaining Qt Creator acceptance
+
+No command-line Deploy or packaging blocker remains. Ray still needs to select
+Release, refresh CMake and build **Deploy** visibly in the open Qt Creator project.
+The optional notice-source cache is configured for this build; fresh builds can
+automatically download matching pinned notice sources once. Local Deploy artifacts
+must not replace the separately validated Ubuntu 22.04 official release artifact.
+
+---
+
 # M39.L2A installer validation record
 
 Technical checks passed. This installer-enabled archive supersedes the earlier

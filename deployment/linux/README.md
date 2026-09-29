@@ -5,6 +5,52 @@ the Ubuntu 26.04 development host is not a Linux release artifact. These scripts
 use a rootless Bubblewrap namespace with Ubuntu 22.04 userspace; they do not
 install packages into or change the host OS. The host kernel is shared.
 
+## Qt Creator: local Linux Deploy
+
+1. Select the **Desktop Qt 6.10.3 Release** build configuration.
+2. Run CMake once to refresh the targets.
+3. In Projects → Build Settings → Build Steps → Details, select **Deploy** as
+   the CMake build target (instead of `all`), then build it. You can also use
+   Qt Creator's build-target selector where available.
+4. Read the archive path, size, SHA-256 and measured ABI in Compile Output.
+   Outputs are under `<build-dir>/deploy/`, including
+   `BrickSuite-v0.4.0-Linux-x86_64.tar.gz` and its `.sha256` file.
+
+The command-line equivalent is `cmake --build <build-dir> --target Deploy`.
+Debug configurations fail with an actionable Release-only message. The target
+builds BrickSuite and BrickSuiteMeshBooleanWorker first; it does not build or run
+the full test suite. No environment-variable editing is needed. Windows continues
+using `deployment/windows/package_windows.bat` (windeployqt + Inno Setup), with
+its existing build-tree `deploy` convention; there was no repository-defined
+Windows CMake Deploy target to modify.
+
+**Deploy creates a local development package from the current host binaries.**
+The summary and metadata identify its source commit/dirty state, OS, Qt, OpenSSL,
+build-host ABI policy and measured shipped ABI. A package from newer Ubuntu is
+not an official Ubuntu 22.04 release. The default baseline packager and auditor
+still require the original Ubuntu 22.04 policy and exhaustive test gate.
+
+The target calls `local_deploy.py`, a native-input/notice-cache adapter that calls
+`package_linux.stage`. Staging, closure, plugin allowlist, RPATH, notices, installer,
+archive and checksum all remain in the authoritative shared implementation.
+The installer uses the explicit local ABI policy only for a package labeled
+`local-development`; normal release archives retain the unchanged baseline.
+Actual loader verification still rejects installation on an incompatible host.
+
+Packaging tools are Python 3, Git, binutils, patchelf, libc-bin, dpkg and tar/xz.
+Missing tools fail clearly; Deploy never runs sudo or installs packages. Matching
+Qt/ICU notice sources download with pinned hashes on first use into
+`<build-dir>/deploy-inputs/`, then are cached. To reuse already prepared matching
+sources, set the optional CMake cache path `BRICKSUITE_LINUX_DEPLOY_SOURCES` once.
+Only notice sources are reused; production binaries always come from the selected
+native Release build and SDK. Deploy publishes a completed package only after
+successful audit; a failed run preserves the previous local package. An unmanaged
+`deploy/` directory is refused rather than overwritten.
+
+To independently audit a local extraction, use
+`audit_bundle.py <bundle> --source-sha <sha> --local`. Without `--local`, the audit
+continues to enforce Ubuntu 22.04. `test_local_deploy.py` verifies that separation.
+
 ## Install the release on Ubuntu
 
 Extract `BrickSuite-v0.4.0-Linux-x86_64.tar.gz`, enter `BrickSuite`, and run

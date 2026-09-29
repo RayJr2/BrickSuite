@@ -157,6 +157,14 @@ class BundleVerificationTests(unittest.TestCase):
     def test_absolute_runpath_report_rejected(self):
         self.report['elf'][0]['rpaths']=['/opt/sdk/lib'];self.save()
         self.assertRaisesRegex(RuntimeError,'RUNPATH',i.verify_bundle,self.bundle)
+    def test_local_abi_policy_requires_explicit_package_kind(self):
+        meta=self.bundle/'share/build-metadata.json';data=json.loads(meta.read_text())
+        data['abi_policy']={'GLIBC':'2.43','GLIBCXX':'3.4.34','CXXABI':'1.3.15'}
+        self.report['elf'][0]['requires']['GLIBC']='2.43';self.save()
+        meta.write_text(json.dumps(data))
+        self.assertRaisesRegex(RuntimeError,'ABI ceiling',i.verify_bundle,self.bundle)
+        data['package_kind']='local-development';meta.write_text(json.dumps(data))
+        self.assertEqual(i.verify_bundle(self.bundle),'0.4.0')
     def test_unsafe_symlink_rejected(self):
         (self.bundle/'lib/escape').symlink_to('/usr/lib')
         self.assertRaisesRegex(RuntimeError,'symlink',i.verify_bundle,self.bundle)
