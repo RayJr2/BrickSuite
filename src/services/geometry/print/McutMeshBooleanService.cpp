@@ -3,6 +3,7 @@
 #include "PrintMeshAnalysis.h"
 #include <mcut/mcut.h>
 #include <algorithm>
+#include <cmath>
 #include <vector>
 #include "McutWorkerProtocol.h"
 #include "BoundedGeometryWorker.h"
@@ -43,6 +44,7 @@ bool dispatchBoolean(const PrintMesh&a,const PrintMesh&b,McFlags operationFlags,
         }
         std::vector<double> vertices(bytes/sizeof(double));
         if(!checked(mcGetConnectedComponentData(context,handle,MC_CONNECTED_COMPONENT_DATA_VERTEX_DOUBLE,bytes,vertices.data(),nullptr),"vertices"))return false;
+        if(!std::all_of(vertices.begin(),vertices.end(),[](double value){return std::isfinite(value);})){*error="MCUT returned non-finite vertex data";return false;}
         const auto base=std::uint32_t(merged.vertices.size());
         for(std::size_t i=0;i<vertices.size();i+=3)merged.vertices.push_back({vertices[i],vertices[i+1],vertices[i+2]});
         // A failed size query can leave MCUT's CDT cache partially populated.
@@ -106,7 +108,7 @@ MeshBooleanResult McutMeshBooleanService::runWorker(const PrintMesh& a,const Pri
 {
     using namespace McutWorkerProtocol;
     MeshBooleanResult result;
-    const auto fail=[&](MeshBooleanError error,const QString& message){result.error=error;result.message=message.toStdString();return result;};
+    const auto fail=[&](MeshBooleanError error,const QString& message){result.mesh={};result.error=error;result.message=message.toStdString();return result;};
     if(a.faces.size()+b.faces.size()>MaximumFaces||a.vertices.size()+b.vertices.size()>3*MaximumFaces)
         return fail(MeshBooleanError::ResourceLimitExceeded,QStringLiteral("MCUT worker input exceeds 50,000 faces / 150,000 vertices; no Boolean started."));
     QTemporaryDir directory;

@@ -1,0 +1,6 @@
+if(MISSING_PYTHON)
+    message(FATAL_ERROR "macOS Deploy requires Python 3.11 or newer. Set Python3_EXECUTABLE in Qt Creator's CMake configuration and refresh CMake.")
+endif()
+if(NOT CONFIG STREQUAL "Release")
+    message(FATAL_ERROR "macOS Deploy requires a Release configuration. Select Release in Qt Creator, run CMake, then build Deploy.")
+endif()

@@ -270,3 +270,116 @@ GitHub does not execute a workflow file present only in a local checkout.
 See `docs/m39-3-macos-ci.md` for validation evidence and the M39.4 handoff.
 The M39.3A correction and unsigned ARM64/x86_64 signing regressions are documented
 in `docs/m39-3a-signing-closure.md`.
+
+## Local Qt Creator Deploy (ARM64)
+
+Current closure evidence, the green 123-test installed-source suite and the
+Qt Creator target-selection workaround are in
+[`docs/m39-macos-portability-closure.md`](../../docs/m39-macos-portability-closure.md).
+The initial failed run is retained separately as investigation history.
+
+The Apple-only CMake target `Deploy` builds `BrickSuite`,
+`BrickSuiteMeshBooleanWorker` and the excluded-from-ALL `BrickSuitePackageProbe`.
+It does not build or run the full CTest suite. The probe is built with CMake from
+the application's sources and target settings, replacing only the entry point;
+it is never included in the production ZIP. This works with Make and Ninja
+without parsing their generated linker commands.
+
+`local_deploy.py` is an adapter to `package_macos.py` and the existing
+`ci_release.py` bundle validator, packaged probe and archive functions. It retains
+the architecture/minimum-OS/dependency audits, inside-out ad-hoc signing,
+deep/strict verification and ZIP byte/mode/symlink round trip. The existing runtime
+probe runs against a disposable ZIP extraction with isolated preferences and no
+personal Keychain access. Only a successfully validated result replaces a prior
+managed `deploy` directory; an unrelated directory is never replaced.
+
+Use a **Release**, native ARM64 Qt 6.10.3 configuration whose Qt and OpenSSL
+dependencies were built for macOS 13.0 using `build_dependencies.sh`. Setting the
+application's minimum alone cannot lower a dependency's minimum. A kit using
+Homebrew dependencies or a mixed-architecture Qt may fail the unchanged audit.
+Use the matching source-built dependency prefixes in CMake's `CMAKE_PREFIX_PATH`
+and `OPENSSL_ROOT_DIR` when configuring a fresh build. Keep
+`CMAKE_OSX_ARCHITECTURES=arm64` and `CMAKE_OSX_DEPLOYMENT_TARGET=13.0`.
+
+Deploy also requires Python 3.11 or newer (`Python3_EXECUTABLE` can select it in
+Qt Creator's CMake configuration). For license notices, set these CMake PATH
+options once if the matching sources are not in the automatically discovered
+locations:
+
+- `BRICKSUITE_MAC_DEPLOY_QT_SOURCE`: Qt source root containing `qtbase`, `qtsvg`,
+  `qtimageformats`, `qtwebsockets` and `LICENSES`. Discovery checks the installed
+  prefix's sibling `Src` and `sources/qt-everywhere-src-6.10.3`.
+- `BRICKSUITE_MAC_DEPLOY_OPENSSL_SOURCE`: matching OpenSSL source root containing
+  `VERSION.dat` and `LICENSE.txt`. Discovery checks the installed prefix's sibling
+  `sources/openssl-<version>`.
+
+The adapter checks source versions against configured dependency versions.
+These are CMake settings; no environment-variable editing is needed.
+
+In Qt Creator:
+
+1. Select the macOS Qt 6.10.3 Release configuration. For an already configured
+   source-built dependency build, use **Projects → Import Existing Build…** and
+   select its build directory. Qt Creator creates a matching kit/configuration
+   without replacing the existing development kit.
+2. Open **Projects → Build Settings → CMake → Run CMake**.
+3. Under **Build Steps → Details → Targets**, clear `all` and select `Deploy`.
+4. Build and read **Compile Output** for the package path, byte size, SHA-256,
+   architecture, source commit/dirty state, deployment target, Qt version and
+   signing mode. This is a build target, not the separate Deploy Settings tab.
+
+**Qt Creator 20.0.2 accessibility workaround:** on this Mac, changing a checkbox
+in the large Release target list crashes inside Qt Creator's accessibility cache,
+including the ordinary `all` checkbox. The small Debug list does not reproduce
+it. Keep the existing `all` selection and enter `--target Deploy` in the build
+step's **CMake arguments** field instead. The preview becomes
+`cmake --build <build-dir> --target all --target Deploy`. CMake builds the usual
+application dependencies and the same `Deploy` target; excluded test executables
+and CTest are not added. This uses the existing build step, requires no shell or
+accessibility setting change, and preserves all Release/package gates. Remove
+the extra arguments to return to ordinary development builds. Do not edit or
+commit Qt Creator `.user` files.
+
+The identical command-line invocation is:
+
+```sh
+cmake --build <release-build-dir> --target Deploy
+```
+
+Output is `<release-build-dir>/deploy/BrickSuite-v0.4.0-macOS-arm64.zip`, plus its
+`.sha256`, build metadata, bundle audit and packaged-probe log. Debug configurations
+fail with `macOS Deploy requires a Release configuration.` Local candidates are
+**ad-hoc signed / non-notarized**, ARM64 only. GitHub retains the separate ARM64
+and x86_64 matrix. Local Deploy neither cross-compiles nor creates Universal2.
+
+### Installed-LDraw test configuration
+
+Set `BUILD_TESTING=ON` and the CMake PATH option
+`BRICKSUITE_CALIBRATION_LDRAW_ROOT=<installed-library-root>` in the Release test
+configuration, then Run CMake. Use the same library root selected in BrickSuite's
+3D Models settings (containing `parts`, `p` and `LDConfig.ldr`). Do not copy the
+library into the repository or put a personal path into source defaults.
+
+The option registers six `FitCalibrationSource` cases (`BallSocket`,
+`PinBarrelHinge`, `InterleavedFingerHinge`, `ClickHinge`, `RetainedRotatingWheel`,
+`PlainRoundBoreWheel`) plus `PrintCompositionRouting` and `PrintPreparation3021`.
+They are unregistered when the option is empty, not skipped. On the current
+macOS configuration this changes 115 tests to 123. Build every configured test
+executable explicitly (`ci_release.configured_targets` provides the existing
+discovery mechanism), then run CTest serially with the existing 180-second default
+and per-test timeouts. Development-tree TLS tests require the rebuilt OpenSSL
+library directory in their runtime search path, as in `ci_release.py`; packaged
+probes deliberately run without that environment override.
+
+Run packaging regressions separately:
+
+```sh
+python3 -m unittest discover -s deployment/macos -p 'test_*.py' -v
+```
+
+Native viewer acceptance remains separate from offscreen CTest. The disposable
+`ViewerAcceptanceMain.cpp` harness accepts an installed library root, optional
+`--part <number>` or `--external <file>`, and `--smoke` / `--prepare`. It exercises
+the production viewer with isolated settings, verifies native shared-context
+rendering of loaded geometry, and optionally checks preparation outcomes. It
+does not create a Verified Fit Profile and is never shipped in the ZIP.

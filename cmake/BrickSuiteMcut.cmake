@@ -27,9 +27,10 @@ FetchContent_Declare(mcut
     GIT_SHALLOW FALSE
     ${_bricksuite_mcut_patch})
 FetchContent_MakeAvailable(mcut)
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    include("${CMAKE_CURRENT_LIST_DIR}/BrickSuiteMcutLinuxQueue.cmake")
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/BrickSuiteMcutPortability.cmake")
+# The same lost-wakeup was reproduced on macOS; retain the existing overlay
+# path (also used by Linux provenance) and synchronize the queue on every OS.
+include("${CMAKE_CURRENT_LIST_DIR}/BrickSuiteMcutLinuxQueue.cmake")
 # The pinned math.cpp uses uint32_t without including its defining header.
 # GCC 15 no longer supplies it through the other standard-library headers.
 target_compile_options(mcut PRIVATE
@@ -44,11 +45,17 @@ configure_file("${mcut_SOURCE_DIR}/LICENSE.txt"
     "${_bricksuite_mcut_license_dir}/LICENSE.txt" COPYONLY)
 configure_file("${mcut_SOURCE_DIR}/COPYING.LESSER"
     "${_bricksuite_mcut_license_dir}/COPYING.LESSER" COPYONLY)
+configure_file("${CMAKE_CURRENT_LIST_DIR}/../third_party/mcut/README.md"
+    "${_bricksuite_mcut_license_dir}/BrickSuite-integration.md" COPYONLY)
+foreach(_overlay BrickSuiteMcutPortability.cmake BrickSuiteMcutLinuxQueue.cmake)
+    configure_file("${CMAKE_CURRENT_LIST_DIR}/${_overlay}"
+        "${_bricksuite_mcut_license_dir}/${_overlay}" COPYONLY)
+endforeach()
 
 add_library(BrickSuiteMcut INTERFACE)
 target_link_libraries(BrickSuiteMcut INTERFACE mcut)
 target_compile_definitions(BrickSuiteMcut INTERFACE
-    BRICKSUITE_MCUT_VERSION="1.2.0-047d75f")
+    BRICKSUITE_MCUT_VERSION="1.2.0-047d75f-portability1")
 add_library(BrickSuite::Mcut ALIAS BrickSuiteMcut)
 
 function(bricksuite_stage_mcut_runtime target_name)

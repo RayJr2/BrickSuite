@@ -1,7 +1,9 @@
 # The pinned queue can lose a wakeup between its predicate check and wait:
 # push() changes the tail without acquiring the condition variable's head mutex.
 # Reuse its existing synchronized notification after releasing the tail mutex.
-# Keep the downloaded source intact and scope the corrected header to Linux MCUT.
+# Keep the downloaded source intact and scope the corrected header to MCUT.
+# The historical filename/output path is retained for Linux package provenance;
+# the lost-wakeup also reproduces on macOS and this correction is platform-neutral.
 set(_mcut_queue_header "${mcut_SOURCE_DIR}/include/mcut/internal/tpool.h")
 file(READ "${_mcut_queue_header}" _mcut_queue_contents)
 set(_mcut_queue_original "        data_cond.notify_one();\n    }\n\n    void wait_and_pop(T& value)")

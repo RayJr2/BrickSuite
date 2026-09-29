@@ -72,11 +72,30 @@ bool check3021(const QString& library)
         if(progress.phase==PrintPreparationPhase::BooleanComposition&&progress.currentOperation)observed.push_back(progress.currentOperation);
     });
     QTextStream(stdout)<<"3021 "<<result.diagnostic<<Qt::endl;
-    ok&=check(!result.ready()&&result.error==PrintPreparationError::BooleanFailed&&result.operations.size()==5&&
-        result.diagnostic.contains("face triangulation size query failed (-1)")&&result.sourceCoverage.complete()&&
-        observed==QVector<int>({1,2,3,4,5}),"3021 stops on failed triangulation query before retrying the partial CDT cache, without Ready or parent crash");
+    // Linux and macOS reject this source during extraction, but MCUT's exact
+    // rejection point/code depends on floating-point and exception handling.
+    // Accept only demonstrated triangulation-size-query rejections, never an
+    // arbitrary backend failure, timeout, memory exhaustion or invalid mesh.
+    const auto safeRejection=[](const PrintPreparationResult& r){
+        const int count=int(r.operations.size());
+        if(r.state!=PrintPreparationState::Failed||r.ready()||r.preparedMesh||
+           r.error!=PrintPreparationError::BooleanFailed||!r.sourceCoverage.complete()||
+           (count!=2&&count!=5))return false;
+        const QString prefix=QStringLiteral("Boolean operation %1 failed for p/4-4cyli.dat|p/4-4disc.dat: MCUT union face triangulation size query failed ").arg(count);
+        const bool linuxExtraction=count==5&&r.diagnostic==prefix+QStringLiteral("(-1)");
+        const bool originalMacExtraction=count==2&&r.diagnostic==prefix+QStringLiteral("(-2)");
+        // The finite-CDT guard throws invalid_argument, mapped by MCUT to -4.
+        const bool finiteGuard=count==5&&r.diagnostic==prefix+QStringLiteral("(-4)");
+        if(!linuxExtraction&&!originalMacExtraction&&!finiteGuard)return false;
+        for(int i=0;i<count;++i)
+            if(r.operations[i].sequence!=i+1||r.operations[i].successful!=(i+1<count))return false;
+        return true;
+    };
+    QVector<int> expectedProgress;for(int i=1;i<=result.operations.size();++i)expectedProgress.push_back(i);
+    ok&=check(safeRejection(result)&&observed==expectedProgress,
+        "3021 safely rejects the demonstrated triangulation query, without Ready, crash, timeout or resource exhaustion");
     const auto repeated=LDrawPrintPreparationService().prepare(part);
-    return check(ok&&!repeated.ready()&&repeated.error==result.error&&repeated.diagnostic==result.diagnostic,
+    return check(ok&&safeRejection(repeated)&&repeated.operations.size()==result.operations.size()&&repeated.diagnostic==result.diagnostic,
         "3021 bounded failure is deterministic across independent runs");
 }
 bool checkLocalPlateCorpus(const QString& library)
@@ -144,6 +163,10 @@ bool checkNonPlanarOpenGroups(const QString& library)
     if(!slope.loadResult.ok())return false;
     const auto sourceTriangles=slope.loadResult.mesh.triangles;
     const auto semantic=LDrawSemanticOperandBuilder::build(slope.loadResult);
+    bool finiteOperands=true;
+    for(const auto& operand:semantic.operands)for(const auto& p:operand.closedMesh.vertices)
+        finiteOperands&=std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z);
+    ok&=check(finiteOperands,"3037 semantic operands are finite before MCUT");
     ok&=check(semantic.ok()&&semantic.coverage.complete()&&
         semantic.coverage.groups.size()==8&&semantic.coverage.representedGroups()==8&&
         semantic.coverage.uncoveredGroups().isEmpty()&&semantic.operands.size()==8,
@@ -151,7 +174,7 @@ bool checkNonPlanarOpenGroups(const QString& library)
     const auto prepared=LDrawPrintPreparationService().prepare(slope);
     ok&=check(prepared.ready(),QStringLiteral("3037 prepares through the normal service: ")+prepared.diagnostic);
     if(prepared.ready()){
-        ok&=check(prepared.sourceCoverage.complete()&&prepared.operations.size()==7&&
+        ok&=check(prepared.sourceCoverage.complete()&&prepared.operations.size()==7&&prepared.finalAnalysis.finite&&
             prepared.finalAnalysis.connectedComponents==1&&prepared.finalAnalysis.boundaryEdges==0&&
             prepared.finalAnalysis.nonManifoldEdges==0&&prepared.finalAnalysis.selfIntersections==0&&
             prepared.finalAnalysis.triangles==1720&&

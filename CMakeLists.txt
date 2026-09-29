@@ -726,10 +726,14 @@ if(BUILD_TESTING)
     add_test(NAME PrintMeshAnalysis COMMAND PrintMeshAnalysisTest)
 
     qt_add_executable(McutMeshBooleanTest EXCLUDE_FROM_ALL tests/McutMeshBooleanTest.cpp
+        tests/McutFiniteGeometryChecks.cpp
+        tests/McutQueueRegression.cpp
         src/services/geometry/print/PrintMesh.h src/services/geometry/print/LDrawPrintPreparationProfile.h
         src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
         src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h)
     target_link_libraries(McutMeshBooleanTest PRIVATE Qt6::Core BrickSuite::Mcut)
+    target_include_directories(McutMeshBooleanTest BEFORE PRIVATE
+        "${BRICKSUITE_MCUT_PORTABILITY_INCLUDE}" "${_mcut_queue_include}")
     bricksuite_stage_mcut_runtime(McutMeshBooleanTest)
     add_test(NAME McutMeshBoolean COMMAND McutMeshBooleanTest)
 
@@ -2777,4 +2781,8 @@ else()
     target_compile_definitions(BrickSuite PRIVATE
         BRICKSUITE_REBRICKABLE_API_BLOCKED=0
     )
+endif()
+
+if(APPLE)
+    include(cmake/BrickSuiteMacDeploy.cmake)
 endif()

@@ -26,6 +26,42 @@ The upstream v1.3.0 tag retains `1.2.0` in its CMake/API version metadata. The
 tag and pinned commit above are BrickSuite's dependency provenance authority.
 No MCUT implementation code is copied into BrickSuite production sources.
 
+`cmake/BrickSuiteMcutPortability.cmake` generates a narrow source/header overlay
+for the same pinned revision on every platform; downloaded sources stay intact:
+
+- General-position perturbation names `std::minstd_rand0` instead of
+  implementation-defined `std::default_random_engine`, preserving the engine
+  used by the validated Linux/libstdc++ path and its seed of 1.
+- MCUT alone uses non-contracted floating-point arithmetic (`-ffp-contract=off`
+  for GCC/Clang, `/fp:strict` for MSVC). On ARM64, the original arithmetic and
+  engine combination diverged in source-backed extraction. Neither correction
+  alone restored 3037; together they pass the unchanged seven-operation,
+  1,720-triangle manifold and deterministic-repeat assertions.
+- CDT rejects NaN and infinities before bounds construction or KD-tree insertion.
+  MCUT's duplicate-vertex perturbation can normalize a zero vector; the original
+  NaN bounds caused unbounded root expansion. This guard throws a caught backend
+  exception instead of fabricating coordinates or accepting invalid topology.
+
+The integration identity is `1.2.0-047d75f-portability1` so cached preparation
+does not reuse the previous backend identity. `McutMeshBoolean` includes a bounded
+child regression for NaN and both infinities, before initial and subsequent CDT
+insertion. `PrintCompositionRouting` retains the full 3037 Ready contract.
+Linux and Windows must rerun the shared geometry/calibration tests after adopting
+this change; macOS results alone do not validate those platforms.
+
+The previously Linux-only `BrickSuiteMcutLinuxQueue.cmake` synchronization overlay
+now applies to every platform. A macOS calibration stall showed the same caller/
+API-thread lost wakeup, and the original 100,000-transition queue regression
+failed on this Mac. The existing synchronized notification is reused unchanged.
+Its historical filename/output directory is retained for Linux provenance.
+The portable `McutMeshBoolean` test reuses this regression in a contained child;
+Linux retains its separately registered queue test as well.
+
+The engine difference is documented by the
+[libstdc++ random engine reference](https://gcc.gnu.org/onlinedocs/libstdc%2B%2B/latest-doxygen/a00641.html).
+The arithmetic setting follows the
+[Clang floating-point controls](https://clang.llvm.org/docs/UsersManual.html).
+
 BrickSuite links MCUT dynamically and stages `libmcut.dll` beside development
 and test executables on Windows. Release packaging must ship the corresponding
 shared library, its LGPL notice, and the information/source offer needed to let

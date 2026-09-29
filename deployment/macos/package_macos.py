@@ -79,6 +79,7 @@ def main():
     for name in ('build', 'qt', 'qt-source', 'openssl', 'openssl-source', 'lib3mf-source', 'output'):
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--source-sha', help='Immutable source commit recorded in bundle metadata')
+    parser.add_argument('--binary-dir', type=Path, help='Configuration-specific binary directory (defaults to build)')
     parser.add_argument('--probe', type=Path, help='Optional disposable acceptance executable; omit for release staging')
     parser.add_argument('--arch', required=True, choices=('arm64', 'x86_64'))
     args = parser.parse_args()
@@ -86,12 +87,13 @@ def main():
     bundle = args.output.resolve()
     if bundle.exists() or bundle.suffix != '.app':
         raise SystemExit('Output must be a new .app path; existing output is never removed.')
-    shutil.copytree(args.build / 'BrickSuite.app', bundle, symlinks=True)
+    binary_dir = args.binary_dir or args.build
+    shutil.copytree(binary_dir / 'BrickSuite.app', bundle, symlinks=True)
     contents = bundle / 'Contents'
     frameworks = contents / 'Frameworks'
     frameworks.mkdir(exist_ok=True)
     helper = contents / 'MacOS/BrickSuiteMeshBooleanWorker'
-    helper_source = args.build / 'BrickSuiteMeshBooleanWorker'
+    helper_source = binary_dir / 'BrickSuiteMeshBooleanWorker'
     if not helper.exists():
         copy(helper_source, helper)
     deployed = []
