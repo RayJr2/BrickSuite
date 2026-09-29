@@ -137,6 +137,7 @@ MyInventoryWidget::MyInventoryWidget(
 
     auto* filterLayout =
         new QHBoxLayout();
+    auto* storageFilterLayout = new QHBoxLayout();
 
     m_searchEdit =
         new QLineEdit(this);
@@ -189,21 +190,21 @@ MyInventoryWidget::MyInventoryWidget(
         m_colorCombo,
         1);
 
-    filterLayout->addWidget(
+    storageFilterLayout->addWidget(
         new QLabel("Storage:", this));
 
-    filterLayout->addWidget(
+    storageFilterLayout->addWidget(
         m_storageCombo,
         1);
 
-    filterLayout->addWidget(
+    storageFilterLayout->addWidget(
         new QLabel("Manufacturer:", this));
 
-    filterLayout->addWidget(
+    storageFilterLayout->addWidget(
         m_manufacturerCombo,
         1);
 
-    filterLayout->addWidget(
+    storageFilterLayout->addWidget(
         m_searchButton);
 
     m_resultLabel =
@@ -304,6 +305,7 @@ MyInventoryWidget::MyInventoryWidget(
 
     mainLayout->addLayout(
         filterLayout);
+    mainLayout->addLayout(storageFilterLayout);
 
     mainLayout->addWidget(
         m_resultLabel);

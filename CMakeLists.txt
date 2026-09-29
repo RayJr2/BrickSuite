@@ -2572,6 +2572,22 @@ if(BUILD_TESTING)
     target_link_libraries(LoggerLevelTest PRIVATE Qt6::Core)
     add_test(NAME LoggerLevel COMMAND LoggerLevelTest)
 
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        find_package(Threads REQUIRED)
+        add_executable(McutQueueWakeupTest EXCLUDE_FROM_ALL tests/McutQueueWakeupTest.cpp)
+        target_include_directories(McutQueueWakeupTest PRIVATE
+            "${_mcut_queue_include}" "${mcut_SOURCE_DIR}/include")
+        target_link_libraries(McutQueueWakeupTest PRIVATE Threads::Threads)
+        add_test(NAME McutQueueWakeup COMMAND McutQueueWakeupTest)
+        set_tests_properties(McutQueueWakeup PROPERTIES TIMEOUT 20)
+
+        qt_add_executable(CredentialStoreLinuxTest EXCLUDE_FROM_ALL
+            tests/CredentialStoreLinuxTest.cpp
+            src/services/CredentialStore.cpp src/services/CredentialStore.h)
+        target_link_libraries(CredentialStoreLinuxTest PRIVATE Qt6::Core)
+        add_test(NAME CredentialStoreLinux COMMAND CredentialStoreLinuxTest)
+    endif()
+
     qt_add_executable(DatabaseRestoreHardeningTest EXCLUDE_FROM_ALL
         tests/DatabaseRestoreHardeningTest.cpp
         src/database/DatabaseManager.h src/database/DatabaseManager.cpp

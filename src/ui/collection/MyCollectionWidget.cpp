@@ -83,6 +83,7 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext,
     m_minifigImages = new MinifigImageService(this);
     auto* root = new QVBoxLayout(this);
     auto* filters = new QHBoxLayout;
+    auto* detailFilters = new QHBoxLayout;
     m_searchEdit = new QLineEdit(this);
     m_searchEdit->setPlaceholderText("Reference, name, or nickname");
     m_searchEdit->setMinimumWidth(220);
@@ -124,9 +125,9 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext,
     filters->addWidget(new QLabel("Search:", this)); filters->addWidget(m_searchEdit, 2);
     filters->addWidget(new QLabel("Type:", this)); filters->addWidget(m_typeCombo);
     filters->addWidget(new QLabel("State:", this)); filters->addWidget(m_stateCombo);
-    filters->addWidget(new QLabel("Condition:", this)); filters->addWidget(m_conditionCombo);
-    filters->addWidget(new QLabel("Completeness:", this)); filters->addWidget(m_completenessCombo);
-    filters->addWidget(new QLabel("Location:", this)); filters->addWidget(m_locationCombo, 1);
+    detailFilters->addWidget(new QLabel("Condition:", this)); detailFilters->addWidget(m_conditionCombo);
+    detailFilters->addWidget(new QLabel("Completeness:", this)); detailFilters->addWidget(m_completenessCombo);
+    detailFilters->addWidget(new QLabel("Location:", this)); detailFilters->addWidget(m_locationCombo, 1);
     filters->addWidget(m_activeCombo); filters->addWidget(m_searchButton);
 
     m_messageLabel = new QLabel(this);
@@ -149,6 +150,7 @@ MyCollectionWidget::MyCollectionWidget(WorkspaceContext& workspaceContext,
     paging->addWidget(m_summaryLabel); paging->addStretch(); paging->addWidget(m_previousButton);
     paging->addWidget(m_pageLabel); paging->addWidget(m_nextButton);
     auto* heading=new QHBoxLayout;heading->addWidget(new QLabel("My Collection",this));heading->addStretch();m_exportButton=new QPushButton(QStringLiteral("Export CSV..."),this);heading->addWidget(m_exportButton);root->addLayout(heading);root->addLayout(filters);
+    root->addLayout(detailFilters);
     root->addWidget(m_messageLabel); root->addWidget(m_table, 1); root->addLayout(paging);
 
     auto criteriaChange = [this]() { loadPage(true); };

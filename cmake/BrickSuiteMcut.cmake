@@ -27,6 +27,9 @@ FetchContent_Declare(mcut
     GIT_SHALLOW FALSE
     ${_bricksuite_mcut_patch})
 FetchContent_MakeAvailable(mcut)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    include("${CMAKE_CURRENT_LIST_DIR}/BrickSuiteMcutLinuxQueue.cmake")
+endif()
 # The pinned math.cpp uses uint32_t without including its defining header.
 # GCC 15 no longer supplies it through the other standard-library headers.
 target_compile_options(mcut PRIVATE

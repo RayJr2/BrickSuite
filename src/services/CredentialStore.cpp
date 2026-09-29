@@ -193,18 +193,20 @@ CredentialStore::ReadResult CredentialStore::read(const QString& credentialName)
     }
 
     if (process.exitCode() != 0) {
-        // secret-tool lookup returns a non-zero code when no matching secret
-        // exists. Treat an empty stdout result as a normal "not found".
-        if (process.readAllStandardOutput().trimmed().isEmpty()) {
+        const QByteArray output = process.readAllStandardOutput().trimmed();
+        const QString detail = QString::fromUtf8(process.readAllStandardError()).trimmed();
+        // A normal miss exits with 1 and no output. Backend failures also
+        // have empty stdout, but must not be mistaken for absent credentials.
+        if (process.exitCode() == 1 && output.isEmpty() && detail.isEmpty()) {
             result.success = true;
             result.found = false;
             return result;
         }
 
-        result.error =
-            QStringLiteral("Linux Secret Service lookup failed: %1")
-                .arg(QString::fromUtf8(
-                    process.readAllStandardError()).trimmed());
+        result.error = detail.isEmpty()
+            ? QStringLiteral("Linux Secret Service lookup failed (exit code %1).")
+                  .arg(process.exitCode())
+            : QStringLiteral("Linux Secret Service lookup failed: %1").arg(detail);
         return result;
     }
 
