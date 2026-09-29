@@ -8,7 +8,7 @@ BrickSuite is a free, open-source desktop application for keeping a traceable di
 >
 > **Windows:** packaged installer available from the GitHub Releases page
 >
-> **macOS / Linux:** source builds supported; packaged distributions remain deferred
+> **v0.4.0 platform artifacts:** see [Release Platforms](#release-platforms) for packaging and validation status
 
 The [online User Guide](https://rayjr2.github.io/BrickSuite/) is also built into BrickSuite under **Help → BrickSuite Help**.
 
@@ -65,15 +65,20 @@ Interface preferences are stored through `QSettings`. Uninstalling BrickSuite in
 
 **File → Backup Database** is an explicit manual preservation workflow. Optional automatic backups first validate the live database, create and verify a SQLite snapshot, then apply retention only to recognized automatic backups in the current schema-version directory. Database health and recovery guidance are available under **Tools → Database Status & Integrity**.
 
-## Installation and Platform Support
+## Release Platforms
 
-### Windows
+BrickSuite v0.4.0 has the following platform artifacts. Build/CI validation and manual runtime acceptance are listed separately; deployment targets do not imply testing on every OS version.
 
-Published Windows releases use an installer assembled with Qt's `windeployqt` and Inno Setup. Use the installer attached to the matching GitHub Release when available.
+| Platform | Artifact | Baseline / Validation status |
+| --- | --- | --- |
+| Windows x64 | `.exe` installer assembled with Qt's `windeployqt` and Inno Setup | Existing Windows release packaging; use the installer attached to the matching GitHub Release when available. |
+| macOS ARM64 / Apple Silicon | `BrickSuite-v0.4.0-macOS-arm64.zip` | macOS **13.0 or newer** deployment target; manually tested on the physical Mac mini. |
+| macOS x86_64 / Intel | `BrickSuite-v0.4.0-macOS-x86_64.zip` | macOS **13.0 or newer** deployment target; built and CI-tested. Manual Intel runtime acceptance remains pending. |
+| Linux x86_64 | Relocatable installer tarball: `BrickSuite-v0.4.0-Linux-x86_64.tar.gz` | Release baseline: **Ubuntu 22.04 LTS / glibc 2.35**. Forward compatibility was also validated on Ubuntu 26.04. |
 
-### macOS and Linux
+BrickSuite macOS builds are currently **ad-hoc signed and are not Apple notarized**. The project does not currently use an Apple Developer ID certificate, so macOS may require additional confirmation before first launch. See the [macOS deployment notes](deployment/macos/README.md).
 
-BrickSuite is supported as a source build on macOS and Linux. Packaged macOS and Linux distributions are not currently provided.
+On Ubuntu, extract the Linux archive and run `./install.sh` from its `BrickSuite` directory. The installer checks runtime prerequisites and asks for consent before installing missing Ubuntu packages. It installs to `/opt/BrickSuite`; launch from the application menu or run `bricksuite`. Automatic installation supports Ubuntu 22.04 or newer on x86_64, not arbitrary Linux distributions. Packages built locally on newer Ubuntu are development artifacts, not the Ubuntu 22.04 baseline release. See the [Linux installation instructions](deployment/linux/RUNTIME.md).
 
 ## Quick Start
 
