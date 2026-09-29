@@ -67,6 +67,51 @@ and configure an installed Qt 6.10.3 kit.
 
 See `README.md` for the current public build overview and platform notes.
 
+### Ubuntu development setup
+
+For the current development checkout, install the system build dependencies:
+
+```bash
+sudo apt-get install build-essential gdb git pkg-config libgl1-mesa-dev libssl-dev zlib1g-dev
+```
+
+For runtime API credential storage, also install `libsecret-tools` and run
+inside a desktop session with an unlocked Secret Service keyring (provided by
+GNOME Keyring on a standard Ubuntu desktop). BrickSuite uses `secret-tool`;
+the shared libsecret library alone is not sufficient.
+
+Install the Qt 6.10.3 Desktop GCC 64-bit kit, including Core, Gui, Widgets,
+Sql, Network, WebSockets, Concurrent, OpenGL, and OpenGLWidgets. The Qt
+installation must include the QSQLITE plugin. CMake fetches pinned MCUT
+and lib3mf sources (including their dependencies), so the first configuration
+also requires network access to GitHub.
+
+In Qt Creator, select the Desktop Qt 6.10.3 kit with the system GCC compiler,
+GDB, and the CMake supplied by the Qt installer. Use separate Debug and
+Release build directories. If configuration reports that Qt6Gui is missing
+even though its configuration file exists, inspect the preceding errors:
+missing OpenGL headers and development libraries can cause this message.
+After installing them, run CMake again from Qt Creator.
+
+For terminal builds with the default Qt installer location, use its bundled
+tools without installing another Qt version:
+
+```bash
+export PATH="$HOME/Qt/Tools/CMake/bin:$HOME/Qt/Tools/Ninja:$PATH"
+cmake -S . -B build/linux-debug -G Ninja \
+    -DCMAKE_PREFIX_PATH="$HOME/Qt/6.10.3/gcc_64" \
+    -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/linux-debug --target BrickSuite --parallel 4
+```
+
+Linux source builds are distinct from distributable packages. The current
+Linux install rules do not collect the full Qt runtime and plugins. A release
+package also needs the mesh boolean worker, MCUT shared library, other runtime
+dependencies, and applicable licenses. Validate it on a clean target system
+without the developer's Qt installation. Build release artifacts against the
+oldest supported target environment to avoid depending on newer system library
+versions unavailable to users; see [Qt's Linux deployment guidance](https://doc.qt.io/qt-6.10/linux-deployment.html).
+
 ## Debug and Release Builds
 
 BrickSuite intentionally exposes additional internal diagnostics in Debug

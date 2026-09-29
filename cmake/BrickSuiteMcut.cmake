@@ -27,6 +27,11 @@ FetchContent_Declare(mcut
     GIT_SHALLOW FALSE
     ${_bricksuite_mcut_patch})
 FetchContent_MakeAvailable(mcut)
+# The pinned math.cpp uses uint32_t without including its defining header.
+# GCC 15 no longer supplies it through the other standard-library headers.
+target_compile_options(mcut PRIVATE
+    "$<$<COMPILE_LANG_AND_ID:CXX,GNU>:-include>"
+    "$<$<COMPILE_LANG_AND_ID:CXX,GNU>:stdint.h>")
 target_include_directories(mcut INTERFACE "${mcut_SOURCE_DIR}/include")
 target_compile_definitions(mcut INTERFACE MCUT_SHARED_LIB=1)
 

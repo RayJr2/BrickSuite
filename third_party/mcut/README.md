@@ -16,6 +16,12 @@ pinned MCUT source: the `_Acquires_lock_` SAL annotation in
 compilers. The patch is required by GCC/MinGW and deliberately fails when the
 expected v1.3.0 source text is absent.
 
+`cmake/BrickSuiteMcut.cmake` also force-includes `stdint.h` privately when
+compiling MCUT C++ sources with GCC. The pinned `source/math.cpp` uses the
+global `uint32_t` type without its defining header; GCC 15 no longer provides
+it through incidental standard-library includes. This adjustment does not
+change the fetched source or propagate compiler options to BrickSuite.
+
 The upstream v1.3.0 tag retains `1.2.0` in its CMake/API version metadata. The
 tag and pinned commit above are BrickSuite's dependency provenance authority.
 No MCUT implementation code is copied into BrickSuite production sources.
