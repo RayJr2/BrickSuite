@@ -40,6 +40,7 @@
 #include "services/Logger.h"
 #include "settings/ThemeManager.h"
 #include "ui/common/TooltipPolicy.h"
+#include "ui/common/InitialWindowActivation.h"
 #include "ui/parts/PartViewerSurfaceFormat.h"
 
 namespace {
@@ -162,6 +163,7 @@ int main(int argc, char *argv[])
     }
 
     splash.finish(application.mainWindow());
+    requestInitialWindowActivation(application.mainWindow());
     qInfo().noquote() << QStringLiteral("BrickSuite startup completed in %1 seconds.")
                             .arg(startupTimer.elapsed() / 1000.0, 0, 'f', 2);
 

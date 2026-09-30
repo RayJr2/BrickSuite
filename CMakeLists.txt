@@ -719,6 +719,10 @@ endif()
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(InitialWindowActivationTest EXCLUDE_FROM_ALL
+        tests/InitialWindowActivationTest.cpp src/ui/common/InitialWindowActivation.h)
+    target_link_libraries(InitialWindowActivationTest PRIVATE Qt6::Widgets)
+    add_test(NAME InitialWindowActivation COMMAND InitialWindowActivationTest)
     qt_add_executable(PrintMeshAnalysisTest EXCLUDE_FROM_ALL tests/PrintMeshAnalysisTest.cpp
         src/services/geometry/print/PrintMesh.h
         src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h)
