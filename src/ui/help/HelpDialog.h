@@ -48,6 +48,7 @@ protected:
     void changeEvent(QEvent* event) override;
 
 private:
+    void updateTheme();
     void updateSearchHighlights();
     void buildContents();
     void applySearch(const QString& searchText);

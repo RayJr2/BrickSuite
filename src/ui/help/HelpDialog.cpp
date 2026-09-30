@@ -31,6 +31,9 @@
 #include <QEvent>
 #include <QTimer>
 #include <QTextCursor>
+#include <QTextBlock>
+#include <QTextFragment>
+#include <algorithm>
 #include <cmath>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -49,6 +52,36 @@ namespace
 {
 
 constexpr int TopicRole = Qt::UserRole;
+
+double luminance(const QColor& color)
+{
+    const auto linear = [](double c) { return c <= .04045 ? c / 12.92 : std::pow((c + .055) / 1.055, 2.4); };
+    return .2126 * linear(color.redF()) + .7152 * linear(color.greenF()) + .0722 * linear(color.blueF());
+}
+
+QColor contrastingText(const QColor& background)
+{
+    return luminance(background) > .179 ? QColor(Qt::black) : QColor(Qt::white);
+}
+
+QColor readableLink(QColor link, const QColor& background)
+{
+    const double base = luminance(background);
+    const QColor target = contrastingText(background);
+    // Retain the platform link color when readable; otherwise move it towards
+    // the contrasting endpoint without losing the link's underline or target.
+    const QColor original = link;
+    for (int step = 0; step < 100; ++step) {
+        const double text = luminance(link);
+        if ((std::max(text, base) + .05) / (std::min(text, base) + .05) >= 4.5)
+            return link;
+        const double blend = (step + 1) / 100.0;
+        link = QColor::fromRgbF(original.redF() + (target.redF() - original.redF()) * blend,
+                                original.greenF() + (target.greenF() - original.greenF()) * blend,
+                                original.blueF() + (target.blueF() - original.blueF()) * blend);
+    }
+    return target;
+}
 
 QTreeWidgetItem* addTopicItem(QTreeWidgetItem* parent,
                               HelpTopic topic,
@@ -168,7 +201,7 @@ HelpDialog::HelpDialog(QWidget* parent)
     });
 
     connect(m_browser, &QTextBrowser::sourceChanged, this, [this](const QUrl& source) {
-        updateSearchHighlights();
+        updateTheme();
         syncContentsSelection(source);
         updateNavigationButtons();
     });
@@ -390,10 +423,7 @@ void HelpDialog::updateSearchHighlights()
     QList<QTextEdit::ExtraSelection> selections;
     const QString needle = m_searchEdit->text().trimmed();
     const QColor background = m_browser->palette().color(QPalette::Highlight);
-    const auto linear = [](double c) { return c <= .04045 ? c/12.92 : std::pow((c+.055)/1.055,2.4); };
-    const double luminance = .2126*linear(background.redF()) + .7152*linear(background.greenF()) + .0722*linear(background.blueF());
-    // Select the contrasting foreground as a pair, including after theme changes.
-    const QColor foreground = luminance > .179 ? QColor(Qt::black) : QColor(Qt::white);
+    const QColor foreground = m_browser->palette().color(QPalette::HighlightedText);
     if (!needle.isEmpty()) {
         QTextCursor cursor(m_browser->document());
         while (!(cursor = m_browser->document()->find(needle, cursor)).isNull()) {
@@ -407,9 +437,41 @@ void HelpDialog::updateSearchHighlights()
     m_browser->setExtraSelections(selections);
 }
 
+void HelpDialog::updateTheme()
+{
+    if (!m_browser) return;
+    // Scope the correction to Help: the rest of the application's colors and
+    // the contents tree's existing selected-row styling remain unchanged.
+    const QColor selection = contrastingText(QApplication::palette().color(QPalette::Highlight));
+    m_browser->setStyleSheet(QString("QTextBrowser { selection-color: %1; }").arg(selection.name()));
+
+    const auto palette = m_browser->palette();
+    const QColor link = readableLink(QApplication::palette().color(QPalette::Link), palette.color(QPalette::Base));
+    auto* document = m_browser->document();
+    const bool modified = document->isModified();
+    // Updating formats in place preserves history, scroll position and text
+    // selection during live theme changes; reloading HTML would discard them.
+    QList<QTextCursor> anchors;
+    for (auto block = document->begin(); block.isValid(); block = block.next()) {
+        for (auto it = block.begin(); !it.atEnd(); ++it) {
+            const auto fragment = it.fragment();
+            if (!fragment.isValid() || !fragment.charFormat().isAnchor()) continue;
+            QTextCursor cursor(document);
+            cursor.setPosition(fragment.position());
+            cursor.setPosition(fragment.position() + fragment.length(), QTextCursor::KeepAnchor);
+            anchors.append(cursor);
+        }
+    }
+    QTextCharFormat format;
+    format.setForeground(link);
+    for (auto cursor : anchors) cursor.mergeCharFormat(format);
+    document->setModified(modified);
+    updateSearchHighlights();
+}
+
 void HelpDialog::changeEvent(QEvent* event)
 {
     QDialog::changeEvent(event);
     if (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange)
-        QTimer::singleShot(0, this, &HelpDialog::updateSearchHighlights);
+        QTimer::singleShot(0, this, &HelpDialog::updateTheme);
 }

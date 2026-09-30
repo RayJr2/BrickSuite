@@ -10,18 +10,24 @@
 #include <QRegularExpression>
 #include <QHelpEvent>
 #include <QKeyEvent>
+#include <QMouseEvent>
+#include <QEventLoop>
+#include <QTimer>
 #include <QLineEdit>
 #include <QProcess>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTextBrowser>
 #include <QTextCursor>
+#include <QTextBlock>
+#include <QTextFragment>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
 #include <cmath>
 #include <cstdio>
 
 namespace {
+void settleEvents(){QEventLoop loop;QTimer::singleShot(50,&loop,&QEventLoop::quit);loop.exec();}
 bool check(bool value,const char* message){if(!value)fprintf(stderr,"FAIL: %s\n",message);return value;}
 class TooltipProbe : public QWidget {
 public:
@@ -129,8 +135,16 @@ int main(int argc,char** argv){
         "audit Help explains explicit intent, partial fit and diagnostic separation");
     help.showTopic(HelpTopic::Printing);
     search->setText("printing");
-    for(auto theme:{UserSettings::Theme::Dark,UserSettings::Theme::Light}){
-        ThemeManager::applyTheme(app,theme);QApplication::processEvents();
+    for(auto theme:{UserSettings::Theme::Dark,UserSettings::Theme::Light,UserSettings::Theme::Dark}){
+        auto liveLink=browser->document()->find("LDraw 3D Models");
+        browser->setTextCursor(liveLink);
+        const auto liveSource=browser->source();
+        ThemeManager::applyTheme(app,theme);settleEvents();
+        const double linkText=luminance(liveLink.charFormat().foreground().color());
+        const double articleBase=luminance(browser->palette().color(QPalette::Base));
+        ok&=check((std::max(linkText,articleBase)+.05)/(std::min(linkText,articleBase)+.05)>=4.5&&
+            browser->source()==liveSource&&browser->textCursor().selectedText()==liveLink.selectedText(),
+            "Dark-Light-Dark refresh recolors existing links without losing selection or reloading");
         const auto tooltipPalette=QToolTip::palette();
         const double tipText=luminance(tooltipPalette.color(QPalette::ToolTipText));
         const double tipBase=luminance(tooltipPalette.color(QPalette::ToolTipBase));
@@ -145,6 +159,62 @@ int main(int argc,char** argv){
             const auto a=luminance(selection.format.foreground().color()),b=luminance(selection.format.background().color());
             ok&=check((std::max(a,b)+.05)/(std::min(a,b)+.05)>=4.5,"Dark and Light search foreground/background contrast >=4.5");
         }
+        for(auto group:{QPalette::Active,QPalette::Inactive}){
+            const auto palette=browser->palette();
+            const double foreground=luminance(palette.color(group,QPalette::HighlightedText));
+            const double background=luminance(palette.color(group,QPalette::Highlight));
+            ok&=check((std::max(foreground,background)+.05)/(std::min(foreground,background)+.05)>=4.5,
+                "active and inactive article selection contrast >=4.5");
+        }
+        // The same open document must retain links, selection and navigation
+        // when its theme changes, including selected/search-highlighted links.
+        for(auto topic:{HelpTopic::Home,HelpTopic::Printing}){
+            help.showTopic(topic);
+            auto selected=browser->document()->find(topic==HelpTopic::Home?"Getting Started":"LDraw 3D Models");
+            browser->setTextCursor(selected);
+            const auto source=browser->source();
+            const bool backward=browser->isBackwardAvailable();
+            ThemeManager::applyTheme(app,theme);settleEvents();
+            ok&=check(browser->source()==source&&browser->isBackwardAvailable()==backward&&
+                browser->textCursor().selectedText()==selected.selectedText(),"theme refresh preserves article selection and navigation");
+            int links=0;
+            for(auto block=browser->document()->begin();block.isValid();block=block.next()){
+                for(auto it=block.begin();!it.atEnd();++it){
+                    const auto fragment=it.fragment();const auto format=fragment.charFormat();
+                    if(!format.isAnchor()||format.anchorHref().isEmpty())continue;
+                    ++links;
+                    const double foreground=luminance(format.foreground().color());
+                    const double background=luminance(browser->palette().color(QPalette::Base));
+                    ok&=check((std::max(foreground,background)+.05)/(std::min(foreground,background)+.05)>=4.5,
+                        "Home and Printing links have readable theme contrast");
+                    ok&=check(format.fontUnderline()&&format.foreground().color()!=browser->palette().color(QPalette::Text),
+                        "links retain underline and distinct color");
+                }
+            }
+            ok&=check(links>0,"article retains hyperlink targets");
+            browser->setFocus();QApplication::processEvents();
+            QTextCursor start(browser->document());browser->setTextCursor(start);
+            // QTextBrowser normally enables mouse selection and keyboard link
+            // navigation, not keyboard text selection. Check it only if enabled.
+            if(browser->textInteractionFlags().testFlag(Qt::TextSelectableByKeyboard)){
+                QKeyEvent selectWord(QEvent::KeyPress,Qt::Key_Right,Qt::ControlModifier|Qt::ShiftModifier);
+                QApplication::sendEvent(browser,&selectWord);
+                ok&=check(browser->textCursor().hasSelection(),"keyboard can select article text when supported");
+            }
+            browser->setTextCursor(start);
+            const QPoint from=browser->cursorRect(start).center();
+            start.movePosition(QTextCursor::NextWord);
+            const QPoint to=browser->cursorRect(start).center();
+            auto* viewport=browser->viewport();
+            QMouseEvent press(QEvent::MouseButtonPress,from,viewport->mapToGlobal(from),Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
+            QMouseEvent move(QEvent::MouseMove,to,viewport->mapToGlobal(to),Qt::NoButton,Qt::LeftButton,Qt::NoModifier);
+            QMouseEvent release(QEvent::MouseButtonRelease,to,viewport->mapToGlobal(to),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
+            QApplication::sendEvent(viewport,&press);QApplication::sendEvent(viewport,&move);QApplication::sendEvent(viewport,&release);
+            ok&=check(browser->textCursor().hasSelection(),"mouse drag can select article text");
+            tree->setFocus();QApplication::processEvents();
+            ok&=check(browser->textCursor().hasSelection(),"article selection survives focus moving to contents");
+        }
+        help.showTopic(HelpTopic::Printing);search->setText("printing");
         // Switching pages from search results retains the search and highlights.
         QTreeWidgetItem* printing=nullptr;
         for(int i=0;i<tree->topLevelItemCount();++i)if(tree->topLevelItem(i)->data(0,Qt::UserRole).toInt()==int(HelpTopic::FitCalibration))printing=tree->topLevelItem(i);
@@ -161,7 +231,9 @@ int main(int argc,char** argv){
     bool routed=false;
     QObject::connect(&f1,&QAction::triggered,[&]{auto context=HelpManager::context(QApplication::focusWidget());
         routed=context&&context->topic==HelpTopic::FitCalibration;if(context)help.showTopic(context->topic);});
-    window.show();window.activateWindow();field.setFocus();QApplication::processEvents();
+    // Give the synthetic shortcut a deterministic focus owner even when a
+    // desktop compositor declines this test window's activation request.
+    window.show();window.activateWindow();settleEvents();QApplication::setActiveWindow(&window);field.setFocus();QApplication::processEvents();
     QKeyEvent key(QEvent::KeyPress,Qt::Key_F1,Qt::NoModifier);QApplication::sendEvent(&field,&key);QApplication::processEvents();
     ok&=check(routed&&browser->source().path().endsWith("fit_calibration.html"),"F1 routes directly to dedicated calibration topic");
     QWidget unrelated;ok&=check(!HelpManager::context(&unrelated),"unrelated unassigned windows retain normal fallback");
