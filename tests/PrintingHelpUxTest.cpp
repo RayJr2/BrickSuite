@@ -1,4 +1,9 @@
 #include "../src/ui/help/HelpDialog.h"
+#include "../src/ui/about/AboutDialog.h"
+#include "../src/ui/common/ThemeRichTextLabel.h"
+#include <QDesktopServices>
+#include <QAbstractTextDocumentLayout>
+#include <QUrl>
 #include "../src/ui/help/HelpManager.h"
 #include "../src/ui/common/TooltipPolicy.h"
 #include "../src/settings/ThemeManager.h"
@@ -25,6 +30,14 @@
 #include <QTreeWidgetItemIterator>
 #include <cmath>
 #include <cstdio>
+
+class LinkReceiver : public QObject {
+    Q_OBJECT
+public:
+    QList<QUrl> urls;
+public slots:
+    void receive(const QUrl& url){urls.append(url);}
+};
 
 namespace {
 void settleEvents(){QEventLoop loop;QTimer::singleShot(50,&loop,&QEventLoop::quit);loop.exec();}
@@ -111,6 +124,81 @@ int main(int argc,char** argv){
     }
     QAction action(nullptr);TooltipPolicy::explain(&action,"Action explanation");
     ok&=check(action.statusTip()==action.toolTip(),"menu action status tip agrees with explanatory help");
+
+    for(const QColor background:{QColor(Qt::white),QColor(Qt::black),QColor("#2b2b2b")}){
+        for(const QColor original:{QColor(Qt::blue),QColor(Qt::darkMagenta),QColor(Qt::cyan)}){
+            const auto adjusted=ThemeContrast::readableLink(original,background);
+            const double a=luminance(adjusted),b=luminance(background);
+            ok&=check((std::max(a,b)+.05)/(std::min(a,b)+.05)>=4.5,"shared link helper contrast contract");
+        }
+    }
+    LinkReceiver receiver;
+    QDesktopServices::setUrlHandler("https",&receiver,"receive");
+    AboutDialog about;about.show();
+    ThemeRichTextLabel provider("-");
+    provider.setText("<a href=\"https://brickset.com/sets/test\">Open on Brickset</a>");
+    const auto labelContrast=[&](QLabel* label){
+        QTextDocument document;document.setHtml(label->text());int links=0;
+        for(auto block=document.begin();block.isValid();block=block.next())
+            for(auto it=block.begin();!it.atEnd();++it){const auto format=it.fragment().charFormat();
+                if(!format.isAnchor()||format.anchorHref().isEmpty())continue;
+                ++links;const double foreground=luminance(format.foreground().color());
+                const double background=luminance(label->palette().color(label->backgroundRole()));
+                ok&=check((std::max(foreground,background)+.05)/(std::min(foreground,background)+.05)>=4.5,
+                    "parsed rich-label links have readable contrast");
+                ok&=check(format.fontUnderline(),"rich-label links retain underline");
+            }
+        return links;
+    };
+    for(auto theme:{UserSettings::Theme::Dark,UserSettings::Theme::Light,UserSettings::Theme::Dark}){
+        ThemeManager::applyTheme(app,theme);settleEvents();
+        ok&=check(labelContrast(&provider)==1,"dynamically populated provider label retains its link");
+        int aboutLinks=0;
+        for(auto* label:about.findChildren<QLabel*>()){
+            if(!label->text().contains("<a "))continue;
+            aboutLinks+=labelContrast(label);
+            const QString before=label->text();label->setSelection(0,7);
+            ThemeManager::applyTheme(app,theme==UserSettings::Theme::Dark?UserSettings::Theme::Light:UserSettings::Theme::Dark);
+            settleEvents();ok&=check(label->selectionStart()==0&&label->selectedText().size()==7,"rich-label selection survives live theme refresh");
+            ThemeManager::applyTheme(app,theme);settleEvents();
+            ok&=check(label->text()==before,"theme round trip preserves markup without accumulated styles");
+            if(theme==UserSettings::Theme::Light){
+                const auto original=QApplication::palette().color(QPalette::Link);
+                const double a=luminance(original),b=luminance(label->palette().color(label->backgroundRole()));
+                if((std::max(a,b)+.05)/(std::min(a,b)+.05)>=4.5)
+                    ok&=check(label->text().contains(QString("color: %1").arg(original.name())),
+                        "Light theme retains its readable native link color");
+            }
+            label->setSelection(0,0);about.activateWindow();QApplication::setActiveWindow(&about);
+            // Locate the rendered anchor without relying on platform font pixels.
+            QTextDocument layout;layout.setDocumentMargin(0);layout.setDefaultFont(label->font());
+            layout.setHtml(label->text());layout.setTextWidth(label->contentsRect().width());
+            QPoint anchor(-1,-1);
+            for(int y=0;y<int(layout.size().height())&&anchor.x()<0;++y)
+                for(int x=0;x<int(layout.size().width());++x)
+                    if(!layout.documentLayout()->anchorAt(QPointF(x,y)).isEmpty()){anchor={x+1,y};break;}
+            anchor+=label->contentsRect().topLeft()+QPoint(0,int((label->contentsRect().height()-layout.size().height())/2));
+            QMouseEvent press(QEvent::MouseButtonPress,anchor,label->mapToGlobal(anchor),Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
+            QMouseEvent release(QEvent::MouseButtonRelease,anchor,label->mapToGlobal(anchor),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
+            QApplication::sendEvent(label,&press);QApplication::sendEvent(label,&release);
+        }
+        ok&=check(aboutLinks==2,"About retains both original hyperlink targets");
+        QPushButton disabled("Unavailable");disabled.setEnabled(false);disabled.ensurePolished();
+        const auto disabledPalette=disabled.palette();
+        const double disabledText=luminance(disabledPalette.color(QPalette::Disabled,QPalette::ButtonText));
+        const double disabledBase=luminance(disabledPalette.color(QPalette::Disabled,QPalette::Button));
+        ok&=check((std::max(disabledText,disabledBase)+.05)/(std::min(disabledText,disabledBase)+.05)>=3.0,
+            "disabled button text remains legible while distinct from enabled text");
+        const auto palette=QApplication::palette();
+        for(auto group:{QPalette::Active,QPalette::Inactive}){
+            const double a=luminance(palette.color(group,QPalette::Highlight));
+            const double b=luminance(palette.color(group,QPalette::HighlightedText));
+            ok&=check((std::max(a,b)+.05)/(std::min(a,b)+.05)>=4.5,"shared text selection roles have readable contrast");
+        }
+    }
+    ok&=check(receiver.urls.count(QUrl("https://www.gnu.org/licenses/lgpl-3.0.html"))==3&&
+        receiver.urls.count(QUrl("https://rfstateside.com"))==3,"both About links activate their unchanged destinations in each theme");
+    QDesktopServices::unsetUrlHandler("https");about.hide();
 
     HelpDialog help;help.show();
     auto* tree=help.findChild<QTreeWidget*>();auto* search=help.findChild<QLineEdit*>();auto* browser=help.findChild<QTextBrowser*>();
@@ -241,3 +329,5 @@ int main(int argc,char** argv){
     const auto context=HelpManager::context(&field);ok&=check(context&&context->topic==HelpTopic::DatabaseStatus&&context->anchor=="integrity","unrelated existing context and anchors preserved");
     return ok?0:1;
 }
+
+#include "PrintingHelpUxTest.moc"

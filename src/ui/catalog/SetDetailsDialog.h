@@ -36,6 +36,8 @@ class WorkspaceContext;
 class RemoteReadApplicationServices;
 class RemoteCollectionMutationApplicationService;
 
+class ThemeRichTextLabel;
+
 class SetDetailsDialog : public QDialog
 {
     Q_OBJECT
@@ -95,7 +97,7 @@ private:
     QWidget* m_instructionsRowWidget = nullptr;
     QPushButton* m_viewInstructionsButton = nullptr;
     QLabel* m_additionalImagesLabel = nullptr;
-    QLabel* m_providerLinkLabel = nullptr;
+    ThemeRichTextLabel* m_providerLinkLabel = nullptr;
     QFormLayout* m_providerLayout = nullptr;
 
     QLabel* m_compositionSummaryLabel = nullptr;

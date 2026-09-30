@@ -861,9 +861,11 @@ if(BUILD_TESTING)
     add_test(NAME FitCalibrationUnifiedGeneration COMMAND FitCalibrationUnifiedGenerationTest)
     qt_add_executable(PrintingHelpUxTest EXCLUDE_FROM_ALL
         tests/PrintingHelpUxTest.cpp
+        src/ui/about/AboutDialog.cpp src/ui/about/AboutDialog.h
         src/ui/help/HelpManager.cpp src/ui/help/HelpDialog.cpp resources/help/help.qrc
         src/settings/UserSettings.cpp src/settings/ThemeManager.cpp src/services/CredentialStore.cpp)
     target_link_libraries(PrintingHelpUxTest PRIVATE Qt6::Widgets)
+    target_compile_definitions(PrintingHelpUxTest PRIVATE $<TARGET_PROPERTY:BrickSuite,COMPILE_DEFINITIONS>)
     if(WIN32)
         target_link_libraries(PrintingHelpUxTest PRIVATE Advapi32)
     elseif(APPLE)

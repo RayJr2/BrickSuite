@@ -21,6 +21,7 @@
 #include "../help/HelpManager.h"
 #include "../common/TooltipPolicy.h"
 #include "SetDetailsDialog.h"
+#include "../common/ThemeRichTextLabel.h"
 #include "../collection/CatalogCollectionDialog.h"
 #include "../collection/RemoteCollectionMutationDialog.h"
 #include "../../services/application/RemoteReadApplicationServices.h"
@@ -149,7 +150,7 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
 
     m_additionalImagesLabel = new QLabel("-", providerGroup);
 
-    m_providerLinkLabel = new QLabel("-", providerGroup);
+    m_providerLinkLabel = new ThemeRichTextLabel("-", providerGroup);
     m_providerLinkLabel->setOpenExternalLinks(true);
     m_providerLinkLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
 

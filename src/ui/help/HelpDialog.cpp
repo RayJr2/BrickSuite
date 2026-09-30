@@ -23,6 +23,7 @@
 #include "HelpManager.h"
 
 #include "../../settings/UserSettings.h"
+#include "../../settings/ThemeContrast.h"
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -33,8 +34,6 @@
 #include <QTextCursor>
 #include <QTextBlock>
 #include <QTextFragment>
-#include <algorithm>
-#include <cmath>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -52,36 +51,6 @@ namespace
 {
 
 constexpr int TopicRole = Qt::UserRole;
-
-double luminance(const QColor& color)
-{
-    const auto linear = [](double c) { return c <= .04045 ? c / 12.92 : std::pow((c + .055) / 1.055, 2.4); };
-    return .2126 * linear(color.redF()) + .7152 * linear(color.greenF()) + .0722 * linear(color.blueF());
-}
-
-QColor contrastingText(const QColor& background)
-{
-    return luminance(background) > .179 ? QColor(Qt::black) : QColor(Qt::white);
-}
-
-QColor readableLink(QColor link, const QColor& background)
-{
-    const double base = luminance(background);
-    const QColor target = contrastingText(background);
-    // Retain the platform link color when readable; otherwise move it towards
-    // the contrasting endpoint without losing the link's underline or target.
-    const QColor original = link;
-    for (int step = 0; step < 100; ++step) {
-        const double text = luminance(link);
-        if ((std::max(text, base) + .05) / (std::min(text, base) + .05) >= 4.5)
-            return link;
-        const double blend = (step + 1) / 100.0;
-        link = QColor::fromRgbF(original.redF() + (target.redF() - original.redF()) * blend,
-                                original.greenF() + (target.greenF() - original.greenF()) * blend,
-                                original.blueF() + (target.blueF() - original.blueF()) * blend);
-    }
-    return target;
-}
 
 QTreeWidgetItem* addTopicItem(QTreeWidgetItem* parent,
                               HelpTopic topic,
@@ -442,11 +411,11 @@ void HelpDialog::updateTheme()
     if (!m_browser) return;
     // Scope the correction to Help: the rest of the application's colors and
     // the contents tree's existing selected-row styling remain unchanged.
-    const QColor selection = contrastingText(QApplication::palette().color(QPalette::Highlight));
+    const QColor selection = ThemeContrast::contrastingText(QApplication::palette().color(QPalette::Highlight));
     m_browser->setStyleSheet(QString("QTextBrowser { selection-color: %1; }").arg(selection.name()));
 
     const auto palette = m_browser->palette();
-    const QColor link = readableLink(QApplication::palette().color(QPalette::Link), palette.color(QPalette::Base));
+    const QColor link = ThemeContrast::readableLink(QApplication::palette().color(QPalette::Link), palette.color(QPalette::Base));
     auto* document = m_browser->document();
     const bool modified = document->isModified();
     // Updating formats in place preserves history, scroll position and text

@@ -19,6 +19,7 @@
  */
 
 #include "AboutDialog.h"
+#include "../common/ThemeRichTextLabel.h"
 
 #include "../../core/AppConstants.h"
 #include "../../core/AppVersion.h"
@@ -39,7 +40,7 @@ namespace
 
 QLabel* createWrappedLabel(const QString& text, QWidget* parent)
 {
-    auto* label = new QLabel(text, parent);
+    auto* label = new ThemeRichTextLabel(text, parent);
     label->setWordWrap(true);
     label->setTextInteractionFlags(Qt::TextBrowserInteraction);
     label->setOpenExternalLinks(true);

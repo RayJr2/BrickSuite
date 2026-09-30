@@ -19,6 +19,7 @@
  */
 
 #include "ThemeManager.h"
+#include "ThemeContrast.h"
 
 #include <QApplication>
 #include <QColor>
@@ -104,7 +105,15 @@ void ThemeManager::applyDarkTheme(QApplication& application)
 
     palette.setColor(QPalette::Highlight, QColor(42, 130, 218));
 
-    palette.setColor(QPalette::HighlightedText, Qt::white);
+    palette.setColor(QPalette::HighlightedText,
+                     ThemeContrast::contrastingText(palette.color(QPalette::Highlight)));
+
+    // Shared rich-text styling uses these roles; parsed anchors also need
+    // the explicit refresh provided by ThemeRichTextLabel / HelpDialog.
+    // Check the lighter dialog background; the darker input base also passes.
+    for (auto role : {QPalette::Link, QPalette::LinkVisited})
+        palette.setColor(role, ThemeContrast::readableLink(palette.color(role),
+                                                         palette.color(QPalette::Window)));
 
     palette.setColor(QPalette::PlaceholderText, QColor(150, 150, 150));
 
