@@ -1,6 +1,7 @@
 #include "../src/ui/help/HelpDialog.h"
 #include "../src/ui/about/AboutDialog.h"
 #include "../src/ui/common/ThemeRichTextLabel.h"
+#include "../src/ui/common/SupportLinks.h"
 #include <QDesktopServices>
 #include <QAbstractTextDocumentLayout>
 #include <QUrl>
@@ -134,7 +135,44 @@ int main(int argc,char** argv){
     }
     LinkReceiver receiver;
     QDesktopServices::setUrlHandler("https",&receiver,"receive");
+    const QUrl supportUrl(QString::fromLatin1(AppConstants::SupportUrl));
+    ok&=check(supportUrl.isValid()&&supportUrl.scheme()=="https"&&supportUrl.host()=="www.paypal.com"
+        &&supportUrl.path()=="/ncp/payment/WB8RKBVN6DTYW"&&supportUrl.port()==-1
+        &&supportUrl.userInfo().isEmpty()&&!supportUrl.hasQuery()&&!supportUrl.hasFragment(),
+        "central support URL has the exact HTTPS destination and no added data");
+    QWidget menuOwner;QMenu helpMenu("Help",&menuOwner);
+    auto* supportAction=SupportLinks::addHelpAction(&helpMenu,&menuOwner);
+    ok&=check(helpMenu.actions().contains(supportAction)&&supportAction->text()==QString::fromUtf8("Support BrickSuite…"),
+        "support action is attached to Help with the requested label");
+    ok&=check(source("src/ui/MainWindow.cpp").contains("SupportLinks::addHelpAction(helpMenu, this);"),
+        "main window installs the shared action in its Help menu");
+    supportAction->trigger();
+    ok&=check(receiver.urls.count(supportUrl)==1,"Help action uses the centralized external desktop URL");
+    bool failureShown=false;
+    QTimer dismissFailure;dismissFailure.setInterval(5);
+    QObject::connect(&dismissFailure,&QTimer::timeout,[&]{
+        if(auto* warning=qobject_cast<QMessageBox*>(QApplication::activeModalWidget())){
+            failureShown=warning->icon()==QMessageBox::Warning
+                &&warning->text().contains(supportUrl.toString())
+                &&warning->text().contains("could not open")
+                &&warning->textFormat()==Qt::PlainText
+                &&warning->textInteractionFlags().testFlag(Qt::TextSelectableByKeyboard);
+            warning->accept();
+        }
+    });
+    dismissFailure.start();
+    SupportLinks::openSupportPage(&menuOwner,[](const QUrl&){return false;});
+    dismissFailure.stop();
+    ok&=check(failureShown,"browser failure returns normally after a selectable-address warning");
     AboutDialog about;about.show();
+    auto* supportLabel=about.findChild<QLabel*>("supportBrickSuiteLink");
+    bool voluntaryText=false;for(auto* label:about.findChildren<QLabel*>())voluntaryText|=label->text().contains("Voluntary contributions");
+    ok&=check(supportLabel&&voluntaryText
+        &&supportLabel->text().contains(supportUrl.toString())
+        &&supportLabel->accessibleName()=="Support BrickSuite with PayPal"
+        &&supportLabel->focusPolicy()==Qt::StrongFocus
+        &&supportLabel->textInteractionFlags().testFlag(Qt::LinksAccessibleByKeyboard)
+        &&!supportLabel->openExternalLinks(),"About support uses shared handling and accessible keyboard link text");
     ThemeRichTextLabel provider("-");
     provider.setText("<a href=\"https://brickset.com/sets/test\">Open on Brickset</a>");
     const auto labelContrast=[&](QLabel* label){
@@ -173,6 +211,8 @@ int main(int argc,char** argv){
             // Locate the rendered anchor without relying on platform font pixels.
             QTextDocument layout;layout.setDocumentMargin(0);layout.setDefaultFont(label->font());
             layout.setHtml(label->text());layout.setTextWidth(label->contentsRect().width());
+            if(label==supportLabel)ok&=check(layout.size().height()<=label->contentsRect().height(),
+                "support link remains fully visible after a live theme change");
             QPoint anchor(-1,-1);
             for(int y=0;y<int(layout.size().height())&&anchor.x()<0;++y)
                 for(int x=0;x<int(layout.size().width());++x)
@@ -182,7 +222,7 @@ int main(int argc,char** argv){
             QMouseEvent release(QEvent::MouseButtonRelease,anchor,label->mapToGlobal(anchor),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
             QApplication::sendEvent(label,&press);QApplication::sendEvent(label,&release);
         }
-        ok&=check(aboutLinks==2,"About retains both original hyperlink targets");
+        ok&=check(aboutLinks==3,"About retains original links and adds the support link");
         QPushButton disabled("Unavailable");disabled.setEnabled(false);disabled.ensurePolished();
         const auto disabledPalette=disabled.palette();
         const double disabledText=luminance(disabledPalette.color(QPalette::Disabled,QPalette::ButtonText));
@@ -198,6 +238,18 @@ int main(int argc,char** argv){
     }
     ok&=check(receiver.urls.count(QUrl("https://www.gnu.org/licenses/lgpl-3.0.html"))==3&&
         receiver.urls.count(QUrl("https://rfstateside.com"))==3,"both About links activate their unchanged destinations in each theme");
+    ok&=check(receiver.urls.count(supportUrl)==4,
+        "About mouse activation uses the same support URL through Dark-Light-Dark changes");
+    if(supportLabel){
+        about.activateWindow();QApplication::setActiveWindow(&about);
+        supportLabel->clearFocus();supportLabel->setFocus(Qt::TabFocusReason);settleEvents();
+        // Tab selects the anchor within the focused rich-text label; Return opens it.
+        QKeyEvent selectLink(QEvent::KeyPress,Qt::Key_Tab,Qt::NoModifier);
+        QApplication::sendEvent(supportLabel,&selectLink);
+        QKeyEvent activate(QEvent::KeyPress,Qt::Key_Return,Qt::NoModifier);
+        QApplication::sendEvent(supportLabel,&activate);
+        ok&=check(receiver.urls.count(supportUrl)==5,"About support link activates from the keyboard");
+    }
     QDesktopServices::unsetUrlHandler("https");about.hide();
 
     HelpDialog help;help.show();

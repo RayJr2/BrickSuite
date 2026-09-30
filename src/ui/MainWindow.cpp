@@ -19,6 +19,7 @@
  */
 
 #include "common/TooltipPolicy.h"
+#include "common/SupportLinks.h"
 #include "MainWindow.h"
 
 #include "about/AboutDialog.h"
@@ -1308,6 +1309,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                 }
             });
 
+    helpMenu->addSeparator();
+
+    SupportLinks::addHelpAction(helpMenu, this);
     helpMenu->addSeparator();
 
     auto* aboutAction = helpMenu->addAction("About BrickSuite...");

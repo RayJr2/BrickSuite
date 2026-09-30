@@ -865,7 +865,9 @@ if(BUILD_TESTING)
         src/ui/help/HelpManager.cpp src/ui/help/HelpDialog.cpp resources/help/help.qrc
         src/settings/UserSettings.cpp src/settings/ThemeManager.cpp src/services/CredentialStore.cpp)
     target_link_libraries(PrintingHelpUxTest PRIVATE Qt6::Widgets)
-    target_compile_definitions(PrintingHelpUxTest PRIVATE $<TARGET_PROPERTY:BrickSuite,COMPILE_DEFINITIONS>)
+    # About needs application metadata, not the GUI executable's Qt entry-point defines.
+    target_compile_definitions(PrintingHelpUxTest PRIVATE
+        "$<FILTER:$<TARGET_PROPERTY:BrickSuite,COMPILE_DEFINITIONS>,INCLUDE,^(APP_|BRICKSUITE_VERSION=)>")
     if(WIN32)
         target_link_libraries(PrintingHelpUxTest PRIVATE Advapi32)
     elseif(APPLE)

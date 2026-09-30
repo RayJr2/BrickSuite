@@ -4,6 +4,8 @@
 
 namespace AppConstants {
 
+inline constexpr char SupportUrl[] = "https://www.paypal.com/ncp/payment/WB8RKBVN6DTYW";
+
 inline QString name()
 {
     return QString::fromLatin1(APP_NAME);

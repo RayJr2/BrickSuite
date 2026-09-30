@@ -20,6 +20,7 @@
 
 #include "AboutDialog.h"
 #include "../common/ThemeRichTextLabel.h"
+#include "../common/SupportLinks.h"
 
 #include "../../core/AppConstants.h"
 #include "../../core/AppVersion.h"
@@ -155,6 +156,24 @@ AboutDialog::AboutDialog(QWidget* parent)
                                "and instructions.")
                                .arg(AppConstants::name()),
                            this));
+
+    auto* supportLayout = new QVBoxLayout();
+    supportLayout->setSpacing(4);
+    supportLayout->addWidget(createWrappedLabel(tr(
+        "<b>Support BrickSuite</b><br>"
+        "BrickSuite is free and open-source software. Voluntary contributions help "
+        "with development, testing, documentation, and maintenance."), this));
+    auto* support = createWrappedLabel(tr(
+        "<a href=\"%1\">Support BrickSuite with PayPal</a>")
+        .arg(QString::fromLatin1(AppConstants::SupportUrl)), this);
+    support->setObjectName(QStringLiteral("supportBrickSuiteLink"));
+    support->setAccessibleName(tr("Support BrickSuite with PayPal"));
+    support->setFocusPolicy(Qt::StrongFocus);
+    support->setOpenExternalLinks(false);
+    connect(support, &QLabel::linkActivated, this,
+            [this](const QString&) { SupportLinks::openSupportPage(this); });
+    supportLayout->addWidget(support);
+    mainLayout->addLayout(supportLayout);
 
     mainLayout->addWidget(
         createWrappedLabel(QStringLiteral(
