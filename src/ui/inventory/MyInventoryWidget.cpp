@@ -1727,6 +1727,16 @@ void MyInventoryWidget::addPart()
     dialog->activateWindow();
 }
 
+void MyInventoryWidget::addPartFromSetCatalog(int partId, int colorId)
+{
+    // Set composition IDs are local catalog identities, not Host inventory IDs.
+    if (m_remoteReads || !m_workspaceContext.hasCurrentWorkspace() || partId <= 0)
+        return;
+    addPart();
+    if (m_activeAddInventoryDialog)
+        m_activeAddInventoryDialog->setPartFromSetCatalog(partId, colorId);
+}
+
 bool MyInventoryWidget::hasActiveAddInventoryDialog() const
 {
     return m_activeAddInventoryDialog != nullptr;

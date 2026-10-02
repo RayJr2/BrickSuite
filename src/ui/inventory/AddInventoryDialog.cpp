@@ -162,6 +162,7 @@ void AddInventoryDialog::initializeUi()
     //
     if (m_quickEntryMode) {
         m_partSearchEdit = new QLineEdit(this);
+        m_partSearchEdit->setObjectName(QStringLiteral("addInventoryPartSearch"));
 
         m_partSearchEdit->setPlaceholderText("Search by Part Number or Name");
 
@@ -202,6 +203,7 @@ void AddInventoryDialog::initializeUi()
         m_partSearchEdit->setCompleter(m_partCompleter);
 
         m_rememberPartCheck = new QCheckBox("Remember Part", this);
+        m_rememberPartCheck->setObjectName(QStringLiteral("addInventoryRememberPart"));
         TooltipPolicy::explain(m_rememberPartCheck, tr("Keep the resolved Part selected after saving, for another Color or Condition of the same Part."));
 
         auto* partRowWidget = new QWidget(this);
@@ -245,11 +247,13 @@ void AddInventoryDialog::initializeUi()
     }
 
     m_colorCombo = new QComboBox(this);
+    m_colorCombo->setObjectName(QStringLiteral("addInventoryColor"));
 
     m_showAllColorsCheck = new QCheckBox("Show all colors", this);
     TooltipPolicy::explain(m_showAllColorsCheck, tr("Show all catalog Colors instead of only Colors known for this Part. This does not confirm that the combination was produced."));
 
     m_storageCombo = new QComboBox(this);
+    m_storageCombo->setObjectName(QStringLiteral("addInventoryStorage"));
     TooltipPolicy::explain(m_storageCombo, tr("Choose an active leaf Storage location for these physical Parts."));
 
     m_manufacturerCombo = new QComboBox(this);
@@ -260,6 +264,7 @@ void AddInventoryDialog::initializeUi()
     m_ownershipCombo = new QComboBox(this);
 
     m_quantitySpin = new QSpinBox(this);
+    m_quantitySpin->setObjectName(QStringLiteral("addInventoryQuantity"));
 
     m_quantitySpin->setMinimum(1);
     m_quantitySpin->setMaximum(1000000);
@@ -271,6 +276,7 @@ void AddInventoryDialog::initializeUi()
     m_ownershipCombo->addItem("Owned");
 
     m_keepOpenCheck = new QCheckBox("Keep Open", this);
+    m_keepOpenCheck->setObjectName(QStringLiteral("addInventoryKeepOpen"));
     TooltipPolicy::explain(m_keepOpenCheck, tr("Keep this window open after a successful add so you can enter another Part."));
 
     m_keepOpenCheck->setVisible(m_quickEntryMode);
@@ -460,6 +466,26 @@ void AddInventoryDialog::initializeUi()
             }
         });
     }
+}
+
+bool AddInventoryDialog::setPartFromSetCatalog(int partId, int colorId)
+{
+    if (!m_quickEntryMode || m_remoteMutations || !m_partSearchEdit)
+        return false;
+    const auto part = PartRepository().getById(partId);
+    if (!part)
+        return false;
+    if ((!m_partSearchEdit->text().trimmed().isEmpty() || m_quantitySpin->value() != 1)
+        && QMessageBox::question(this, tr("Replace Inventory Entry?"),
+            tr("Replace the current Part, Color and quantity with this Set selection? "
+               "Any unsaved entry will be replaced. Storage, manufacturer and condition are retained."),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return false;
+    m_quantitySpin->setValue(1);
+    applyResolvedPart(part->id(), QString("%1 — %2").arg(part->partNumber(), part->name()),
+                      tr("Set Catalog Parts List"), colorId > 0 ? colorId : -1);
+    show(); raise(); activateWindow();
+    return true;
 }
 
 void AddInventoryDialog::setPartFromReference(const QString& partNumber)
@@ -1318,7 +1344,7 @@ void AddInventoryDialog::handlePartDetailsForAliasLearning(
 void AddInventoryDialog::applyResolvedPart(
     int partId,
     const QString& displayText,
-    const QString& resolutionText)
+    const QString& resolutionText, int preferredColorId)
 {
     if (partId <= 0)
         return;
@@ -1367,8 +1393,8 @@ void AddInventoryDialog::applyResolvedPart(
     // During rapid Keep-Open entry, preserve the user's
     // working color across Parts.
     //
-    const int preferredColorId =
-        m_quickEntryMode && m_keepOpenCheck->isChecked() ? m_quickEntryColorId : 0;
+    if (preferredColorId < 0)
+        preferredColorId = m_quickEntryMode && m_keepOpenCheck->isChecked() ? m_quickEntryColorId : 0;
     loadKnownColors(preferredColorId);
     updateAddButtonState();
 }

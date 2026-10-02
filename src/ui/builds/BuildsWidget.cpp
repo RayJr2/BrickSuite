@@ -510,6 +510,8 @@ BuildsWidget::BuildsWidget(
 
     m_whatCanIBuildWidget = new WhatCanIBuildWidget(
         m_workspaceContext, m_buildTabs, m_remoteReads, m_remoteCollection);
+    connect(m_whatCanIBuildWidget, &WhatCanIBuildWidget::addInventoryRequested,
+            this, &BuildsWidget::addInventoryRequested);
     connect(m_whatCanIBuildWidget, &WhatCanIBuildWidget::createBuildRequested,
             this, &BuildsWidget::createSetBuildRequested);
     connect(m_whatCanIBuildWidget, &WhatCanIBuildWidget::statusMessageRequested,

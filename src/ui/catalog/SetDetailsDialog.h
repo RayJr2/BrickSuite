@@ -22,6 +22,8 @@
 
 #include <QDialog>
 
+class QSplitter;
+class QAction;
 class QLabel;
 class QPushButton;
 class QWidget;
@@ -49,11 +51,17 @@ public:
                               RemoteCollectionMutationApplicationService* remoteMutations = nullptr);
 
 signals:
+    void addInventoryRequested(int partId, int colorId);
     void createBuildRequested(int setCatalogId, const QString& buildName);
     void collectionItemCreated(int collectionItemId);
     void compositionChanged();
 
+protected:
+    void done(int result) override;
+
 private:
+    void updateInventoryAction();
+    void sendSelectedPartToInventory();
     bool loadSet();
     void loadCachedImage();
     void requestImage();
@@ -103,6 +111,9 @@ private:
     QLabel* m_compositionSummaryLabel = nullptr;
     QLabel* m_compositionStatusLabel = nullptr;
     QTableWidget* m_compositionTable = nullptr;
+    QSplitter* m_sectionsSplitter = nullptr;
+    QAction* m_addInventoryAction = nullptr;
+    QPushButton* m_addInventoryButton = nullptr;
     QPushButton* m_getPartsButton = nullptr;
     QPushButton* m_importPartsButton = nullptr;
     QPushButton* m_createBuildButton = nullptr;

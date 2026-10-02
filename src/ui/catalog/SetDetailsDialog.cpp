@@ -42,6 +42,11 @@
 #include "BricksetInstructionsDialog.h"
 
 #include <QDebug>
+#include <QAction>
+#include <QMenu>
+#include <QScrollArea>
+#include <QSettings>
+#include <QSplitter>
 #include <QAbstractItemView>
 #include <QDialogButtonBox>
 #include <QFileDialog>
@@ -69,6 +74,7 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
 {
     HelpManager::setContextTopic(this, HelpTopic::SetsCatalog);
     setWindowTitle("Set Details");
+    setWindowModality(Qt::NonModal);
 
     resize(960, 850);
 
@@ -171,7 +177,13 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
     // when Brickset actually supplies them.
     setBricksetRowsVisible(false);
 
-    mainLayout->addWidget(providerGroup);
+    m_sectionsSplitter = new QSplitter(Qt::Vertical, this);
+    m_sectionsSplitter->setObjectName(QStringLiteral("setDetailsSections"));
+    auto* providerScroll = new QScrollArea(m_sectionsSplitter);
+    providerScroll->setWidgetResizable(true);
+    providerScroll->setFrameShape(QFrame::NoFrame);
+    providerScroll->setWidget(providerGroup);
+    providerScroll->setMinimumHeight(0);
 
     auto* compositionGroup = new QGroupBox("Catalog Parts List", this);
     auto* compositionLayout = new QVBoxLayout(compositionGroup);
@@ -191,6 +203,8 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
     compositionLayout->addLayout(compositionHeader);
 
     m_compositionTable = new QTableWidget(compositionGroup);
+    m_compositionTable->setObjectName(QStringLiteral("setCompositionTable"));
+    m_compositionTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_compositionTable->setColumnCount(6);
     m_compositionTable->setHorizontalHeaderLabels(
         {"Image", "Part #", "Part Name", "Color", "Qty", "Spare"});
@@ -205,7 +219,38 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
     m_compositionTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     m_compositionTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
     compositionLayout->addWidget(m_compositionTable);
-    mainLayout->addWidget(compositionGroup, 1);
+    m_addInventoryAction = new QAction(tr("Add to Inventory"), this);
+    m_addInventoryAction->setObjectName(QStringLiteral("setPartAddInventoryAction"));
+    m_addInventoryButton = new QPushButton(tr("Add to Inventory..."), compositionGroup);
+    m_addInventoryButton->setObjectName(QStringLiteral("setPartAddInventoryButton"));
+    compositionLayout->addWidget(m_addInventoryButton, 0, Qt::AlignRight);
+    connect(m_addInventoryAction, &QAction::triggered, this, &SetDetailsDialog::sendSelectedPartToInventory);
+    connect(m_addInventoryButton, &QPushButton::clicked, m_addInventoryAction, &QAction::trigger);
+    connect(m_compositionTable, &QTableWidget::itemSelectionChanged, this, &SetDetailsDialog::updateInventoryAction);
+    connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged, this, &SetDetailsDialog::updateInventoryAction);
+    m_compositionTable->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_compositionTable, &QWidget::customContextMenuRequested, this, [this](const QPoint& point) {
+        if (auto* item = m_compositionTable->itemAt(point))
+            m_compositionTable->selectRow(item->row());
+        else
+            m_compositionTable->clearSelection();
+        QMenu menu(this);
+        menu.addAction(m_addInventoryAction);
+        menu.exec(m_compositionTable->viewport()->mapToGlobal(point));
+    });
+    updateInventoryAction();
+    m_sectionsSplitter->addWidget(compositionGroup);
+    m_sectionsSplitter->setCollapsible(0, true);
+    m_sectionsSplitter->setCollapsible(1, false);
+    m_sectionsSplitter->setStretchFactor(0, 1);
+    m_sectionsSplitter->setStretchFactor(1, 3);
+    m_sectionsSplitter->setSizes({120, 360});
+    const auto saved = QSettings().value("SetDetails/sectionsSplitterState").toByteArray();
+    if (!saved.isEmpty()) m_sectionsSplitter->restoreState(saved);
+    connect(m_sectionsSplitter, &QSplitter::splitterMoved, this, [this] {
+        QSettings().setValue("SetDetails/sectionsSplitterState", m_sectionsSplitter->saveState());
+    });
+    mainLayout->addWidget(m_sectionsSplitter, 1);
 
     auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, this);
 
@@ -427,6 +472,42 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
     requestProviderEnrichment();
 }
 
+void SetDetailsDialog::done(int result)
+{
+    QSettings().setValue("SetDetails/sectionsSplitterState", m_sectionsSplitter->saveState());
+    QDialog::done(result);
+}
+
+void SetDetailsDialog::updateInventoryAction()
+{
+    const bool local = !m_remoteReads
+        && UserSettings::instance().sharedDataSource() == SharedDataSource::ThisComputer;
+    const int row = m_compositionTable->currentRow();
+    const auto* item = row >= 0 ? m_compositionTable->item(row, 1) : nullptr;
+    const bool selected = item && item->isSelected() && item->data(Qt::UserRole).toInt() > 0;
+    const bool enabled = local && selected && m_workspaceContext.hasCurrentWorkspace();
+    m_addInventoryAction->setEnabled(enabled);
+    m_addInventoryButton->setEnabled(enabled);
+    const QString explanation = !local
+        ? tr("Use My Inventory on the connected Host to add Parts. This list contains local catalog identities.")
+        : !m_workspaceContext.hasCurrentWorkspace() ? tr("Select a workspace before adding Inventory.")
+        : !selected ? tr("Select a catalog Part row to add physical pieces to Inventory.")
+        : tr("Open the existing Add Inventory window with this Part and Color. Quantity starts at 1; saving does not change the Set parts list.");
+    TooltipPolicy::explain(m_addInventoryAction, explanation);
+    TooltipPolicy::explain(m_addInventoryButton, explanation);
+}
+
+void SetDetailsDialog::sendSelectedPartToInventory()
+{
+    updateInventoryAction();
+    if (!m_addInventoryAction->isEnabled()) return;
+    const int row = m_compositionTable->currentRow();
+    // Copy stable catalog identities before any receiver opens or refreshes UI.
+    const int partId = m_compositionTable->item(row, 1)->data(Qt::UserRole).toInt();
+    const int colorId = m_compositionTable->item(row, 3)->data(Qt::UserRole).toInt();
+    emit addInventoryRequested(partId, colorId);
+}
+
 void SetDetailsDialog::addToCollection()
 {
     if (!m_workspaceContext.hasCurrentWorkspace()) {
@@ -534,9 +615,13 @@ void SetDetailsDialog::loadComposition()
         }
         imageItem->setData(Qt::UserRole, part.id);
         m_compositionTable->setItem(row, 0, imageItem);
-        m_compositionTable->setItem(row, 1, new QTableWidgetItem(part.partNumber));
+        auto* partItem = new QTableWidgetItem(part.partNumber);
+        partItem->setData(Qt::UserRole, part.partId);
+        m_compositionTable->setItem(row, 1, partItem);
         m_compositionTable->setItem(row, 2, new QTableWidgetItem(part.partName));
-        m_compositionTable->setItem(row, 3, new QTableWidgetItem(part.colorName));
+        auto* colorItem = new QTableWidgetItem(part.colorName);
+        colorItem->setData(Qt::UserRole, part.colorId);
+        m_compositionTable->setItem(row, 3, colorItem);
         auto* quantity = new QTableWidgetItem(QString::number(part.quantity));
         quantity->setTextAlignment(Qt::AlignCenter);
         m_compositionTable->setItem(row, 4, quantity);

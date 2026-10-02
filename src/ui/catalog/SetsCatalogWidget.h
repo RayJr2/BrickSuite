@@ -21,12 +21,15 @@
 #pragma once
 
 #include <QWidget>
+#include <QHash>
+#include <QPointer>
 
 class QComboBox;
 class QLabel;
 class QLineEdit;
 class QPushButton;
 class QTableWidget;
+class SetDetailsDialog;
 class WorkspaceContext;
 class RemoteReadApplicationServices;
 class RemoteCollectionMutationApplicationService;
@@ -49,6 +52,7 @@ private slots:
     void importSetsCsv();
 
 signals:
+    void addInventoryRequested(int partId, int colorId);
     void createBuildRequested(int setCatalogId, const QString& inventoryMode);
     void createStockBuildRequested(int setCatalogId, const QString& buildName);
     void collectionItemCreated(int collectionItemId);
@@ -57,6 +61,7 @@ signals:
 private:
     void loadYears();
     void updatePagingControls();
+    QHash<int, QPointer<SetDetailsDialog>> m_detailsWindows;
     WorkspaceContext& m_workspaceContext;
     RemoteReadApplicationServices* m_remoteReads = nullptr;
     RemoteCollectionMutationApplicationService* m_remoteMutations = nullptr;

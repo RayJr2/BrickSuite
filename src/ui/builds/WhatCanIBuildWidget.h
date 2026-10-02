@@ -6,8 +6,11 @@
 #include "../../models/WhatCanIBuildPartSelection.h"
 #include "../../services/application/dto/RemoteBuildabilityDtos.h"
 #include <QWidget>
+#include <QHash>
+#include <QPointer>
 #include <optional>
 
+class SetDetailsDialog;
 class WorkspaceContext;
 class RemoteReadApplicationServices;
 class RemoteCollectionMutationApplicationService;
@@ -37,6 +40,7 @@ public:
                           QString* statusMessage = nullptr);
 
 signals:
+    void addInventoryRequested(int partId, int colorId);
     void createBuildRequested(int setCatalogId, const QString& inventoryMode);
     void statusMessageRequested(const QString& message, int timeoutMs);
 
@@ -58,6 +62,7 @@ private:
     void renderCriteria();
     void updateResolvedPartSelection();
 
+    QHash<int, QPointer<SetDetailsDialog>> m_detailsWindows;
     WorkspaceContext& m_workspaceContext;
     RemoteReadApplicationServices* m_remoteReads = nullptr;
     RemoteCollectionMutationApplicationService* m_remoteCollection = nullptr;

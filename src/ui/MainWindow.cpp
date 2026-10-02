@@ -450,6 +450,10 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                                       m_networkManager.remotePulling(),
                                       m_networkManager.remoteCollectionMutations(),
                                       m_networkManager.remoteBuildMutations());
+    connect(m_setsCatalogWidget, &SetsCatalogWidget::addInventoryRequested,
+            m_myInventoryWidget, &MyInventoryWidget::addPartFromSetCatalog);
+    connect(m_buildsWidget, &BuildsWidget::addInventoryRequested,
+            m_myInventoryWidget, &MyInventoryWidget::addPartFromSetCatalog);
     connect(m_buildsWidget, &BuildsWidget::createSetBuildRequested,
             m_setsCatalogWidget, &SetsCatalogWidget::createBuildRequested);
     connect(m_buildsWidget, &BuildsWidget::statusMessageRequested,

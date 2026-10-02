@@ -318,17 +318,28 @@ void SetsCatalogWidget::searchSets(const QString& loadingMessage)
                     actionCombo->setCurrentIndex(0);
 
                     if (action == "details") {
-                        SetDetailsDialog dialog(setCatalogId, m_workspaceContext, this,
-                                                m_remoteReads, m_remoteMutations);
-
-                        connect(&dialog, &SetDetailsDialog::createBuildRequested,
+                        if (auto* existing = m_detailsWindows.value(setCatalogId).data()) {
+                            if (existing->isMinimized()) existing->showNormal();
+                            existing->show(); existing->raise(); existing->activateWindow();
+                            return;
+                        }
+                        auto* dialog = new SetDetailsDialog(setCatalogId, m_workspaceContext, this,
+                                                            m_remoteReads, m_remoteMutations);
+                        dialog->setAttribute(Qt::WA_DeleteOnClose);
+                        m_detailsWindows.insert(setCatalogId, dialog);
+                        connect(dialog, &QObject::destroyed, this, [this, setCatalogId] {
+                            m_detailsWindows.remove(setCatalogId);
+                        });
+                        connect(dialog, &SetDetailsDialog::addInventoryRequested,
+                                this, &SetsCatalogWidget::addInventoryRequested);
+                        connect(dialog, &SetDetailsDialog::createBuildRequested,
                                 this, &SetsCatalogWidget::createStockBuildRequested);
-                        connect(&dialog, &SetDetailsDialog::collectionItemCreated,
+                        connect(dialog, &SetDetailsDialog::collectionItemCreated,
                                 this, &SetsCatalogWidget::collectionItemCreated);
-                        connect(&dialog, &SetDetailsDialog::compositionChanged,
+                        connect(dialog, &SetDetailsDialog::compositionChanged,
                                 this, &SetsCatalogWidget::catalogDataChanged);
 
-                        dialog.exec();
+                        dialog->show();
 
                         return;
                     }

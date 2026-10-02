@@ -85,6 +85,7 @@ public:
                               int rebrickableColorId,
                               const QString& imagePath);
 
+    void addPartFromSetCatalog(int partId, int colorId);
     bool hasActiveAddInventoryDialog() const;
     void sendPartToActiveAddInventoryDialog(const QString& partNumber);
 

@@ -75,6 +75,7 @@ public slots:
     // M23.3 Part Reference integration. Resolves an exact local catalog
     // part and places it into the rapid-entry dialog without using the
     // clipboard.
+    bool setPartFromSetCatalog(int partId, int colorId);
     void setPartFromReference(const QString& partNumber);
 
 signals:
@@ -104,7 +105,7 @@ private:
     void resolveEnteredPart();
     void handlePartDetailsForAliasLearning(
         const RebrickableService::PartDetailsResult& result);
-    void applyResolvedPart(int partId, const QString& displayText, const QString& resolutionText);
+    void applyResolvedPart(int partId, const QString& displayText, const QString& resolutionText, int preferredColorId = -1);
     void updateAddButtonState();
     bool tryResolveBrickLinkExternalId(const QString& externalId);
     void startBrickLinkCandidateLookup(const QString& externalId);

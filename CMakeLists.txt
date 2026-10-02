@@ -859,6 +859,100 @@ if(BUILD_TESTING)
     target_link_libraries(FitCalibrationUnifiedGenerationTest PRIVATE Qt6::Core Qt6::Gui BrickSuite::Mcut BrickSuite::Lib3mf)
     bricksuite_stage_mcut_runtime(FitCalibrationUnifiedGenerationTest)
     add_test(NAME FitCalibrationUnifiedGeneration COMMAND FitCalibrationUnifiedGenerationTest)
+    # Real Set Details / rapid-entry integration with isolated credentials and data.
+    qt_add_executable(SetDetailsInventoryWorkflowTest EXCLUDE_FROM_ALL
+        tests/SetDetailsInventoryWorkflowTest.cpp
+        src/api/ApiNetworkService.cpp
+        src/api/ApiProviderStatusRegistry.cpp
+        src/api/brickset/BricksetService.cpp
+        src/api/brickset/BricksetUsagePolicy.cpp
+        src/api/rebrickable/RebrickableService.cpp
+        src/app/WorkspaceContext.cpp
+        src/database/DatabaseManager.cpp
+        src/database/DatabaseSchema.cpp
+        src/import/RebrickableCsvInputResolver.cpp
+        src/import/RebrickableSetPartsImporter.cpp
+        src/models/Build.cpp
+        src/models/BuildAllocation.cpp
+        src/models/CollectionItem.cpp
+        src/models/Color.cpp
+        src/models/InventoryMovement.cpp
+        src/models/InventoryRecord.cpp
+        src/models/MinifigCatalogItem.cpp
+        src/models/Part.cpp
+        src/models/PartCategory.cpp
+        src/models/SetCatalogItem.cpp
+        src/models/StorageLocation.cpp
+        src/models/Workspace.cpp
+        src/network/BrickSuiteAuthentication.cpp
+        src/network/BrickSuiteHostIdentity.cpp
+        src/network/BrickSuiteProtocol.cpp
+        src/network/BrickSuiteWebSocketClient.cpp
+        src/network/OperationalInvalidation.cpp
+        src/network/RemoteSessionState.cpp
+        src/repositories/BuildAllocationRepository.cpp
+        src/repositories/BuildRepository.cpp
+        src/repositories/CollectionRepository.cpp
+        src/repositories/ColorRepository.cpp
+        src/repositories/EffectiveSetCompositionRepository.cpp
+        src/repositories/ExternalColorMappingRepository.cpp
+        src/repositories/ExternalPartIdentifierRepository.cpp
+        src/repositories/ExternalPartMappingRepository.cpp
+        src/repositories/InventoryMovementRepository.cpp
+        src/repositories/InventoryRecordRepository.cpp
+        src/repositories/ManufacturerRepository.cpp
+        src/repositories/MinifigCatalogRepository.cpp
+        src/repositories/PartAliasRepository.cpp
+        src/repositories/PartCategoryRepository.cpp
+        src/repositories/PartRelationshipRepository.cpp
+        src/repositories/PartRepository.cpp
+        src/repositories/SetCatalogPartRepository.cpp
+        src/repositories/SetCatalogRepository.cpp
+        src/repositories/StorageLocationRepository.cpp
+        src/repositories/WorkspaceRepository.cpp
+        src/services/RebrickableApiClient.cpp
+        src/services/application/RemoteCollectionMutationApplicationService.cpp
+        src/services/application/RemoteInventoryMutationApplicationService.cpp
+        src/services/application/RemoteMutationApplicationServices.cpp
+        src/services/application/RemoteReadApplicationServices.cpp
+        src/services/application/dto/RemoteBuildabilityDtos.cpp
+        src/services/application/dto/RemoteCollectionMutationDtos.cpp
+        src/services/application/dto/RemoteInventoryMutationDtos.cpp
+        src/services/application/dto/RemoteMutationDtos.cpp
+        src/services/application/dto/RemoteReadJson.cpp
+        src/services/collection/CollectionItemService.cpp
+        src/services/database/AutomaticBackupPolicy.cpp
+        src/services/database/DatabaseFileValidator.cpp
+        src/services/images/ImageUnavailableCache.cpp
+        src/services/images/PartImageService.cpp
+        src/services/images/SetImageService.cpp
+        src/services/mappings/BrickLinkMappingService.cpp
+        src/services/parts/BrickLinkCandidateDiscoveryService.cpp
+        src/services/parts/PartExternalIdEnrichmentService.cpp
+        src/services/parts/PartResolver.cpp
+        src/services/parts/RebrickablePartAliasLearner.cpp
+        src/services/sets/RebrickableSetPartsService.cpp
+        src/services/sets/SetCompositionReplacementService.cpp
+        src/services/sets/SetDetailsProviderService.cpp
+        src/services/storage/SessionStorageSelectionService.cpp
+        src/settings/UserSettings.cpp
+        src/ui/catalog/BricksetInstructionsDialog.cpp
+        src/ui/catalog/SetDetailsDialog.cpp
+        src/ui/collection/CatalogCollectionDialog.cpp
+        src/ui/collection/RemoteCollectionMutationDialog.cpp
+        src/ui/common/SessionFileDialogDirectoryService.cpp
+        src/ui/help/HelpDialog.cpp
+        src/ui/help/HelpManager.cpp
+        src/ui/helpers/ColorComboHelper.cpp
+        src/ui/inventory/AddInventoryDialog.cpp
+        resources/help/help.qrc)
+    target_compile_definitions(SetDetailsInventoryWorkflowTest PRIVATE
+        "$<FILTER:$<TARGET_PROPERTY:BrickSuite,COMPILE_DEFINITIONS>,INCLUDE,^(APP_|BRICKSUITE_VERSION=)>")
+    target_link_libraries(SetDetailsInventoryWorkflowTest PRIVATE
+        Qt6::Widgets Qt6::Sql Qt6::Network Qt6::WebSockets Qt6::Concurrent ZLIB::ZLIB OpenSSL::Crypto)
+    add_test(NAME SetDetailsInventoryWorkflow COMMAND SetDetailsInventoryWorkflowTest -platform offscreen)
+    set_tests_properties(SetDetailsInventoryWorkflow PROPERTIES TIMEOUT 30)
+
     qt_add_executable(PrintingHelpUxTest EXCLUDE_FROM_ALL
         tests/PrintingHelpUxTest.cpp
         src/ui/about/AboutDialog.cpp src/ui/about/AboutDialog.h

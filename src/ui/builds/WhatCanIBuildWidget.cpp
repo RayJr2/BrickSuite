@@ -292,7 +292,23 @@ void WhatCanIBuildWidget::showPage()
     m_pageLabel->setText(QStringLiteral("Page %1 of %2").arg(m_page+1).arg(pages));m_previous->setEnabled(m_page>0);m_next->setEnabled(m_page+1<pages);updateControls();
 }
 
-void WhatCanIBuildWidget::showDetails(int id){SetDetailsDialog dialog(id,m_workspaceContext,this,m_remoteReads,m_remoteCollection);connect(&dialog,&SetDetailsDialog::createBuildRequested,this,[this,id](int,const QString&){emit createBuildRequested(id,QStringLiteral("Stock"));});connect(&dialog,&SetDetailsDialog::compositionChanged,this,&WhatCanIBuildWidget::invalidateCatalog);dialog.exec();}
+void WhatCanIBuildWidget::showDetails(int id)
+{
+    if (auto* existing = m_detailsWindows.value(id).data()) {
+        if (existing->isMinimized()) existing->showNormal();
+        existing->show(); existing->raise(); existing->activateWindow();
+        return;
+    }
+    auto* dialog = new SetDetailsDialog(id, m_workspaceContext, this, m_remoteReads, m_remoteCollection);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    m_detailsWindows.insert(id, dialog);
+    connect(dialog, &QObject::destroyed, this, [this, id] { m_detailsWindows.remove(id); });
+    connect(dialog, &SetDetailsDialog::addInventoryRequested, this, &WhatCanIBuildWidget::addInventoryRequested);
+    connect(dialog, &SetDetailsDialog::createBuildRequested, this,
+            [this, id](int, const QString&) { emit createBuildRequested(id, QStringLiteral("Stock")); });
+    connect(dialog, &SetDetailsDialog::compositionChanged, this, &WhatCanIBuildWidget::invalidateCatalog);
+    dialog->show();
+}
 void WhatCanIBuildWidget::showMissingParts(const InventoryBuildabilitySetResult&x){if(m_remoteReads){requestRemoteDetails(x,false);return;}QDialog dialog(this);dialog.setWindowTitle(QStringLiteral("Missing Parts — %1").arg(x.setNumber));dialog.resize(760,420);auto*l=new QVBoxLayout(&dialog);auto*t=new QTableWidget(&dialog);t->setColumnCount(7);t->setHorizontalHeaderLabels({"Part #","Name","Color","Required","Loose","Collection","Missing"});for(const auto&r:x.requirements)if(r.missing>0){int row=t->rowCount();t->insertRow(row);t->setItem(row,0,new QTableWidgetItem(r.partNumber));t->setItem(row,1,new QTableWidgetItem(r.partName));t->setItem(row,2,new QTableWidgetItem(r.colorName));t->setItem(row,3,new QTableWidgetItem(QString::number(r.required)));t->setItem(row,4,new QTableWidgetItem(QString::number(r.looseUsed)));t->setItem(row,5,new QTableWidgetItem(QString::number(r.collectionUsed)));t->setItem(row,6,new QTableWidgetItem(QString::number(r.missing)));}t->horizontalHeader()->setSectionResizeMode(1,QHeaderView::Stretch);l->addWidget(t);auto*b=new QDialogButtonBox(QDialogButtonBox::Close,&dialog);connect(b,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);l->addWidget(b);dialog.exec();}
 void WhatCanIBuildWidget::showSources(const InventoryBuildabilitySetResult&x){if(m_remoteReads){requestRemoteDetails(x,true);return;}QStringList rows;for(const auto&s:x.sources)rows<<QStringLiteral("%1 (%2) — %3 piece(s)").arg(s.label,s.state).arg(s.piecesUsed);QMessageBox::information(this,QStringLiteral("Advisory Collection Sources"),rows.join('\n'));}
 
