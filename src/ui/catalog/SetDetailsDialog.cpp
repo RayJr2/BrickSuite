@@ -129,7 +129,14 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
     mainLayout->addLayout(contentLayout);
 
     auto* providerGroup = new QGroupBox("Provider Enrichment", this);
+    providerGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_providerLayout = new QFormLayout(providerGroup);
+    // macOS defaults to centered fields capped at their size hints. Let the
+    // value column use the scroll pane before wrapping genuinely long text.
+    m_providerLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    m_providerLayout->setRowWrapPolicy(QFormLayout::DontWrapRows);
+    m_providerLayout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+    m_providerLayout->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
     m_providerSourceLabel = new QLabel("Checking...", providerGroup);
     m_providerStatusLabel = new QLabel(providerGroup);
@@ -151,8 +158,8 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
     m_viewInstructionsButton->setVisible(false);
 
     instructionsRowLayout->addWidget(m_instructionsLabel);
-    instructionsRowLayout->addStretch();
     instructionsRowLayout->addWidget(m_viewInstructionsButton);
+    instructionsRowLayout->addStretch();
 
     m_additionalImagesLabel = new QLabel("-", providerGroup);
 
@@ -171,6 +178,14 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
     m_providerLayout->addRow("Instructions:", m_instructionsRowWidget);
     m_providerLayout->addRow("Additional Images:", m_additionalImagesLabel);
     m_providerLayout->addRow("Provider Link:", m_providerLinkLabel);
+    for (int row = 0; row < m_providerLayout->rowCount(); ++row) {
+        auto* value = m_providerLayout->itemAt(row, QFormLayout::FieldRole)->widget();
+        value->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        if (auto* label = qobject_cast<QLabel*>(value)) {
+            label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+            label->setWordWrap(true);
+        }
+    }
 
     // Until provider selection completes, show only the generic Source and
     // Status rows. Brickset-specific enrichment fields become visible only

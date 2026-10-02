@@ -862,6 +862,7 @@ if(BUILD_TESTING)
     # Real Set Details / rapid-entry integration with isolated credentials and data.
     qt_add_executable(SetDetailsInventoryWorkflowTest EXCLUDE_FROM_ALL
         tests/SetDetailsInventoryWorkflowTest.cpp
+        src/settings/ThemeManager.cpp
         src/api/ApiNetworkService.cpp
         src/api/ApiProviderStatusRegistry.cpp
         src/api/brickset/BricksetService.cpp
