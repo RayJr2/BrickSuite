@@ -21,6 +21,7 @@
 #include "common/TooltipPolicy.h"
 #include "common/SupportLinks.h"
 #include "MainWindow.h"
+#include "ToolsMenuLayout.h"
 
 #include "about/AboutDialog.h"
 #include "help/HelpManager.h"
@@ -1167,6 +1168,9 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
             m_remoteRefreshCoordinator->surfaceBecameRelevant(
                 RemoteRefreshCoordinator::Projection::PartReferenceCustomizations);
     });
+
+    ToolsMenuLayout::apply(toolsMenu, importRebrickableDataAction, partReferenceAction,
+        modelViewerMenu->menuAction(), fitCalibrationAction, databaseStatusAction, referenceDataAction);
 
     // Help menu
     auto* helpMenu = menuBar()->addMenu("Help");

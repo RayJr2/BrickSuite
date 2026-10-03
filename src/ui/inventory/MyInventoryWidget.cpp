@@ -1125,7 +1125,12 @@ void MyInventoryWidget::searchInventory(const QString& loadingMessage)
                         EditInventoryDialog dialog(inventoryRecordId, m_workspaceContext, this);
 
                         if (dialog.exec() == QDialog::Accepted) {
-                            refresh();
+                            if (dialog.removedInventory()) {
+                                searchInventory();
+                                emit inventoryChanged();
+                            } else {
+                                refresh();
+                            }
                             emit hostInventoryMutationCommitted(
                                 m_workspaceContext.currentWorkspaceId(), inventoryRecordId);
                         }

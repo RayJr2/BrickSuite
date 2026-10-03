@@ -40,6 +40,8 @@ public:
                                  WorkspaceContext& workspaceContext,
                                  QWidget* parent = nullptr);
 
+    bool removedInventory() const { return m_removedInventory; }
+
 private slots:
     void saveChanges();
     void showAllColorsToggled(bool checked);
@@ -56,6 +58,7 @@ private:
     void loadOwnershipOptions();
     void loadManufacturers();
 
+    bool m_removedInventory = false;
     int m_inventoryRecordId = 0;
     int m_partId = 0;
 

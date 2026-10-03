@@ -954,6 +954,22 @@ if(BUILD_TESTING)
     add_test(NAME SetDetailsInventoryWorkflow COMMAND SetDetailsInventoryWorkflowTest -platform offscreen)
     set_tests_properties(SetDetailsInventoryWorkflow PROPERTIES TIMEOUT 30)
 
+    # Reuse the isolated dialog harness dependencies; never link real credentials.
+    get_target_property(inventoryZeroTestSources SetDetailsInventoryWorkflowTest SOURCES)
+    list(REMOVE_ITEM inventoryZeroTestSources tests/SetDetailsInventoryWorkflowTest.cpp)
+    qt_add_executable(InventoryZeroQuantityWorkflowTest EXCLUDE_FROM_ALL
+        tests/InventoryZeroQuantityWorkflowTest.cpp
+        src/ui/inventory/EditInventoryDialog.cpp
+        src/ui/inventory/RemoveInventoryDialog.cpp
+        src/ui/inventory/RemoteInventoryMutationDialog.cpp
+        ${inventoryZeroTestSources})
+    target_compile_definitions(InventoryZeroQuantityWorkflowTest PRIVATE
+        "$<FILTER:$<TARGET_PROPERTY:BrickSuite,COMPILE_DEFINITIONS>,INCLUDE,^(APP_|BRICKSUITE_VERSION=)>")
+    target_link_libraries(InventoryZeroQuantityWorkflowTest PRIVATE
+        Qt6::Widgets Qt6::Sql Qt6::Network Qt6::WebSockets Qt6::Concurrent ZLIB::ZLIB OpenSSL::Crypto)
+    add_test(NAME InventoryZeroQuantityWorkflow COMMAND InventoryZeroQuantityWorkflowTest -platform offscreen)
+    set_tests_properties(InventoryZeroQuantityWorkflow PROPERTIES TIMEOUT 30)
+
     qt_add_executable(PrintingHelpUxTest EXCLUDE_FROM_ALL
         tests/PrintingHelpUxTest.cpp
         src/ui/about/AboutDialog.cpp src/ui/about/AboutDialog.h

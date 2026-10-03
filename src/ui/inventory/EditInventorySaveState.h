@@ -2,8 +2,8 @@
 
 namespace EditInventorySaveState
 {
-inline bool canSave(bool recordLoaded, bool knownColorsLoading, int colorId)
+inline bool canSave(bool recordLoaded, bool knownColorsLoading, int colorId, int quantity = 1)
 {
-    return recordLoaded && !knownColorsLoading && colorId > 0;
+    return recordLoaded && (quantity == 0 || (quantity > 0 && !knownColorsLoading && colorId > 0));
 }
 }

@@ -21,6 +21,7 @@
 #include "../help/HelpManager.h"
 #include "../common/TooltipPolicy.h"
 #include "EditInventoryDialog.h"
+#include "RemoveInventoryDialog.h"
 #include "EditInventorySaveState.h"
 
 #include "../../app/WorkspaceContext.h"
@@ -83,7 +84,7 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
     m_ownershipCombo = new QComboBox(this);
 
     m_quantitySpin = new QSpinBox(this);
-    TooltipPolicy::explain(m_quantitySpin, tr("Set the total quantity for this Inventory entry, not an amount to add."));
+    TooltipPolicy::explain(m_quantitySpin, tr("Set the total quantity for this Inventory entry, not an amount to add. Zero opens Remove Entry for confirmation."));
 
     m_quantitySpin->setMinimum(0);
     m_quantitySpin->setMaximum(1000000);
@@ -150,6 +151,9 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
     connect(m_colorCombo, &QComboBox::currentIndexChanged, this,
             [this](int) { updateSaveEnabledState(); });
 
+    connect(m_quantitySpin, &QSpinBox::valueChanged, this,
+            [this](int) { updateSaveEnabledState(); });
+
     loadAllColors();
     loadManufacturers();
 
@@ -171,7 +175,7 @@ void EditInventoryDialog::updateSaveEnabledState()
     if (QPushButton* saveButton = m_buttonBox->button(QDialogButtonBox::Save)) {
         const int colorId = m_colorCombo ? m_colorCombo->currentData().toInt() : 0;
         saveButton->setEnabled(EditInventorySaveState::canSave(
-            m_recordLoaded, m_knownColorsLoading, colorId));
+            m_recordLoaded, m_knownColorsLoading, colorId, m_quantitySpin->value()));
     }
 }
 
@@ -275,6 +279,14 @@ void EditInventoryDialog::saveChanges()
     if (!HostOperationalGate::localWritesAllowed()) {
         QMessageBox::information(this, tr("Host Maintenance"), tr("Host Maintenance prevents operational changes.")); return;
     }
+    if (m_quantitySpin->value() == 0) {
+        RemoveInventoryDialog removal(m_inventoryRecordId, this);
+        if (removal.exec() == QDialog::Accepted) {
+            m_removedInventory = true;
+            accept();
+        }
+        return;
+    }
     const int colorId = m_colorCombo->currentData().toInt();
 
     if (colorId <= 0) {
@@ -299,15 +311,6 @@ void EditInventoryDialog::saveChanges()
     }
 
     const int quantity = m_quantitySpin->value();
-
-    if (quantity == 0) {
-        QMessageBox::warning(this,
-                             "BrickSuite",
-                             "Quantity cannot be zero in this version.\n\n"
-                             "A remove-inventory workflow will be added separately.");
-
-        return;
-    }
 
     InventoryRecord updated = *existing;
 
