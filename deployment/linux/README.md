@@ -5,6 +5,73 @@ the Ubuntu 26.04 development host is not a Linux release artifact. These scripts
 use a rootless Bubblewrap namespace with Ubuntu 22.04 userspace; they do not
 install packages into or change the host OS. The host kernel is shared.
 
+## Build the official Linux release
+
+From a **clean Git checkout**, run:
+
+```sh
+python3 deployment/linux/build_release_artifact.py
+```
+
+This is the normal official release workflow. It checks host prerequisites,
+prepares a fresh pinned Ubuntu 22.04 baseline, builds Release and every configured
+test, runs the isolated full/focused gates and release-tool/installer regressions,
+builds probes, packages/audits the ELF closure, and verifies the archive checksum.
+The full test count is derived from the build; failures and skips prevent release.
+
+**`build_release_artifact.py` = official Ubuntu 22.04 release artifact.**
+**Qt Creator `Deploy` = local development package.** Neither technical success
+nor the final “Ready for clean-machine/user acceptance” message replaces user
+acceptance on a separate Ubuntu machine.
+
+Host requirements are Linux x86_64, Python 3 with TLS support, Git, tar, xz,
+Bubblewrap with usable unprivileged namespaces, and the system CA bundle.
+The baseline supplies Qt, GCC, CMake, Ninja and development libraries. Missing
+Ubuntu host prerequisites are listed with an exact install command; interactive
+installation uses sudo only after consent. Other distributions receive a manual
+installation diagnostic. `--no-install-prerequisites` disables the offer;
+`--jobs N` controls build parallelism (default six). Network access and sufficient
+disk/RAM are required. Namespace/AppArmor failures are reported before bootstrap.
+
+Any tracked or untracked source change is refused; there is no dirty-release
+bypass. Commit reviewed changes yourself before running; the wrapper never
+commits or pushes. Source SHA, branch/tag, project version, schema and protocol
+are recorded before building and checked again before publication.
+
+The wrapper owns `build/linux-release/`, guarded by a marker and process lock.
+It refuses unmanaged or redirected workspace paths. Each run recreates `rootfs/`
+and `work/`; bootstrap's `downloads/` cache remains and cached pinned inputs are
+rehashed by bootstrap. Copy any diagnostic evidence you need from `work/` before
+starting another run. Logs live in `logs/release-build.log`; previous orchestration
+logs are retained with unique names. Detailed existing test evidence remains in
+`work/evidence/` until the next run. A failed/interrupted run leaves that evidence
+for diagnosis, returns nonzero, and never announces a completed release.
+
+Successful output is available at:
+
+```text
+build/linux-release/release/BrickSuite-v0.4.0-Linux-x86_64.tar.gz
+build/linux-release/release/BrickSuite-v0.4.0-Linux-x86_64.tar.gz.sha256
+build/linux-release/release/build-metadata.json
+build/linux-release/release/dependencies.json
+build/linux-release/release/abi-audit.json
+```
+
+`release` is an atomically updated symlink to a completed generation under
+`published/`. Previous successful generations are retained, including when a new
+run fails; they can consume substantial disk space. Publication happens only after
+checksum, source identity and test-summary verification. The packager remains
+responsible for the official GLIBC 2.35 / GLIBCXX 3.4.30 / CXXABI 1.3.13 ceilings.
+The final summary reports actual test counts, bytes, SHA-256, measured ABI,
+metadata paths and duration. Ctrl+C terminates the active process group and
+prints “Release generation canceled.”
+
+Wrapper regressions use synthetic data and do not bootstrap a baseline:
+
+```sh
+python3 deployment/linux/test_build_release_artifact.py
+```
+
 ## Qt Creator: local Linux Deploy
 
 1. Select the **Desktop Qt 6.10.3 Release** build configuration.
@@ -140,7 +207,7 @@ See [Ubuntu snapshots](https://snapshot.ubuntu.com/),
 [Qt platform documentation](https://doc.qt.io/qt-6.10/supported-platforms.html), and
 [OpenSSL sources and maintenance](https://www.openssl-library.org/source/).
 
-## Build and test
+## Advanced / Manual Pipeline
 
 Host requirements: Linux x86_64, Python 3, tar/xz, Bubblewrap with unprivileged user
 namespaces enabled, network access, and sufficient disk/RAM for all test targets.
