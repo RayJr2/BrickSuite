@@ -40,6 +40,7 @@ public:
                           QString* statusMessage = nullptr);
 
 signals:
+    void partOutRequested(int setCatalogId);
     void addInventoryRequested(int partId, int colorId);
     void createBuildRequested(int setCatalogId, const QString& inventoryMode);
     void statusMessageRequested(const QString& message, int timeoutMs);

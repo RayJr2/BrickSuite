@@ -51,6 +51,7 @@ public:
                               RemoteCollectionMutationApplicationService* remoteMutations = nullptr);
 
 signals:
+    void partOutRequested(int setCatalogId);
     void addInventoryRequested(int partId, int colorId);
     void createBuildRequested(int setCatalogId, const QString& buildName);
     void collectionItemCreated(int collectionItemId);
@@ -116,6 +117,7 @@ private:
     QPushButton* m_addInventoryButton = nullptr;
     QPushButton* m_getPartsButton = nullptr;
     QPushButton* m_importPartsButton = nullptr;
+    QPushButton* m_partOutButton = nullptr;
     QPushButton* m_createBuildButton = nullptr;
     QPushButton* m_addToCollectionButton = nullptr;
     int m_requiredPieces = 0;

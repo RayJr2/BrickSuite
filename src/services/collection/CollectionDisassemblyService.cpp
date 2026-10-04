@@ -1,4 +1,6 @@
 #include "CollectionDisassemblyService.h"
+#include "../inventory/CompositionToInventoryService.h"
+#include <limits>
 
 #include "../../database/DatabaseManager.h"
 #include "../../models/InventoryRecord.h"
@@ -66,12 +68,20 @@ CollectionDisassemblyService::Plan CollectionDisassemblyService::buildPlan(int i
     Plan result; result.item=item; result.reference=display->displayReference;
     result.name=display->displayName;
     QMap<QPair<int,int>, Row> aggregated;
-    auto append = [&](int partId, int colorId, int quantity, bool spare,
+    bool quantityOverflow = false;
+    auto append = [&](int partId, int colorId, qint64 quantity, bool spare,
                       const QString& number, const QString& name, const QString& color) {
-        if (spare) { ++result.excludedSpareRows; result.excludedSparePieces += qMax(0, quantity); return; }
+        if (quantity > std::numeric_limits<int>::max()) { quantityOverflow = true; return; }
+        if (spare) {
+            ++result.excludedSpareRows;
+            if (result.excludedSparePieces > std::numeric_limits<int>::max() - qMax(qint64(0), quantity)) quantityOverflow = true;
+            else result.excludedSparePieces += int(qMax(qint64(0), quantity));
+            return;
+        }
         if (partId <= 0 || colorId <= 0 || quantity <= 0) return;
         const QPair<int,int> key(partId,colorId);
         auto row=aggregated.value(key); row.partId=partId; row.colorId=colorId;
+        if (row.quantity > std::numeric_limits<int>::max() - quantity) { quantityOverflow = true; return; }
         row.quantity+=quantity; row.partNumber=number; row.partName=name; row.colorName=color;
         aggregated.insert(key,row);
     };
@@ -81,7 +91,7 @@ CollectionDisassemblyService::Plan CollectionDisassemblyService::buildPlan(int i
             return planFailure(Error::DatabaseFailure, composition.message.isEmpty()
                 ? QStringLiteral("Unable to read the Set composition.") : composition.message);
         for (const auto& part:composition.parts)
-            append(part.partId,part.colorId,int(part.quantity),part.spare,
+            append(part.partId,part.colorId,part.quantity,part.spare,
                    part.partNumber,part.partName,part.colorName);
     } else {
         const auto parts=MinifigCatalogPartRepository(database()).listForMinifig(item.minifigCatalogId);
@@ -89,6 +99,7 @@ CollectionDisassemblyService::Plan CollectionDisassemblyService::buildPlan(int i
             append(part.partId,part.colorId,part.quantityRequired,part.isSpare,
                    part.partNumber,part.partName,part.colorName);
     }
+    if (quantityOverflow) return planFailure(Error::CompositionUnavailable, "The composition quantity overflows.");
     result.rows=aggregated.values();
     for (const Row& row:result.rows) {
         const auto part=PartRepository(database()).getById(row.partId);
@@ -96,6 +107,8 @@ CollectionDisassemblyService::Plan CollectionDisassemblyService::buildPlan(int i
         if (!part || !part->isActive() || !color)
             return planFailure(Error::CompositionUnavailable,
                 "The authoritative composition contains an unavailable Part or Color.");
+        if (result.totalPieces > std::numeric_limits<int>::max() - row.quantity)
+            return planFailure(Error::CompositionUnavailable, "The composition total overflows.");
         result.totalPieces+=row.quantity;
     }
     if (result.rows.isEmpty())
@@ -136,10 +149,8 @@ CollectionDisassemblyService::disassembleInCurrentTransaction(
     }
     QMap<QPair<int,int>,int> requiredQuantities;
     QMap<QPair<int,int>,int> assignedQuantities;
-    QMap<QPair<int,int>,Row> rowsByIdentity;
     for (const Row& row : plan.rows) {
         requiredQuantities.insert({row.partId,row.colorId},row.quantity);
-        rowsByIdentity.insert({row.partId,row.colorId},row);
     }
     for (const DestinationAssignment& assignment : assignments) {
         const QPair<int,int> key(assignment.partId,assignment.colorId);
@@ -153,6 +164,8 @@ CollectionDisassemblyService::disassembleInCurrentTransaction(
             return resultFailure(Error::InvalidDestination,
                 "Every returned Part requires an active Inventory-capable leaf destination in this Workspace.");
         }
+        if (assignedQuantities.value(key) > std::numeric_limits<int>::max() - assignment.quantity)
+            return resultFailure(Error::InvalidInput, "The assigned quantity overflows.");
         assignedQuantities[key]+=assignment.quantity;
     }
     if (assignedQuantities!=requiredQuantities) {
@@ -161,27 +174,24 @@ CollectionDisassemblyService::disassembleInCurrentTransaction(
     }
     const int manufacturerId=ManufacturerRepository(db).legoManufacturerId();
     if (manufacturerId<=0) return resultFailure(Error::DatabaseFailure,"The LEGO manufacturer identity is unavailable.");
-    InventoryRecordRepository inventory(db);
-    Result result; result.collectionItemId=itemId;
-    const QString reference=QString::number(itemId);
-    const QString notes=QStringLiteral("Required piece returned while disassembling Collection item %1 (%2).")
+    CompositionToInventoryService::Context context;
+    context.workspaceId = plan.item.workspaceId;
+    context.manufacturerId = manufacturerId;
+    context.condition = collectionItemConditionToString(plan.item.condition);
+    context.movementType = QStringLiteral("CollectionDisassembly");
+    context.referenceType = QStringLiteral("Collection");
+    context.referenceId = QString::number(itemId);
+    context.notes = QStringLiteral("Required piece returned while disassembling Collection item %1 (%2).")
         .arg(itemId).arg(plan.reference);
-    for (const DestinationAssignment& assignment:assignments) {
-        const QPair<int,int> key(assignment.partId,assignment.colorId);
-        const Row row=rowsByIdentity.value(key);
-        InventoryRecord record; record.setWorkspaceId(plan.item.workspaceId);
-        record.setPartId(row.partId); record.setColorId(row.colorId);
-        record.setStorageLocationId(assignment.storageLocationId); record.setManufacturerId(manufacturerId);
-        record.setCondition(collectionItemConditionToString(plan.item.condition));
-        record.setOwnershipType(QStringLiteral("Owned")); record.setQuantity(assignment.quantity);
-        InventoryRecordRepository::AddResult added;
-        if (!inventory.addOrIncreaseQuantityInCurrentTransaction(record,
-                QStringLiteral("CollectionDisassembly"),QStringLiteral("Collection"),reference,notes,&added)) {
-            return resultFailure(Error::DatabaseFailure,"Unable to add a Collection piece to Inventory.");
-        }
-        result.affectedInventoryIds.append(added.inventoryRecordId);
-        result.totalPieces+=assignment.quantity; ++result.distinctRows;
-    }
+    QList<CompositionToInventoryService::Row> inventoryRows;
+    for (const auto& assignment : assignments)
+        inventoryRows.append({assignment.partId, assignment.colorId, assignment.storageLocationId, assignment.quantity});
+    const auto added = CompositionToInventoryService(db).addInCurrentTransaction(context, inventoryRows);
+    if (!added.success) return resultFailure(Error::DatabaseFailure, added.message);
+    Result result; result.collectionItemId = itemId;
+    result.affectedInventoryIds = added.inventoryIds;
+    result.totalPieces = int(added.totalPieces);
+    result.distinctRows = assignments.size();
     if (!CollectionRepository(db).transitionCatalogItemToUnassembled(
             itemId,plan.item.workspaceId,expectedModifiedUtc)) {
         return resultFailure(Error::Stale,

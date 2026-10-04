@@ -3,6 +3,7 @@
 #include "../src/services/application/HostStorageProtocolMutationService.h"
 #include "../src/services/application/dto/RemoteStorageMutationDtos.h"
 #include "../src/repositories/StorageLocationRepository.h"
+#include "../src/repositories/StorageLocationTypeRepository.h"
 
 #include <QCoreApplication>
 #include <QSqlDatabase>
@@ -95,8 +96,65 @@ int main(int argc, char** argv)
 
     Fixture fixture;
     if (!require(fixture.initialize(), "fixture initialized")) return 1;
+    // Reference-data additions must reach Schema 35 databases without changing
+    // existing identities, descriptions, activation, or the schema version.
+    const QStringList originalNames{"Area", "Cabinet", "Shelf", "Case", "Drawer",
+                                    "Bin", "Tray", "Bag", "Compartment", "Divider"};
+    StorageLocationTypeRepository types(fixture.database);
+    const auto originalTypes = types.getAll();
+    QStringList activeNames;
+    for (const auto& type : types.getActive()) activeNames.append(type.name());
+    ok &= require(activeNames.mid(0, 11) == QStringList({"Area", "Cabinet", "Shelf", "Case",
+                      "Box", "Drawer", "Bin", "Tray", "Bag", "Compartment", "Divider"}),
+                  "fresh standard types use the normal display order including Box");
+    for (int i = 0; i < originalNames.size(); ++i) {
+        const auto type = types.getById(i + 1);
+        ok &= require(type && type->name() == originalNames[i] && type->isActive()
+                      && type->isSystem(), "original fresh seed IDs and flags preserved");
+    }
+    ok &= require(scalar(fixture.database, "SELECT COUNT(*) FROM storage_location_type WHERE name='Box' AND is_system=1 AND is_active=1 AND sort_order=45") == 1,
+                  "fresh Box exists exactly once with standard flags");
+    {
+        QSqlQuery setup(fixture.database);
+        ok &= require(setup.exec("DELETE FROM storage_location_type WHERE name='Box'"),
+                      "synthetic pre-Box Schema 35 fixture arranged");
+    }
+    int boxType = 0;
+    int typeSequence = 0;
+    for (int restart = 0; restart < 3; ++restart) {
+        fixture.database.close();
+        ok &= require(fixture.database.open() && DatabaseSchema::initialize(fixture.database),
+                      "existing Schema 35 database reopens and ensures reference data");
+        ok &= require(scalar(fixture.database, "SELECT version FROM schema_version") == 35
+                      && scalar(fixture.database, "SELECT COUNT(*) FROM storage_location_type WHERE name='Box'") == 1,
+                      "repeated startup adds Box once without schema migration");
+        const int currentBox = scalar(fixture.database, "SELECT id FROM storage_location_type WHERE name='Box'");
+        const int currentSequence = scalar(fixture.database, "SELECT seq FROM sqlite_sequence WHERE name='storage_location_type'");
+        if (restart == 0) { boxType = currentBox; typeSequence = currentSequence; }
+        ok &= require(currentBox == boxType && currentSequence == typeSequence,
+                      "repeated startup preserves Box identity and does not consume IDs");
+        for (const auto& before : originalTypes) {
+            if (before.name() == "Box") continue;
+            const auto after = types.getById(before.id());
+            ok &= require(after && after->name() == before.name()
+                          && after->description() == before.description()
+                          && after->isActive() == before.isActive()
+                          && after->isSystem() == before.isSystem()
+                          && after->sortOrder() == before.sortOrder(),
+                          "existing standard and custom type records are untouched");
+        }
+    }
     HostStorageMutationService service(fixture.database);
     QSqlQuery q(fixture.database);
+
+    auto box = service.add(addRequest(fixture.workspace, boxType, QStringLiteral("Original Set box")));
+    ok &= require(box.success && box.location.locationTypeId() == boxType,
+                  "ordinary Storage creation accepts repository Box identity");
+    auto boxEdit = editRequest(box.location); boxEdit.name = QStringLiteral("Renamed box");
+    const auto editedBox = service.edit(boxEdit);
+    ok &= require(editedBox.success && StorageLocationRepository(fixture.database)
+                      .getById(box.location.id())->locationTypeId() == boxType,
+                  "Storage edit persists Box type");
 
     auto root = service.add(addRequest(fixture.workspace, fixture.type, QStringLiteral("Room")));
     ok &= require(root.success && root.location.parentLocationId() == 0
@@ -284,7 +342,7 @@ int main(int argc, char** argv)
 
     RemoteStorageMutationDto::Request protocolAdd; protocolAdd.workspaceId=fixture.workspace;
     protocolAdd.mutationId=RemoteMutationDto::newMutationId();protocolAdd.name=QStringLiteral("Protocol root");
-    protocolAdd.description=QStringLiteral("Typed DTO");protocolAdd.storageTypeId=fixture.type;
+    protocolAdd.description=QStringLiteral("Typed DTO");protocolAdd.storageTypeId=boxType;
     protocolAdd.allowsInventory=true;protocolAdd.allowsCollection=false;
     const auto addMetadata=RemoteStorageMutationDto::toMetadata(QStringLiteral("storage.add"),protocolAdd);
     RemoteMutationDto::Error dtoError;auto mutation=HostStorageProtocolMutationService::createMutation(QStringLiteral("storage.add"),addMetadata,&dtoError);
@@ -292,6 +350,8 @@ int main(int argc, char** argv)
     const auto protocolResult=mutation(fixture.database);
     ok &= require(protocolResult.success&&protocolResult.authoritative.value("created").toBool()
                   &&protocolResult.authoritative.value("storage").toObject().value("displayPath").toString()==QStringLiteral("Protocol root"),"protocol add returns authoritative detail");
+    ok &= require(scalar(fixture.database, "SELECT location_type_id FROM storage_location WHERE name='Protocol root'") == boxType,
+                  "Remote Storage add uses normal Box record ID without a protocol enum");
     ok &= require(fixture.database.rollback(),"protocol adapter leaves commit ownership to executor");
     auto malformed=addMetadata;malformed.mutation.insert(QStringLiteral("unknown"),true);
     ok &= require(!HostStorageProtocolMutationService::createMutation(QStringLiteral("storage.add"),malformed,&dtoError)

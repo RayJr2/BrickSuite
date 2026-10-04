@@ -21,6 +21,8 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QPointer>
+class PartOutSetDialog;
 #include "../services/application/HostMutationPublicationService.h"
 #include <memory>
 class QCloseEvent;
@@ -81,6 +83,8 @@ private slots:
     void workspaceSelected();
 
 private:
+    void openCatalogSetPartOut(int setCatalogId);
+    QPointer<PartOutSetDialog> m_partOutDialog;
     void loadWorkspaces();
     void loadRemoteWorkspaces();
     void setRemoteSurfacesConnected(bool connected);

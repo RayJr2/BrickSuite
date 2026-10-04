@@ -86,6 +86,7 @@ public:
                                  QString* statusMessage = nullptr);
 
 signals:
+    void partOutRequested(int setCatalogId);
     void addInventoryRequested(int partId, int colorId);
     void collectionItemRequested(int collectionItemId);
     void remoteBuildsRefreshFinished(bool succeeded);

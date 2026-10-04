@@ -607,6 +607,13 @@ bool DatabaseSchema::initialize(QSqlDatabase& database)
         return false;
     }
 
+    // Storage types are reference data, not a structural schema change. Ensure
+    // newly supported types also reach existing databases without rewriting rows.
+    if (!seedStorageLocationTypes(database)) {
+        database.rollback();
+        return false;
+    }
+
     if (!database.commit()) {
         qCritical() << "Unable to commit schema transaction:" << database.lastError().text();
 
@@ -858,7 +865,9 @@ bool DatabaseSchema::seedStorageLocationTypes(QSqlDatabase& database)
                                   {"Tray", "A storage tray.", 70},
                                   {"Bag", "A bag used to contain or group stored parts.", 75},
                                   {"Compartment", "A compartment within another location.", 80},
-                                  {"Divider", "A divided section of another location.", 90}};
+                                  {"Divider", "A divided section of another location.", 90},
+                                  // Append new types to preserve original seed IDs.
+                                  {"Box", "A box used to store loose Parts, Sets, or other LEGO inventory.", 45}};
 
     for (const LocationType& type : types) {
         QSqlQuery query(database);
@@ -872,13 +881,15 @@ bool DatabaseSchema::seedStorageLocationTypes(QSqlDatabase& database)
                 is_active,
                 sort_order
             )
-            VALUES
-            (
+            SELECT
                 :name,
                 :description,
                 1,
                 1,
                 :sort_order
+            WHERE NOT EXISTS
+            (
+                SELECT 1 FROM storage_location_type WHERE name = :name
             )
         )");
 

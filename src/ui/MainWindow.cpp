@@ -21,6 +21,7 @@
 #include "common/TooltipPolicy.h"
 #include "common/SupportLinks.h"
 #include "MainWindow.h"
+#include "catalog/PartOutSetDialog.h"
 #include "ToolsMenuLayout.h"
 
 #include "about/AboutDialog.h"
@@ -451,6 +452,8 @@ MainWindow::MainWindow(WorkspaceContext& workspaceContext,
                                       m_networkManager.remotePulling(),
                                       m_networkManager.remoteCollectionMutations(),
                                       m_networkManager.remoteBuildMutations());
+    connect(m_setsCatalogWidget, &SetsCatalogWidget::partOutRequested, this, &MainWindow::openCatalogSetPartOut);
+    connect(m_buildsWidget, &BuildsWidget::partOutRequested, this, &MainWindow::openCatalogSetPartOut);
     connect(m_setsCatalogWidget, &SetsCatalogWidget::addInventoryRequested,
             m_myInventoryWidget, &MyInventoryWidget::addPartFromSetCatalog);
     connect(m_buildsWidget, &BuildsWidget::addInventoryRequested,
@@ -2984,4 +2987,33 @@ QWidget* MainWindow::createWorkspaceTab()
             &MainWindow::workspaceSelected);
 
     return tab;
+}
+
+void MainWindow::openCatalogSetPartOut(int setCatalogId)
+{
+    if (m_remoteReads || UserSettings::instance().sharedDataSource() != SharedDataSource::ThisComputer
+        || !m_workspaceContext.hasCurrentWorkspace()) return;
+    if (m_partOutDialog) {
+        m_partOutDialog->show(); m_partOutDialog->raise(); m_partOutDialog->activateWindow(); return;
+    }
+    auto* dialog = new PartOutSetDialog(setCatalogId, m_workspaceContext.currentWorkspaceId(), false, this);
+    m_partOutDialog = dialog;
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged, dialog, [dialog] { dialog->reject(); });
+    connect(dialog, &PartOutSetDialog::inventoryCommitted, this, [this](int workspaceId, int storageId, bool created) {
+        HostMutationPublicationService::Scope scope; scope.workspaceId = workspaceId;
+        m_hostMutationPublications->publish(HostMutationPublicationService::Workflow::Inventory, scope);
+        if (created) {
+            scope.storageLocationId = storageId;
+            m_hostMutationPublications->publish(HostMutationPublicationService::Workflow::Storage, scope);
+        }
+        if (workspaceId == m_workspaceContext.currentWorkspaceId()) {
+            m_myInventoryWidget->refresh();
+            m_myInventoryWidget->refreshOpenHistoryAfterStorageChange();
+            if (created) m_storageWidget->refresh();
+            m_buildsWidget->refresh();
+            m_buildsWidget->refreshOpenLocalPulling();
+        }
+    });
+    dialog->open();
 }

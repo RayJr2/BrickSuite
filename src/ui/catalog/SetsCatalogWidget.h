@@ -52,6 +52,7 @@ private slots:
     void importSetsCsv();
 
 signals:
+    void partOutRequested(int setCatalogId);
     void addInventoryRequested(int partId, int colorId);
     void createBuildRequested(int setCatalogId, const QString& inventoryMode);
     void createStockBuildRequested(int setCatalogId, const QString& buildName);

@@ -21,6 +21,7 @@
 #include "../help/HelpManager.h"
 #include "../common/TooltipPolicy.h"
 #include "SetDetailsDialog.h"
+#include "../../repositories/WorkspaceRepository.h"
 #include "../common/ThemeRichTextLabel.h"
 #include "../collection/CatalogCollectionDialog.h"
 #include "../collection/RemoteCollectionMutationDialog.h"
@@ -269,6 +270,13 @@ SetDetailsDialog::SetDetailsDialog(int setCatalogId, WorkspaceContext& workspace
 
     auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, this);
 
+    m_partOutButton = buttonBox->addButton(tr("Use Set for Parts..."), QDialogButtonBox::ActionRole);
+    m_partOutButton->setObjectName("setPartOutButton");
+    connect(m_partOutButton, &QPushButton::clicked, this, [this] {
+        updateInventoryAction();
+        if (m_partOutButton->isEnabled()) emit partOutRequested(m_setCatalogId);
+    });
+    updateInventoryAction();
     m_createBuildButton = buttonBox->addButton("Create Build From Stock...",
                                                QDialogButtonBox::ActionRole);
     m_createBuildButton->setEnabled(false);
@@ -497,6 +505,13 @@ void SetDetailsDialog::updateInventoryAction()
 {
     const bool local = !m_remoteReads
         && UserSettings::instance().sharedDataSource() == SharedDataSource::ThisComputer;
+    if (m_partOutButton) {
+        const auto workspace = WorkspaceRepository().getById(m_workspaceContext.currentWorkspaceId());
+        m_partOutButton->setEnabled(local && workspace && workspace->isActive());
+        TooltipPolicy::explain(m_partOutButton, !local
+            ? tr("Parting out a catalog Set is currently available on the Host/local database only.")
+            : tr("Add the whole Set composition to loose Inventory without creating a Collection item. Requires an active Workspace."));
+    }
     const int row = m_compositionTable->currentRow();
     const auto* item = row >= 0 ? m_compositionTable->item(row, 1) : nullptr;
     const bool selected = item && item->isSelected() && item->data(Qt::UserRole).toInt() > 0;

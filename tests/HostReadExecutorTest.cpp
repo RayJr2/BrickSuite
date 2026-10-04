@@ -222,6 +222,8 @@ int main(int argc, char** argv)
         QList<RemoteReadDto::StorageType> storageTypes;
         ok &= check(waitFor([&](QEventLoop&loop){executor.listStorageTypesPortable(&app,[&](const auto&result){storageTypes=result;loop.quit();});}),"Storage type list completion");
         ok &= check(!storageTypes.isEmpty()&&std::all_of(storageTypes.cbegin(),storageTypes.cend(),[](const auto&type){return type.storageTypeId>0&&type.active;}),"only active Host Storage types returned");
+        ok &= check(std::count_if(storageTypes.cbegin(),storageTypes.cend(),[](const auto&type){return type.name==QStringLiteral("Box")&&type.storageTypeId>0&&type.active;})==1,
+                    "Host reference-data enumeration includes Box exactly once");
         std::optional<QList<RemoteReadDto::StorageSummary>> missingStorage = QList<RemoteReadDto::StorageSummary>{};
         ok &= check(waitFor([&](QEventLoop& loop) {
             executor.listStoragePortable(999, true, &app, [&](const auto& result) { missingStorage=result; loop.quit(); });
@@ -770,6 +772,16 @@ int main(int argc, char** argv)
                 [&](const auto& result) { crossWorkspaceRejected = result.error == AsyncReadError::NotFound; loop.quit(); });
         }), "cross-Workspace Collection detail completion");
         ok &= check(crossWorkspaceRejected, "Collection detail cannot probe another Workspace");
+        // Restore real database-backed handlers after the delayed generation fixtures.
+        protocol.registerOperations(server.operationDispatcher());
+        bool remoteBoxPresent = false;
+        ok &= check(waitFor([&](QEventLoop& loop) {
+            remote.listStorageTypes(&app, [&](const auto& result) {
+                if (result.succeeded())
+                    remoteBoxPresent = std::count_if(result.value->cbegin(),result.value->cend(),[](const auto&type){return type.name==QStringLiteral("Box")&&type.storageTypeId>0&&type.active;})==1;
+                loop.quit();
+            });
+        }) && remoteBoxPresent,"Box survives authenticated database-backed Host/Remote Storage Types round trip");
         const QList<QPair<QString,QJsonObject>> requests{
             {"workspace.list",{}}, {"manufacturers.list",{}}, {"storage.list",{{"workspaceId",1}}},
             {"storage.get",{{"workspaceId",1},{"storageId",1}}}, {"storage.types.list",{}},

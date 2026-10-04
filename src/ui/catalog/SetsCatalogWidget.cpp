@@ -20,6 +20,8 @@
 
 #include "../help/HelpManager.h"
 #include "SetsCatalogWidget.h"
+#include "../../repositories/WorkspaceRepository.h"
+#include <QStandardItemModel>
 #include "SetDetailsDialog.h"
 #include "../helpers/LargeViewLoadingGuard.h"
 #include "../../app/WorkspaceContext.h"
@@ -168,6 +170,17 @@ SetsCatalogWidget::SetsCatalogWidget(WorkspaceContext& workspaceContext, QWidget
 
     connect(m_importButton, &QPushButton::clicked, this, &SetsCatalogWidget::importSetsCsv);
 
+    connect(&m_workspaceContext, &WorkspaceContext::currentWorkspaceChanged, this, [this] {
+        const auto workspace = WorkspaceRepository().getById(m_workspaceContext.currentWorkspaceId());
+        const bool enabled = !m_remoteReads
+            && UserSettings::instance().sharedDataSource() == SharedDataSource::ThisComputer
+            && workspace && workspace->isActive();
+        for (auto* combo : m_resultsTable->findChildren<QComboBox*>()) {
+            const int index = combo->findData("partOut");
+            if (index >= 0) qobject_cast<QStandardItemModel*>(combo->model())->item(index)->setEnabled(enabled);
+        }
+    });
+
     refresh();
 }
 
@@ -285,6 +298,15 @@ void SetsCatalogWidget::searchSets(const QString& loadingMessage)
         actionCombo->addItem("Create Build from Stock", "Stock");
 
         actionCombo->addItem("Add as Complete Set", "CompleteSet");
+        actionCombo->addItem(tr("Use Set for Parts..."), "partOut");
+        auto* partOutItem = qobject_cast<QStandardItemModel*>(actionCombo->model())->item(actionCombo->count()-1);
+        const auto workspace = WorkspaceRepository().getById(m_workspaceContext.currentWorkspaceId());
+        const bool local = !m_remoteReads && UserSettings::instance().sharedDataSource() == SharedDataSource::ThisComputer;
+        partOutItem->setEnabled(local && workspace && workspace->isActive());
+        partOutItem->setToolTip(!local
+            ? tr("Parting out a catalog Set is currently available on the Host/local database only.")
+            : tr("Add this Set's composition to loose Inventory. Requires an active Workspace."));
+
 
         yearItem->setTextAlignment(Qt::AlignCenter);
 
@@ -317,6 +339,11 @@ void SetsCatalogWidget::searchSets(const QString& loadingMessage)
 
                     actionCombo->setCurrentIndex(0);
 
+                    if (action == "partOut") {
+                        if (!m_remoteReads && UserSettings::instance().sharedDataSource() == SharedDataSource::ThisComputer
+                            && m_workspaceContext.hasCurrentWorkspace()) emit partOutRequested(setCatalogId);
+                        return;
+                    }
                     if (action == "details") {
                         if (auto* existing = m_detailsWindows.value(setCatalogId).data()) {
                             if (existing->isMinimized()) existing->showNormal();
@@ -330,6 +357,7 @@ void SetsCatalogWidget::searchSets(const QString& loadingMessage)
                         connect(dialog, &QObject::destroyed, this, [this, setCatalogId] {
                             m_detailsWindows.remove(setCatalogId);
                         });
+                        connect(dialog, &SetDetailsDialog::partOutRequested, this, &SetsCatalogWidget::partOutRequested);
                         connect(dialog, &SetDetailsDialog::addInventoryRequested,
                                 this, &SetsCatalogWidget::addInventoryRequested);
                         connect(dialog, &SetDetailsDialog::createBuildRequested,

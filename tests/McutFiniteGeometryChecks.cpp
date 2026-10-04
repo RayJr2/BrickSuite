@@ -1,6 +1,17 @@
 #include "../src/services/geometry/print/BoundedGeometryWorker.h"
 #include "../src/services/geometry/print/McutWorkerProtocol.h"
+// BoundedGeometryWorker includes Windows headers, whose IGNORE macro collides
+// with CDT's enum. Isolate the undef to this test's third-party header include.
+#ifdef IGNORE
+#pragma push_macro("IGNORE")
+#undef IGNORE
+#define BRICKSUITE_TEST_RESTORE_IGNORE
+#endif
 #include "mcut/internal/cdt/triangulate.h"
+#ifdef BRICKSUITE_TEST_RESTORE_IGNORE
+#pragma pop_macro("IGNORE")
+#undef BRICKSUITE_TEST_RESTORE_IGNORE
+#endif
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QProcess>

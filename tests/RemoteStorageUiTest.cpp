@@ -25,7 +25,7 @@ int main(int argc,char**argv)
     const auto shown=StorageTreeVisibility::visibleIds(hierarchy,true);
     ok&=require(shown.size()==4,"Show Inactive reveals the complete hierarchy");
     const QList<RemoteReadDto::StorageSummary> hostStorage{
-        {10,0,QStringLiteral("Leaf"),QStringLiteral("Leaf"),QStringLiteral("Bin"),0,true,true,false},
+        {10,0,QStringLiteral("Leaf"),QStringLiteral("Leaf"),QStringLiteral("Box"),0,true,true,false},
         {11,0,QStringLiteral("Parent"),QStringLiteral("Parent"),QStringLiteral("Shelf"),0,true,true,false},
         {12,11,QStringLiteral("Child"),QStringLiteral("Parent / Child"),QStringLiteral("Bin"),0,true,true,false},
         {13,0,QStringLiteral("Inactive"),QStringLiteral("Inactive"),QStringLiteral("Bin"),0,false,true,false},
@@ -42,13 +42,19 @@ int main(int argc,char**argv)
     input.canGet=false;eligibility=remoteStorageActionEligibility(input);ok&=require(!eligibility.edit&&!eligibility.deactivate&&!eligibility.reactivate,"read capabilities do not imply writes and detail is required");
     input.canGet=true;input.pending=true;eligibility=remoteStorageActionEligibility(input);ok&=require(!eligibility.add&&!eligibility.edit&&!eligibility.deactivate&&!eligibility.reactivate,"pending mutation disables all actions");
 
-    const QList<StorageLocationDialog::Choice> types{{17,QStringLiteral("Cabinet")},{23,QStringLiteral("Bin")}};
+    const QList<StorageLocationDialog::Choice> types{{17,QStringLiteral("Cabinet")},{23,QStringLiteral("Bin")},{57,QStringLiteral("Box")}};
     const QList<StorageLocationDialog::Choice> parents{{41,QStringLiteral("Room / Shelf")}};
     StorageLocationDialog::Values initial{QStringLiteral("Drawer"),QStringLiteral("Middle"),41,23,true,true};
     auto*dialog=new StorageLocationDialog(StorageLocationDialog::Mode::Edit,initial,types,parents);
     ok&=require(dialog->windowTitle()==QStringLiteral("Edit Storage Location"),"Edit title");
     auto*type=dialog->findChild<QComboBox*>("storageTypeCombo");auto*parent=dialog->findChild<QComboBox*>("storageParentCombo");auto*buttons=dialog->findChild<QDialogButtonBox*>("storageDialogButtons");
     ok&=require(type&&type->currentData().toLongLong()==23&&parent&&parent->currentData().toLongLong()==41,"Host type and parent IDs retained");
+    type->setCurrentIndex(type->findData(57));
+    ok&=require(type->currentText()==QStringLiteral("Box")&&dialog->values().storageTypeId==57,
+                "Edit Storage selects Box using Host record identity");
+    StorageLocationDialog reopened(StorageLocationDialog::Mode::Edit,dialog->values(),types,parents);
+    ok&=require(reopened.findChild<QComboBox*>("storageTypeCombo")->currentText()==QStringLiteral("Box"),
+                "Edit Storage retains previously selected Box");
     ok&=require(buttons&&buttons->button(QDialogButtonBox::Ok)->text()==QStringLiteral("Save"),"Edit button wording");
     ok&=require(!dialog->findChild<QWidget*>("mutationId")&&!dialog->findChild<QWidget*>("modifiedUtc"),"protocol state hidden");
     dialog->open();QApplication::processEvents();ok&=require(dialog->isVisible(),"asynchronous open path displays dialog");
@@ -56,5 +62,10 @@ int main(int argc,char**argv)
     dialog->setUnknownOutcome(true,QStringLiteral("unknown"));ok&=require(buttons->button(QDialogButtonBox::Ok)->text()==QStringLiteral("Retry Safely")&&!type->isEnabled()&&!parent->isEnabled(),"Unknown outcome locks payload and exposes safe retry");
     dialog->close();QApplication::processEvents();
     auto*add=new StorageLocationDialog(StorageLocationDialog::Mode::Add,{},types,parents);buttons=add->findChild<QDialogButtonBox*>("storageDialogButtons");ok&=require(buttons->button(QDialogButtonBox::Ok)->text()==QStringLiteral("Add"),"Add button wording");add->open();add->close();QApplication::processEvents();
+    StorageLocationDialog boxAdd(StorageLocationDialog::Mode::Add,{},types,parents);
+    auto* boxType=boxAdd.findChild<QComboBox*>("storageTypeCombo");
+    boxType->setCurrentIndex(boxType->findData(57));
+    ok&=require(boxType->currentText()==QStringLiteral("Box")&&boxAdd.values().storageTypeId==57,
+                "Add Storage exposes Box and preserves its record identity");
     return ok?0:1;
 }

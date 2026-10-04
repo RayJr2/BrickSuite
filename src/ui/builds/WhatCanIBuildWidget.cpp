@@ -303,6 +303,7 @@ void WhatCanIBuildWidget::showDetails(int id)
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     m_detailsWindows.insert(id, dialog);
     connect(dialog, &QObject::destroyed, this, [this, id] { m_detailsWindows.remove(id); });
+    connect(dialog, &SetDetailsDialog::partOutRequested, this, &WhatCanIBuildWidget::partOutRequested);
     connect(dialog, &SetDetailsDialog::addInventoryRequested, this, &WhatCanIBuildWidget::addInventoryRequested);
     connect(dialog, &SetDetailsDialog::createBuildRequested, this,
             [this, id](int, const QString&) { emit createBuildRequested(id, QStringLiteral("Stock")); });

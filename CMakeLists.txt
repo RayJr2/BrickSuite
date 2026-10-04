@@ -272,6 +272,9 @@ qt_add_executable(BrickSuite
     src/services/collection/CollectionItemService.h
     src/services/collection/CollectionItemService.cpp
     src/services/collection/CollectionDisassemblyService.h
+    src/services/inventory/CatalogSetPartOutService.cpp
+    src/ui/catalog/PartOutSetDialog.cpp
+    src/services/inventory/CompositionToInventoryService.cpp
     src/services/collection/CollectionDisassemblyService.cpp
     src/ui/storage/StorageWidget.cpp
     src/ui/storage/StorageTreeVisibility.h
@@ -736,6 +739,19 @@ if(BUILD_TESTING)
         src/services/geometry/print/PrintMeshAnalysis.cpp src/services/geometry/print/PrintMeshAnalysis.h
         src/services/geometry/print/McutMeshBooleanService.cpp src/services/geometry/print/McutMeshBooleanService.h)
     target_link_libraries(McutMeshBooleanTest PRIVATE Qt6::Core BrickSuite::Mcut)
+    if(WIN32)
+        # The direct CDT regression needs internal predicates not exported by
+        # the Windows DLL. Compile the unchanged pinned sources into this test.
+        enable_language(C)
+        target_sources(McutMeshBooleanTest PRIVATE
+            "${mcut_SOURCE_DIR}/source/math.cpp"
+            "${mcut_SOURCE_DIR}/source/shewchuk.c")
+        if(MSVC)
+            target_compile_options(McutMeshBooleanTest PRIVATE /fp:strict)
+        else()
+            target_compile_options(McutMeshBooleanTest PRIVATE -ffp-contract=off)
+        endif()
+    endif()
     target_include_directories(McutMeshBooleanTest BEFORE PRIVATE
         "${BRICKSUITE_MCUT_PORTABILITY_INCLUDE}" "${_mcut_queue_include}")
     bricksuite_stage_mcut_runtime(McutMeshBooleanTest)
@@ -969,6 +985,27 @@ if(BUILD_TESTING)
         Qt6::Widgets Qt6::Sql Qt6::Network Qt6::WebSockets Qt6::Concurrent ZLIB::ZLIB OpenSSL::Crypto)
     add_test(NAME InventoryZeroQuantityWorkflow COMMAND InventoryZeroQuantityWorkflowTest -platform offscreen)
     set_tests_properties(InventoryZeroQuantityWorkflow PROPERTIES TIMEOUT 30)
+
+    qt_add_executable(CatalogSetPartOutTest EXCLUDE_FROM_ALL
+        tests/CatalogSetPartOutTest.cpp
+        src/services/inventory/CatalogSetPartOutService.cpp
+        src/services/inventory/CompositionToInventoryService.cpp
+        src/services/application/HostStorageMutationService.cpp
+        src/repositories/StorageLocationTypeRepository.cpp
+        src/repositories/RemoteMutationReceiptRepository.cpp
+        src/repositories/InventoryBuildabilityRepository.cpp
+        src/models/StorageLocationType.cpp
+        src/models/InventoryBuildability.cpp
+        src/ui/catalog/PartOutSetDialog.cpp
+        src/ui/catalog/SetsCatalogWidget.cpp
+        src/import/RebrickableSetCatalogImporter.cpp
+        ${inventoryZeroTestSources})
+    target_compile_definitions(CatalogSetPartOutTest PRIVATE
+        "$<FILTER:$<TARGET_PROPERTY:BrickSuite,COMPILE_DEFINITIONS>,INCLUDE,^(APP_|BRICKSUITE_VERSION=)>")
+    target_link_libraries(CatalogSetPartOutTest PRIVATE
+        Qt6::Widgets Qt6::Sql Qt6::Network Qt6::WebSockets Qt6::Concurrent ZLIB::ZLIB OpenSSL::Crypto)
+    add_test(NAME CatalogSetPartOut COMMAND CatalogSetPartOutTest -platform offscreen)
+    set_tests_properties(CatalogSetPartOut PROPERTIES TIMEOUT 90)
 
     qt_add_executable(PrintingHelpUxTest EXCLUDE_FROM_ALL
         tests/PrintingHelpUxTest.cpp
@@ -1539,6 +1576,7 @@ if(BUILD_TESTING)
         src/services/collection/CollectionItemService.h
         src/services/collection/CollectionItemService.cpp
         src/services/collection/CollectionDisassemblyService.h
+        src/services/inventory/CompositionToInventoryService.cpp
         src/services/collection/CollectionDisassemblyService.cpp)
     target_link_libraries(CollectionDisassemblyTest PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME CollectionDisassembly COMMAND CollectionDisassemblyTest)
@@ -1559,6 +1597,7 @@ if(BUILD_TESTING)
         src/repositories/SetCatalogRepository.cpp src/repositories/MinifigCatalogRepository.cpp
         src/repositories/ManufacturerRepository.cpp
         src/services/collection/CollectionItemService.cpp
+        src/services/inventory/CompositionToInventoryService.cpp
         src/services/collection/CollectionDisassemblyService.cpp
         src/services/builds/BuildLifecycleService.cpp
         src/services/application/CollectionDisassemblyPlanService.cpp
@@ -2423,7 +2462,9 @@ if(BUILD_TESTING)
     src/services/builds/BuildRequirementAvailabilityService.cpp
         src/services/builds/BuildLifecycleService.h src/services/builds/BuildLifecycleService.cpp
         src/services/collection/CollectionItemService.h src/services/collection/CollectionItemService.cpp
-        src/services/collection/CollectionDisassemblyService.h src/services/collection/CollectionDisassemblyService.cpp
+        src/services/collection/CollectionDisassemblyService.h
+        src/services/inventory/CompositionToInventoryService.cpp
+        src/services/collection/CollectionDisassemblyService.cpp
         src/services/parts/PartReferenceManifest.h src/services/parts/PartReferenceManifest.cpp
         src/services/parts/PartReferenceCustomizationService.h src/services/parts/PartReferenceCustomizationService.cpp
         src/services/parts/ElementIdentityService.h src/services/parts/ElementIdentityService.cpp

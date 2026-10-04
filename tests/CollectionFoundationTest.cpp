@@ -55,6 +55,7 @@ bool validateMigration29To30()
         const QStringList statements = {
             "PRAGMA foreign_keys=ON",
             "CREATE TABLE schema_version(version INTEGER)",
+            "CREATE TABLE storage_location_type(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL UNIQUE,description TEXT,is_system INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,sort_order INTEGER NOT NULL DEFAULT 0)",
             "INSERT INTO schema_version VALUES(29)",
             "CREATE TABLE workspace(id INTEGER PRIMARY KEY, name TEXT, description TEXT, created_utc TEXT, modified_utc TEXT, is_active INTEGER)",
             "CREATE TABLE storage_location(id INTEGER PRIMARY KEY, workspace_id INTEGER NOT NULL, parent_location_id INTEGER, location_type_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT, sort_order INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_utc TEXT NOT NULL, modified_utc TEXT NOT NULL, FOREIGN KEY(workspace_id) REFERENCES workspace(id), FOREIGN KEY(parent_location_id) REFERENCES storage_location(id))",
@@ -91,6 +92,7 @@ bool validateMigration30To31()
         const QStringList statements = {
             "PRAGMA foreign_keys=ON",
             "CREATE TABLE schema_version(version INTEGER)",
+            "CREATE TABLE storage_location_type(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL UNIQUE,description TEXT,is_system INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,sort_order INTEGER NOT NULL DEFAULT 0)",
             "INSERT INTO schema_version VALUES(30)",
             "CREATE TABLE workspace(id INTEGER PRIMARY KEY)",
             "CREATE TABLE storage_location(id INTEGER PRIMARY KEY,workspace_id INTEGER)",
