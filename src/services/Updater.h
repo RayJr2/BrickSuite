@@ -29,6 +29,12 @@ public:
     void checkForUpdates(const QString& manifestUrl,
                          const QString& currentVersion);
 
+    // Pure selection policy, parameterized for host-independent tests.
+    static QString platformKey(const QString& operatingSystem,
+                               const QString& buildArchitecture);
+    static QString pickDownloadUrl(const QJsonObject& root,
+                                   const QString& platformKey);
+
 signals:
     void updateAvailable(const QString& newVersion,
                          const QString& downloadUrl,
@@ -39,8 +45,6 @@ signals:
 
 private:
     QString detectPlatformKey() const;
-    QString pickDownloadUrl(const QJsonObject& root,
-                            const QString& platformKey) const;
 
     void processReply(QNetworkReply* reply);
 

@@ -63,17 +63,21 @@ static QVersionNumber parseNumericVersion(const QString& value)
 }
 
 QString Updater::pickDownloadUrl(const QJsonObject& root,
-                                 const QString& platformKey) const
+                                 const QString& platformKey)
 {
-    // Preferred schema:
-    // {
-    //   "downloads": {
-    //     "windows": { "url": "..." },
-    //     "macos":   { "url": "..." },
-    //     "linux64": { "url": "..." },
-    //     "linuxarm":{ "url": "..." }
-    //   }
-    // }
+    // Exact structured key only: never fall back from an architecture-specific
+    // macOS entry to generic macos or another architecture.
+    if (platformKey != QStringLiteral("windows")
+        && platformKey != QStringLiteral("linux64")
+        && platformKey != QStringLiteral("macos-arm64")
+        && platformKey != QStringLiteral("macos-x86_64")) return {};
+    const auto validUrl = [](const QString& value) {
+        const QString text = value.trimmed();
+        const QUrl url(text, QUrl::StrictMode);
+        return url.isValid() && !url.host().isEmpty()
+            && (url.scheme() == QStringLiteral("https") || url.scheme() == QStringLiteral("http"))
+            ? text : QString();
+    };
     if (root.contains(QStringLiteral("downloads"))
         && root.value(QStringLiteral("downloads")).isObject()) {
         const QJsonObject downloads =
@@ -82,7 +86,7 @@ QString Updater::pickDownloadUrl(const QJsonObject& root,
         const auto it = downloads.find(platformKey);
         if (it != downloads.end()) {
             if (it->isString()) {
-                return it->toString().trimmed();
+                return validUrl(it->toString());
             }
 
             if (it->isObject()) {
@@ -92,12 +96,10 @@ QString Updater::pickDownloadUrl(const QJsonObject& root,
                     object.value(QStringLiteral("url")).toString().trimmed();
 
                 if (!url.isEmpty()) {
-                    return url;
+                    return validUrl(url);
                 }
 
-                return object.value(QStringLiteral("downloadUrl"))
-                    .toString()
-                    .trimmed();
+                return validUrl(object.value(QStringLiteral("downloadUrl")).toString());
             }
         }
     }
@@ -124,12 +126,10 @@ QString Updater::pickDownloadUrl(const QJsonObject& root,
                     .trimmed();
 
             if (!downloadUrl.isEmpty()) {
-                return downloadUrl;
+                return validUrl(downloadUrl);
             }
 
-            return object.value(QStringLiteral("url"))
-                .toString()
-                .trimmed();
+            return validUrl(object.value(QStringLiteral("url")).toString());
         }
     }
 
@@ -195,7 +195,7 @@ void Updater::processReply(QNetworkReply* reply)
 
     if (downloadUrl.isEmpty()) {
         emit updateCheckFailed(
-            QStringLiteral("No download URL is available for platform '%1'.")
+            QStringLiteral("No compatible update package is available for this BrickSuite build ('%1').")
                 .arg(platformKey));
         return;
     }
@@ -205,19 +205,37 @@ void Updater::processReply(QNetworkReply* reply)
                          releaseNotes);
 }
 
+QString Updater::platformKey(const QString& operatingSystem,
+                             const QString& buildArchitecture)
+{
+    if (operatingSystem == QStringLiteral("macos")) {
+        if (buildArchitecture == QStringLiteral("arm64")) return QStringLiteral("macos-arm64");
+        if (buildArchitecture == QStringLiteral("x86_64")) return QStringLiteral("macos-x86_64");
+    } else if (buildArchitecture == QStringLiteral("x86_64")) {
+        if (operatingSystem == QStringLiteral("windows")) return QStringLiteral("windows");
+        if (operatingSystem == QStringLiteral("linux")) return QStringLiteral("linux64");
+    }
+    return QStringLiteral("unsupported-%1-%2").arg(operatingSystem, buildArchitecture);
+}
+
 QString Updater::detectPlatformKey() const
 {
-#if defined(Q_OS_WIN)
-    return QStringLiteral("windows");
-#elif defined(Q_OS_MACOS) || defined(Q_OS_MAC)
-    return QStringLiteral("macos");
-#elif defined(Q_OS_LINUX)
-#  if defined(Q_PROCESSOR_ARM_64) || defined(__aarch64__)
-    return QStringLiteral("linuxarm");
-#  else
-    return QStringLiteral("linux64");
-#  endif
+    // Qt compiler-target macros describe this executable's architecture, not
+    // the host CPU. An x86_64 process under Rosetta must still select Intel.
+#if defined(Q_PROCESSOR_ARM_64)
+    const QString architecture = QStringLiteral("arm64");
+#elif defined(Q_PROCESSOR_X86_64)
+    const QString architecture = QStringLiteral("x86_64");
 #else
-    return QStringLiteral("unknown");
+    const QString architecture = QStringLiteral("unknown");
+#endif
+#if defined(Q_OS_WIN)
+    return platformKey(QStringLiteral("windows"), architecture);
+#elif defined(Q_OS_MACOS) || defined(Q_OS_MAC)
+    return platformKey(QStringLiteral("macos"), architecture);
+#elif defined(Q_OS_LINUX)
+    return platformKey(QStringLiteral("linux"), architecture);
+#else
+    return platformKey(QStringLiteral("unknown"), architecture);
 #endif
 }

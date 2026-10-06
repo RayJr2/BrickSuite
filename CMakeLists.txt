@@ -722,6 +722,10 @@ endif()
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(UpdaterTest EXCLUDE_FROM_ALL tests/UpdaterTest.cpp
+        src/services/Updater.cpp src/services/Updater.h)
+    target_link_libraries(UpdaterTest PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME Updater COMMAND UpdaterTest "${CMAKE_SOURCE_DIR}/deployment/update/update.json")
     qt_add_executable(InitialWindowActivationTest EXCLUDE_FROM_ALL
         tests/InitialWindowActivationTest.cpp src/ui/common/InitialWindowActivation.h)
     target_link_libraries(InitialWindowActivationTest PRIVATE Qt6::Widgets)

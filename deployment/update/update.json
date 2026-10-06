@@ -1,20 +1,20 @@
 {
   "version": "0.3.0",
-    "release": "Release",
-    "releaseDate": "2026-09-04",
-    "changelog": "BrickSuite v0.3.0 adds My Collection, Minifigs Catalog and Builds, Part Reference, improved Build From Stock workflows, automatic verified database backups, database integrity tools, and major inventory usability improvements.",
+  "release": "Release",
+  "releaseDate": "2026-09-04",
+  "changelog": "BrickSuite v0.3.0 adds My Collection, Minifigs Catalog and Builds, Part Reference, improved Build From Stock workflows, automatic verified database backups, database integrity tools, and major inventory usability improvements.",
   "downloads": {
     "windows": {
-      "url": "https://github.com/RayJr2/BrickSuite/releases/latest"
-    },
-    "macos": {
       "url": "https://github.com/RayJr2/BrickSuite/releases/latest"
     },
     "linux64": {
       "url": "https://github.com/RayJr2/BrickSuite/releases/latest"
     },
-    "linuxarm": {
-      "url": "https://github.com/RayJr2/BrickSuite/releases/latest"
+    "macos-arm64": {
+      "url": ""
+    },
+    "macos-x86_64": {
+      "url": ""
     }
   }
 }
