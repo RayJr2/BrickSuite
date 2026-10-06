@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QAction>
 #include <QFile>
+#include <QFileInfo>
 #include <QDir>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -262,6 +263,52 @@ int main(int argc,char** argv){
         ok&=check(matches>0,"common printing search term finds indexed topic");
         if(term=="printing")ok&=check(matches>=4,"printing search finds multiple focused topics");
     }
+    // Validate the published HTML contract against the same compiled resources
+    // used by the application: links, fragments and accessible image labels.
+    const QRegularExpression references(R"re((href|src)="([^"]+)")re");
+    const QRegularExpression imageTags(R"re(<img\b[^>]*>)re");
+    const QRegularExpression altText(R"re(alt="[^"]+")re");
+    for (const auto& info : HelpManager::topics()) {
+        QFile page(info.resourcePath);
+        ok &= check(page.open(QIODevice::ReadOnly), "Help page can be read");
+        const QString html = QString::fromUtf8(page.readAll());
+        auto links = references.globalMatch(html);
+        while (links.hasNext()) {
+            const auto match = links.next();
+            const QUrl target(match.captured(2));
+            if (!target.scheme().isEmpty()) continue;
+            const QString path = target.path().isEmpty() ? info.resourcePath
+                : QDir(QFileInfo(info.resourcePath).path()).filePath(target.path());
+            QFile linked(path);
+            ok &= check(linked.open(QIODevice::ReadOnly), "local Help target is in QRC");
+            if (!target.fragment().isEmpty()) {
+                const QString body = QString::fromUtf8(linked.readAll());
+                ok &= check(body.contains("id=\"" + target.fragment() + "\"")
+                    || body.contains("name=\"" + target.fragment() + "\""),
+                    "local Help fragment exists");
+            }
+        }
+        auto images = imageTags.globalMatch(html);
+        while (images.hasNext())
+            ok &= check(altText.match(images.next().captured()).hasMatch(),
+                        "Help image has nonempty alt text");
+    }
+    for (const auto& destination : {
+             HelpContext{HelpTopic::SetsCatalog, "use-set-for-parts"},
+             HelpContext{HelpTopic::Builds, "what-can-i-build"},
+             HelpContext{HelpTopic::PreparePrinting, "fit-outcomes"}}) {
+        help.showTopic(destination.topic, destination.anchor);
+        ok &= check(browser->source().fragment() == destination.anchor,
+                    "workflow navigation preserves the requested fragment");
+    }
+    help.showTopic(HelpTopic::Home);
+    ok &= check(!browser->toPlainText().contains("v0.3.0")
+        && browser->toPlainText().contains("Support BrickSuite"),
+        "Help Home describes the current application and optional support");
+    help.showTopic(HelpTopic::PrintTroubleshooting);
+    ok &= check(browser->toPlainText().contains("Part Reference audit mode")
+        && browser->toPlainText().contains("not universal printability"),
+        "reference corpus coverage remains a bounded developer diagnostic");
     help.showTopic(HelpTopic::Printing);
     const auto overview=browser->toPlainText();
     ok&=check(overview.contains("installed LDraw parts library")&&overview.contains(QString::fromUtf8("Edit → Settings → 3D Models"))&&
@@ -276,6 +323,18 @@ int main(int argc,char** argv){
     help.showTopic(HelpTopic::Printing);
     search->setText("printing");
     for(auto theme:{UserSettings::Theme::Dark,UserSettings::Theme::Light,UserSettings::Theme::Dark}){
+        ThemeManager::applyTheme(app,theme);settleEvents();
+        for (const auto topic : {HelpTopic::Home, HelpTopic::Storage, HelpTopic::SetsCatalog,
+                 HelpTopic::Inventory, HelpTopic::MyCollection, HelpTopic::Builds,
+                 HelpTopic::MissingParts, HelpTopic::Settings, HelpTopic::BrickSuiteServer,
+                 HelpTopic::Printing, HelpTopic::PreparePrinting, HelpTopic::FitCalibration,
+                 HelpTopic::LocalPrintableOverride}) {
+            help.showTopic(topic);
+            ok &= check(!browser->toPlainText().trimmed().isEmpty()
+                && browser->source().path() == HelpManager::resourcePath(topic).mid(1),
+                "representative Help topic loads in both themes");
+        }
+        help.showTopic(HelpTopic::Printing);search->setText("printing");
         auto liveLink=browser->document()->find("LDraw 3D Models");
         browser->setTextCursor(liveLink);
         const auto liveSource=browser->source();

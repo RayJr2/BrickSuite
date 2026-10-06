@@ -5,6 +5,7 @@
 #include "../src/repositories/InventoryBuildabilityRepository.h"
 #include "../src/repositories/StorageLocationTypeRepository.h"
 #include "../src/ui/catalog/PartOutSetDialog.h"
+#include "../src/ui/help/HelpManager.h"
 #include "../src/ui/catalog/SetDetailsDialog.h"
 #include "../src/ui/catalog/SetsCatalogWidget.h"
 #include "../src/app/WorkspaceContext.h"
@@ -264,6 +265,9 @@ int main(int argc,char** argv)
     }
     {
         PartOutSetDialog dialog(100,100,false); dialog.show();
+        const auto helpContext=HelpManager::context(&dialog);
+        check(helpContext && helpContext->topic==HelpTopic::SetsCatalog
+            && helpContext->anchor=="use-set-for-parts","part-out F1 targets its workflow section");
         auto* buttons=dialog.findChild<QDialogButtonBox*>(); auto* confirm=buttons->button(QDialogButtonBox::Ok);
         check(dialog.windowTitle()=="Part Out Set to Inventory","dialog title");
         check(dialog.findChild<QSpinBox*>("partOutCopies")->value()==1 && dialog.findChild<QCheckBox*>("partOutSpares")->isChecked()

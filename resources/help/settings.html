@@ -12,6 +12,7 @@ code { font-family: monospace; }
 <p>Settings contains user preferences that control how BrickSuite starts, appears, and connects
 to supported external data providers. These preferences persist between application sessions.</p>
 
+<p>Open <b>Edit → Settings</b>. Pages include <b>General</b>, <b>Appearance</b>, <b>APIs</b>, <b>Database Backup</b>, <b>Server</b>, <b>Builds</b>, and <b>3D Models</b>. Older illustrations may show fewer tabs; follow the current labels described here.</p>
 <p>Settings are separate from the BrickSuite database content that represents your workshop.</p>
 
 <pre>
@@ -49,7 +50,7 @@ supported Inventory, Storage, Build, Collection, Pulling, and Part Reference cha
 
 <h2>Server</h2>
 <p>The <b>Server</b> page configures the optional BrickSuite WSS Host and remote Client connection.
-Server mode is disabled by default and is available only with <b>Shared Data Source = This Computer</b>.
+The Server page has <b>This Computer</b>, <b>Host Client</b>, and <b>Devices</b> sections. Server mode is disabled by default and is available only with <b>Shared Data Source = This Computer</b>.
 Host-client mode cannot also expose a Server. Settings includes explicit bind address and port,
 certificate fingerprint, access-token generation/rotation, Host identity regeneration, secure
 Client endpoint, trusted fingerprint, masked Client token, reconnect preference, and a real
@@ -63,7 +64,7 @@ It changes the Workspace selected by default; each Workspace continues to mainta
 <h2>Appearance</h2>
 
 <img class="screenshot" src="images/settings_appearance.png"
-     alt="BrickSuite Settings Appearance page with Theme choices visible">
+     alt="Earlier Settings illustration; current theme controls are on Appearance">
 
 <p>The <b>Appearance</b> page controls BrickSuite's visual theme. Theme changes are applied
 immediately so you can evaluate the result while the Settings dialog is open. If you cancel the
@@ -215,8 +216,7 @@ Saved preferences are retained for future BrickSuite sessions.</p>
 
 <h2>Help from Settings</h2>
 
-<p>Press <b>F1</b> while the Settings dialog has focus to open this Settings Help topic. This
-provides contextual Help without closing Settings and navigating through Help Contents.</p>
+<p>Press <b>F1</b> for the focused Settings area. Database Backup, Server, Builds, and 3D Models route to their dedicated topics; other pages use Settings Help. Settings stays open.</p>
 
 <h2>Settings and Database Backup</h2>
 

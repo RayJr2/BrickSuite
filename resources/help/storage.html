@@ -61,7 +61,7 @@ destinations.</p>
 
 <p>BrickSuite provides the following location types:</p>
 
-<p><b>Area, Cabinet, Shelf, Case, Box, Drawer, Bin, Bag, Tray, Compartment, and Divider.</b></p>
+<p><b>Area, Cabinet, Shelf, Case, Box, Drawer, Bin, Tray, Bag, Compartment, and Divider.</b></p>
 
 <p>The type describes the physical location; it does not impose a rigid hierarchy. For example, a
 Cabinet can contain Drawers, while a Shelf might contain Bins directly. Choose the type that best
@@ -141,7 +141,7 @@ reference data.</p>
 <p>The Host remains authoritative. It rejects invalid parents, hierarchy cycles, inactive types,
 and attempts to remove a capability or deactivate a location while affected Inventory, Collection
 items, or active child locations remain. Deactivation is reversible and never cascades or deletes
-the location. Storage type administration remains a Host-local workflow.</p>
+the location. Choose from the standard Storage Types when adding or editing a location; there is no separate user editor for the standard type catalog.</p>
 
 <p>If another user changes a location after you open Edit, BrickSuite rejects the stale edit rather
 than overwriting the newer Host data. If a connection loss or timeout leaves the result unknown,
@@ -196,5 +196,6 @@ actually use.</p>
 <h2>Location capabilities</h2>
 <p>Each location can allow <strong>Inventory</strong>, <strong>Collection</strong>, or both. Inventory-capable leaf locations appear as destinations for loose parts. Collection-capable leaf locations appear for physical Sets, Minifigs, and MOCs in My Collection.</p>
 <p>A parent may have neither capability when it is used only to organize eligible descendants. Capability settings determine where a location appears; a Collection-only location is never offered as a loose-inventory destination.</p>
+<p><b>Box</b> is a normal Storage Type and can be used within the same hierarchy as a Bin or Drawer. Its type does not override destination rules: loose Inventory requires an active, Inventory-capable leaf with no child locations. Parent locations organize their children.</p>
 </body>
 </html>

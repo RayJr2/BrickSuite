@@ -42,7 +42,7 @@ WhatCanIBuildWidget::WhatCanIBuildWidget(WorkspaceContext& workspaceContext, QWi
     : QWidget(parent), m_workspaceContext(workspaceContext), m_remoteReads(remoteReads),
       m_remoteCollection(remoteCollection)
 {
-    HelpManager::setContextTopic(this, HelpTopic::Builds);
+    HelpManager::setContextTopic(this, HelpTopic::Builds, QStringLiteral("what-can-i-build"));
     m_service = new PartUsageDiscoveryService(DatabaseManager::instance().databasePath(), this);
     m_inventoryService = new InventoryBuildabilityService(DatabaseManager::instance().databasePath(), this);
     m_images = new SetImageService(this);

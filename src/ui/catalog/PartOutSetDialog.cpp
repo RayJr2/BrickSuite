@@ -32,7 +32,7 @@ PartOutSetDialog::PartOutSetDialog(int setCatalogId, int workspaceId, bool remot
       m_operationId(QUuid::createUuid().toString(QUuid::WithoutBraces))
 {
     setWindowTitle(tr("Part Out Set to Inventory")); resize(920,720);
-    HelpManager::setContextTopic(this,HelpTopic::SetsCatalog);
+    HelpManager::setContextTopic(this,HelpTopic::SetsCatalog,QStringLiteral("use-set-for-parts"));
     auto* layout=new QVBoxLayout(this);
     m_summary=new QLabel(this); m_summary->setWordWrap(true); layout->addWidget(m_summary);
     m_fields=new QWidget(this); auto* form=new QFormLayout(m_fields); layout->addWidget(m_fields);
