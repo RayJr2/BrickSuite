@@ -2,8 +2,12 @@
 <h1>LDraw 3D Models</h1>
 <p>BrickSuite reads native geometry from an LDraw library installed on this computer. It does not download an LDraw library or send geometry to an online service.</p>
 <h2>Configure the library and mesh repair</h2>
+<p style="line-height:100%"><img class="screenshot" src="images/settings_ldraw.png" style="max-width:100%;height:auto" alt="3D Models settings pointing to an installed LDraw library"></p>
+
 <p>Open <b>Edit → Settings → 3D Models</b>, choose the LDraw library root, and select <b>Validate</b>. A usable root contains <code>parts</code> and <code>p</code> folders and recognizable <code>.dat</code> files. If a saved removable or network path is unavailable, BrickSuite preserves the setting and reports that the library is unavailable.</p>
 <h2>Open and inspect a model</h2>
+<p style="line-height:100%"><img class="screenshot" src="images/ldraw_viewer_source.png" style="max-width:100%;height:auto" alt="LDraw 3001 Source geometry in the 3D Model Viewer"></p>
+
 <p>Open Part Details and select <b>3D Model...</b>. BrickSuite uses only exact stored LDraw external identities; it does not guess from the Rebrickable Part number. The persistent, non-modal viewer can remain open after Part Details closes, and opening another Part reuses it.</p>
 <ul><li><b>Left drag</b> orbits.</li><li><b>Middle drag</b> or <b>Shift + Left drag</b> pans.</li><li><b>Mouse wheel</b> zooms.</li><li><b>Fit</b> frames the complete Part; <b>Reset View</b> returns to Isometric and fits it.</li></ul>
 <p>Perspective is the default; Orthographic is useful for engineering inspection. Standard views are deterministic and use the same Z-up convention as OBJ export. <b>Show Axes</b> toggles the labeled XYZ triad.</p>

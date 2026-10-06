@@ -34,6 +34,9 @@
 #include <QTextCursor>
 #include <QTextBlock>
 #include <QTextFragment>
+#include <QTextFrame>
+#include <QTextImageFormat>
+#include <QImage>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -130,6 +133,7 @@ HelpDialog::HelpDialog(QWidget* parent)
     m_browser = new QTextBrowser(m_splitter);
     m_browser->setOpenExternalLinks(true);
     m_browser->setOpenLinks(true);
+    m_browser->viewport()->installEventFilter(this);
 
     m_splitter->addWidget(leftPane);
     m_splitter->addWidget(m_browser);
@@ -171,6 +175,7 @@ HelpDialog::HelpDialog(QWidget* parent)
 
     connect(m_browser, &QTextBrowser::sourceChanged, this, [this](const QUrl& source) {
         updateTheme();
+        updateImageSizes();
         syncContentsSelection(source);
         updateNavigationButtons();
     });
@@ -443,4 +448,48 @@ void HelpDialog::changeEvent(QEvent* event)
     QDialog::changeEvent(event);
     if (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange)
         QTimer::singleShot(0, this, &HelpDialog::updateTheme);
+}
+
+bool HelpDialog::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_browser->viewport() && event->type() == QEvent::Resize)
+        QTimer::singleShot(0, this, &HelpDialog::updateImageSizes);
+    return QDialog::eventFilter(watched, event);
+}
+
+void HelpDialog::updateImageSizes()
+{
+    // QTextBrowser's HTML image max-width does not reliably preserve aspect
+    // ratio or account for page margins. Size the embedded image, not its file.
+    auto* document = m_browser->document();
+    const auto frame = document->rootFrame()->frameFormat();
+    const bool modified = document->isModified();
+    for (auto block = document->begin(); block.isValid(); block = block.next()) {
+        const auto margins = block.blockFormat();
+        const qreal available = qMax<qreal>(1, m_browser->viewport()->width()
+            - frame.leftMargin() - frame.rightMargin()
+            - margins.leftMargin() - margins.rightMargin()
+            - margins.indent() * document->indentWidth() - 8);
+        for (auto it = block.begin(); !it.atEnd(); ++it) {
+            const auto fragment = it.fragment();
+            if (!fragment.isValid() || !fragment.charFormat().isImageFormat()) continue;
+            auto format = fragment.charFormat().toImageFormat();
+            const auto image = document->resource(QTextDocument::ImageResource,
+                QUrl(format.name())).value<QImage>();
+            if (image.isNull()) continue;
+            const qreal width = qMin<qreal>(image.width() / image.devicePixelRatio(), available);
+            const qreal height = width * image.height() / image.width();
+            if (qFuzzyCompare(format.width(), width) && qFuzzyCompare(format.height(), height)) continue;
+            format.setWidth(width);
+            format.setHeight(height);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+            format.clearProperty(QTextFormat::ImageMaxWidth);
+#endif
+            QTextCursor cursor(document);
+            cursor.setPosition(fragment.position());
+            cursor.setPosition(fragment.position() + fragment.length(), QTextCursor::KeepAnchor);
+            cursor.setCharFormat(format);
+        }
+    }
+    document->setModified(modified);
 }

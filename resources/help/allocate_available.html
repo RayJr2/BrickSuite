@@ -33,11 +33,12 @@ but the pieces remain in their physical Storage locations until the pull-list wo
 what was actually pulled.</div>
 
 <h2>Understanding the Requirement Quantities</h2>
+<p style="line-height:100%"><img class="screenshot" src="images/builds_allocated.png" style="max-width:100%;height:auto" alt="Garden workshop requirements after Allocate Available"></p>
 
-<p>This small Build from Stock example contains three requirements before any allocation:</p>
 
-<img class="screenshot" src="images/allocate_before.png"
-     alt="Build requirements before allocation">
+<p>The screenshot shows six requirements in the synthetic <b>Garden workshop</b> Build after Allocate Available. Red 3001 needs 20 pieces; 12 are allocated and 8 remain missing. Pulled is still 0.</p>
+<p>The following separate manual-allocation example illustrates the quantity columns:</p>
+
 
 <p>The <b>House</b> Build requires 10 Black 3001 bricks, 4 Yellow 60032 windows, and 1
 Trans-Clear 60616a door. Before allocation, <b>This Build</b> is 0 for every row.</p>
@@ -63,8 +64,6 @@ none are allocated to this or another Build, and all 17 are currently available.
 <p>Choose <b>Allocate</b> from a requirement row's Actions menu when you want direct control over
 which physical Storage location supplies the pieces.</p>
 
-<img class="dialog" src="images/allocate_manual_dialog.png"
-     alt="Allocate Build Requirement dialog for Black 3001 bricks">
 
 <p>The Allocate Build Requirement dialog breaks matching inventory down by Storage location. For
 the Black 3001 requirement, BrickSuite finds inventory in three locations:</p>
@@ -84,8 +83,6 @@ you want to decide exactly where the Build should pull from.</p>
 
 <h2>After Manual Allocation</h2>
 
-<img class="screenshot" src="images/allocate_after_manual.png"
-     alt="Build requirements after manual allocation">
 
 <p>After manually allocating all three requirements, the table shows:</p>
 
@@ -108,14 +105,11 @@ where additional allocation is still needed.</p>
 Available therefore finds no additional loose inventory that needs to be allocated and leaves the
 existing allocations unchanged.</p>
 
-<img class="screenshot" src="images/allocate_available_result.png"
-     alt="Build after Allocate Available finds no additional allocation work">
 
 <p>This demonstrates an important rule: <b>Allocate Available supplements the current allocation
 state; it does not replace or disturb valid allocations that are already assigned to the Build.</b></p>
 
-<p>For comparison, the larger Set example in <a href="builds.html">Builds</a> shows Allocate
-Available automatically allocating 231 pieces and fully satisfying 93 requirements.</p>
+<p>For the current Build layout and interactive pulling controls, see <a href="builds.html">Builds</a>.</p>
 
 <h2>When Inventory Is Shared with Other Builds</h2>
 

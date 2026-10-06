@@ -28,6 +28,9 @@
 #include <QTextCursor>
 #include <QTextBlock>
 #include <QTextFragment>
+#include <QTextImageFormat>
+#include <QScrollBar>
+#include <QImage>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
 #include <cmath>
@@ -255,6 +258,24 @@ int main(int argc,char** argv){
 
     HelpDialog help;help.show();
     auto* tree=help.findChild<QTreeWidget*>();auto* search=help.findChild<QLineEdit*>();auto* browser=help.findChild<QTextBrowser*>();
+    help.showTopic(HelpTopic::Inventory);
+    for (const int width : {1100, 800, 1100}) {
+        help.resize(width, 720);settleEvents();settleEvents();
+        int imageCount=0;
+        for(auto block=browser->document()->begin();block.isValid();block=block.next())
+            for(auto it=block.begin();!it.atEnd();++it){
+                const auto fragment=it.fragment();
+                if(!fragment.isValid()||!fragment.charFormat().isImageFormat())continue;
+                ++imageCount;const auto format=fragment.charFormat().toImageFormat();
+                const auto image=browser->document()->resource(QTextDocument::ImageResource,QUrl(format.name())).value<QImage>();
+                ok&=check(!image.isNull()&&format.width()>0&&format.width()<browser->viewport()->width(),
+                    "Help screenshots fit the available viewport after resizing");
+                if(!image.isNull())ok&=check(std::abs(format.height()-format.width()*image.height()/image.width())<.01,
+                    "Help screenshot aspect ratio survives narrow and wide resizing");
+            }
+        ok&=check(imageCount>0&&browser->horizontalScrollBar()->maximum()==0,
+            "illustrated Help page has no horizontal scrolling at desktop or narrow width");
+    }
     auto groups=tree->findItems("3D Printing",Qt::MatchExactly);
     ok&=check(groups.size()==1&&groups.front()->childCount()==7,"first-class printing group contains seven focused topics");
     for(const auto& info:HelpManager::topics())ok&=check(QFile::exists(info.resourcePath),"registered Help topic exists in compiled resources");

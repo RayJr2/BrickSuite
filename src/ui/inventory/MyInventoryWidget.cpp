@@ -114,7 +114,7 @@ MyInventoryWidget::MyInventoryWidget(
     auto* mainLayout =
         new QVBoxLayout(this);
 
-    auto* titleLabel = new QLabel("My Loose Inventory", this);
+    auto* titleLabel = new QLabel("My Inventory", this);
 
     m_addPartButton = new QPushButton("Add Part...", this);
     m_lostInventoryButton = new QPushButton("Lost Inventory...", this);

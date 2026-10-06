@@ -25,54 +25,46 @@ changed and preserves the event in Inventory History.</div>
 
 <h2>Starting Inventory</h2>
 
-<p>In this example, My Inventory contains <b>24</b> used, owned
-<b>3001 — Brick 2 x 4 / Light Bluish Gray</b> pieces in <b>Shelf Top / Bricks</b>.</p>
+<p>In this example, My Inventory contains <b>12</b> used, owned
+<b>3001 — Brick 2 x 4 / Red</b> pieces in <b>Workshop / Building stock / Red bricks</b>.</p>
 
-<img class="screenshot" src="images/lost_found_inventory_before.png"
-     alt="Inventory before reporting pieces lost">
 
-<p>The database says 24 pieces are present. If a physical count shows that two of those pieces
+<p>The database says 12 pieces are present. If a physical count shows that two of those pieces
 cannot be located, use <b>Lost Inventory...</b> rather than manually changing the inventory
 quantity.</p>
 
 <h2>Report the Missing Pieces</h2>
+<p style="line-height:100%"><img class="screenshot" src="images/lost_found_report_lost.png" style="max-width:100%;height:auto" alt="Mark Inventory Lost for synthetic Red 3001 stock"></p>
+
 
 <p>Choose <b>Lost Inventory...</b>, select the inventory record, and enter the quantity that cannot
 be found. Add a note when it will help explain the loss later.</p>
 
-<img class="dialog" src="images/lost_found_report_lost.png"
-     alt="Mark Inventory Lost dialog">
 
-<p>Here, two Light Bluish Gray 3001 bricks are being reported lost from the <b>Bricks</b> Storage
-location. The current quantity is 24, and the note records that the bricks had been played with
-outdoors.</p>
+<p>The dialog identifies the exact Inventory record and its current quantity. For this example, enter a loss of two Red 3001 bricks from <b>Red bricks</b>, then review the confirmation before applying it.</p>
 
 <h2>Confirm the Inventory Change</h2>
 
 <p>Before committing the loss, BrickSuite summarizes the effect of the operation.</p>
 
-<img class="dialog" src="images/lost_found_mark_lost_confirmation.png"
-     alt="Confirmation before marking two pieces lost">
 
 <p>The confirmation shows:</p>
 
 <ul>
-<li><b>Current Quantity:</b> 24</li>
+<li><b>Current Quantity:</b> 12</li>
 <li><b>Quantity Lost:</b> 2</li>
-<li><b>Remaining Loose Inventory:</b> 22</li>
+<li><b>Remaining Loose Inventory:</b> 10</li>
 </ul>
 
-<p>It also states that the operation will reduce My Loose Inventory and create a
+<p>It also states that the operation will reduce My Inventory and create a
 <b>Lost movement-history record</b>. Choose <b>Yes</b> only after confirming that the quantity
 matches the physical discrepancy.</p>
 
 <h2>Inventory After the Loss</h2>
 
-<img class="screenshot" src="images/lost_found_return.png"
-     alt="Inventory quantity after the loss is recorded">
 
-<p>After the loss is recorded, the same inventory record now contains <b>22</b> pieces instead of
-24. The two missing pieces are no longer counted as available loose inventory.</p>
+<p>After the loss is recorded, the same inventory record now contains <b>10</b> pieces instead of
+12. The two missing pieces are no longer counted as available loose inventory.</p>
 
 <p>This is the important digital-twin correction: BrickSuite now agrees with the quantity that can
 actually be accounted for in the physical Storage location.</p>
@@ -81,11 +73,9 @@ actually be accounted for in the physical Storage location.</p>
 
 <p>Choose <b>History</b> for the part/color to review the event.</p>
 
-<img class="screenshot" src="images/lost_found_history.png"
-     alt="Inventory History showing a Lost event">
 
 <p>The example history records a <b>Lost</b> event with quantity <b>-2</b>, the source Storage
-location <b>Shelf Top / Bricks</b>, Condition <b>Used</b>, Ownership <b>Owned</b>, and the note
+location <b>Workshop / Building stock / Red bricks</b>, Condition <b>Used</b>, Ownership <b>Owned</b>, and the note
 entered when the loss was reported.</p>
 
 <p>The earlier CSV import records remain in the same history, so the inventory's lifecycle is

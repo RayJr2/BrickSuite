@@ -26,11 +26,8 @@ and the loose inventory that remains available.</p>
 
 <h2>Start with the Build Requirements</h2>
 
-<p>This example uses the MOC Build <b>Power Digger 2</b>. Its requirements contain a realistic
-mixture of parts that are available, partially available, and unavailable.</p>
+<p>The synthetic <b>Garden workshop</b> MOC has fully satisfiable requirements and one partial shortage.</p>
 
-<img class="screenshot" src="images/missing_parts_requirements.png"
-     alt="Power Digger 2 Build requirements with missing parts">
 
 <p>The Build Requirements table provides the information needed to understand each shortage:</p>
 
@@ -53,12 +50,10 @@ quantity as missing. Other requirements can be satisfied completely or partially
 <p>Before acquiring missing pieces, use <b>Allocate Available</b>. BrickSuite reserves the loose
 inventory it can legitimately use for the Build and leaves the unresolved shortage visible.</p>
 
-<img class="screenshot" src="images/missing_parts_allocate_result.png"
-     alt="Power Digger 2 requirements after available inventory is allocated">
 
 <p>The resulting table makes partial shortages easy to see. For example,
-<b>3021 — Plate 2 x 3 / Light Bluish Gray</b> requires 3 pieces. Two matching pieces are allocated
-to this Build, leaving <b>1 missing</b>.</p>
+<b>3001 — Brick 2 x 4 / Red</b> requires 20 pieces. Twelve matching pieces are allocated
+to this Build, leaving <b>8 missing</b>.</p>
 
 <p>Requirements with enough inventory can be fully allocated, while requirements with no
 available inventory remain completely missing. BrickSuite does not treat the Build as
@@ -112,12 +107,9 @@ reports excluded rows and pieces. After all included rows have valid selections,
 Element IDs, sums their missing quantities, and writes the final file without a BOM using CRLF
 line endings.</p>
 
-<img class="dialog" src="images/missing_parts_export.png"
-     alt="Save Missing Parts CSV dialog">
 
 <p>Choose <b>Export...</b> after reviewing the preview. BrickSuite then proposes a descriptive
-filename based on the Build. In this example the export is
-saved as <b>BrickSuite_Missing_ALT-31014.csv</b>.</p>
+filename based on the Build.</p>
 
 <p>Saving the CSV does not change inventory, allocations, or Build requirements. It creates a
 working list of the pieces that still need to be acquired.</p>
@@ -126,10 +118,8 @@ working list of the pieces that still need to be acquired.</p>
 
 <p>Open the exported file in a spreadsheet or another CSV-capable application.</p>
 
-<img class="screenshot" src="images/missing_parts_csv.png"
-     alt="Exported BrickSuite Missing Parts CSV">
 
-<p>The exported file shown here includes:</p>
+<p>The default General CSV fields include:</p>
 
 <ul>
 <li><b>Build</b></li>
@@ -224,6 +214,8 @@ round trip.</p>
 <a href="rebrickable_import.html">Rebrickable Import</a> |
 <a href="mocs.html">MOCs</a></p>
 
-<h2 id="procurement">BrickLink procurement and receiving</h2><p>Choose <b>Procure Missing Parts...</b> in the Build to open <b>Missing Parts Procurement Preview</b> for a <b>BrickLink Wanted List</b>. Review authoritative Part/Color mappings and resolve every <b>Needs Review</b> row before choosing <b>Generate BrickLink XML</b>. Use <b>Retry Unresolved IDs</b> when needed; do not substitute a guessed provider identity. Review optional Wanted List fields before saving or using the generated XML.</p><p>CSV export and Wanted List preparation do not purchase or receive Parts, change requirements, or add Inventory. After acquisition, use <a href="inventory.html">Add Inventory or a supported import/receiving preview</a>. Supported BrickOwl order receiving validates identities and colors before a transactional commit records Inventory and history. Re-run Allocate Available afterward. Rebrickable Custom List/WishList API integration is not available.</p>
+<h2 id="procurement">BrickLink procurement and receiving</h2>
+<p style="line-height:100%"><img class="screenshot" src="images/missing_parts_preview.png" style="max-width:100%;height:auto" alt="Missing Parts Procurement Preview showing eight missing Red 3001 pieces and unresolved provider mappings"></p>
+<p>Choose <b>Procure Missing Parts...</b> in the Build to open <b>Missing Parts Procurement Preview</b> for a <b>BrickLink Wanted List</b>. Review authoritative Part/Color mappings and resolve every <b>Needs Review</b> row before choosing <b>Generate BrickLink XML</b>. Use <b>Retry Unresolved IDs</b> when needed; do not substitute a guessed provider identity. Review optional Wanted List fields before saving or using the generated XML.</p><p>CSV export and Wanted List preparation do not purchase or receive Parts, change requirements, or add Inventory. After acquisition, use <a href="inventory.html">Add Inventory or a supported import/receiving preview</a>. Supported BrickOwl order receiving validates identities and colors before a transactional commit records Inventory and history. Re-run Allocate Available afterward. Rebrickable Custom List/WishList API integration is not available.</p>
 </body>
 </html>

@@ -51,12 +51,8 @@ physical pulling, and completion use the same Build model afterward.</p>
 MOCs are commonly managed as <b>Build from Stock</b> projects because BrickSuite compares their
 requirements with the loose inventory available in the Workspace.</p>
 
-<img class="screenshot" src="images/mocs_new_build.png"
-     alt="New Starfighter MOC Build before requirements are imported">
 
-<p>The example uses MOC <b>ALT-53284 — Starfighter</b>, an alternate build based on Set
-912055-1 — Snowspeeder. The Build is in <b>Planned</b> status and its Build Requirements table is
-initially empty.</p>
+<p>A new MOC starts in <b>Planned</b> status with an empty Build Requirements table. The screenshot below shows the synthetic <b>Garden workshop</b> MOC after six requirements have been entered.</p>
 
 <p>This empty state is expected: creating the MOC Build establishes the project, but it does not
 yet tell BrickSuite which pieces the MOC requires.</p>
@@ -66,12 +62,8 @@ yet tell BrickSuite which pieces the MOC requires.</p>
 <p>With the MOC selected, choose <b>Import MOC Parts CSV</b> and select the CSV containing the
 MOC's part requirements.</p>
 
-<img class="dialog" src="images/mocs_import_csv.png"
-     alt="Selecting a Rebrickable MOC parts CSV">
 
-<p>In this example the selected file is
-<b>rebrickable_parts_alt-53284-912055-starfighter.csv</b>. Using a descriptive filename can make
-MOC files easier to recognize later, but the requirements themselves come from the CSV contents.</p>
+<p>Use a descriptive filename to recognize a MOC requirements file later. The requirements themselves come from the CSV contents.</p>
 
 <div class="note"><b>A MOC parts CSV is not an inventory import.</b> Importing this file tells
 BrickSuite what the Build requires. It does not add those pieces to My Inventory and does not imply
@@ -81,10 +73,8 @@ that you own them.</div>
 
 <p>BrickSuite reads the CSV and reports the result before you continue with the Build.</p>
 
-<img class="screenshot" src="images/mocs_requirements.png"
-     alt="Successful MOC requirements import">
 
-<p>For the Starfighter example, BrickSuite reports:</p>
+<p>For example, a 19-row CSV containing 26 regular pieces and no spares would report:</p>
 
 <ul>
 <li><b>CSV Rows Read:</b> 19</li>
@@ -98,12 +88,12 @@ that you own them.</div>
 message. Each imported requirement identifies the part, color, and quantity needed by the MOC.</p>
 
 <h2>The MOC Is Ready for the Normal Build Workflow</h2>
+<p style="line-height:100%"><img class="screenshot" src="images/builds_overview.png" style="max-width:100%;height:auto" alt="Garden workshop MOC with six entered requirements"></p>
+
 
 <p>After dismissing the import result, the requirements remain attached to the MOC Build and
 BrickSuite compares them with the current Workspace inventory.</p>
 
-<img class="screenshot" src="images/mocs_ready.png"
-     alt="Starfighter MOC ready for allocation">
 
 <p>The requirements table now shows the same inventory-state columns used by other Builds:
 <b>Required</b>, <b>Pulled</b>, <b>Remaining</b>, <b>Owned</b>, <b>This Build</b>,
@@ -137,9 +127,7 @@ automatic allocation workflow.</p>
 visible in the <b>Missing</b> column. Export the missing-parts CSV when you need an external
 acquisition list.</p>
 
-<p>The larger <b>Power Digger 2</b> MOC example in
-<a href="missing_parts.html"><b>Missing Parts</b></a> demonstrates this workflow, including a
-realistic mix of fully available, partially available, and completely missing requirements.</p>
+<p>See <a href="missing_parts.html"><b>Missing Parts</b></a> for the current procurement preview and shortage workflow.</p>
 
 <h2>Pull, Reconcile, and Complete</h2>
 

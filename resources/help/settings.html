@@ -12,7 +12,7 @@ code { font-family: monospace; }
 <p>Settings contains user preferences that control how BrickSuite starts, appears, and connects
 to supported external data providers. These preferences persist between application sessions.</p>
 
-<p>Open <b>Edit → Settings</b>. Pages include <b>General</b>, <b>Appearance</b>, <b>APIs</b>, <b>Database Backup</b>, <b>Server</b>, <b>Builds</b>, and <b>3D Models</b>. Older illustrations may show fewer tabs; follow the current labels described here.</p>
+<p>Open <b>Edit → Settings</b>. Pages include <b>General</b>, <b>Appearance</b>, <b>APIs</b>, <b>Database Backup</b>, <b>Server</b>, <b>Builds</b>, and <b>3D Models</b>.</p>
 <p>Settings are separate from the BrickSuite database content that represents your workshop.</p>
 
 <pre>
@@ -29,8 +29,6 @@ Application Settings
 
 <h2>General</h2>
 
-<img class="screenshot" src="images/settings_general.png"
-     alt="BrickSuite Settings General page">
 
 <p>The <b>General</b> page contains application-wide preferences, including the
 <b>Default Workspace</b>. The Default Workspace determines which Workspace BrickSuite selects
@@ -62,9 +60,9 @@ router port forwarding, firewall, LAN/public addressing, and secure setup guidan
 It changes the Workspace selected by default; each Workspace continues to maintain its own data.</div>
 
 <h2>Appearance</h2>
+<p style="line-height:100%"><img class="screenshot" src="images/settings_appearance.png" style="max-width:100%;height:auto" alt="Appearance settings in Dark theme"></p>
+<p style="line-height:100%"><img class="screenshot" src="images/settings_appearance_light.png" style="max-width:100%;height:auto" alt="Appearance settings in Light theme for comparison"></p>
 
-<img class="screenshot" src="images/settings_appearance.png"
-     alt="Earlier Settings illustration; current theme controls are on Appearance">
 
 <p>The <b>Appearance</b> page controls BrickSuite's visual theme. Theme changes are applied
 immediately so you can evaluate the result while the Settings dialog is open. If you cancel the
@@ -76,8 +74,7 @@ data. Most screenshots in this Help system use Dark theme, so colors may differ 
 theme is selected.</p>
 
 <h2>Database Backup</h2>
-<img class="screenshot" src="images/settings_database_backup.png"
-     alt="Database Backup settings showing an hourly policy, retention, live status, and Backup Now">
+
 
 <p>The <b>Database Backup</b> page configures BrickSuite-managed automatic backups. Automatic
 backups are disabled by default. Choose a <b>Backup root</b>, a supported hourly/daily frequency, and how many
@@ -122,8 +119,6 @@ destination, and automatic retention never applies to it.</p>
 
 <h2>APIs</h2>
 
-<img class="screenshot" src="images/settings_apis_overview.png"
-     alt="BrickSuite Settings APIs page">
 
 <p>The <b>APIs</b> page contains provider-specific configuration for <b>Rebrickable</b> and
 <b>Brickset</b>. Each provider has its own sub-tab, credentials, connection status, and connection
@@ -139,8 +134,6 @@ keys are normally masked in the Settings dialog.</div>
 
 <h3>Rebrickable</h3>
 
-<img class="screenshot" src="images/quick_start_rebrickable_api.png"
-     alt="BrickSuite Rebrickable API settings">
 
 <p>Enter your Rebrickable API key and choose <b>Test Connection</b>. When the test succeeds,
 <b>Connection Status</b> shows <b>Connected</b>.</p>
@@ -168,8 +161,6 @@ instead of making large numbers of repeated API requests. See
 
 <h3>Brickset</h3>
 
-<img class="screenshot" src="images/quick_start_brickset_api.png"
-     alt="BrickSuite Brickset API settings">
 
 <p>Enter your Brickset API key and choose <b>Test Connection</b>. When the test succeeds,
 <b>Connection Status</b> shows <b>Connected</b>.</p>

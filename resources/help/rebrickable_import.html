@@ -17,6 +17,8 @@ img.dialog { display:block; max-width:94%; height:auto; margin:14px auto 18px au
 <h1>Rebrickable Import</h1>
 
 <h2>Import Reference Catalog and Composition Data</h2>
+<p style="line-height:100%"><img class="screenshot" src="images/rebrickable_import_preview.png" style="max-width:100%;height:auto" alt="Import Rebrickable Data Files preview; missing optional datasets are not failures"></p>
+
 
 <p>Choose <b>Tools → Import Rebrickable Data Files...</b> to scan a folder containing official
 Rebrickable <code>.csv</code> or <code>.csv.zip</code> bulk downloads. BrickSuite recognizes all
@@ -57,8 +59,6 @@ is previewed first so you can review its effect before changing BrickSuite inven
 <p>From <b>My Inventory</b>, choose the <b>Import CSV</b> button and browse to the Rebrickable CSV
 you want to use. Choose the operation before continuing.</p>
 
-<img class="dialog" src="images/rebrickable_import_operations.png"
-     alt="Rebrickable inventory import operation choices">
 
 <p>BrickSuite provides four operations:</p>
 
@@ -80,8 +80,6 @@ BrickSuite inventory.</div>
 <p>For inventory-changing operations, choose the destination Storage location and the Condition
 and Ownership values that apply to the imported parts. Then choose <b>Preview</b>.</p>
 
-<img class="dialog" src="images/rebrickable_import_file.png"
-     alt="Import Rebrickable Inventory CSV dialog">
 
 <p>When a Rebrickable parts-list filename corresponds closely to an existing Storage location,
 BrickSuite can use that information to help select the destination. Always verify the Storage field
@@ -94,8 +92,6 @@ cancelled or failed imports do not update that remembered destination.</p>
 <p>The preview shows the CSV quantity, current BrickSuite quantity, the projected result for the
 selected operation, the difference, status, and any validation error.</p>
 
-<img class="screenshot" src="images/rebrickable_import_preview.png"
-     alt="Append Inventory Preview">
 
 <p>For an Append operation, <b>After Append</b> shows the quantity that will exist after the CSV
 quantity is added. The preview button changes to an operation-specific action such as
@@ -110,8 +106,6 @@ you expected.</div>
 <p><b>Compare Only</b> is intended for reconciling a Rebrickable parts list with the corresponding
 BrickSuite inventory without changing BrickSuite.</p>
 
-<img class="screenshot" src="images/rebrickable_import_sync_preview.png"
-     alt="Compare Only Inventory Preview">
 
 <p>The comparison identifies the Rebrickable quantity, BrickSuite quantity, Difference, and the
 action needed to make Rebrickable agree with BrickSuite.</p>
@@ -148,8 +142,6 @@ inventory.</div>
 <p>When an Append, Replace, or Subtract preview is correct, choose its operation-specific Apply
 button. BrickSuite performs the previewed changes and reports the result.</p>
 
-<img class="dialog" src="images/rebrickable_import_complete.png"
-     alt="Successful Rebrickable inventory operation">
 
 <p>If the preview contains invalid rows or the operation encounters a genuine failure, review the
 reported error information rather than assuming all CSV rows were applied.</p>
@@ -159,8 +151,6 @@ reported error information rather than assuming all CSV rows were applied.</p>
 <p>After an inventory-changing operation, return to My Inventory and filter by the applicable
 Storage location or search for one of the affected parts.</p>
 
-<img class="screenshot" src="images/rebrickable_import_inventory.png"
-     alt="Rebrickable inventory result in My Inventory">
 
 <p>The resulting records appear with their part/color quantities, physical Storage location,
 Manufacturer, Condition, and Ownership values just like inventory entered manually.</p>
