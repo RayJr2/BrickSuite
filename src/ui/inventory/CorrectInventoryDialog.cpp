@@ -60,6 +60,7 @@ CorrectInventoryDialog::CorrectInventoryDialog(int inventoryRecordId,
     resize(640, 280);
 
     auto* layout = new QFormLayout(this);
+    layout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_currentPartLabel = new QLabel(this);
     m_contextLabel = new QLabel(this);
@@ -79,6 +80,10 @@ CorrectInventoryDialog::CorrectInventoryDialog(int inventoryRecordId,
     m_resolvedLabel = new QLabel(this);
     m_resolvedLabel->setVisible(false);
 
+    for (auto* label : {m_currentPartLabel, m_contextLabel, m_resolvedLabel}) {
+        label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        label->setWordWrap(true);
+    }
     m_quantitySpin = new QSpinBox(this);
     m_quantitySpin->setMinimum(1);
 

@@ -2852,6 +2852,24 @@ if(BUILD_TESTING)
         endforeach()
     endif()
 
+    # Exercise real dialog implementations with isolated data and credential doubles.
+    get_target_property(_dialogLayoutSources BrickSuite SOURCES)
+    list(REMOVE_ITEM _dialogLayoutSources src/main.cpp src/services/CredentialStore.cpp)
+    qt_add_executable(DialogLayoutTest EXCLUDE_FROM_ALL tests/DialogLayoutTest.cpp ${_dialogLayoutSources})
+    target_compile_definitions(DialogLayoutTest PRIVATE
+        "$<FILTER:$<TARGET_PROPERTY:BrickSuite,COMPILE_DEFINITIONS>,INCLUDE,^(APP_|BRICKSUITE_)>")
+    target_link_libraries(DialogLayoutTest PRIVATE Qt6::Widgets Qt6::Sql Qt6::Network
+        Qt6::WebSockets Qt6::Concurrent Qt6::OpenGLWidgets ZLIB::ZLIB OpenSSL::Crypto
+        BrickSuite::Mcut BrickSuite::Lib3mf)
+    if(WIN32)
+        target_link_libraries(DialogLayoutTest PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(DialogLayoutTest PRIVATE "-framework Security" "-framework CoreFoundation")
+    endif()
+    bricksuite_stage_mcut_runtime(DialogLayoutTest)
+    add_test(NAME DialogLayout COMMAND DialogLayoutTest -platform offscreen)
+    set_tests_properties(DialogLayout PROPERTIES TIMEOUT 90)
+
     get_property(_bricksuite_configured_tests DIRECTORY PROPERTY TESTS)
     foreach(_bricksuite_test IN LISTS _bricksuite_configured_tests)
         bricksuite_configure_test_runtime("${_bricksuite_test}")

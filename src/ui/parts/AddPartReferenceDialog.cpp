@@ -61,11 +61,14 @@ AddPartReferenceDialog::AddPartReferenceDialog(
 
     auto* layout = new QVBoxLayout(this);
     auto* form = new QFormLayout;
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     m_search = new QLineEdit(this); m_search->setPlaceholderText(tr("Part number or name"));
     form->addRow(tr("Find Part:"), m_search);
     m_results = new QListWidget(this); m_results->setMinimumHeight(160);
     form->addRow(tr("Catalog Parts:"), m_results);
     m_destination = new QComboBox(this);
+    m_destination->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    m_destination->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     for (const auto& destination : service.destinations()) {
         m_destination->addItem(QStringLiteral("%1 — %2").arg(destination.catalog, destination.section),
                                QStringList{destination.catalog, destination.section});
@@ -79,7 +82,7 @@ AddPartReferenceDialog::AddPartReferenceDialog(
     m_placement->addItem(tr("After selected"), static_cast<int>(PartReferencePlacement::After));
     if (!m_defaultAnchor.isEmpty()) m_placement->setCurrentIndex(2);
     form->addRow(tr("Placement:"), m_placement);
-    m_anchor = new QComboBox(this); form->addRow(tr("Relative to:"), m_anchor);
+    m_anchor = new QComboBox(this); m_anchor->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);m_anchor->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon); form->addRow(tr("Relative to:"), m_anchor);
     layout->addLayout(form);
     m_note = new QLabel(this); m_note->setWordWrap(true); layout->addWidget(m_note);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);

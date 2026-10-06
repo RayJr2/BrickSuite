@@ -38,9 +38,9 @@ StorageLocationDialog::StorageLocationDialog(Mode mode,const Values&initial,
     HelpManager::setContextTopic(this, HelpTopic::Storage);
     setAttribute(Qt::WA_DeleteOnClose);setModal(true);
     setWindowTitle(mode==Mode::Add?QStringLiteral("Add Storage Location"):QStringLiteral("Edit Storage Location"));
-    auto*form=new QFormLayout(this);m_name=new QLineEdit(initial.name,this);m_name->setObjectName("storageNameEdit");
+    auto*form=new QFormLayout(this);form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);m_name=new QLineEdit(initial.name,this);m_name->setObjectName("storageNameEdit");
     m_description=new QTextEdit(initial.description,this);m_description->setObjectName("storageDescriptionEdit");m_description->setMaximumHeight(90);
-    m_parent=new QComboBox(this);
+    m_parent=new QComboBox(this);m_parent->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);m_parent->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     TooltipPolicy::explain(m_parent, tr("Place this location under a container, or choose Top Level. Operational destinations must be active leaf locations."));m_parent->setObjectName("storageParentCombo");m_parent->addItem(QStringLiteral("(Top Level)"),QVariant::fromValue<qint64>(0));
     for(const auto&choice:parents)m_parent->addItem(choice.name,QVariant::fromValue(choice.id));
     m_type=new QComboBox(this);

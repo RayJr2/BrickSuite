@@ -463,6 +463,7 @@ void StorageWidget::addLocation()
 
     auto* formLayout =
         new QFormLayout(&dialog);
+    formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     auto* nameEdit =
         new QLineEdit(&dialog);
@@ -602,6 +603,7 @@ void StorageWidget::editLocation()
     dialog.setWindowTitle("Edit Storage Location");
 
     auto* formLayout = new QFormLayout(&dialog);
+    formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     auto* nameEdit = new QLineEdit(existing->name(), &dialog);
 
@@ -616,6 +618,8 @@ void StorageWidget::editLocation()
     }
 
     auto* parentCombo = new QComboBox(&dialog);
+    parentCombo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    parentCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
 
     auto* inventoryCheck = new QCheckBox("Allow Inventory", &dialog);
     inventoryCheck->setChecked(existing->allowsInventory());

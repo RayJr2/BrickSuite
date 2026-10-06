@@ -47,6 +47,7 @@ EditBuildDialog::EditBuildDialog(int buildId, QWidget* parent)
     auto* mainLayout = new QVBoxLayout(this);
 
     auto* formLayout = new QFormLayout();
+    formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_typeLabel = new QLabel(this);
 
@@ -57,6 +58,7 @@ EditBuildDialog::EditBuildDialog(int buildId, QWidget* parent)
     m_nameEdit = new QLineEdit(this);
 
     m_manufacturerCombo = new QComboBox(this);
+    m_manufacturerCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     m_notesEdit = new QTextEdit(this);
 

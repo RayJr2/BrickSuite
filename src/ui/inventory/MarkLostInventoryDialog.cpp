@@ -50,6 +50,7 @@ MarkLostInventoryDialog::MarkLostInventoryDialog(int inventoryRecordId, QWidget*
     resize(500, 300);
 
     auto* layout = new QFormLayout(this);
+    layout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_partLabel = new QLabel(this);
 
@@ -59,6 +60,10 @@ MarkLostInventoryDialog::MarkLostInventoryDialog(int inventoryRecordId, QWidget*
 
     m_currentQuantityLabel = new QLabel(this);
 
+    for (auto* label : {m_partLabel, m_colorLabel, m_locationLabel}) {
+        label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        label->setWordWrap(true);
+    }
     m_quantityLostSpin = new QSpinBox(this);
 
     m_notesEdit = new QTextEdit(this);

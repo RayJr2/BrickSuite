@@ -62,8 +62,10 @@ EditBuildRequirementDialog::EditBuildRequirementDialog(int requirementId, QWidge
 
     auto* originalGroup = new QGroupBox("Original Requirement", this);
     auto* originalLayout = new QFormLayout(originalGroup);
+    originalLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     m_originalPartLabel = new QLabel(originalGroup);
+    m_originalPartLabel->setWordWrap(true);
     m_originalPartLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
     m_originalColorLabel = new QLabel(originalGroup);
@@ -76,12 +78,14 @@ EditBuildRequirementDialog::EditBuildRequirementDialog(int requirementId, QWidge
 
     auto* useGroup = new QGroupBox("Use for this Build", this);
     auto* useLayout = new QFormLayout(useGroup);
+    useLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_usePartEdit = new QLineEdit(useGroup);
     m_usePartEdit->setPlaceholderText("Part number");
     PartSearchCompleterHelper::install(m_usePartEdit);
 
     m_useColorCombo = new QComboBox(useGroup);
+    m_useColorCombo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
 
     m_quantitySpin = new QSpinBox(useGroup);
     m_quantitySpin->setRange(1, 99999);

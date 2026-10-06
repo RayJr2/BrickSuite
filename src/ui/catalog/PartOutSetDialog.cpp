@@ -55,7 +55,7 @@ PartOutSetDialog::PartOutSetDialog(int setCatalogId, int workspaceId, bool remot
     HelpManager::setContextTopic(this,HelpTopic::SetsCatalog,QStringLiteral("use-set-for-parts"));
     auto* layout=new QVBoxLayout(this);
     m_summary=new QLabel(this); m_summary->setWordWrap(true); layout->addWidget(m_summary);
-    m_fields=new QWidget(this); auto* form=new QFormLayout(m_fields); layout->addWidget(m_fields);
+    m_fields=new QWidget(this); auto* form=new QFormLayout(m_fields); form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow); layout->addWidget(m_fields);
     m_copies=new QSpinBox(this); m_copies->setObjectName("partOutCopies"); m_copies->setRange(1,CatalogSetPartOutService::MaximumCopies);
     m_condition=new QComboBox(this); m_condition->setObjectName("partOutCondition"); m_condition->addItems({"Used","New"});
     m_spares=new QCheckBox(tr("Include catalog spare Parts"),this); m_spares->setObjectName("partOutSpares"); m_spares->setChecked(true);
@@ -65,6 +65,10 @@ PartOutSetDialog::PartOutSetDialog(int setCatalogId, int workspaceId, bool remot
     m_type=new QComboBox(this); m_type->setObjectName("partOutStorageType");
     m_parent=new QComboBox(this); m_parent->setObjectName("partOutParent"); m_parent->addItem(tr("Top Level"),0);
     m_name=new QLineEdit(this); m_name->setObjectName("partOutStorageName");
+    for (auto* field : {m_mode, m_existing, m_parent}) {
+        field->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+        field->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    }
     const auto set=SetCatalogRepository().getById(setCatalogId);
     if (set) {
         m_summary->setText(QString("%1 - %2").arg(set->setNumber(),set->name()));

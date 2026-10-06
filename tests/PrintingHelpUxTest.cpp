@@ -54,6 +54,8 @@
 #include <QDialogButtonBox>
 #include <QScreen>
 #include <QImage>
+#include <QProxyStyle>
+#include <QStyleFactory>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
 #include <cmath>
@@ -68,6 +70,16 @@ public slots:
 };
 
 namespace {
+class DarkSystemPaletteStyle : public QProxyStyle {
+public:
+    DarkSystemPaletteStyle() : QProxyStyle(QStyleFactory::create("Fusion")) {}
+    QPalette standardPalette() const override {
+        QPalette palette = QProxyStyle::standardPalette();
+        for (auto role : {QPalette::Window, QPalette::Base, QPalette::AlternateBase, QPalette::ToolTipBase})
+            palette.setColor(role, QColor(30, 30, 30));
+        return palette;
+    }
+};
 void settleEvents(){QEventLoop loop;QTimer::singleShot(50,&loop,&QEventLoop::quit);loop.exec();}
 bool check(bool value,const char* message){if(!value)fprintf(stderr,"FAIL: %s\n",message);return value;}
 class TooltipProbe : public QWidget {
@@ -91,7 +103,22 @@ int main(int argc,char** argv){
     app.setOrganizationName("PrintingHelpTests");app.setApplicationName("IsolatedUx");
     auto& settings=UserSettings::instance();
     if(child>=0)return check(!settings.explanatoryTooltipsEnabled(),"tooltip preference survives process restart")?0:1;
+    // A native dark desktop must not supply dark backgrounds to explicit Light.
+    // Isolate the injected style from the native style used by the UI checks.
+    if(args.contains("--light-palette-child")){
+        app.setStyle(new DarkSystemPaletteStyle);
+        ThemeManager::applyTheme(app, UserSettings::Theme::Light);
+        bool light=true;
+        for(auto role:{QPalette::Window,QPalette::Base,QPalette::AlternateBase,QPalette::ToolTipBase})
+            light &= check(luminance(app.palette().color(role)) > .85,
+                "explicit Light has light backgrounds even with a dark system palette");
+        return light?0:1;
+    }
     bool ok=check(settings.explanatoryTooltipsEnabled(),"tooltips enabled by default");
+    QProcess lightPalette;
+    lightPalette.start(app.applicationFilePath(),{"-platform","offscreen","--light-palette-child"});
+    ok&=check(lightPalette.waitForFinished(30000)&&lightPalette.exitStatus()==QProcess::NormalExit
+        &&lightPalette.exitCode()==0,"explicit Light overrides a dark system palette");
     TooltipPolicy policy(app);TooltipProbe probe;TooltipPolicy::explain(&probe,"Useful explanation");
     QHelpEvent hover(QEvent::ToolTip,QPoint(1,1),QPoint(1,1));
     QApplication::sendEvent(&probe,&hover);ok&=check(probe.delivered==1,"enabled tooltip event reaches control");

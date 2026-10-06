@@ -56,6 +56,7 @@ FoundInventoryDialog::FoundInventoryDialog(
     resize(525, 340);
 
     auto* layout = new QFormLayout(this);
+    layout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_partLabel = new QLabel(this);
 
@@ -66,6 +67,8 @@ FoundInventoryDialog::FoundInventoryDialog(
     m_quantityFoundSpin = new QSpinBox(this);
 
     m_storageCombo = new QComboBox(this);
+    m_storageCombo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    m_storageCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
 
     m_conditionCombo = new QComboBox(this);
 

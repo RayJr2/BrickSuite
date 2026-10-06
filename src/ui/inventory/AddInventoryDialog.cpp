@@ -156,6 +156,10 @@ void AddInventoryDialog::initializeUi()
     }
 
     auto* layout = new QFormLayout(this);
+    // Native macOS forms otherwise keep even expanding editors at sizeHint().
+    // Only descriptive fields opt into growth; short choices and counts stay compact.
+    layout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    layout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
 
     //
     // Part control.
@@ -207,6 +211,7 @@ void AddInventoryDialog::initializeUi()
         TooltipPolicy::explain(m_rememberPartCheck, tr("Keep the resolved Part selected after saving, for another Color or Condition of the same Part."));
 
         auto* partRowWidget = new QWidget(this);
+        partRowWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         auto* partRowLayout = new QHBoxLayout(partRowWidget);
         partRowLayout->setContentsMargins(0, 0, 0, 0);
         partRowLayout->addWidget(m_partSearchEdit, 1);
@@ -228,6 +233,7 @@ void AddInventoryDialog::initializeUi()
             "external part ID and cross-reference it to the local Rebrickable part.");
 
         auto* resolvedRowWidget = new QWidget(this);
+        resolvedRowWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         auto* resolvedRowLayout = new QHBoxLayout(resolvedRowWidget);
         resolvedRowLayout->setContentsMargins(0, 0, 0, 0);
         resolvedRowLayout->addWidget(m_partResolutionLabel, 1);
@@ -242,6 +248,8 @@ void AddInventoryDialog::initializeUi()
         m_partSearchTimer->setInterval(200);
     } else {
         m_partLabel = new QLabel(this);
+        m_partLabel->setWordWrap(true);
+        m_partLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
         layout->addRow("Part:", m_partLabel);
     }
@@ -257,6 +265,8 @@ void AddInventoryDialog::initializeUi()
     TooltipPolicy::explain(m_storageCombo, tr("Choose an active leaf Storage location for these physical Parts."));
 
     m_manufacturerCombo = new QComboBox(this);
+    for (auto* field : {m_colorCombo, m_storageCombo, m_manufacturerCombo})
+        field->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     TooltipPolicy::explain(m_manufacturerCombo, tr("Record who made these physical Parts; this does not change their catalog identity."));
 
     m_conditionCombo = new QComboBox(this);
@@ -300,6 +310,7 @@ void AddInventoryDialog::initializeUi()
     });
 
     auto* colorRowWidget = new QWidget(this);
+    colorRowWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto* colorRowLayout = new QHBoxLayout(colorRowWidget);
     colorRowLayout->setContentsMargins(0, 0, 0, 0);
     colorRowLayout->addWidget(m_colorCombo, 1);
@@ -923,7 +934,12 @@ void AddInventoryDialog::updatePartSearch()
     }
 
     if (m_partSearchModel->rowCount() > 0) {
-        m_partCompleter->complete();
+        // Use the available field column, including the space under Remember
+        // Part, rather than measuring an unbounded catalog description. Qt's
+        // completer clamps and positions this rectangle within the screen.
+        QRect popupRect = m_partSearchEdit->rect();
+        popupRect.setWidth(m_partSearchEdit->parentWidget()->width());
+        m_partCompleter->complete(popupRect);
     }
 }
 

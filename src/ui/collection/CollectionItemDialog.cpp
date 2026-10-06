@@ -69,6 +69,7 @@ CollectionItemDialog::CollectionItemDialog(int collectionItemId, QWidget* parent
 
     const auto result = CollectionRepository().displayById(collectionItemId);
     auto* form = new QFormLayout(this);
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     if (!result) {
         form->addRow(new QLabel("The Collection item is unavailable.", this));
         auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
@@ -113,6 +114,8 @@ CollectionItemDialog::CollectionItemDialog(int collectionItemId, QWidget* parent
         m_completenessCombo->findData(static_cast<int>(item.completeness)));
 
     m_locationCombo = new QComboBox(this);
+    m_locationCombo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    m_locationCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_locationCombo->addItem("Unassigned", 0);
     StorageLocationRepository locations;
     const QList<StorageLocation> all = locations.getByWorkspaceIncludingInactive(item.workspaceId);

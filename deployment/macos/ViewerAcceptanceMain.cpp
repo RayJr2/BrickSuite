@@ -98,6 +98,14 @@ int main(int argc, char** argv)
         qInfo() << "Native source viewport:" << rendered << "visible pixels:" << visible
                 << "part:" << request.partNumber << "external:" << !request.externalFilePath.isEmpty();
         if (!rendered) return 1;
+        bool statusVisible = false;
+        for (auto* label : viewer.findChildren<QLabel*>()) {
+            if (label->text() != QStringLiteral("Geometry loaded successfully.")) continue;
+            statusVisible = label->isVisible()
+                && label->height() >= label->heightForWidth(label->width());
+        }
+        qInfo() << "Native viewer status text fully visible:" << statusVisible;
+        if (!statusVisible) return 1;
         viewport->setRenderMode(PartViewerRenderMode::Wireframe);
         const QImage edges = viewport->grabFramebuffer();
         if (edges.isNull() || edges == frame) return 1;

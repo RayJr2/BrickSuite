@@ -65,9 +65,11 @@ CatalogCollectionDialog::CatalogCollectionDialog(
     resize(520, 360);
     HelpManager::setContextTopic(this, HelpTopic::MyCollection);
     auto* form = new QFormLayout(this);
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     form->addRow("Type:", new QLabel(collectionItemTypeToString(type), this));
     form->addRow("Reference:", new QLabel(reference, this));
     auto* nameLabel = new QLabel(name, this);
+    nameLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     nameLabel->setWordWrap(true);
     form->addRow("Name:", nameLabel);
     if (sourceBuildId > 0) form->addRow("Source Build:", new QLabel(QString("%1 (%2)").arg(name, reference), this));
@@ -103,7 +105,8 @@ CatalogCollectionDialog::CatalogCollectionDialog(
         if (!repository.isValidCollectionDestination(workspaceId, location.id())) continue;
         m_locationCombo->addItem(qualifiedPath(location, byId), location.id());
     }
-    m_locationCombo->setMinimumWidth(260);
+    m_locationCombo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    m_locationCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_nicknameEdit = new QLineEdit(this);
     m_notesEdit = new QTextEdit(this);
     form->addRow("State:", m_stateCombo);

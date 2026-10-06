@@ -74,6 +74,7 @@ ManufacturingMeshDiagnosticDialog::ManufacturingMeshDiagnosticDialog(
     root->addWidget(explanation);
 
     auto* form = new QFormLayout;
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     form->addRow(tr("Part:"), new QLabel(QStringLiteral("3700 — Technic Brick 1 x 2 with Hole"), this));
     form->addRow(tr("Nominal geometry:"), new QLabel(tr("Prepared Mesh (unchanged)"), this));
     form->addRow(tr("Print orientation:"), new QLabel(m_printOrientation.summary(), this));

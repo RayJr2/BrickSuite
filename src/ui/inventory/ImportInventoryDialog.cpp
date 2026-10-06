@@ -71,6 +71,7 @@ ImportInventoryDialog::ImportInventoryDialog(
     auto* mainLayout = new QVBoxLayout(this);
 
     auto* formLayout = new QFormLayout();
+    formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     // File selector
     auto* fileLayout = new QHBoxLayout();
@@ -88,6 +89,7 @@ ImportInventoryDialog::ImportInventoryDialog(
     auto* fileWidget = new QWidget(this);
 
     fileWidget->setLayout(fileLayout);
+    fileWidget->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
 
     // Provider / format
     m_formatCombo = new QComboBox(this);
@@ -102,6 +104,7 @@ ImportInventoryDialog::ImportInventoryDialog(
         static_cast<int>(InventoryImportSource::BrickOwlOrderCsv));
 
     m_formatStatusLabel = new QLabel(this);
+    m_formatStatusLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_formatStatusLabel->setWordWrap(true);
     m_formatStatusLabel->setText(QStringLiteral("Select an inventory CSV file."));
 
@@ -128,6 +131,8 @@ ImportInventoryDialog::ImportInventoryDialog(
 
     // Storage
     m_storageCombo = new QComboBox(this);
+    m_storageCombo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    m_storageCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
 
     // Condition
     m_conditionCombo = new QComboBox(this);

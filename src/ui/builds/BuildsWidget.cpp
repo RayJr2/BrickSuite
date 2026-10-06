@@ -3281,6 +3281,7 @@ void BuildsWidget::allocateAvailable()
         preferenceDialog.setWindowTitle("Allocate Available");
 
         auto* layout = new QFormLayout(&preferenceDialog);
+        layout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
         auto* explanation = new QLabel(
             "Choose a preferred storage location to allocate from first.\n"
@@ -3292,6 +3293,8 @@ void BuildsWidget::allocateAvailable()
         layout->addRow(explanation);
 
         auto* storageCombo = new QComboBox(&preferenceDialog);
+        storageCombo->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+        storageCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
         storageCombo->addItem("No Preferred Storage", 0);
 
         StorageLocationRepository storageRepository;

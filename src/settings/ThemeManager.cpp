@@ -25,6 +25,7 @@
 #include <QColor>
 #include <QPalette>
 #include <QStyle>
+#include <QStyleHints>
 
 void ThemeManager::applySavedTheme(QApplication& application)
 {
@@ -33,6 +34,13 @@ void ThemeManager::applySavedTheme(QApplication& application)
 
 void ThemeManager::applyTheme(QApplication& application, UserSettings::Theme theme)
 {
+#if defined(Q_OS_MACOS) && QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    // Cocoa checkbox indicators follow NSAppearance, not the custom palette.
+    // Match native controls to explicit themes; System restores desktop tracking.
+    application.styleHints()->setColorScheme(theme == UserSettings::Theme::Light
+        ? Qt::ColorScheme::Light : theme == UserSettings::Theme::Dark
+        ? Qt::ColorScheme::Dark : Qt::ColorScheme::Unknown);
+#endif
     switch (theme) {
     case UserSettings::Theme::Light:
         applyLightTheme(application);
@@ -60,6 +68,14 @@ void ThemeManager::applyLightTheme(QApplication& application)
 {
     QPalette palette = application.style()->standardPalette();
 
+    // The native standard palette can be dark (notably on macOS). Explicit
+    // Light must set backgrounds as well as foregrounds, independently of it.
+    palette.setColor(QPalette::Window, QColor(245, 245, 245));
+    palette.setColor(QPalette::Base, Qt::white);
+    palette.setColor(QPalette::AlternateBase, QColor(245, 245, 245));
+    palette.setColor(QPalette::ToolTipBase, Qt::white);
+    palette.setColor(QPalette::ToolTipText, Qt::black);
+
     palette.setColor(QPalette::Button, QColor(0, 96, 96));
 
     palette.setColor(QPalette::ButtonText, Qt::white);
@@ -76,7 +92,25 @@ void ThemeManager::applyLightTheme(QApplication& application)
 
     application.setPalette(palette);
 
-    application.setStyleSheet(globalStyleSheet(UserSettings::Theme::Light));
+    QString styleSheet = globalStyleSheet(UserSettings::Theme::Light);
+#ifdef Q_OS_MACOS
+    // Keep native checked/mixed indicators. Only the faint empty Aqua indicator
+    // needs an explicit boundary on our Light background.
+    styleSheet += QStringLiteral(R"(
+        QCheckBox::indicator:unchecked {
+            border: 1px solid #666666;
+            border-radius: 3px;
+            background-color: #ffffff;
+        }
+        QCheckBox::indicator:unchecked:hover,
+        QCheckBox::indicator:unchecked:focus { border-color: #1e5aa0; }
+        QCheckBox::indicator:unchecked:disabled {
+            border-color: #aaaaaa;
+            background-color: #eeeeee;
+        }
+    )");
+#endif
+    application.setStyleSheet(styleSheet);
 }
 
 void ThemeManager::applyDarkTheme(QApplication& application)

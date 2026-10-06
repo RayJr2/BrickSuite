@@ -45,6 +45,8 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QHeaderView>
 #include <QIcon>
 #include <QLabel>
@@ -73,7 +75,18 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId,
     setWindowTitle("Minifig Details");
     resize(900, 720);
 
-    auto* mainLayout = new QVBoxLayout(this);
+    // Keep fixed-size artwork and wrapped summaries intact on shorter displays.
+    // Actions stay outside the scrolling content.
+    auto* outerLayout = new QVBoxLayout(this);
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setObjectName("catalogDetailsScroll");
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto* content = new QWidget(scroll);
+    auto* mainLayout = new QVBoxLayout(content);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    scroll->setWidget(content);
+    outerLayout->addWidget(scroll, 1);
     auto* definitionGroup = new QGroupBox("Catalog Definition", this);
     auto* contentLayout = new QHBoxLayout(definitionGroup);
     auto* imageLayout = new QVBoxLayout();
@@ -88,6 +101,7 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId,
     contentLayout->addLayout(imageLayout);
 
     auto* formLayout = new QFormLayout();
+    formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     m_numberLabel = new QLabel(definitionGroup);
     m_nameLabel = new QLabel(definitionGroup);
     m_nameLabel->setWordWrap(true);
@@ -95,6 +109,11 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId,
     m_providerLabel = new QLabel(definitionGroup);
     m_sourceLabel = new QLabel(definitionGroup);
     m_sourceLabel->setWordWrap(true);
+    for (auto* label : {m_numberLabel, m_nameLabel, m_partsLabel, m_providerLabel, m_sourceLabel}) {
+        auto policy = label->sizePolicy();
+        policy.setHorizontalPolicy(QSizePolicy::Expanding);
+        label->setSizePolicy(policy);
+    }
     formLayout->addRow("Minifig #:", m_numberLabel);
     formLayout->addRow("Name:", m_nameLabel);
     formLayout->addRow("Declared Parts:", m_partsLabel);
@@ -157,7 +176,7 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId,
     connect(m_addToCollectionButton, &QPushButton::clicked,
             this, &MinifigDetailsDialog::addToCollection);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    mainLayout->addWidget(buttons);
+    outerLayout->addWidget(buttons);
     connect(m_importPartsButton,
             &QPushButton::clicked,
             this,
@@ -218,6 +237,8 @@ MinifigDetailsDialog::MinifigDetailsDialog(int minifigCatalogId,
         m_imageStatusLabel->setText("Loading...");
         m_imageService->requestMinifigImage(m_minifigNumber, m_imageUrl);
     }
+    scroll->setMinimumWidth(content->minimumSizeHint().width()
+                            + scroll->verticalScrollBar()->sizeHint().width());
 }
 
 void MinifigDetailsDialog::addToCollection()

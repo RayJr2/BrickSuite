@@ -50,8 +50,13 @@ RemoveInventoryDialog::RemoveInventoryDialog(int inventoryRecordId, QWidget* par
     resize(560, 220);
 
     auto* layout = new QFormLayout(this);
+    layout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     m_partLabel = new QLabel(this);
     m_contextLabel = new QLabel(this);
+    for (auto* label : {m_partLabel, m_contextLabel}) {
+        label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        label->setWordWrap(true);
+    }
     m_quantitySpin = new QSpinBox(this);
     m_quantitySpin->setMinimum(1);
     m_notesEdit = new QLineEdit(this);

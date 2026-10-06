@@ -40,6 +40,8 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QHeaderView>
 #include <QLabel>
 #include <QListWidget>
@@ -64,8 +66,18 @@ PartDetailsDialog::PartDetailsDialog(
 
     resize(850, 650);
 
-    auto* mainLayout =
-        new QVBoxLayout(this);
+    // Keep fixed-size artwork and wrapped summaries intact on shorter displays.
+    // Actions stay outside the scrolling content.
+    auto* outerLayout = new QVBoxLayout(this);
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setObjectName("catalogDetailsScroll");
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto* content = new QWidget(scroll);
+    auto* mainLayout = new QVBoxLayout(content);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    scroll->setWidget(content);
+    outerLayout->addWidget(scroll, 1);
 
     //
     // Top section
@@ -94,6 +106,7 @@ PartDetailsDialog::PartDetailsDialog(
     auto* detailsLayout =
         new QFormLayout(
             detailsGroup);
+    detailsLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_partNumberLabel =
         new QLabel(detailsGroup);
@@ -127,6 +140,13 @@ PartDetailsDialog::PartDetailsDialog(
     m_rebrickableStatusLabel
         ->setWordWrap(true);
 
+    m_nameLabel->setWordWrap(true);
+    for (auto* label : {m_partNumberLabel, m_nameLabel, m_categoryLabel, m_materialLabel,
+                       m_elementIdsLabel, m_yearsLabel, m_rebrickableStatusLabel}) {
+        auto policy = label->sizePolicy();
+        policy.setHorizontalPolicy(QSizePolicy::Expanding);
+        label->setSizePolicy(policy);
+    }
     detailsLayout->addRow(
         "Part #:",
         m_partNumberLabel);
@@ -342,7 +362,7 @@ PartDetailsDialog::PartDetailsDialog(
     buttonLayout->addWidget(
         m_closeButton);
 
-    mainLayout->addLayout(
+    outerLayout->addLayout(
         buttonLayout);
 
     //
@@ -487,6 +507,8 @@ PartDetailsDialog::PartDetailsDialog(
         return;
     }
 
+    scroll->setMinimumWidth(content->minimumSizeHint().width()
+                            + scroll->verticalScrollBar()->sizeHint().width());
     loadCachedImage();
 
     requestRebrickableDetails();

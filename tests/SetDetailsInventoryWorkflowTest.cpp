@@ -29,6 +29,17 @@
 #include "../src/settings/ThemeManager.h"
 #include "../src/services/sets/SetDetailsProviderService.h"
 #include "../src/ui/common/ThemeRichTextLabel.h"
+#include "../src/network/BrickSuiteWebSocketClient.h"
+#include "../src/services/application/RemoteMutationApplicationServices.h"
+#include "../src/services/application/RemoteInventoryMutationApplicationService.h"
+#include <QAbstractItemView>
+#include <QCompleter>
+#include <QEventLoop>
+#include <QProcess>
+#include <QProcessEnvironment>
+#include <QProxyStyle>
+#include <QScreen>
+#include <QStyleFactory>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QLabel>
@@ -77,6 +88,59 @@ void events()
     QApplication::processEvents();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
+// Reproduce the native macOS form default on every test platform.
+class CompactFormStyle : public QProxyStyle {
+public:
+    CompactFormStyle() : QProxyStyle(QStyleFactory::create("Fusion")) {}
+    int styleHint(StyleHint hint, const QStyleOption* option = nullptr,
+                  const QWidget* widget = nullptr, QStyleHintReturn* data = nullptr) const override
+    {
+        if (hint == SH_FormLayoutFieldGrowthPolicy) return QFormLayout::FieldsStayAtSizeHint;
+        return QProxyStyle::styleHint(hint, option, widget, data);
+    }
+};
+bool inventoryLayout(AddInventoryDialog& dialog)
+{
+    bool ok = true;
+    auto* part = dialog.findChild<QLineEdit*>("addInventoryPartSearch");
+    auto* storage = dialog.findChild<QComboBox*>("addInventoryStorage");
+    auto* quantity = dialog.findChild<QSpinBox*>("addInventoryQuantity");
+    auto* buttons = dialog.findChild<QDialogButtonBox*>();
+    dialog.show();
+    for (auto theme : {UserSettings::Theme::Dark, UserSettings::Theme::Light}) {
+        ThemeManager::applyTheme(*qApp, theme);
+        dialog.resize(650, 430); events();
+        const int partBefore = part->width(), storageBefore = storage->width();
+        const int quantityBefore = quantity->width();
+        dialog.resize(900, 520); events();
+        ok &= check(part->width() > partBefore && storage->width() > storageBefore,
+                    "Part and Storage expand when dialog expands under compact native form defaults");
+        ok &= check(part->width() > dialog.width() / 2,
+                    "Part editor receives meaningful available width");
+        ok &= check(quantity->width() == quantityBefore,
+                    "Quantity remains intentionally compact");
+        for (const auto size : {QSize(650,430), QSize(520,360)}) {
+            dialog.resize(size); events();
+            ok &= check(dialog.rect().contains(QRect(buttons->mapTo(&dialog,QPoint()),buttons->size())),
+                        "Add/Cancel remain inside constrained dialog");
+            ok &= check(part->isVisible() && storage->isVisible() && quantity->isVisible()
+                        && part->width() >= part->minimumSizeHint().width(),
+                        "constrained form retains usable visible fields");
+            part->setFocus(); part->setText("soak");
+            QMetaObject::invokeMethod(part,"textEdited",Q_ARG(QString,QStringLiteral("soak")));
+            QEventLoop wait; QTimer::singleShot(300,&wait,&QEventLoop::quit); wait.exec();
+            auto* popup = part->completer()->popup();
+            ok &= check(popup->isVisible() && popup->width() >= part->width(),
+                        "completion popup is at least as wide as editor");
+            ok &= check(popup->width() >= qMin(part->parentWidget()->width(), dialog.screen()->availableGeometry().width())
+                        && popup->width() <= dialog.screen()->availableGeometry().width(),
+                        "completion popup uses bounded field-column width");
+            popup->hide(); part->clear();
+        }
+    }
+    dialog.hide();
+    return ok;
+}
 struct Cleanup {
     QString path;
     ~Cleanup() { DatabaseManager::instance().close(); QDir(path).removeRecursively(); }
@@ -114,6 +178,30 @@ int main(int argc, char** argv)
     workspace.setCurrentWorkspaceId(100);
     SessionStorageSelectionService storage;
     storage.rememberDestination(100, 100);
+    if (app.arguments().contains("--inventory-layout-test")) {
+        app.setStyle(new CompactFormStyle);
+        AddInventoryDialog local(workspace, storage);
+        bool layoutOk = inventoryLayout(local);
+        BrickSuiteWebSocketClient client;
+        RemoteMutationApplicationServices mutations(client);
+        RemoteInventoryMutationApplicationService remote(mutations);
+        AddInventoryDialog remoteDialog(workspace,storage,remote,{{100,"Host / Fixture bin"}},
+            {"LEGO"},100,"fixture-host",{});
+        layoutOk &= inventoryLayout(remoteDialog);
+        return layoutOk ? 0 : 1;
+    }
+    for (const char* dpi : {"96", "144"}) {
+        QProcess layoutChild;
+        auto environment = QProcessEnvironment::systemEnvironment();
+        environment.insert("QT_FONT_DPI", dpi);
+        layoutChild.setProcessEnvironment(environment);
+        layoutChild.start(app.applicationFilePath(),{"-platform","offscreen","--inventory-layout-test"});
+        if (!check(layoutChild.waitForFinished(30000) && layoutChild.exitCode()==0
+                   && layoutChild.exitStatus()==QProcess::NormalExit,"local/Remote responsive inventory layouts at 96/144 DPI")) {
+            std::fprintf(stderr,"%s",layoutChild.readAllStandardError().constData());
+            return 1;
+        }
+    }
     QWidget owner; owner.show();
     QPointer<SetDetailsDialog> details = new SetDetailsDialog(100, workspace, &owner);
     details->setAttribute(Qt::WA_DeleteOnClose);

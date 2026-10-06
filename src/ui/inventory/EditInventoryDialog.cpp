@@ -68,6 +68,7 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
     resize(520, 320);
 
     auto* layout = new QFormLayout(this);
+    layout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_partLabel = new QLabel(this);
 
@@ -75,6 +76,11 @@ EditInventoryDialog::EditInventoryDialog(int inventoryRecordId,
 
     m_manufacturerCombo = new QComboBox(this);
     TooltipPolicy::explain(m_manufacturerCombo, tr("Record the manufacturer of these physical Parts without changing their catalog identity."));
+
+    for (auto* field : {m_colorCombo, m_manufacturerCombo})
+        field->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_partLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_partLabel->setWordWrap(true);
 
     m_showAllColorsCheck = new QCheckBox("Show all colors", this);
     TooltipPolicy::explain(m_showAllColorsCheck, tr("Show all catalog Colors, including combinations not known for this Part."));

@@ -60,11 +60,18 @@ MoveInventoryDialog::MoveInventoryDialog(int inventoryRecordId,
     resize(550, 300);
 
     auto* layout = new QFormLayout(this);
+    layout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_partLabel = new QLabel(this);
     m_currentStorageLabel = new QLabel(this);
     m_availableLabel = new QLabel(this);
     m_destinationCombo = new QComboBox(this);
+    m_destinationCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_destinationCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    for (auto* label : {m_partLabel, m_currentStorageLabel}) {
+        label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        label->setWordWrap(true);
+    }
     TooltipPolicy::explain(m_destinationCombo, tr("Move the selected quantity to an active leaf Storage location. Movement history is retained."));
     m_quantitySpin = new QSpinBox(this);
     m_quantitySpin->setMinimum(1);

@@ -619,6 +619,7 @@ void SettingsDialog::buildDatabaseBackupTab()
     auto* layout = new QVBoxLayout(tab);
     auto* group = new QGroupBox("Automatic Database Backup", tab);
     auto* form = new QFormLayout(group);
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_automaticBackupEnabledCheck = new QCheckBox("Enable automatic database backups", group);
     TooltipPolicy::explain(m_automaticBackupEnabledCheck, tr("Create scheduled backups while BrickSuite is running. Review the destination and retention settings below."));
@@ -626,6 +627,7 @@ void SettingsDialog::buildDatabaseBackupTab()
     form->addRow(m_automaticBackupEnabledCheck);
 
     auto* rootRow = new QWidget(group);
+    rootRow->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
     auto* rootLayout = new QHBoxLayout(rootRow);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     m_backupRootEdit = new QLineEdit(rootRow);
@@ -667,6 +669,11 @@ void SettingsDialog::buildDatabaseBackupTab()
     m_lastBackupFailureLabel->setWordWrap(true);
     m_nextBackupDueLabel = new QLabel(group);
     m_nextBackupDueLabel->setObjectName("automaticBackupNextDueLabel");
+    for (auto* label : {m_currentBackupFolderLabel, m_lastBackupLabel, m_lastBackupFileLabel,
+                        m_lastBackupFailureLabel, m_nextBackupDueLabel}) {
+        label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        label->setWordWrap(true);
+    }
     form->addRow("Last successful backup:", m_lastBackupLabel);
     form->addRow("Last successful file:", m_lastBackupFileLabel);
     form->addRow("Last failure:", m_lastBackupFailureLabel);
@@ -926,6 +933,7 @@ void SettingsDialog::buildServerTab()
     auto* hostClientLayout = new QVBoxLayout(hostClientPage);
     auto* clientGroup = new QGroupBox(tr("BrickSuite Host Client"), hostClientPage);
     auto* clientForm = new QFormLayout(clientGroup);
+    clientForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     m_hostEndpointEdit = new QLineEdit(clientGroup);
     m_hostEndpointEdit->setPlaceholderText(QStringLiteral("wss://host.example:47826"));
     m_hostFingerprintEdit = new QLineEdit(clientGroup);
@@ -956,6 +964,10 @@ void SettingsDialog::buildServerTab()
     m_remotePairingStatusLabel->setWordWrap(true);
     m_pairDeviceButton = new QPushButton(tr("Pair This Device"), clientGroup);
     TooltipPolicy::explain(m_pairDeviceButton, tr("Use the Host's active pairing code to authorize this device. Confirm the intended Host before pairing."));
+    for (auto* label : {m_hostConnectionStatusLabel, m_remotePairingStatusLabel}) {
+        label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        label->setWordWrap(true);
+    }
     clientForm->addRow(tr("Secure endpoint:"), m_hostEndpointEdit);
     clientForm->addRow(tr("Trusted fingerprint:"), m_hostFingerprintEdit);
     clientForm->addRow(tr("Legacy 1.2 access token:"), m_hostTokenEdit);
@@ -1523,6 +1535,7 @@ QWidget* SettingsDialog::buildRebrickableApiPage(QWidget* parent)
 
     auto* apiGroup = new QGroupBox("Rebrickable API", page);
     auto* apiLayout = new QFormLayout(apiGroup);
+    apiLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_apiKeyEdit = new QLineEdit(apiGroup);
     TooltipPolicy::explain(m_apiKeyEdit, tr("Use your Rebrickable API key for catalog requests. This does not grant undocumented Custom List or WishList access."));
@@ -1571,6 +1584,10 @@ QWidget* SettingsDialog::buildRebrickableApiPage(QWidget* parent)
             this,
             &SettingsDialog::testRebrickableConnection);
 
+    for (auto* label : {m_rebrickableStatusLabel, m_rebrickableCoordinationLabel, m_rebrickableParticipantsLabel, m_rebrickableEffectiveIntervalLabel}) {
+        label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        label->setWordWrap(true);
+    }
     apiLayout->addRow("API Key:", m_apiKeyEdit);
     apiLayout->addRow(QString(), m_showApiKeyCheck);
     apiLayout->addRow("Connection Status:", m_rebrickableStatusLabel);
@@ -1628,6 +1645,7 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
 
     auto* apiGroup = new QGroupBox("Brickset API", page);
     auto* apiLayout = new QFormLayout(apiGroup);
+    apiLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     m_bricksetApiKeyEdit = new QLineEdit(apiGroup);
     TooltipPolicy::explain(m_bricksetApiKeyEdit, tr("Use your Brickset API key for supported catalog and instruction requests."));
@@ -1693,6 +1711,10 @@ QWidget* SettingsDialog::buildBricksetApiPage(QWidget* parent)
             this,
             &SettingsDialog::testBricksetConnection);
 
+    for (auto* label : {m_bricksetStatusLabel, m_bricksetUsageLabel, m_bricksetProviderUsageLabel, m_bricksetUsageStatusLabel, m_bricksetCallsRemainingLabel, m_bricksetUsageRefreshLabel}) {
+        label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        label->setWordWrap(true);
+    }
     apiLayout->addRow("API Key:", m_bricksetApiKeyEdit);
     apiLayout->addRow(QString(), m_showBricksetApiKeyCheck);
     apiLayout->addRow("Connection Status:", m_bricksetStatusLabel);
