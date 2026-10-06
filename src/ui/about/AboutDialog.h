@@ -22,10 +22,16 @@
 
 #include <QDialog>
 
+class QScrollArea;
+
 class AboutDialog : public QDialog
 {
     Q_OBJECT
 
 public:
     explicit AboutDialog(QWidget* parent = nullptr);
+    QSize sizeHint() const override;
+
+private:
+    QScrollArea* m_textArea = nullptr;
 };

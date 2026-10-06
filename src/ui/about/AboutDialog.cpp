@@ -33,6 +33,8 @@
 #include <QLabel>
 #include <QPixmap>
 #include <QPushButton>
+#include <QScreen>
+#include <QScrollArea>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -58,7 +60,6 @@ AboutDialog::AboutDialog(QWidget* parent)
 
     setWindowIcon(QApplication::windowIcon());
     setModal(true);
-    setMinimumWidth(560);
 
     auto* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(24, 24, 24, 20);
@@ -128,6 +129,11 @@ AboutDialog::AboutDialog(QWidget* parent)
 
     titleLayout->addStretch(1);
 
+    for (int i = 0; i < titleLayout->count(); ++i) {
+        if (auto* widget = titleLayout->itemAt(i)->widget())
+            widget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    }
+
     headerLayout->addLayout(titleLayout, 1);
 
     mainLayout->addLayout(headerLayout);
@@ -138,7 +144,23 @@ AboutDialog::AboutDialog(QWidget* parent)
 
     mainLayout->addWidget(separator);
 
-    mainLayout->addWidget(
+    // Keep the header and Close action visible when the wrapped description
+    // exceeds the screen. QScrollArea uses the content's height-for-width
+    // minimum, so paragraphs scroll instead of being compressed vertically.
+    m_textArea = new QScrollArea(this);
+    m_textArea->setFrameShape(QFrame::NoFrame);
+    m_textArea->setWidgetResizable(true);
+    m_textArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto* textContent = new QWidget(m_textArea);
+    auto* textLayout = new QVBoxLayout(textContent);
+    textLayout->setContentsMargins(0, 0, 0, 0);
+    textLayout->setSpacing(mainLayout->spacing());
+    textLayout->setSizeConstraint(QLayout::SetMinAndMaxSize);
+    textLayout->setAlignment(Qt::AlignTop);
+    m_textArea->setWidget(textContent);
+    mainLayout->addWidget(m_textArea, 1);
+
+    textLayout->addWidget(
         createWrappedLabel(QStringLiteral(
                                "%1 is an open-source desktop application for managing "
                                "a LEGO workshop: inventory, storage, collections, catalogs, "
@@ -148,7 +170,7 @@ AboutDialog::AboutDialog(QWidget* parent)
                                .arg(AppConstants::name()),
                            this));
 
-    mainLayout->addWidget(
+    textLayout->addWidget(
         createWrappedLabel(QStringLiteral(
                                "%1 integrates with Rebrickable for supported catalog and inventory "
                                "data workflows, and with Brickset for supported Set information "
@@ -172,9 +194,9 @@ AboutDialog::AboutDialog(QWidget* parent)
     connect(support, &QLabel::linkActivated, this,
             [this](const QString&) { SupportLinks::openSupportPage(this); });
     supportLayout->addWidget(support);
-    mainLayout->addLayout(supportLayout);
+    textLayout->addLayout(supportLayout);
 
-    mainLayout->addWidget(
+    textLayout->addWidget(
         createWrappedLabel(QStringLiteral(
                                "<b>License:</b> GNU Lesser General Public License, version 3.0 "
                                "(LGPL-3.0-only)<br>"
@@ -182,7 +204,7 @@ AboutDialog::AboutDialog(QWidget* parent)
                                "View the GNU LGPL v3.0 license</a>"),
                            this));
 
-    mainLayout->addWidget(
+    textLayout->addWidget(
         createWrappedLabel(QStringLiteral("<b>%1:</b> "
                                           "<a href=\"https://%2\">https://%2</a>")
                                .arg(AppConstants::company(), AppConstants::domain()),
@@ -197,8 +219,8 @@ AboutDialog::AboutDialog(QWidget* parent)
             .arg(AppConstants::name()),
         this);
 
-    mainLayout->addWidget(trademarkLabel);
-    mainLayout->addWidget(createWrappedLabel(tr(
+    textLayout->addWidget(trademarkLabel);
+    textLayout->addWidget(createWrappedLabel(tr(
         "Software dependency notices are provided in the installed licenses directory "
         "and THIRD_PARTY_NOTICES.md (Contents/Resources/Licenses on macOS)."), this));
 
@@ -207,4 +229,29 @@ AboutDialog::AboutDialog(QWidget* parent)
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     mainLayout->addWidget(buttonBox);
+
+    // Resolve the content-derived size before the native window is created.
+    // Relying on the implicit first-show adjustment can leave the parented
+    // Linux dialog at the layout minimum after native configure events.
+    adjustSize();
+}
+
+QSize AboutDialog::sizeHint() const
+{
+    const QSize base = QDialog::sizeHint();
+    if (!m_textArea)
+        return base;
+    // Qt asks for this after style/font polishing, before showing the window.
+    // Leave room for window decorations; do not impose a fixed platform height
+    // or a maximum size that would prevent the user from resizing later.
+    const QSize available = screen()->availableGeometry().size() * 0.9;
+    const int preferredWidth = fontMetrics().averageCharWidth() * 100;
+    const int initialWidth = qMin(available.width(),
+                                 qMax(minimumSizeHint().width(), preferredWidth));
+    const auto margins = layout()->contentsMargins();
+    const int textWidth = initialWidth - margins.left() - margins.right()
+        - 2 * m_textArea->frameWidth();
+    const int textHeight = m_textArea->widget()->heightForWidth(textWidth);
+    const int chromeHeight = base.height() - m_textArea->sizeHint().height();
+    return QSize(initialWidth, qMin(available.height(), chromeHeight + textHeight));
 }

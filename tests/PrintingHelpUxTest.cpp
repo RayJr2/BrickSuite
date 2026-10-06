@@ -50,6 +50,9 @@
 #include <QTextFragment>
 #include <QTextImageFormat>
 #include <QScrollBar>
+#include <QScrollArea>
+#include <QDialogButtonBox>
+#include <QScreen>
 #include <QImage>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
@@ -275,6 +278,47 @@ int main(int argc,char** argv){
         ok&=check(receiver.urls.count(supportUrl)==5,"About support link activates from the keyboard");
     }
     QDesktopServices::unsetUrlHandler("https");about.hide();
+
+    // Construct under each theme: changing the theme on an already visible
+    // dialog did not catch the original collapsed first-show layout.
+    for(auto theme:{UserSettings::Theme::Dark,UserSettings::Theme::Light}){
+        ThemeManager::applyTheme(app,theme);
+        QWidget owner;owner.show();
+        AboutDialog fresh(&owner);fresh.show();settleEvents();
+        const auto available=fresh.screen()->availableGeometry().size();
+        ok&=check(fresh.width()<=available.width()&&fresh.height()<=available.height(),
+            "About initially fits the available desktop");
+        ok&=check(fresh.width()>=qMin(fresh.sizeHint().width(),available.width()*2/3),
+            "parented About opens at its useful width rather than its layout minimum");
+        auto* scroll=fresh.findChild<QScrollArea*>();
+        ok&=check(scroll,"About provides scrolling when its text exceeds the viewport");
+        for(bool constrained:{false,true}){
+            if(constrained){fresh.resize(fresh.width()*3/4,available.height()/2);settleEvents();}
+            for(auto* label:fresh.findChildren<QLabel*>()){
+                if(label->text().isEmpty())continue;
+                const int required=label->heightForWidth(label->width());
+                ok&=check(label->height()>=qMax(label->minimumSizeHint().height(),required),
+                    "About text rows retain their font/width-derived height");
+                if(scroll&&scroll->widget()->isAncestorOf(label)&&label->text().contains("<a ")){
+                    scroll->ensureWidgetVisible(label);settleEvents();
+                    ok&=check(scroll->viewport()->rect().contains(label->mapTo(scroll->viewport(),label->rect().center())),
+                        "each About link is reachable in the scrolling viewport");
+                }
+            }
+            auto* buttons=fresh.findChild<QDialogButtonBox*>();
+            auto* close=buttons?buttons->button(QDialogButtonBox::Close):nullptr;
+            ok&=check(close&&close->isVisible()&&fresh.rect().contains(QRect(close->mapTo(&fresh,QPoint()),close->size())),
+                "About Close remains visible independently of text scrolling");
+            if(scroll){
+                ok&=check(scroll->horizontalScrollBar()->maximum()==0,"About text wraps without horizontal overflow");
+                const auto* content=scroll->widget();
+                ok&=check(content->height()<=qMax(scroll->viewport()->height(),content->heightForWidth(content->width())),
+                    "About does not reserve unreachable or empty scrolling space");
+                if(constrained)ok&=check(scroll->verticalScrollBar()->maximum()>0,
+                    "constrained About scrolls instead of collapsing its content");
+            }
+        }
+    }
 
     HelpDialog help;help.show();
     auto* tree=help.findChild<QTreeWidget*>();auto* search=help.findChild<QLineEdit*>();auto* browser=help.findChild<QTextBrowser*>();
