@@ -186,6 +186,14 @@ Do not commit or expose:
 
 Use synthetic, minimal fixtures when test data is required.
 
+## First-Party C++ Source Headers
+
+Every new BrickSuite-owned `.h` and `.cpp` file, including tests and deployment
+probes, must begin with the exact standard BrickSuite LGPL header defined in
+`tests/check_source_headers.py`. Preserve third-party/generated notices; do not
+apply BrickSuite copyright to external source. Run
+`python -B tests/check_source_headers.py` before submitting new source files.
+
 ## Change Discipline
 
 - Match the existing coding and naming style in the files being changed.
