@@ -1,4 +1,14 @@
-# macOS 13.0 source build and disposable packaging
+# macOS installation and packaging
+
+## Install the application
+
+Use the matching archive from the [BrickSuite release](https://github.com/RayJr2/BrickSuite/releases): ARM64 for Apple Silicon, x86_64 for Intel. Both target macOS 13.0 or newer. Extract the ZIP, copy `BrickSuite.app` to Applications, and open it. Close the existing application before replacing it during an update; back up your database first.
+
+BrickSuite macOS builds are currently ad-hoc signed and are not Apple notarized. The project does not currently use an Apple Developer ID certificate, so macOS may require additional confirmation before first launch. Use macOS’s per-application confirmation in Privacy & Security only after verifying the download source; do not globally disable Gatekeeper.
+
+ARM64 has been manually tested on a physical Mac mini. Intel packages are built and CI-tested; manual Intel runtime acceptance remains pending. v0.4.0 publication is pending release cutover.
+
+## Source build and disposable packaging
 
 BrickSuite v0.4.0 targets macOS **13.0+**. Build every bundled dependency for
 that minimum; changing Info.plist or rewriting a Mach-O minimum is not a
@@ -106,8 +116,8 @@ Final allowlist: Cocoa; QSQLITE; OpenSSL TLS; Apple network information; macOS
 style; SVG icon engine; GIF, ICO, JPEG, SVG, WebP image readers. PNG is built
 into QtGui. No Mimer/ODBC/PostgreSQL, QML/Quick, VirtualKeyboard, or Secure
 Transport plugins ship. Licenses and source-relative Qt attribution metadata
-are under `Contents/Resources/Licenses`. Ad-hoc signing is only for local
-acceptance, not Developer ID/notarization or public distribution.
+are under `Contents/Resources/Licenses`. Ad-hoc signing provides bundle integrity but is not Developer ID signing or
+Apple notarization; it does not remove first-launch confirmation requirements.
 
 On this sandboxed development host, Apple's `iconutil` rejected even correctly
 sized icons inside the sandbox and succeeded outside it. Run packaging with

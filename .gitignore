@@ -42,8 +42,22 @@ target_wrapper.*
 
 # Build directories
 build/
+/cmake-build-*/
+/CMakeFiles/
+/CMakeCache.txt
+/Testing/
+/deploy/
+
+# Regenerated root-level semantic mesh proofs (model fixtures remain visible)
+/*-ldraw-aware-proof.obj
+
+# Accidental root-level runtime databases (reviewed fixtures live elsewhere)
+/*.db
+/*.sqlite
+/*.sqlite3
 
 # Qt Creator / IDE local files
+/.qtcreator/
 *.autosave
 *.qmlproject.user
 *.qmlproject.user.*

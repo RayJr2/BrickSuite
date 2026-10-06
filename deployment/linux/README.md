@@ -1,4 +1,6 @@
-# M39.L2 Linux baseline and relocatable tarball
+# Linux release build and relocatable tarball
+
+For installation, follow the [user runtime guide](RUNTIME.md): extract the archive, run `./install.sh`, approve missing prerequisites when requested, then launch BrickSuite. The instructions below build packages; they are not required for normal users.
 
 The release floor is **Ubuntu 22.04 x86_64, glibc 2.35, GCC 11**. A build made on
 the Ubuntu 26.04 development host is not a Linux release artifact. These scripts

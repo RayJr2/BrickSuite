@@ -2,7 +2,7 @@
 
 ## Supported Version
 
-BrickSuite is currently in the v0.2.0 release line.
+The current public release is v0.3.0; v0.4.0 is in release preparation.
 
 Security fixes will generally target the current public release and the active
 development branch.

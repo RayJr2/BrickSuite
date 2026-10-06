@@ -8,7 +8,7 @@ BrickSuite is a free, open-source desktop application for keeping a traceable di
 >
 > **Windows:** packaged installer available from the GitHub Releases page
 >
-> **v0.4.0 platform artifacts:** see [Release Platforms](#release-platforms) for packaging and validation status
+> **v0.4.0 release candidate (not yet published):** capabilities below describe the current checkout; see [Release Platforms](#release-platforms) for packaging and validation status
 
 The [online User Guide](https://rayjr2.github.io/BrickSuite/) is also built into BrickSuite under **Help → BrickSuite Help**.
 
@@ -17,11 +17,16 @@ The [online User Guide](https://rayjr2.github.io/BrickSuite/) is also built into
 ## What BrickSuite Does
 
 - **Catalogs** — maintain searchable local Parts, Sets, and Minifigs reference data from Rebrickable, with Set enrichment and instructions from Brickset where configured.
-- **Part identity** — resolve aliases, relationships, and persisted Rebrickable or BrickLink external identifiers. The non-modal **Part Reference** organizes 2,985 commonly used parts into 38 visual families.
+- **Part identity** — resolve aliases, relationships, and persisted Rebrickable or BrickLink external identifiers. The non-modal **Part Reference** organizes commonly used Parts into visual families and dimension views.
 - **My Inventory** — record exact Part, Color, quantity, Manufacturer, condition, ownership, and Storage location, with correction, movement, Lost/Found, and history workflows.
 - **Builds** — manage Set, Minifig, and MOC requirements through allocation, substitution, shortages, interactive pulling, reconciliation, completion, cancellation, and disassembly.
 - **My Collection** — record individual physical Sets, Minifigs, and MOCs independently from loose inventory and Build history, including State, Condition, Completeness, Location, nickname, and notes.
-- **Storage** — organize hierarchical locations and control whether active leaf locations may hold Inventory, Collection items, or Both.
+- **Storage** — organize hierarchical locations, including Box, and control whether active leaf locations may hold Inventory, Collection items, or Both.
+- **Use Set for Parts** — preview a catalog Set’s composition and add its loose pieces directly to Inventory, with copies, optional catalog spares, condition, and an active leaf Storage destination. This local/Host workflow is unavailable on Remote Clients and is distinct from disassembling an owned Collection item.
+- **What Can I Build / procurement** — compare catalog requirements with available stock, review shortages, and export supported procurement formats, including Rebrickable CSV. Rebrickable Custom List API creation is not implemented.
+- **Host / Remote** — use a BrickSuite Host through paired, trusted Remote clients; shared data and local settings remain distinct.
+- **3D models and printing** — view installed LDraw models or local LDraw files, prepare supported geometry, and export nominal or supported profile-corrected output. Readiness and fit coverage are reported per model; not every Part is printable.
+- **LEGO Fit Calibration** — generate managed single-family or multi-family calibration packages, record physical observations, verify evidence, and create compatible Fit Profiles. Local repaired overrides do not automatically gain fit ownership.
 - **Database safety** — inspect database integrity and foreign keys, create manual backups, and optionally run verified automatic backups with retention.
 
 BrickSuite preserves stable identities and operational history. Records referenced by inventory, Builds, or Collection history are generally moved through explicit lifecycle states, archived, or deactivated rather than silently deleted.
@@ -67,14 +72,16 @@ Interface preferences are stored through `QSettings`. Uninstalling BrickSuite in
 
 ## Release Platforms
 
-BrickSuite v0.4.0 has the following platform artifacts. Build/CI validation and manual runtime acceptance are listed separately; deployment targets do not imply testing on every OS version.
+BrickSuite v0.4.0 release preparation targets the following artifacts; this table does not announce publication. Build/CI validation and manual runtime acceptance are listed separately; deployment targets do not imply testing on every OS version.
 
 | Platform | Artifact | Baseline / Validation status |
 | --- | --- | --- |
-| Windows x64 | `.exe` installer assembled with Qt's `windeployqt` and Inno Setup | Existing Windows release packaging; use the installer attached to the matching GitHub Release when available. |
+| Windows x64 | `.exe` installer assembled with Qt's `windeployqt` and Inno Setup | Primary validated development/release environment; use the installer attached to the matching GitHub Release when available. |
 | macOS ARM64 / Apple Silicon | `BrickSuite-v0.4.0-macOS-arm64.zip` | macOS **13.0 or newer** deployment target; manually tested on the physical Mac mini. |
 | macOS x86_64 / Intel | `BrickSuite-v0.4.0-macOS-x86_64.zip` | macOS **13.0 or newer** deployment target; built and CI-tested. Manual Intel runtime acceptance remains pending. |
 | Linux x86_64 | Relocatable installer tarball: `BrickSuite-v0.4.0-Linux-x86_64.tar.gz` | Release baseline: **Ubuntu 22.04 LTS / glibc 2.35**. Forward compatibility was also validated on Ubuntu 26.04. |
+
+For Windows, download the x64 installer from the [matching GitHub Release](https://github.com/RayJr2/BrickSuite/releases), close BrickSuite, and follow the installer. See [Windows installation and packaging](deployment/windows/README.md).
 
 BrickSuite macOS builds are currently **ad-hoc signed and are not Apple notarized**. The project does not currently use an Apple Developer ID certificate, so macOS may require additional confirmation before first launch. See the [macOS deployment notes](deployment/macos/README.md).
 
@@ -95,7 +102,7 @@ See the built-in **Quick Start** topic for exact provider files and workflow det
 
 ## Building from Source
 
-BrickSuite v0.3.0 uses C++17, Qt 6.10.3 (Core, Gui, Widgets, Sql, and Network), SQLite through Qt's QSQLITE driver, ZLIB, and CMake 3.16 or newer.
+The current checkout uses C++17, Qt 6.10.3 (Core, Gui, Widgets, Sql, Network, WebSockets, Concurrent, OpenGL, and OpenGLWidgets), SQLite through Qt’s QSQLITE driver, ZLIB, OpenSSL 3 (Crypto), and CMake 3.16 or newer. CMake downloads pinned MCUT/mio and lib3mf sources, including lib3mf submodules; first configuration needs network access or the documented source overrides.
 
 The reference Windows environment is Qt 6.10.3 MinGW 64-bit. BrickSuite is also built from source on macOS and Linux.
 
@@ -104,7 +111,15 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/Qt/6.10.3/<kit>
 cmake --build build
 ```
 
-The platform's ZLIB development package must be discoverable by CMake. Qt Creator can open `CMakeLists.txt` directly and configure an installed Qt kit.
+ZLIB and OpenSSL development files must be discoverable by CMake. Qt Creator can open `CMakeLists.txt` directly. See [CONTRIBUTING](CONTRIBUTING.md) for testing and [Windows](deployment/windows/README.md), [macOS](deployment/macos/README.md), and [Linux](deployment/linux/README.md) for packaging. The official Linux baseline builder is `python3 deployment/linux/build_release_artifact.py`; Qt Creator Deploy creates a local host-ABI development package only.
+
+## Support BrickSuite
+
+BrickSuite is free and open-source software. If you find it useful and would like to support continued development, testing, documentation, and maintenance, you can make a voluntary contribution through PayPal.
+
+Support is completely optional and does not unlock additional features or services. Payments are handled by PayPal, not by BrickSuite.
+
+[Support BrickSuite with PayPal](https://www.paypal.com/ncp/payment/WB8RKBVN6DTYW)
 
 ## Help, Contributions, and License
 

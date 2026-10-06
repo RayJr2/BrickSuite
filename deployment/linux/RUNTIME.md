@@ -1,5 +1,7 @@
 # BrickSuite 0.4.0 Linux x86_64
 
+The following instructions apply to the v0.4.0 release-candidate package; final publication is pending release cutover. Download the matching archive from [BrickSuite Releases](https://github.com/RayJr2/BrickSuite/releases) when available.
+
 For Ubuntu 22.04 or newer on x86_64:
 
 ```sh

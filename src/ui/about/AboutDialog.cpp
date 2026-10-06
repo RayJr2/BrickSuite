@@ -141,11 +141,10 @@ AboutDialog::AboutDialog(QWidget* parent)
     mainLayout->addWidget(
         createWrappedLabel(QStringLiteral(
                                "%1 is an open-source desktop application for managing "
-                               "a personal LEGO collection. Parts Catalog, My Inventory, "
-                               "My Collection, Sets, Minifigs, MOCs and Builds, and the visual "
-                               "Part Reference bring catalog, storage, and collection workflows "
-                               "together. Build From Stock and interactive pulling help plan and "
-                               "assemble Builds using owned inventory.")
+                               "a LEGO workshop: inventory, storage, collections, catalogs, "
+                               "and Builds. Paired Host / Remote access connects shared workflows; "
+                               "LDraw viewing, supported print preparation, and LEGO Fit Calibration "
+                               "extend the workshop into 3D printing.")
                                .arg(AppConstants::name()),
                            this));
 
@@ -190,7 +189,7 @@ AboutDialog::AboutDialog(QWidget* parent)
                            this));
 
     auto* trademarkLabel = createWrappedLabel(
-        QStringLiteral("<b>Third-Party Notice:</b> LEGO® is a trademark of the LEGO Group "
+        QStringLiteral("<b>Trademarks:</b> LEGO® is a trademark of the LEGO Group "
                        "of companies, which does not sponsor, authorize, or endorse "
                        "%1. Rebrickable and Brickset are trademarks or brand names of their "
                        "respective owners. %1 is an independent application and is not "
@@ -199,6 +198,9 @@ AboutDialog::AboutDialog(QWidget* parent)
         this);
 
     mainLayout->addWidget(trademarkLabel);
+    mainLayout->addWidget(createWrappedLabel(tr(
+        "Software dependency notices are provided in the installed licenses directory "
+        "and THIRD_PARTY_NOTICES.md (Contents/Resources/Licenses on macOS)."), this));
 
     auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, this);
 

@@ -1,5 +1,10 @@
 # WallPocket physical calibration proofs
 
+Historical generated validation assets retained from the family foundation work.
+These are not current live-session templates or Verified evidence. The workflow
+labels below describe the historical capture; use current built-in LEGO Fit
+Calibration Help to generate fresh packages and identities.
+
 These are geometry proofs, not Verified calibration evidence. Create the managed
 sessions from Tools → LEGO Fit Calibration → New: Stud Receiving Clutch →
 New Calibration, choosing WallPocket brick depth and WallPocket plate depth in

@@ -33,16 +33,15 @@ as pull requests.
 
 ## Development Baseline
 
-BrickSuite v0.3.0 uses:
+The v0.4.0 development checkout uses:
 
 - C++17
 - Qt 6.10.3
-- Qt Widgets
-- Qt SQL
-- Qt Network
-- SQLite
-- ZLIB
-- CMake
+- Qt Core, Gui, Widgets, Sql, Network, WebSockets, Concurrent, OpenGL, and OpenGLWidgets
+- SQLite through the QSQLITE plugin
+- ZLIB and OpenSSL 3 development files (Crypto)
+- CMake 3.16 or newer
+- Pinned MCUT/mio and lib3mf sources fetched by CMake (including lib3mf submodules)
 
 The primary reference development environment is Windows 11 with Qt Creator
 and the Qt 6.10.3 MinGW 64-bit toolchain.
@@ -65,7 +64,7 @@ The exact Qt kit path and generator vary by operating system and development
 environment. Qt Creator can open the repository's `CMakeLists.txt` directly
 and configure an installed Qt 6.10.3 kit.
 
-See `README.md` for the current public build overview and platform notes.
+See [README](README.md) for the public build overview, and the [Windows](deployment/windows/README.md), [macOS](deployment/macos/README.md), and [Linux](deployment/linux/README.md) deployment guides for packaging requirements and source locks.
 
 ### Ubuntu development setup
 
@@ -104,13 +103,48 @@ cmake -S . -B build/linux-debug -G Ninja \
 cmake --build build/linux-debug --target BrickSuite --parallel 4
 ```
 
-Linux source builds are distinct from distributable packages. The current
-Linux install rules do not collect the full Qt runtime and plugins. A release
-package also needs the mesh boolean worker, MCUT shared library, other runtime
-dependencies, and applicable licenses. Validate it on a clean target system
-without the developer's Qt installation. Build release artifacts against the
-oldest supported target environment to avoid depending on newer system library
-versions unavailable to users; see [Qt's Linux deployment guidance](https://doc.qt.io/qt-6.10/linux-deployment.html).
+Linux source builds are distinct from distributable packages. The official
+Ubuntu 22.04/glibc 2.35 baseline workflow is
+`python3 deployment/linux/build_release_artifact.py`. Qt Creator Deploy produces
+a local host-ABI development package, not the baseline release. See the
+[Linux deployment guide](deployment/linux/README.md).
+
+## Development Tools
+
+BrickSuite development uses OpenAI Codex as one of the tools for code analysis,
+implementation, testing, review, and documentation. Codex does not replace
+project review. Contributors are not required to use Codex. AI-generated or
+AI-assisted changes are held to the same review and testing standards as other
+code.
+
+## Automated Tests and Validation
+
+Code changes must include appropriate automated tests to be considered for acceptance.
+New behavior and features require focused tests; bug fixes should include a test
+reproducing the corrected behavior where practical. Preserve existing tests.
+Documentation-only changes do not need artificial code tests. Tests must be
+deterministic and must not depend on private user data or credentials.
+
+Configure with `-DBUILD_TESTING=ON`, build the relevant test targets explicitly
+(some are excluded from the default build), then run `ctest --test-dir <build-dir>
+--output-on-failure`. Use `ctest --test-dir <build-dir> -N` to inspect the configured
+suite and `-R <pattern>` for focused runs. Run the full configured suite when
+warranted by scope; do not report unbuilt or skipped tests as passed. For optional
+source-backed calibration/routing integration tests, set
+`-DBRICKSUITE_CALIBRATION_LDRAW_ROOT=/path/to/installed/ldraw` at configuration.
+Never commit the installed library or private calibration evidence.
+
+Before submitting, ensure the build and relevant focused tests pass, run
+`git diff --check`, and describe workflow/platform validation and any limitations.
+Platform-specific changes need appropriate platform validation. Contributors
+validate platforms available to them; maintainers, CI, and release acceptance
+cover the broader platform matrix. Technical checks do not replace user acceptance.
+
+Do not commit build directories, generated binaries, temporary exports, local
+databases, API credentials, logs, IDE user-state, or incidental proof files.
+Intentional, reviewed fixtures and documentation assets are exceptions. Put local
+validation outputs under ignored build directories. For LDraw semantic proof
+exports, pass `--proof-dir <build-dir>/proofs` rather than writing into the root.
 
 ## Debug and Release Builds
 
@@ -226,5 +260,4 @@ screenshots, logs, test fixtures, or pull requests.
 
 If you believe you have found a security-sensitive issue, avoid posting
 exploit details, credentials, or private data in a public issue. See
-`SECURITY.md` for the preferred reporting process once that document is
-available.
+[SECURITY.md](SECURITY.md) for the current reporting guidance.
