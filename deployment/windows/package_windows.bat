@@ -188,15 +188,10 @@ if errorlevel 1 (
     echo ERROR: Unable to stage the MCUT runtime.
     exit /b 1
 )
-mkdir "%STAGE_DIR%\licenses\MCUT" 2>nul
-copy /Y "%BUILD_DIR%\deployment\licenses\MCUT\LICENSE.txt" "%STAGE_DIR%\licenses\MCUT\LICENSE.txt" >nul
+rem Collect and verify all required notices before deploying or compiling the installer.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0stage_notices.ps1" -BuildDir "%BUILD_DIR%" -StageDir "%STAGE_DIR%" -QtRoot "%QT_ROOT%" -OpenSslRoot "%OPENSSL_ROOT_DIR%"
 if errorlevel 1 (
-    echo ERROR: Unable to stage the MCUT license notice.
-    exit /b 1
-)
-copy /Y "%BUILD_DIR%\deployment\licenses\MCUT\COPYING.LESSER" "%STAGE_DIR%\licenses\MCUT\COPYING.LESSER" >nul
-if errorlevel 1 (
-    echo ERROR: Unable to stage the MCUT LGPL terms.
+    echo ERROR: Required third-party notice staging failed. No installer will be generated.
     exit /b 1
 )
 
@@ -229,17 +224,6 @@ if errorlevel 1 (
     echo ERROR: Unable to stage the OpenSSL 3 runtime libraries.
     exit /b 1
 )
-if not exist "%OPENSSL_ROOT_DIR%\share\licenses\openssl\LICENSE" (
-    echo ERROR: OpenSSL license attribution file was not found under OPENSSL_ROOT_DIR.
-    exit /b 1
-)
-mkdir "%STAGE_DIR%\licenses\OpenSSL" 2>nul
-copy /Y "%OPENSSL_ROOT_DIR%\share\licenses\openssl\LICENSE" "%STAGE_DIR%\licenses\OpenSSL\LICENSE" >nul
-if errorlevel 1 (
-    echo ERROR: Unable to stage the OpenSSL license attribution.
-    exit /b 1
-)
-
 rem ----------------------------------------------------------------
 rem Validate critical runtime files
 rem ----------------------------------------------------------------
@@ -257,6 +241,11 @@ call :checkfile "Qt6WebSockets.dll"
 call :checkfile "libcrypto-3-x64.dll"
 call :checkfile "libssl-3-x64.dll"
 call :checkfile "libmcut.dll"
+call :checkfile "licenses\manifest.txt"
+call :checkfile "licenses\lib3mf\LICENSE"
+call :checkfile "licenses\lib3mf\Libraries\libressl\COPYING"
+call :checkfile "licenses\Qt\LICENSES\LGPL-3.0-only.txt"
+call :checkfile "licenses\MinGW\gcc\COPYING.RUNTIME"
 call :checkfile "licenses\OpenSSL\LICENSE"
 call :checkfile "licenses\MCUT\LICENSE.txt"
 call :checkfile "licenses\MCUT\COPYING.LESSER"

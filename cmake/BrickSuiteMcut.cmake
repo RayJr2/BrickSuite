@@ -45,6 +45,11 @@ configure_file("${mcut_SOURCE_DIR}/LICENSE.txt"
     "${_bricksuite_mcut_license_dir}/LICENSE.txt" COPYONLY)
 configure_file("${mcut_SOURCE_DIR}/COPYING.LESSER"
     "${_bricksuite_mcut_license_dir}/COPYING.LESSER" COPYONLY)
+configure_file("${mcut_SOURCE_DIR}/COPYING"
+    "${_bricksuite_mcut_license_dir}/COPYING" COPYONLY)
+file(MAKE_DIRECTORY "${_bricksuite_mcut_license_dir}/include/mcut/internal/cdt")
+configure_file("${mcut_SOURCE_DIR}/include/mcut/internal/cdt/LICENSE.txt"
+    "${_bricksuite_mcut_license_dir}/include/mcut/internal/cdt/LICENSE.txt" COPYONLY)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/../third_party/mcut/README.md"
     "${_bricksuite_mcut_license_dir}/BrickSuite-integration.md" COPYONLY)
 foreach(_overlay BrickSuiteMcutPortability.cmake BrickSuiteMcutLinuxQueue.cmake)

@@ -13,10 +13,14 @@ third-party notices required by bundled components are included.
 BrickSuite v0.4.0 is built with Qt 6.10.3 and uses the following Qt modules:
 
 - Qt Core
+- Qt Concurrent
 - Qt Gui
 - Qt Widgets
 - Qt SQL
 - Qt Network
+- Qt WebSockets
+- Qt OpenGL
+- Qt OpenGLWidgets
 - Qt Svg where required by deployed plugins/resources
 
 Qt is developed by The Qt Company and the Qt Project and is available under
@@ -58,15 +62,6 @@ later. BrickSuite uses MCUT as a shared library. Binary distributions must
 retain the applicable MCUT copyright and license notices and satisfy the LGPL
 requirements that permit users to replace or relink the shared library.
 
-## lib3mf
-
-BrickSuite uses lib3mf v2.5.0, pinned to upstream commit
-`64bb454d1fcb53effa57d3cef752a10d740d41a2`, from
-https://github.com/3MFConsortium/lib3mf. lib3mf is distributed under the
-BSD 2-Clause License. The build uses lib3mf's pinned bundled zlib, libzip,
-cpp-base64, and fast_float sources; their applicable notices remain part of
-the upstream source and packaged license materials.
-
 BrickSuite applies one narrow MinGW compatibility patch to the pinned source:
 the MSVC SAL `_Acquires_lock_` annotation in `tpool.h` is limited to MSVC. The
 patch does not alter MCUT geometry behavior and fails closed if the pinned
@@ -76,6 +71,17 @@ MCUT's optional `mio` dependency is pinned to commit
 `474d060bddd1d9a3e69c439e31ae6f3dae3d55ad` to avoid a moving configuration
 reference. BrickSuite disables the upstream tutorials/tests that use it, so
 `mio` is not linked or distributed in the current runtime.
+
+## lib3mf
+
+BrickSuite uses lib3mf v2.5.0, pinned to upstream commit
+`64bb454d1fcb53effa57d3cef752a10d740d41a2`, from
+https://github.com/3MFConsortium/lib3mf. lib3mf is distributed under the
+BSD 2-Clause License. The static build includes its pinned LibreSSL, zlib, libzip, cpp-base64,
+and fast_float sources. CMake stages their upstream license texts with
+lib3mf's LICENSE under deployment/licenses/lib3mf, preserving source-relative
+paths. Windows packages this directory under licenses/lib3mf; macOS and Linux
+collect the corresponding upstream texts into their platform notice directories.
 
 ## Rebrickable
 
@@ -132,7 +138,7 @@ https://jrsoftware.org/isinfo.php
 
 ## LEGO Trademark
 
-LEGO® is a trademark of the LEGO Group of companies, which does not sponsor,
+LEGOÃ‚Â® is a trademark of the LEGO Group of companies, which does not sponsor,
 authorize, or endorse BrickSuite.
 
 References to LEGO products, part numbers, Sets, and related terminology are
@@ -166,6 +172,47 @@ cpp-base64, and fast_float notices.
 
 `deployment/macos/package_macos.py` collects license files and Qt attribution
 metadata into `Contents/Resources/Licenses`, preserving source-relative paths.
-The local ad-hoc signed acceptance bundle is not a public release. Public
-packaging must also satisfy applicable source/relinking distribution obligations;
+Historical local acceptance used an ad-hoc signed bundle. The current packager
+also uses ad-hoc signing, retains the macOS 13 target and separate ARM64/x86_64
+artifacts, and does not perform Developer ID signing or notarization. Public
+distribution must also satisfy applicable source/relinking distribution obligations;
 including license texts alone does not establish distribution compliance.
+
+## Windows runtime packaging
+
+The installer retains LICENSE and THIRD_PARTY_NOTICES.md beside BrickSuite.exe,
+with component texts under licenses and a relative-path licenses/manifest.txt.
+CMake supplies the MCUT and lib3mf notice trees, including MCUT's CDT notice.
+OpenSSL 3 runtime DLLs and their license come from the CMake-selected OpenSSL root.
+MinGW GCC runtime (including the runtime exception), mingw-w64, and winpthreads
+texts come from the configured compiler installation. Qt's existing software OpenGL
+runtime is Mesa 11.2.2 with LLVM 3.6; its upstream notice extracts and binary
+provenance are under licenses/SoftwareOpenGL. A different renderer binary
+requires notice review. The SDK's D3D compiler is also redistributed by
+windeployqt; the Qt installer-supplied Microsoft SDK terms are retained under
+licenses/WindowsSDK. These additions do not change runtime selection.
+
+Qt notice sources must match the deployed SDK version. The collector retains
+license texts and qt_attribution.json metadata from qtbase, qtsvg,
+qtimageformats, and qtwebsockets, including referenced license files. This is
+a conservative source-module notice superset, not a claim that every component
+mentioned in those sources is linked. Qt's Windows plugins and embedded
+third-party code are covered by these source notices. Missing required inputs
+stop packaging before Inno Setup runs. Set BRICKSUITE_WINDOWS_QT_SOURCE only
+when the matching Qt sources are outside the SDK's sibling Src directory.
+
+## Linux runtime packaging
+
+The authoritative Linux packager assembles a private runtime closure containing
+Qt, MCUT, OpenSSL, ICU, zlib, zstd, and Brotli as selected by its dependency policy.
+lib3mf and its bundled dependencies are statically linked. Notices reside under
+share/licenses, with a required-license inventory in share/build-metadata.json.
+Qt notices are selected through the shipped binaries' SPDX dependency graph.
+
+The baseline package uses Ubuntu 22.04 and its locked OpenSSL source; the explicit
+local deployment profile records its own runtime origins. glibc, the C++/GCC
+runtime, graphics/window-system libraries, and other allowlisted system services
+remain host-provided, as documented by deployment/linux/runtime-requirements.json
+and the artifact's share/dependencies.json. They are not represented as privately
+bundled libraries. Platform notice directories intentionally differ according to
+what each artifact distributes.

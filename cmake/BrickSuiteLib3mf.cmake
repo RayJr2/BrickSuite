@@ -16,4 +16,9 @@ target_include_directories(BrickSuiteLib3mf INTERFACE "${lib3mf_SOURCE_DIR}/Auto
 add_library(BrickSuite::Lib3mf ALIAS BrickSuiteLib3mf)
 set(_license_dir "${CMAKE_BINARY_DIR}/deployment/licenses/lib3mf")
 file(MAKE_DIRECTORY "${_license_dir}")
-configure_file("${lib3mf_SOURCE_DIR}/LICENSE" "${_license_dir}/LICENSE" COPYONLY)
+foreach(_notice LICENSE Libraries/libressl/COPYING submodules/zlib/LICENSE
+        submodules/libzip/LICENSE submodules/cpp-base64/LICENSE submodules/fast_float/LICENSE-MIT)
+    get_filename_component(_notice_parent "${_notice}" DIRECTORY)
+    file(MAKE_DIRECTORY "${_license_dir}/${_notice_parent}")
+    configure_file("${lib3mf_SOURCE_DIR}/${_notice}" "${_license_dir}/${_notice}" COPYONLY)
+endforeach()
