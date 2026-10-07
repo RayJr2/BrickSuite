@@ -1,20 +1,12 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "release": "Release",
-  "releaseDate": "2026-09-04",
-  "changelog": "BrickSuite v0.3.0 adds My Collection, Minifigs Catalog and Builds, Part Reference, improved Build From Stock workflows, automatic verified database backups, database integrity tools, and major inventory usability improvements.",
+  "releaseDate": "2026-10-07",
+  "changelog": "BrickSuite v0.4.0 adds Windows, macOS and Linux packages; paired Host/Remote workflows; direct Set part-out and Box storage; improved Builds/procurement; supported LDraw printing and managed LEGO Fit Calibration; refreshed Help and optional Support BrickSuite links. See the release notes for platform and printing limitations.",
   "downloads": {
-    "windows": {
-      "url": "https://github.com/RayJr2/BrickSuite/releases/latest"
-    },
-    "linux64": {
-      "url": "https://github.com/RayJr2/BrickSuite/releases/latest"
-    },
-    "macos-arm64": {
-      "url": ""
-    },
-    "macos-x86_64": {
-      "url": ""
-    }
+    "windows": {"url": "https://github.com/RayJr2/BrickSuite/releases/download/v0.4.0/BrickSuite-0.4.0-Windows-x64-Setup.exe"},
+    "macos-arm64": {"url": "https://github.com/RayJr2/BrickSuite/releases/download/v0.4.0/BrickSuite-v0.4.0-macOS-arm64.zip"},
+    "macos-x86_64": {"url": "https://github.com/RayJr2/BrickSuite/releases/download/v0.4.0/BrickSuite-v0.4.0-macOS-x86_64.zip"},
+    "linux64": {"url": "https://github.com/RayJr2/BrickSuite/releases/download/v0.4.0/BrickSuite-v0.4.0-Linux-x86_64.tar.gz"}
   }
 }
