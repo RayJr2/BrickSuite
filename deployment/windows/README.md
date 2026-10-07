@@ -4,7 +4,7 @@
 
 Download the x64 installer from the [matching BrickSuite release](https://github.com/RayJr2/BrickSuite/releases), close BrickSuite, and run the installer. Follow its license and destination prompts, then launch BrickSuite from the Start menu. Windows is the primary validated development/release environment; this guide does not establish a minimum Windows version.
 
-Create a database backup before upgrading. Uninstalling removes application files, not your database or settings. v0.4.0 publication and final download links remain pending release cutover.
+Create a database backup before upgrading. Uninstalling removes application files, not your database or settings.
 
 ## Developer packaging and notices
 

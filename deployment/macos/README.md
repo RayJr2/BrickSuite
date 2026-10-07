@@ -6,7 +6,7 @@ Use the matching archive from the [BrickSuite release](https://github.com/RayJr2
 
 BrickSuite macOS builds are currently ad-hoc signed and are not Apple notarized. The project does not currently use an Apple Developer ID certificate, so macOS may require additional confirmation before first launch. Use macOS’s per-application confirmation in Privacy & Security only after verifying the download source; do not globally disable Gatekeeper.
 
-ARM64 has been manually tested on a physical Mac mini. Intel packages are built and CI-tested; manual Intel runtime acceptance remains pending. v0.4.0 publication is pending release cutover.
+ARM64 physical Apple Silicon runtime acceptance passed on a Mac mini. Intel packages are GitHub Actions built and CI-validated; manual Intel runtime acceptance remains pending. Final release artifacts require the exact-artifact gates in the [release checklist](../../docs/v0.4.0-release-checklist.md).
 
 ## Source build and disposable packaging
 

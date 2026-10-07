@@ -2,7 +2,7 @@
 
 ## Supported Version
 
-The current public release is v0.3.0; v0.4.0 is in release preparation.
+The current release line is v0.4.0.
 
 Security fixes will generally target the current public release and the active
 development branch.

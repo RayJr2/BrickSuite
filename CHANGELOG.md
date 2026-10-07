@@ -4,9 +4,7 @@ All notable changes to BrickSuite are documented in this file.
 
 BrickSuite follows semantic versioning for public releases.
 
-## [0.4.0] - Unreleased
-
-Prepared for release; the final date and publication belong to release cutover.
+## [0.4.0] - 2026-10-07
 
 ### Added and Improved
 
@@ -14,16 +12,16 @@ Prepared for release; the final date and publication belong to release cutover.
 - Paired Host / Remote operation with trust controls, shared-data workflows, and local configuration boundaries.
 - Inventory usability, zero-quantity removal guidance, hierarchical Storage with Box, and clearer Set/Minifig details. Use Set for Parts previews and adds catalog composition directly to loose Inventory without creating or disassembling a Collection item.
 - Builds, What Can I Build, allocation/pulling, and Missing Parts procurement workflows, retaining exact requirement identity and inventory provenance.
-- LDraw 3D Viewer, external-file viewing, bounded Prepare for Printing, nominal/fit-aware export, and validated local printable overrides with explicit user-reviewed nominal acceptance where supported.
+- LDraw 3D Viewer, external-file viewing, Prepare for Printing, nominal/fit-aware export, and validated local printable overrides with explicit user-reviewed nominal acceptance where supported.
 - Managed LEGO Fit Calibration packages, single-family and multi-family workspaces, continuation, observations, verification, and compatible Fit Profiles.
 - Application-wide context Help/tooltips, clearer Dark/Light presentation, refreshed Help screenshots, and consistent printing readiness/fit wording.
 - Reliability, backup/recovery guidance, credential/trust safeguards, and complete packaged dependency notices.
 - Optional Support BrickSuite links that open PayPal; contributions unlock no features or services.
 
-### Limitations and Release Status
+### Known Limitations
 
-- Printing requires the necessary installed LDraw files. Not every model prepares successfully or receives Verified Fit corrections. Nominal output applies no Fit Profile; partial coverage and unproven repaired-surface ownership remain explicit. Experimental override fitting is not a claim of Verified coverage.
-- External identifier groundwork is not a complete multi-source/user-extendable canonical catalog. Rebrickable CSV procurement export is supported; Custom List API creation is not implemented.
+- Printing requires the necessary installed LDraw files. Difficult topology may require external repair; BrickSuite does not claim universal printability. Verified Fit corrections require supported interface evidence, a compatible profile, and an allowed print orientation. Nominal output applies no Fit Profile; partial coverage and unproven repaired-surface ownership remain explicit. Experimental override fitting is not a claim of Verified coverage.
+- Direct Set part-out runs on a local application or Host, not a Remote Client. Uncertain nested composition can block part-out until the required composition is established.
 - macOS packages are ad-hoc signed, not Apple notarized. ARM64 was manually tested on a physical Mac mini; Intel is built/CI-tested with manual runtime acceptance pending. A deployment minimum is not proof of testing every OS version.
 - Linux automatic installation targets Ubuntu 22.04+ x86_64. Qt Creator Deploy is a local development artifact, distinct from the official baseline builder.
 

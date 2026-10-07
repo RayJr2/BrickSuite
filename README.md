@@ -4,11 +4,9 @@
 
 BrickSuite is a free, open-source desktop application for keeping a traceable digital record of a physical brick workshop. It connects reference catalogs, loose inventory, storage, Builds, and owned models without treating those concepts as interchangeable.
 
-> **Current release:** BrickSuite **v0.3.0**
+> **BrickSuite v0.4.0 — 2026-10-07**
 >
-> **Windows:** packaged installer available from the GitHub Releases page
->
-> **v0.4.0 release candidate (not yet published):** capabilities below describe the current checkout; see [Release Platforms](#release-platforms) for packaging and validation status
+> **Downloads:** [GitHub Releases](https://github.com/RayJr2/BrickSuite/releases) — Windows x64, macOS ARM64 / Intel, and Linux x86_64. See [Release Platforms](#release-platforms) for requirements and validation status.
 
 The [online User Guide](https://rayjr2.github.io/BrickSuite/) is also built into BrickSuite under **Help → BrickSuite Help**.
 
@@ -72,14 +70,14 @@ Interface preferences are stored through `QSettings`. Uninstalling BrickSuite in
 
 ## Release Platforms
 
-BrickSuite v0.4.0 release preparation targets the following artifacts; this table does not announce publication. Build/CI validation and manual runtime acceptance are listed separately; deployment targets do not imply testing on every OS version.
+BrickSuite v0.4.0 provides the following platform packages. Build/CI validation and manual runtime acceptance are listed separately; deployment targets do not imply testing on every OS version.
 
 | Platform | Artifact | Baseline / Validation status |
 | --- | --- | --- |
-| Windows x64 | `.exe` installer assembled with Qt's `windeployqt` and Inno Setup | Primary validated development/release environment; use the installer attached to the matching GitHub Release when available. |
-| macOS ARM64 / Apple Silicon | `BrickSuite-v0.4.0-macOS-arm64.zip` | macOS **13.0 or newer** deployment target; manually tested on the physical Mac mini. |
-| macOS x86_64 / Intel | `BrickSuite-v0.4.0-macOS-x86_64.zip` | macOS **13.0 or newer** deployment target; built and CI-tested. Manual Intel runtime acceptance remains pending. |
-| Linux x86_64 | Relocatable installer tarball: `BrickSuite-v0.4.0-Linux-x86_64.tar.gz` | Release baseline: **Ubuntu 22.04 LTS / glibc 2.35**. Forward compatibility was also validated on Ubuntu 26.04. |
+| Windows x64 | `.exe` installer assembled with Qt's `windeployqt` and Inno Setup | Primary validated platform; use the installer attached to the matching GitHub Release. |
+| macOS ARM64 / Apple Silicon | `BrickSuite-v0.4.0-macOS-arm64.zip` | macOS **13.0 or newer** deployment target; physical Apple Silicon runtime accepted on a Mac mini. Final release builds receive another exact-artifact smoke check. |
+| macOS x86_64 / Intel | `BrickSuite-v0.4.0-macOS-x86_64.zip` | macOS **13.0 or newer** deployment target; GitHub Actions built and CI-validated. Manual Intel runtime acceptance remains pending. |
+| Linux x86_64 | Portable installer tarball: `BrickSuite-v0.4.0-Linux-x86_64.tar.gz` | Release baseline: **Ubuntu 22.04 LTS / glibc 2.35**. Forward compatibility was also validated on Ubuntu 26.04. |
 
 For Windows, download the x64 installer from the [matching GitHub Release](https://github.com/RayJr2/BrickSuite/releases), close BrickSuite, and follow the installer. See [Windows installation and packaging](deployment/windows/README.md).
 

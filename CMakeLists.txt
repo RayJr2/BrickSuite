@@ -2922,8 +2922,8 @@ set(APP_COMPANY           "RF StateSide, LLC")
 set(APP_ORGANIZATION_NAME "RFStateSide")
 set(APP_DOMAIN            "rfstateside.com")
 set(APP_COPYRIGHT_YEAR    "2026")
-set(APP_RELEASE           "Development")
-set(APP_RELEASE_DATE      "2026-08-17")
+set(APP_RELEASE           "Release")
+set(APP_RELEASE_DATE      "2026-10-07")
 set(APP_UPDATE_MANIFEST_URL "https://raw.githubusercontent.com/RayJr2/BrickSuite/master/deployment/update/update.json")
 
 # --------------------------------------------------------------------
@@ -2952,6 +2952,14 @@ target_compile_definitions(BrickSuite PRIVATE
     APP_RELEASE_DATE="${APP_RELEASE_DATE}"
     APP_UPDATE_MANIFEST_URL="${APP_UPDATE_MANIFEST_URL}"
 )
+
+if(BUILD_TESTING)
+    qt_add_executable(ReleaseMetadataTest EXCLUDE_FROM_ALL tests/ReleaseMetadataTest.cpp)
+    target_link_libraries(ReleaseMetadataTest PRIVATE Qt6::Core)
+    target_compile_definitions(ReleaseMetadataTest PRIVATE
+        "$<FILTER:$<TARGET_PROPERTY:BrickSuite,COMPILE_DEFINITIONS>,INCLUDE,^(APP_|BRICKSUITE_VERSION=)>")
+    add_test(NAME ReleaseMetadata COMMAND ReleaseMetadataTest)
+endif()
 
 set(BRICKSUITE_REBRICKABLE_API_BLOCKED OFF)
 
