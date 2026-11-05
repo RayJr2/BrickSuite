@@ -74,6 +74,45 @@ Wrapper regressions use synthetic data and do not bootstrap a baseline:
 python3 deployment/linux/test_build_release_artifact.py
 ```
 
+## Private installer-only reuse candidate
+
+`package_linux.py --reuse-qualified-payload <previous.tar.gz>
+--qualified-archive-sha256 <independently-recorded-sha256>` is an explicit,
+candidate-only alternative for an installer change after full qualification.
+It does not build the application or run application tests. Supply the retained
+`--build` directory (source record, configured test count and adjacent
+`evidence/tests/summary.json`), a clean `--source` checkout, and a new `--output`
+directory whose path contains the packaging commit's first seven characters.
+Run with the existing `run_baseline.py` environment and its ELF inspection tools.
+
+Only `deployment/linux/installer.py` and `deployment/linux/test_installer.py`
+may differ between the payload commit and packaging HEAD. Only `installer.py`
+and additive build metadata change inside the archive. Every other archive
+entry's bytes, type, mode and link target must match the checksum-pinned prior
+archive, including all ELF files, Help, requirements and notices. The old source
+record is never rewritten. Normal packaging's source-match guard is unchanged.
+
+Metadata retains `source_sha` for the binary payload/ABI reader and adds
+`payload_source_commit`, `packaging_source_commit`, `installer_source_commit`,
+`payload_reused`, `qualified_archive_sha256` and `reuse_tool_hashes`.
+`package_kind=installer-reuse-candidate` and the reused test-gate description
+prevent the normal official output verifier from accepting it as a release.
+Old full-test results are retained evidence, not newly executed tests.
+
+While reuse tooling itself is under review, run its isolated tools snapshot
+against a separate clean checkout of the committed installer. Tool hashes record
+the exact generator implementation; the packaging commit identifies the installer
+source and does not claim that uncommitted generator code is part of that commit.
+Do not bypass the clean-source rule or add tooling files to the source-delta
+allowlist to make the current candidate pass.
+
+The eventual public v0.4.1 artifact must use the normal authoritative builder
+from one final clean source commit, after Mint/Ubuntu acceptance, RFSS Support
+work and the version bump. No dual-provenance public release is intended.
+
+Focused reuse tests: `python3 -B -m unittest -v test_reuse_payload` from this
+directory, with `TMPDIR` set to an ignored project-local test directory.
+
 ## Qt Creator: local Linux Deploy
 
 1. Select the **Desktop Qt 6.10.3 Release** build configuration.

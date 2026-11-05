@@ -143,6 +143,15 @@ def stage(args):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--stage-only',action='store_true',help='Audit staging without creating a release archive; allows pending test gate')
+    p.add_argument('--reuse-qualified-payload',type=Path,help='Explicit installer-only candidate from an already qualified archive; never a public release')
+    p.add_argument('--qualified-archive-sha256',help='Independently recorded SHA-256 of the qualified archive')
     for name,default in [('source','/src'),('build','/work/build'),('qt','/opt/qt'),('openssl','/work/openssl-prefix/usr'),('sources','/work/sources'),('output','/work/release')]:p.add_argument('--'+name,type=Path,default=Path(default))
-    stage(p.parse_args())
+    args=p.parse_args()
+    if args.reuse_qualified_payload:
+        if args.stage_only or not args.qualified_archive_sha256:p.error('Reuse requires --qualified-archive-sha256 and cannot use --stage-only')
+        from reuse_payload import reuse
+        print(json.dumps(reuse(args),indent=2))
+    else:
+        if args.qualified_archive_sha256:p.error('--qualified-archive-sha256 requires explicit --reuse-qualified-payload')
+        stage(args)
 if __name__=='__main__':main()
