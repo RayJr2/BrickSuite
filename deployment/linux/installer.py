@@ -371,9 +371,16 @@ def replace_transaction(changes, check):
 def refresh(root):
     if root!=Path('/'):return
     for command in [['update-desktop-database','/usr/share/applications'],['gtk-update-icon-cache','-f','-t','/usr/share/icons/hicolor']]:
-        if shutil.which(command[0],path=CLEAN_ENV['PATH']):
-            result=run(command,capture_output=True,text=True)
-            if result.returncode:print('Desktop cache refresh could not complete; log out/in if the menu has not refreshed.')
+        helper=shutil.which(command[0],path=CLEAN_ENV['PATH'])
+        if not helper:continue
+        try:
+            result=run([helper,*command[1:]],capture_output=True,text=True)
+            if not result.returncode:continue
+            reason=result.stderr.strip() or result.stdout.strip() or 'exit status '+str(result.returncode)
+        except OSError as error:
+            reason=str(error)
+        print('Warning: '+command[0]+' could not refresh the desktop cache: '+reason+
+              '. The completed BrickSuite installation/removal is unchanged. Close and reopen the application menu; retry the cache refresh if needed.')
 
 
 def apply(action, root, source):

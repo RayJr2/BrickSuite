@@ -88,10 +88,37 @@ class InstallerTests(unittest.TestCase):
         self.install();app=self.root/i.APP
         self.assertEqual((self.root/i.DESKTOP).read_text(),i.DESKTOP_TEXT)
         self.assertIn('Icon=bricksuite',i.DESKTOP_TEXT);self.assertNotIn('MimeType=',i.DESKTOP_TEXT)
+        self.assertIn('Icon='+Path(i.ICON).stem+'\n',i.DESKTOP_TEXT)
+        self.assertEqual(Path(i.ICON).parent,Path('usr/share/icons/hicolor/256x256/apps'))
         self.assertEqual((self.root/i.ICON).read_bytes(),(self.source/i.BUNDLE_ICON).read_bytes())
         self.assertEqual(os.readlink(self.root/i.COMMAND),'/opt/BrickSuite/BrickSuite')
         self.assertTrue(os.access(app/'bin/BrickSuite',os.X_OK));self.assertTrue((app/'BrickSuite').is_symlink())
         self.assertTrue((app/i.MARKER).is_file())
+    def test_refresh_follows_install_upgrade_and_removal(self):
+        observed=[]
+        def refreshed(root):
+            self.assertEqual(root,self.root)
+            if (root/i.APP).exists():
+                self.assertEqual((root/i.DESKTOP).read_text(),i.DESKTOP_TEXT)
+                self.assertEqual((root/i.ICON).read_bytes(),(self.source/i.BUNDLE_ICON).read_bytes())
+                self.assertTrue((root/i.COMMAND).is_symlink())
+                observed.append((root/i.APP/'bin/BrickSuite').read_text())
+            else:
+                for name in [i.DESKTOP,i.ICON,i.COMMAND]:self.assertFalse(i.exists(root/name))
+                observed.append('removed')
+        with patch.object(i,'refresh',side_effect=refreshed):
+            self.install()
+            (self.source/'bin/BrickSuite').write_text('upgraded');self.install()
+            i.apply('uninstall',self.root,self.source)
+        self.assertEqual(observed,['synthetic application','upgraded','removed'])
+    def test_refresh_spawn_failure_does_not_fail_completed_lifecycle(self):
+        refresh=i.refresh
+        with patch.object(i,'refresh',side_effect=lambda root:refresh(Path('/'))),patch.object(shutil,'which',side_effect=lambda name,**kw:'/usr/bin/'+name),patch.object(i,'run',side_effect=OSError('helper unavailable')):
+            self.install();self.assertTrue((self.root/i.APP).is_dir())
+            (self.source/'bin/BrickSuite').write_text('upgraded');self.install()
+            self.assertEqual((self.root/i.APP/'bin/BrickSuite').read_text(),'upgraded')
+            i.apply('uninstall',self.root,self.source);self.assertFalse((self.root/i.APP).exists())
+        self.assertIn('Warning:',self.output.getvalue())
     def test_reinstall_upgrade_and_uninstall_preserve_user_state(self):
         state=self.user_state()
         self.install();self.assert_user_state(state);self.install();self.assert_user_state(state)
@@ -172,6 +199,28 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(i.has_developer_path(b'\x00/home/ray/build/source.cpp'))
         self.assertTrue(i.has_developer_path(b'/src/source.cpp'))
         self.assertFalse(i.has_developer_path(b'\x00qtbase/src/widgets/source.cpp'))
+
+
+class DesktopRefreshTests(unittest.TestCase):
+    def test_available_helpers_use_standard_arguments(self):
+        with patch.object(shutil,'which',side_effect=lambda name,**kw:'/usr/bin/'+name),patch.object(i,'run',return_value=subprocess.CompletedProcess([],0,'','')) as run:
+            i.refresh(Path('/'))
+            self.assertEqual([call.args[0] for call in run.call_args_list],[['/usr/bin/update-desktop-database','/usr/share/applications'],['/usr/bin/gtk-update-icon-cache','-f','-t','/usr/share/icons/hicolor']])
+    def test_missing_helpers_are_optional(self):
+        for available in [None,'gtk-update-icon-cache','update-desktop-database']:
+            with patch.object(shutil,'which',side_effect=lambda name,**kw:'/usr/bin/'+name if name==available else None),patch.object(i,'run',return_value=subprocess.CompletedProcess([],0,'','')) as run:
+                i.refresh(Path('/'));self.assertEqual(run.call_count,1 if available else 0)
+    def test_nonzero_helper_warns_and_continues(self):
+        with patch.object(shutil,'which',side_effect=lambda name,**kw:'/usr/bin/'+name),patch.object(i,'run',side_effect=[subprocess.CompletedProcess([],1,'','permission denied'),subprocess.CompletedProcess([],0,'','')]) as run,contextlib.redirect_stdout(io.StringIO()) as output:
+            i.refresh(Path('/'));self.assertEqual(run.call_count,2)
+            self.assertIn('Warning: update-desktop-database',output.getvalue());self.assertIn('permission denied',output.getvalue())
+    def test_spawn_error_warns_and_continues(self):
+        with patch.object(shutil,'which',side_effect=lambda name,**kw:'/usr/bin/'+name),patch.object(i,'run',side_effect=[OSError('helper disappeared'),subprocess.CompletedProcess([],0,'','')]) as run,contextlib.redirect_stdout(io.StringIO()) as output:
+            i.refresh(Path('/'));self.assertEqual(run.call_count,2)
+            self.assertIn('helper disappeared',output.getvalue())
+    def test_synthetic_root_never_refreshes_host(self):
+        with patch.object(shutil,'which') as which,patch.object(i,'run') as run:
+            i.refresh(Path('/synthetic'));which.assert_not_called();run.assert_not_called()
 
 
 class PlatformPlanTests(unittest.TestCase):
