@@ -120,14 +120,37 @@ To independently audit a local extraction, use
 `audit_bundle.py <bundle> --source-sha <sha> --local`. Without `--local`, the audit
 continues to enforce Ubuntu 22.04. `test_local_deploy.py` verifies that separation.
 
-## Install the release on Ubuntu
+## Automatic installer policy
 
 Extract `BrickSuite-v0.4.0-Linux-x86_64.tar.gz`, enter `BrickSuite`, and run
 `./install.sh`. Approve missing runtime packages if requested, then installation.
 Launch **Applications → BrickSuite** or `bricksuite`. No SDK or build tools are
 required. The complete user instructions are in [RUNTIME.md](RUNTIME.md).
 
-Ubuntu 22.04+ x86_64 is the automatic installation scope. The installer checks
+The candidate installer accepts Ubuntu 22.04+ x86_64 and specifically Linux Mint
+22.3 x86_64 with `ID=linuxmint`, `ID_LIKE` containing both `ubuntu` and `debian`,
+and `UBUNTU_CODENAME=noble`. Mint's displayed version remains 22.3; package
+providers use its proven Ubuntu 24.04/Noble base. Missing/conflicting base
+information, LMDE, other derivatives and future Mint versions are refused.
+This is fixture-qualified installer policy, **not completed Mint desktop acceptance**;
+Ray must test the final candidate archive before Mint support is claimed publicly.
+The already released v0.4.0 archive does not acquire these changes automatically.
+The release build floor remains Ubuntu 22.04 / GLIBC 2.35 / GLIBCXX 3.4.30 /
+CXXABI 1.3.13; neither builder inputs nor private runtime policy change.
+
+The model distinguishes **Qualified**, **Recognized but not qualified**, and
+**Unsupported / unknown**. Pop!_OS 24.04 (`pop`), Zorin OS 18 (`zorin`) and KDE
+neon (`neon`, `VERSION_ID=24.04`) with both `ubuntu`/`debian` ID_LIKE tokens and
+explicit `UBUNTU_CODENAME=noble` are recognized as Ubuntu 24.04-based, but stop
+before dependency planning or APT. Their own version numbers are kept separately.
+Missing/conflicting evidence, wrong architecture and unlisted releases remain
+unsupported; ID_LIKE alone never authorizes installation. Recognition fixtures
+are not desktop qualification. Future qualification needs policy/tests plus user
+acceptance, expected in order Pop!_OS, Zorin, then KDE neon. KDE neon specifically
+needs credential testing under its KDE/Secret Service session; GNOME-keyring
+behavior must not be assumed. CredentialStore is unchanged.
+
+The installer checks
 actual system libraries/commands/services/fonts using `runtime-requirements.json`,
 whose SONAME set is regression-checked against `policy.json`. Private Qt, MCUT,
 OpenSSL and ICU are not installed through APT. Newer Ubuntu's GLib t64 package
@@ -149,6 +172,28 @@ back caught copy/replacement/verification failures. It is not a power-loss-proof
 filesystem transaction; an interrupted rename can leave a `.previous-*` backup
 for manual recovery. Close a running BrickSuite before upgrade/uninstall.
 Conflicting unmanaged files are refused rather than overwritten.
+
+Non-mutating ownership and bundle-integrity/ABI checks precede any package offer,
+and ownership is checked again under the installer lock. Existing managed ELF
+modifications are refused during install preflight. This is not a complete per-file
+receipt. Durable journaling, stronger receipts, fsync recovery and aggregate
+rollback diagnostics remain deferred.
+
+Missing providers must belong to the runtime contract. APT/dpkg must exist and
+dpkg must report native `amd64`. The installer clears inherited `APT_CONFIG`,
+simulates with `--no-remove --no-upgrade --no-install-recommends`, rejects upgrades,
+removals, core runtime/system Qt changes and unrecognized results, then displays
+new packages including required dependencies. Only interactive `y`/`yes` consent
+at `[y/N]` proceeds; empty input, EOF and noninteractive input decline. Reviewed
+package versions are pinned and simulated again before installation. Sudo is
+required only for non-root execution. Runtime requirements are rechecked afterward.
+APT failure may leave system dependencies installed; program files are unchanged
+at that point and no automatic package rollback/removal is attempted.
+
+Arbitrary personal files stored inside `/opt/BrickSuite` are not preserved: that
+is the managed program tree. Normal RFStateSide/BrickSuite user configuration,
+database, Host state, calibration/profile/workspace/backup data, printable
+overrides and external LDraw/import/export/repair files are untouched.
 
 Installer-only regressions (all filesystem writes use temporary roots):
 

@@ -13,8 +13,11 @@ cd BrickSuite
 Approve prerequisite installation if requested, then approve installation to
 `/opt/BrickSuite`. Launch **Applications → BrickSuite**, or run `bricksuite`.
 The installer prints the OS/version/architecture and missing runtime packages.
-It asks before sudo, installs only missing prerequisites (plus their required
-APT dependencies), and does not open the application automatically. Python 3,
+It inspects a simulated package plan and asks for explicit `y`/`yes` consent
+(`[y/N]`, default No) before installing missing prerequisites and their required
+APT dependencies. Empty input, EOF and noninteractive input decline. Plans involving
+removals, upgrades, core runtime repair or system Qt installation are refused.
+It does not open the application automatically. Python 3,
 normally included with Ubuntu, is needed to run the installer.
 
 To upgrade or reinstall, extract the new archive separately and run its
@@ -40,13 +43,39 @@ locations. Shared prerequisite packages are never uninstalled.
 Built on Ubuntu 22.04 with GCC 11 and Qt 6.10.3. You can still run
 `./BrickSuite/BrickSuite` from an extracted archive without system installation.
 The directory may be moved, including to a path with spaces. Automatic installation
-is supported only on Ubuntu 22.04+ x86_64; portable compatibility elsewhere is
-separate. `./install.sh --check` checks requirements without sudo or file changes.
+in the candidate installer is eligible on Ubuntu 22.04+ x86_64, or specifically
+Linux Mint 22.3 x86_64 with Ubuntu Noble base evidence (`ID=linuxmint`, `ID_LIKE`
+containing both `ubuntu` and `debian`, and `UBUNTU_CODENAME=noble`). Other
+Ubuntu-like distributions, LMDE, unknown Mint versions and missing/conflicting
+base evidence are refused. Mint final-package/manual acceptance is still pending;
+this policy does not change the already released v0.4.0 installer. Portable
+compatibility elsewhere is separate. The build baseline remains Ubuntu 22.04 /
+glibc 2.35. `./install.sh --check` checks requirements without sudo or file changes.
+
+Pop!_OS 24.04, Zorin OS 18 and KDE neon with explicit Ubuntu Noble metadata are
+recognized but **not qualified for automatic installation**. The installer explains
+their Ubuntu base and stops before planning/installing dependencies. Recognition
+does not claim runtime support; manual portable use remains separate. Other
+Ubuntu-like identities are not authorized by `ID_LIKE=ubuntu` alone. Eventual KDE
+neon qualification also requires testing credentials in its KDE/Secret Service
+environment.
 
 The installer detects actual x86_64 shared libraries through the system loader
 cache, commands through PATH, session DBus socket units, available Secret Service
 provider binaries and installed fonts. It does not query or unlock your keyring.
-Ubuntu 24.04+ uses `libglib2.0-0t64` if that library is missing.
+Ubuntu 24.04+ and qualified Mint 22.3/Noble use `libglib2.0-0t64` if that library
+is missing. Mint's own version number is not used as an Ubuntu version.
+APT/dpkg must be available and the native package architecture must be `amd64`;
+sudo is needed only when not running as root. Finding `secret-tool` does not prove
+an unlocked, working Secret Service.
+
+Ownership conflicts are checked before offering package changes. If an APT
+operation fails, some dependencies may already be installed, but BrickSuite
+program files have not changed. Resolve the reported package/runtime failure
+before retrying; the installer does not remove system dependencies to undo it.
+Personal files must not be stored in `/opt/BrickSuite`, which is replaced/removed
+as a managed program tree. Normal user data and externally selected files remain
+outside that tree and are not scanned or deleted.
 
 For advanced manual setup on Ubuntu 22.04, runtime prerequisites are:
 

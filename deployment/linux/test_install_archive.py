@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 
 
@@ -23,7 +24,11 @@ def main():
     sentinel=root/'home/test/.local/share/BrickSuite/BrickSuite.db';sentinel.parent.mkdir(parents=True);sentinel.write_text('synthetic user data: preserve')
     with (args.destination/'lifecycle.log').open('w') as log:
         for script in ['install.sh','install.sh','uninstall.sh','install.sh']:
-            subprocess.run([str(bundle/script),'--root',str(root)],input='y\n',text=True,stdout=log,stderr=subprocess.STDOUT,check=True)
+            # No piped consent: unattended public prompts deliberately decline.
+            # Exercise the existing internal apply path only in this explicit
+            # synthetic root; it never installs prerequisites or invokes sudo.
+            action='uninstall' if script=='uninstall.sh' else 'install'
+            subprocess.run([sys.executable,str(bundle/'installer.py'),action,'--root',str(root),'--apply'],stdin=subprocess.DEVNULL,text=True,stdout=log,stderr=subprocess.STDOUT,check=True)
             assert sentinel.read_text()=='synthetic user data: preserve'
             if script=='uninstall.sh':assert not (root/'opt/BrickSuite').exists()
     installed=root/'opt/BrickSuite'

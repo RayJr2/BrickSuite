@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Ubuntu system installer; standard-library only, no SDK or build tools needed."""
+"""Qualified Ubuntu-base system installer; standard-library only, no SDK needed."""
 import argparse
+from dataclasses import dataclass
+from enum import Enum
 import fcntl
 import hashlib
 import json
@@ -34,6 +36,7 @@ Terminal=false
 Categories=Utility;
 '''
 CLEAN_ENV = {k:v for k,v in os.environ.items() if not k.startswith(('LD_', 'QT_'))}
+CLEAN_ENV.pop('APT_CONFIG',None)
 CLEAN_ENV.update(PATH='/usr/sbin:/usr/bin:/sbin:/bin', LC_ALL='C')
 
 
@@ -55,20 +58,84 @@ def has_developer_path(raw):
     return False
 
 
+class Qualification(Enum):
+    QUALIFIED='Qualified'
+    RECOGNIZED='Recognized but not qualified'
+    UNSUPPORTED='Unsupported / unknown'
+
+
+# Explicit release/base evidence, not a blanket ID_LIKE authorization. A future
+# qualification changes this policy and its acceptance tests, not base detection.
+NOBLE_DERIVATIVES={
+    ('linuxmint','22.3'): Qualification.QUALIFIED,
+    ('pop','24.04'): Qualification.RECOGNIZED,
+    ('zorin','18'): Qualification.RECOGNIZED,
+    ('neon','24.04'): Qualification.RECOGNIZED,
+}
+
+
+@dataclass(frozen=True)
+class PlatformInfo:
+    distribution: str
+    version: str
+    distro_id: str
+    id_like: tuple
+    machine: str
+    package_base: str
+    base_version: tuple
+    base_codename: str
+    qualification: Qualification
+    diagnostic: str
+
+    @property
+    def supported(self):return self.qualification==Qualification.QUALIFIED
+
+
+@dataclass(frozen=True)
+class PackageCapabilities:
+    apt_get: str
+    dpkg: str
+    native_architecture: str
+
+
+def detect_platform(values, machine):
+    identity=values.get('ID','unknown');version=values.get('VERSION_ID','')
+    id_like=tuple(values.get('ID_LIKE','').split())
+    base='';base_version=();codename=''
+    qualification=Qualification.UNSUPPORTED
+    diagnostic='Automatic installation requires Ubuntu 22.04+ or qualified Linux Mint 22.3/Noble on x86_64.'
+    if identity=='ubuntu' and re.fullmatch(r'\d+\.\d+(?:\.\d+)?',version):
+        base='ubuntu';base_version=tuple(map(int,version.split('.')))
+        codename=values.get('UBUNTU_CODENAME',values.get('VERSION_CODENAME',''))
+        if base_version >= (22,4):qualification=Qualification.QUALIFIED
+    elif identity in {key[0] for key in NOBLE_DERIVATIVES}:
+        if (identity,version) in NOBLE_DERIVATIVES and {'ubuntu','debian'} <= set(id_like) and values.get('UBUNTU_CODENAME')=='noble':
+            base='ubuntu';base_version=(24,4);codename='noble'
+            qualification=NOBLE_DERIVATIVES[(identity,version)]
+        else:diagnostic='Unqualified '+identity+' release or missing/conflicting package-base evidence: expected a recognized VERSION_ID, ID_LIKE containing ubuntu and debian, and UBUNTU_CODENAME=noble.'
+    if qualification!=Qualification.UNSUPPORTED:
+        diagnostic=f'Ubuntu package base: {base_version[0]}.{base_version[1]:02d} {codename}. '
+        diagnostic+=('Installer eligible.' if qualification==Qualification.QUALIFIED else 'BrickSuite automatic installation has not yet been qualified for this distribution.')
+    if machine!='x86_64':
+        qualification=Qualification.UNSUPPORTED;diagnostic='Unsupported machine architecture: '+machine+'; x86_64 is required.'
+    return PlatformInfo(values.get('PRETTY_NAME',identity),version,identity,id_like,machine,base,base_version,codename,qualification,diagnostic)
+
+
 def os_info(path=Path('/etc/os-release'), machine=None):
     values={}
     for line in path.read_text().splitlines():
         if '=' in line and not line.startswith('#'):
-            key,value=line.split('=',1);values[key]=shlex.split(value)[0] if value else ''
-    arch=machine or platform.machine()
-    print(f"Platform: {values.get('PRETTY_NAME',values.get('ID','unknown'))}; version {values.get('VERSION_ID','unknown')}; architecture {arch}")
-    parts=values.get('VERSION_ID','').split('.')
-    supported=values.get('ID')=='ubuntu' and all(p.isdigit() for p in parts) and tuple(map(int,parts)) >= (22,4) and arch=='x86_64'
-    if not supported:raise RuntimeError('Automatic installation supports Ubuntu 22.04 or newer on x86_64 only. No package-manager action taken; manual portable use is separate.')
-    return tuple(map(int,parts))
+            key,value=line.split('=',1);tokens=shlex.split(value)
+            if key in values or len(tokens)>1:raise RuntimeError('Malformed or duplicate os-release field: '+key)
+            values[key]=tokens[0] if tokens else ''
+    info=detect_platform(values,machine or platform.machine())
+    print(f'Platform: {info.distribution}; version {info.version}; architecture {info.machine}')
+    print(info.diagnostic)
+    if not info.supported:raise RuntimeError(info.diagnostic+' No package-manager action taken; manual portable use is separate.')
+    return info
 
 
-def missing_requirements(version):
+def missing_requirements(info):
     cache=run(['/sbin/ldconfig','-p'],capture_output=True,text=True,check=True).stdout
     available={}
     for line in cache.splitlines():
@@ -77,7 +144,7 @@ def missing_requirements(version):
     missing=[]
     for package,names in REQUIREMENTS['libraries'].items():
         if any(name not in available for name in names):
-            missing.append('libglib2.0-0t64' if package=='libglib2.0-0' and version >= (24,4) else package)
+            missing.append(provider(package,info))
     for package,names in REQUIREMENTS['commands'].items():
         if any(not shutil.which(name,path=CLEAN_ENV['PATH']) for name in names):missing.append(package)
     if not any(Path(p).is_file() for p in ['/usr/lib/systemd/user/dbus.socket','/lib/systemd/user/dbus.socket']):missing.append('dbus-user-session')
@@ -88,33 +155,103 @@ def missing_requirements(version):
 
 
 def agree(prompt):
-    try:return input(prompt+' [Y/n] ').strip().lower() in ('','y','yes')
+    if not sys.stdin.isatty():return False
+    try:return input(prompt+' [y/N] ').strip().lower() in ('y','yes')
     except EOFError:return False
 
 
 def privileged(command):
-    action=command if os.geteuid()==0 else ['sudo',*command]
+    action=command if os.geteuid()==0 else [required_command('sudo'),*command]
     print('Running: '+shlex.join(action),flush=True)
     run(action,check=True)
 
 
-def prerequisites(version, synthetic=False):
-    missing=missing_requirements(version)
+def provider(package, info):
+    return 'libglib2.0-0t64' if package=='libglib2.0-0' and info.base_version >= (24,4) else package
+
+
+def required_command(name):
+    path=shutil.which(name,path=CLEAN_ENV['PATH'])
+    if not path:raise RuntimeError('Required command unavailable: '+name+'. No automatic package changes possible.')
+    return path
+
+
+def package_manager(info):
+    if not info.supported or info.machine!='x86_64':raise RuntimeError('Unsupported package environment')
+    apt=required_command('apt-get');dpkg=required_command('dpkg')
+    result=run([dpkg,'--print-architecture'],capture_output=True,text=True,check=True)
+    if result.stdout.strip()!='amd64':raise RuntimeError('Native dpkg architecture must be amd64; refusing package changes.')
+    return PackageCapabilities(apt,dpkg,result.stdout.strip())
+
+
+def unsafe_package(name):
+    name=name.split(':')[0]
+    return name.startswith(('libc6','libc-bin','libc-dev','linux-image','linux-headers','libqt','qt5','qt6')) or name in ('libstdc++6','libgcc-s1')
+
+
+APT_FLAGS=['--no-remove','--no-upgrade','--no-install-recommends']
+
+
+def simulate_plan(apt, packages):
+    result=run([apt,'--simulate','-o','APT::Get::Show-User-Simulation-Note=false',*APT_FLAGS,'install',*packages],capture_output=True,text=True)
+    if result.returncode or result.stderr.strip():raise RuntimeError('APT simulation failed: '+result.stderr+result.stdout)
+    planned={};configured=set();summary=None
+    for line in result.stdout.splitlines():
+        if line.startswith('Remv '):raise RuntimeError('APT plan would remove packages: '+line)
+        if line.startswith(('Inst ','Conf ')):
+            match=re.fullmatch(r'(Inst|Conf) ([a-z0-9][a-z0-9+.-]*(?::(?:amd64|all))?) \(([^\s()]+) .+\)',line)
+            if not match:raise RuntimeError('APT plan includes upgrade or unexpected operation: '+line)
+            operation,name,version=match.groups()
+            if unsafe_package(name):raise RuntimeError('APT plan would change core runtime or system Qt: '+name)
+            if not re.fullmatch(r'[a-zA-Z0-9.+:~_-]+',version):raise RuntimeError('Unexpected APT version: '+version)
+            if operation=='Inst':
+                if name in planned:raise RuntimeError('Duplicate APT operation: '+name)
+                planned[name]=version
+            else:
+                if planned.get(name)!=version or name in configured:raise RuntimeError('Unexpected APT configuration: '+line)
+                configured.add(name)
+        elif re.fullmatch(r'\d+ upgraded, \d+ newly installed, \d+ to remove and \d+ not upgraded\.',line):
+            if summary is not None:raise RuntimeError('Duplicate APT summary')
+            summary=tuple(map(int,re.findall(r'\d+',line)))
+        elif line and not (line.startswith(('Reading package lists','Building dependency tree','Reading state information','The following additional packages will be installed:','The following NEW packages will be installed:','Suggested packages:','Recommended packages:','  '))):
+            raise RuntimeError('Unexpected APT simulation output: '+line)
+    requested={p.split('=')[0].split(':')[0] for p in packages}
+    if summary is None or summary[:3]!=(0,len(planned),0) or configured!=set(planned) or not requested <= {p.split(':')[0] for p in planned}:
+        raise RuntimeError('APT plan is incomplete or would change existing packages; resolve dependencies manually.')
+    return tuple(sorted(name+'='+version for name,version in planned.items()))
+
+
+def prerequisites(info, synthetic=False):
+    if not info.supported:raise RuntimeError(info.diagnostic+' No package-manager action taken.')
+    missing=missing_requirements(info)
     if missing:
-        command=['apt-get','install','--no-remove',*missing]
-        print('BrickSuite requires the following Ubuntu packages:\n\n  '+'\n  '.join(missing)+'\n')
-        if synthetic or not agree('Install these packages now?'):
-            print('No packages installed. To continue manually: sudo '+shlex.join(command))
+        allowed={provider(p,info) for p in REQUIREMENTS['libraries']} | set(REQUIREMENTS['commands']) | set(REQUIREMENTS['services']) | {REQUIREMENTS['fonts']}
+        if not set(missing) <= allowed:raise RuntimeError('Unknown runtime package provider: '+', '.join(sorted(set(missing)-allowed)))
+        if any(unsafe_package(p) for p in missing):raise RuntimeError('Core runtime unavailable; repair the operating system manually. No package changes made.')
+        print('BrickSuite requires the following Ubuntu-base packages:\n\n  '+'\n  '.join(missing)+'\n')
+        if synthetic:
+            print('Synthetic root: no host APT or sudo action. Install prerequisites separately.')
             return False
-        # apt-get retains its own confirmation and terminal; never remove packages.
-        privileged(command)
-        remaining=missing_requirements(version)
-        if remaining:raise RuntimeError('Requirements still unavailable after package installation: '+', '.join(remaining))
+        apt=package_manager(info).apt_get
+        plan=simulate_plan(apt,missing)
+        print('Reviewed APT plan (new packages and required dependencies only):\n  '+'\n  '.join(plan))
+        if not agree('Install this package plan now?'):
+            print('No packages installed. Resolve the listed prerequisites manually or rerun the installer.')
+            return False
+        if os.geteuid()!=0:required_command('sudo')
+        # Pin every reviewed version and reject a changed resolver plan before mutation.
+        if simulate_plan(apt,list(plan))!=plan:raise RuntimeError('APT plan changed after consent; retry and review the new plan.')
+        try:
+            privileged([apt,*APT_FLAGS,'--yes','install',*plan])
+            remaining=missing_requirements(info)
+            if remaining:raise RuntimeError('Requirements still unavailable: '+', '.join(remaining))
+        except (OSError,RuntimeError,subprocess.CalledProcessError) as error:
+            raise RuntimeError('BrickSuite program files were not changed. Some system dependencies may now be installed. Resolve the package-manager/runtime failure before retrying: '+str(error)) from error
     print('Requirements satisfied.')
     return True
 
 
-def verify_bundle(bundle, resolve=True):
+def verify_bundle(bundle, resolve=True, allow_missing_requirements=False):
     """Verify audited ELF identity, layout and actual loader closure without binutils."""
     bundle=bundle.resolve()
     meta=json.loads((bundle/'share/build-metadata.json').read_text())
@@ -149,7 +286,14 @@ def verify_bundle(bundle, resolve=True):
         if has_developer_path(raw):raise RuntimeError('Development path in '+name)
         if resolve:
             result=run(['ldd',str(path)],capture_output=True,text=True)
-            if result.returncode or 'not found' in result.stdout+result.stderr:raise RuntimeError('Unresolved installed runtime: '+name+'\n'+result.stdout+result.stderr)
+            output=result.stdout+result.stderr
+            if result.returncode or 'not found' in output:
+                missing_lines=[line.strip() for line in output.splitlines() if 'not found' in line]
+                permitted={soname+' => not found' for names in REQUIREMENTS['libraries'].values() for soname in names}
+                # Missing known system providers may be installed later, but ABI
+                # version errors or missing private libraries cannot be repaired by APT.
+                if result.returncode or not allow_missing_requirements or not missing_lines or not set(missing_lines) <= permitted:
+                    raise RuntimeError('Unresolved installed runtime: '+name+'\n'+output)
             verify_resolution(bundle,row,result.stdout)
     if (bundle/'bin/qt.conf').read_text()!='[Paths]\nPrefix=..\nLibraries=lib\nPlugins=plugins\n':raise RuntimeError('Invalid qt.conf')
     for name in meta['required_licenses']:
@@ -177,6 +321,7 @@ def safe_target(root, relative):
     for parent in [*path.parents]:
         if parent==root.parent:break
         if parent.is_symlink():raise RuntimeError('Refusing symlink installation parent: '+str(parent))
+        if parent.exists() and not parent.is_dir():raise RuntimeError('Refusing non-directory installation parent: '+str(parent))
     return path
 
 
@@ -191,9 +336,10 @@ def remove(path):
 def owned_paths(root):
     app=safe_target(root,APP)
     if exists(app):
-        if app.is_symlink() or not (app/MARKER).is_file():raise RuntimeError('Existing /opt/BrickSuite is not managed by this installer. Move it aside manually before continuing.')
+        marker_path=safe_target(root,APP+'/'+MARKER)
+        if app.is_symlink() or not app.is_dir() or marker_path.is_symlink() or not marker_path.is_file():raise RuntimeError('Existing /opt/BrickSuite is not managed by this installer. Move it aside manually before continuing.')
         marker=json.loads((app/MARKER).read_text())
-        if marker.get('owner')!='BrickSuite Linux installer':raise RuntimeError('Unrecognized installation marker')
+        if not isinstance(marker,dict) or marker.get('owner')!='BrickSuite Linux installer':raise RuntimeError('Unrecognized installation marker')
     for relative in [DESKTOP,ICON,COMMAND]:
         path=safe_target(root,relative)
         if not exists(path):continue
@@ -273,14 +419,18 @@ def main(argv=None):
     p.add_argument('--apply',action='store_true',help=argparse.SUPPRESS)
     args=p.parse_args(argv);root=args.root.absolute()
     try:
-        version=os_info()
+        info=os_info()
         if args.apply:
             if root==Path('/') and os.geteuid()!=0:raise RuntimeError('Privileged installation requires root')
             apply(args.action,root,HERE);return 0
         if args.action=='install':
             if args.check:
-                missing=missing_requirements(version);print('Missing: '+', '.join(missing) if missing else 'Requirements satisfied.');return 1 if missing else 0
-            if not prerequisites(version,root!=Path('/')):return 0
+                missing=missing_requirements(info);print('Missing: '+', '.join(missing) if missing else 'Requirements satisfied.');return 1 if missing else 0
+            app=owned_paths(root)
+            if HERE.resolve()==app.resolve():raise RuntimeError('Run installation from a separately extracted archive, not the installed copy.')
+            verify_bundle(HERE,allow_missing_requirements=True)
+            if app.exists():verify_bundle(app,resolve=False)
+            if not prerequisites(info,root!=Path('/')):return 0
             verify_bundle(HERE)
         elif args.check:raise RuntimeError('--check is for installation prerequisites')
         print('User data and credentials are preserved. Close BrickSuite before replacing or removing application files.')
