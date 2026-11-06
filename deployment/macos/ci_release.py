@@ -87,10 +87,18 @@ def containment_evidence(junit):
     return evidence
 
 
-def validate_bundle(bundle, arch, source_sha):
+def release_version():
+    cmake = (REPO/'CMakeLists.txt').read_text(encoding='utf-8')
+    versions = re.findall(r'^project\(BrickSuite\s+VERSION\s+(\d+\.\d+\.\d+)\s', cmake, re.MULTILINE)
+    if len(versions) != 1:
+        raise RuntimeError('Cannot determine authoritative BrickSuite project version')
+    return versions[0]
+
+
+def validate_bundle(bundle, arch, source_sha, version):
     info = plistlib.loads((bundle/'Contents/Info.plist').read_bytes())
     expected = dict(CFBundleIdentifier='com.rfstateside.bricksuite',
-                    CFBundleShortVersionString='0.4.0', CFBundleVersion='0.4.0',
+                    CFBundleShortVersionString=version, CFBundleVersion=version,
                     CFBundleName='BrickSuite', LSMinimumSystemVersion='13.0',
                     CFBundleIconFile='BrickSuite.icns', BrickSuiteSourceCommit=source_sha,
                     BrickSuiteArchitecture=arch)
@@ -101,7 +109,7 @@ def validate_bundle(bundle, arch, source_sha):
     if executables != {'BrickSuite', 'BrickSuiteMeshBooleanWorker'}:
         raise RuntimeError(f'Unexpected production executables: {executables}')
     plugin_root = bundle/'Contents/PlugIns'
-    plugins = {str(p.relative_to(plugin_root)) for p in plugin_root.rglob('*') if p.is_file()}
+    plugins = {p.relative_to(plugin_root).as_posix() for p in plugin_root.rglob('*') if p.is_file()}
     if plugins != set(PLUGINS):
         raise RuntimeError(f'Unexpected plugin inventory: {plugins}')
     if not (bundle/'Contents/Resources/BrickSuite.icns').is_file():
@@ -136,8 +144,8 @@ def packaged_probe(bundle, probe, arch, reports):
         print((reports/'packaged-probe.log').read_text(), flush=True)
 
 
-def archive_bundle(bundle, destination, arch, source_sha):
-    archive = destination/f'BrickSuite-v0.4.0-macOS-{arch}.zip'
+def archive_bundle(bundle, destination, arch, source_sha, version):
+    archive = destination/f'BrickSuite-v{version}-macOS-{arch}.zip'
     if archive.exists():
         raise RuntimeError('Archive output already exists')
     run('/usr/bin/ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', bundle, archive)
@@ -145,7 +153,7 @@ def archive_bundle(bundle, destination, arch, source_sha):
     with tempfile.TemporaryDirectory(prefix='bricksuite-archive-check-') as temp:
         run('/usr/bin/ditto', '-x', '-k', archive, temp)
         extracted = Path(temp)/'BrickSuite.app'
-        validate_bundle(extracted, arch, source_sha)
+        validate_bundle(extracted, arch, source_sha, version)
         for path in bundle.rglob('*'):
             other = extracted/path.relative_to(bundle)
             if path.is_symlink():
@@ -170,6 +178,7 @@ def main():
         raise RuntimeError('Native runner architecture does not match job')
     if output('git', 'rev-parse', 'HEAD') != source_sha or output('git', 'status', '--porcelain'):
         raise RuntimeError('Source must be a clean checkout of the workflow SHA')
+    project_version = release_version()
     cmake = os.environ['CMAKE']
     ctest = str(Path(cmake).with_name('ctest'))
     deps = Path(os.environ['DEPS_ROOT'])
@@ -182,7 +191,7 @@ def main():
     print(f'Qt version={version}, architecture={qt_arch}, prefix={qt}', flush=True)
     reports = build/'reports'
     reports.mkdir(parents=True, exist_ok=True)
-    metadata = dict(source_commit=source_sha, architecture=arch,
+    metadata = dict(source_commit=source_sha, version=project_version, architecture=arch,
                     runner=os.environ['RUNNER_LABEL'], os=output('sw_vers'),
                     xcode=output('xcodebuild', '-version'), clang=output('/usr/bin/clang', '--version'),
                     sdk=output('xcrun', '--sdk', 'macosx', '--show-sdk-version'),
@@ -227,7 +236,7 @@ def main():
         '--qt-source', os.environ['QT_SOURCE'], '--openssl', openssl,
         '--openssl-source', os.environ['OPENSSL_SOURCE'], '--lib3mf-source', build/'_deps/lib3mf-src',
         '--output', bundle, '--arch', arch, '--source-sha', source_sha)
-    audit_report = validate_bundle(bundle, arch, source_sha)
+    audit_report = validate_bundle(bundle, arch, source_sha, project_version)
     packaged_probe(bundle, build/'BrickSuitePackageProbe', arch, reports)
     metadata['packaged_probe'] = 'passed: TLS, worker/self-launch, SQLite, Help/F1/icon, providers, runtime closure'
     metadata['mach_o_count'] = len(audit_report['binaries'])
@@ -235,7 +244,7 @@ def main():
     metadata['codesign'] = 'deep strict verification passed'
     # Nothing enters the upload directory until every preceding gate passes.
     destination.mkdir(parents=True, exist_ok=False)
-    metadata['archive'] = archive_bundle(bundle, destination, arch, source_sha)
+    metadata['archive'] = archive_bundle(bundle, destination, arch, source_sha, project_version)
     (destination/'build-metadata.json').write_text(json.dumps(metadata, indent=2)+'\n')
     (destination/'bundle-audit.json').write_text(json.dumps(audit_report, indent=2)+'\n')
     for name in ('ctest.xml', 'packaged-probe.log'):

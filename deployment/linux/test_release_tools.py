@@ -10,10 +10,44 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from audit_bundle import POLICY, audit, check_info, inspect
-from package_linux import archive_tree
+from package_linux import archive_path, archive_tree, package_version, write_json
 from normalize_qt_diagnostics import normalize, PREFIX, FILES
 
 SHA='a'*40
+
+
+class PackageVersionTests(unittest.TestCase):
+    def test_source_metadata_and_archive_agree(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            for version in ('0.4.1','0.5.2'):
+                (root/'CMakeLists.txt').write_text(f'project(BrickSuite\n VERSION {version}\n LANGUAGES CXX)\n')
+                metadata={'version':package_version(root),'source_sha':SHA}
+                self.assertEqual(metadata['version'],version)
+                self.assertEqual(package_version(root,{'version':version}),version)
+                bundle=root/'BrickSuite'
+                write_json(bundle/'share/build-metadata.json',metadata)
+                archive=archive_path(root,metadata)
+                self.assertEqual(archive.name,f'BrickSuite-v{version}-Linux-x86_64.tar.gz')
+                archive_tree(bundle,archive,12345)
+                with tarfile.open(archive) as tf:
+                    actual=json.load(tf.extractfile('BrickSuite/share/build-metadata.json'))
+                self.assertEqual(actual,metadata)
+                with self.assertRaisesRegex(ValueError,'does not match'):
+                    package_version(root,{'version':'0.4.0'})
+
+    def test_missing_ambiguous_or_invalid_version_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            for text in ('','project(Other VERSION 0.4.1 LANGUAGES CXX)',
+                         'project(BrickSuite VERSION ${VERSION} LANGUAGES CXX)',
+                         'project(BrickSuite VERSION 0.4.1 LANGUAGES CXX)\n'*2):
+                (root/'CMakeLists.txt').write_text(text)
+                with self.assertRaisesRegex(ValueError,'authoritative'):
+                    package_version(root)
+            for version in ('','../0.4.1','0.4.1/other','0.4.1-beta'):
+                with self.assertRaisesRegex(ValueError,'Invalid package version'):
+                    archive_path(root,{'version':version})
 
 
 class GateTests(unittest.TestCase):

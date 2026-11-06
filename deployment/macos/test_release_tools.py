@@ -2,13 +2,16 @@
 import tempfile
 import unittest
 import plistlib
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
 
 from audit_bundle import audit
-from ci_release import configured_targets, containment_evidence, test_summary
+from ci_release import (archive_bundle, configured_targets, containment_evidence,
+                        release_version, test_summary, validate_bundle)
+from package_macos import PLUGINS
 from sign_bundle import sign_bundle, signing_order
 
 
@@ -102,6 +105,65 @@ class ReleaseGates(unittest.TestCase):
             write(bad)
             with self.assertRaises(RuntimeError):
                 containment_evidence(path)
+
+
+class ReleaseVersion(unittest.TestCase):
+    def test_authoritative_project_version_and_malformed_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with patch('ci_release.REPO', root):
+                for version in ('0.4.1', '0.5.2'):
+                    (root/'CMakeLists.txt').write_text(
+                        f'project(BrickSuite\n    VERSION {version}\n    LANGUAGES CXX)\n')
+                    self.assertEqual(release_version(), version)
+                for text in ('', 'project(Other VERSION 0.4.1 LANGUAGES CXX)',
+                             'project(BrickSuite VERSION ${VERSION} LANGUAGES CXX)',
+                             'project(BrickSuite VERSION 0.4.1 LANGUAGES CXX)\n'*2):
+                    (root/'CMakeLists.txt').write_text(text)
+                    with self.assertRaisesRegex(RuntimeError, 'authoritative'):
+                        release_version()
+
+    def test_bundle_version_and_archive_agree_for_both_architectures(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            bundle = root/'BrickSuite.app'
+            for name in ('Contents/MacOS/BrickSuite', 'Contents/MacOS/BrickSuiteMeshBooleanWorker',
+                         'Contents/Resources/BrickSuite.icns',
+                         *('Contents/PlugIns/'+name for name in PLUGINS)):
+                path = bundle/name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'fixture')
+            plist = bundle/'Contents/Info.plist'
+            info = dict(CFBundleIdentifier='com.rfstateside.bricksuite',
+                        CFBundleShortVersionString='0.4.1', CFBundleVersion='0.4.1',
+                        CFBundleName='BrickSuite', LSMinimumSystemVersion='13.0',
+                        CFBundleIconFile='BrickSuite.icns', BrickSuiteSourceCommit='a'*40)
+
+            def ditto(*args):
+                if args[0] == 'codesign':
+                    return
+                if '-c' in args:
+                    Path(args[-1]).write_bytes(b'archive fixture')
+                else:
+                    shutil.copytree(bundle, Path(args[-1])/'BrickSuite.app')
+
+            with patch('ci_release.audit', return_value={'errors': []}), patch('ci_release.run', ditto):
+                for arch in ('arm64', 'x86_64'):
+                    info['BrickSuiteArchitecture'] = arch
+                    plist.write_bytes(plistlib.dumps(info))
+                    validate_bundle(bundle, arch, 'a'*40, '0.4.1')
+                    for key in ('CFBundleShortVersionString', 'CFBundleVersion'):
+                        stale = dict(info, **{key: '0.4.0'})
+                        plist.write_bytes(plistlib.dumps(stale))
+                        with self.assertRaisesRegex(RuntimeError, key):
+                            validate_bundle(bundle, arch, 'a'*40, '0.4.1')
+                    plist.write_bytes(plistlib.dumps(info))
+                    result = archive_bundle(bundle, root, arch, 'a'*40, '0.4.1')
+                    self.assertEqual(result['filename'], f'BrickSuite-v0.4.1-macOS-{arch}.zip')
+                    self.assertEqual((root/(result['filename']+'.sha256')).read_text(),
+                                     f"{result['sha256']}  {result['filename']}\n")
+                    with self.assertRaisesRegex(RuntimeError, 'already exists'):
+                        archive_bundle(bundle, root, arch, 'a'*40, '0.4.1')
 
 
 class SigningOrder(unittest.TestCase):

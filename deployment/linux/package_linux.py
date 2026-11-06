@@ -4,6 +4,7 @@ import argparse
 import gzip
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import struct
@@ -19,6 +20,21 @@ def write_json(path,value):
     path.write_text(json.dumps(value,indent=2)+'\n')
 
 
+def package_version(source, local=None):
+    cmake=(source/'CMakeLists.txt').read_text(encoding='utf-8')
+    versions=re.findall(r'^project\(BrickSuite\s+VERSION\s+(\d+\.\d+\.\d+)\s',cmake,re.MULTILINE)
+    if len(versions)!=1:raise ValueError('Cannot determine authoritative BrickSuite project version')
+    if local and local.get('version')!=versions[0]:
+        raise ValueError('Local package version does not match source version')
+    return versions[0]
+
+
+def archive_path(output, metadata):
+    version=metadata['version']
+    if not re.fullmatch(r'\d+\.\d+\.\d+',version):raise ValueError('Invalid package version')
+    return output/f'BrickSuite-v{version}-Linux-x86_64.tar.gz'
+
+
 def archive_tree(bundle, output, epoch):
     with output.open('wb') as raw, gzip.GzipFile(filename='',mode='wb',fileobj=raw,mtime=0) as compressed:
         with tarfile.open(fileobj=compressed,mode='w') as archive:
@@ -32,6 +48,7 @@ def archive_tree(bundle, output, epoch):
 
 def stage(args):
     local=getattr(args,"local_metadata",None)
+    version=package_version(args.source,local)
     if not local and 'VERSION_ID="22.04"' not in Path('/etc/os-release').read_text():
         raise ValueError('Package inside Ubuntu 22.04, not on a newer host')
     if not local:subprocess.run(['git','-C',str(args.source),'diff','--exit-code','HEAD','--','src','resources','cmake','CMakeLists.txt'],check=True)
@@ -103,7 +120,7 @@ def stage(args):
     shutil.copyfile(Path(__file__).with_name('normalize_qt_diagnostics.py'),bundle/'share/licenses/Qt/normalize_qt_diagnostics.py')
     write_json(bundle/'share/licenses/Qt/diagnostic-path-remapping.json',remappings)
     required += ['Qt/normalize_qt_diagnostics.py','Qt/diagnostic-path-remapping.json']
-    metadata={**record,'source_repository':'https://github.com/RayJr2/BrickSuite','version':'0.4.0','architecture':'x86_64','build_distro':'Ubuntu 22.04.5','glibc_floor':'2.35','compiler':local['compiler'] if local else subprocess.check_output(['g++-11','-dumpfullversion'],text=True).strip(),'qt':lock['qt']['version'],'openssl':lock['openssl']['version'],'required_licenses':required,'test_gate':'pending; staging only' if gate is None else 'passed','packaging_tool_hashes':{p.name:digest(p) for p in sorted(Path(__file__).parent.glob('*')) if p.is_file() and p.name not in ['README.md','VALIDATION.md']}}
+    metadata={**record,'source_repository':'https://github.com/RayJr2/BrickSuite','version':version,'architecture':'x86_64','build_distro':'Ubuntu 22.04.5','glibc_floor':'2.35','compiler':local['compiler'] if local else subprocess.check_output(['g++-11','-dumpfullversion'],text=True).strip(),'qt':lock['qt']['version'],'openssl':lock['openssl']['version'],'required_licenses':required,'test_gate':'pending; staging only' if gate is None else 'passed','packaging_tool_hashes':{p.name:digest(p) for p in sorted(Path(__file__).parent.glob('*')) if p.is_file() and p.name not in ['README.md','VALIDATION.md']}}
     if local:
         metadata.update({key:value for key,value in local.items() if key!='record'})
         metadata['test_gate']='not run by local Deploy; exhaustive release gate remains separate'
@@ -132,7 +149,7 @@ def stage(args):
     if args.stage_only:
         print(json.dumps({'staging_only':str(bundle),'ceilings':report['ceilings'],'elf_count':report['elf_count']},indent=2));return
     epoch=int(subprocess.check_output(['git','-C',str(args.source),'show','-s','--format=%ct','HEAD'],text=True))
-    archive=args.output/'BrickSuite-v0.4.0-Linux-x86_64.tar.gz'
+    archive=archive_path(args.output,metadata)
     archive_tree(bundle,archive,epoch)
     (args.output/(archive.name+'.sha256')).write_text(digest(archive)+'  '+archive.name+'\n')
     for name in ['build-metadata.json','dependencies.json','abi-audit.json']:shutil.copy2(bundle/'share'/name,args.output/name)
