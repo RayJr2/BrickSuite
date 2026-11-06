@@ -4,7 +4,7 @@
   "releaseDate": "2026-11-06",
   "changelog": "BrickSuite v0.4.1 improves Linux installation reliability, adds qualified Linux Mint 22.3 support, and introduces the RF StateSide Support checkout with direct PayPal fallback. See the release notes for platform details and limitations.",
   "downloads": {
-    "windows": {"url": "https://github.com/RayJr2/BrickSuite/releases/download/v0.4.1/BrickSuite-0.4.1-Windows-x64-Setup.exe"},
+    "windows": {"url": "https://github.com/RayJr2/BrickSuite/releases/download/v0.4.1/BrickSuite-v0.4.1-Windows-x64.zip"},
     "macos-arm64": {"url": "https://github.com/RayJr2/BrickSuite/releases/download/v0.4.1/BrickSuite-v0.4.1-macOS-arm64.zip"},
     "macos-x86_64": {"url": "https://github.com/RayJr2/BrickSuite/releases/download/v0.4.1/BrickSuite-v0.4.1-macOS-x86_64.zip"},
     "linux64": {"url": "https://github.com/RayJr2/BrickSuite/releases/download/v0.4.1/BrickSuite-v0.4.1-Linux-x86_64.tar.gz"}
