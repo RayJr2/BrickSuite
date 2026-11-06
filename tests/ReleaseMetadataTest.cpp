@@ -30,9 +30,9 @@ int main(int argc, char** argv)
     const auto check = [&](bool condition, const char* message) {
         if (!condition) { std::fprintf(stderr, "FAIL: %s\n", message); ok = false; }
     };
-    check(AppVersion::version() == QStringLiteral("0.4.0"), "v0.4.0 compiled version");
+    check(AppVersion::version() == QStringLiteral("0.4.1"), "v0.4.1 compiled version");
     check(AppConstants::release() == QStringLiteral("Release"), "production release channel");
-    check(AppConstants::releaseDate() == QStringLiteral("2026-10-07"), "authoritative release date");
+    check(AppConstants::releaseDate() == QStringLiteral("2026-11-06"), "authoritative release date");
     check(AppConstants::name() == QStringLiteral("BrickSuite"), "product identity");
     check(AppConstants::company() == QStringLiteral("RF StateSide, LLC"), "publisher attribution");
     check(AppConstants::updateManifestUrl() == QStringLiteral(

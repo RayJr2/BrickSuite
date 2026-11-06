@@ -4,7 +4,7 @@
 
 BrickSuite is a free, open-source desktop application for keeping a traceable digital record of a physical brick workshop. It connects reference catalogs, loose inventory, storage, Builds, and owned models without treating those concepts as interchangeable.
 
-> **BrickSuite v0.4.0 — 2026-10-07**
+> **BrickSuite v0.4.1 — 2026-11-06**
 >
 > **Downloads:** [GitHub Releases](https://github.com/RayJr2/BrickSuite/releases) — Windows x64, macOS ARM64 / Intel, and Linux x86_64. See [Release Platforms](#release-platforms) for requirements and validation status.
 
@@ -70,20 +70,20 @@ Interface preferences are stored through `QSettings`. Uninstalling BrickSuite in
 
 ## Release Platforms
 
-BrickSuite v0.4.0 provides the following platform packages. Build/CI validation and manual runtime acceptance are listed separately; deployment targets do not imply testing on every OS version.
+BrickSuite v0.4.1 targets the following platform packages; final artifacts are pending packaging and publication. Build/CI validation and manual runtime acceptance are listed separately; deployment targets do not imply testing on every OS version.
 
 | Platform | Artifact | Baseline / Validation status |
 | --- | --- | --- |
 | Windows x64 | `.exe` installer assembled with Qt's `windeployqt` and Inno Setup | Primary validated platform; use the installer attached to the matching GitHub Release. |
-| macOS ARM64 / Apple Silicon | `BrickSuite-v0.4.0-macOS-arm64.zip` | macOS **13.0 or newer** deployment target; physical Apple Silicon runtime accepted on a Mac mini. Final release builds receive another exact-artifact smoke check. |
-| macOS x86_64 / Intel | `BrickSuite-v0.4.0-macOS-x86_64.zip` | macOS **13.0 or newer** deployment target; GitHub Actions built and CI-validated. Manual Intel runtime acceptance remains pending. |
-| Linux x86_64 | Portable installer tarball: `BrickSuite-v0.4.0-Linux-x86_64.tar.gz` | Release baseline: **Ubuntu 22.04 LTS / glibc 2.35**. Forward compatibility was also validated on Ubuntu 26.04. |
+| macOS ARM64 / Apple Silicon | `BrickSuite-v0.4.1-macOS-arm64.zip` | macOS **13.0 or newer** deployment target; physical Apple Silicon runtime accepted on a Mac mini. Final release builds receive another exact-artifact smoke check. |
+| macOS x86_64 / Intel | `BrickSuite-v0.4.1-macOS-x86_64.zip` | macOS **13.0 or newer** deployment target; GitHub Actions built and CI-validated. Manual Intel runtime acceptance remains pending. |
+| Linux x86_64 | Portable installer tarball: `BrickSuite-v0.4.1-Linux-x86_64.tar.gz` | Release baseline: **Ubuntu 22.04 LTS / glibc 2.35**. Forward compatibility was also validated on Ubuntu 26.04; Linux Mint 22.3 installer qualification is accepted. |
 
 For Windows, download the x64 installer from the [matching GitHub Release](https://github.com/RayJr2/BrickSuite/releases), close BrickSuite, and follow the installer. See [Windows installation and packaging](deployment/windows/README.md).
 
 BrickSuite macOS builds are currently **ad-hoc signed and are not Apple notarized**. The project does not currently use an Apple Developer ID certificate, so macOS may require additional confirmation before first launch. See the [macOS deployment notes](deployment/macos/README.md).
 
-On Ubuntu, extract the Linux archive and run `./install.sh` from its `BrickSuite` directory. The installer checks runtime prerequisites and asks for consent before installing missing Ubuntu packages. It installs to `/opt/BrickSuite`; launch from the application menu or run `bricksuite`. Automatic installation supports Ubuntu 22.04 or newer on x86_64, not arbitrary Linux distributions. Packages built locally on newer Ubuntu are development artifacts, not the Ubuntu 22.04 baseline release. See the [Linux installation instructions](deployment/linux/RUNTIME.md).
+On qualified Ubuntu or Linux Mint, extract the Linux archive and run `./install.sh` from its `BrickSuite` directory. The installer checks runtime prerequisites and asks for consent before installing missing prerequisite packages. It installs to `/opt/BrickSuite`; launch from the application menu or run `bricksuite`. Automatic installation is qualified for Ubuntu 22.04 or newer and Linux Mint 22.3 on x86_64. Pop!_OS 24.04, Zorin OS 18 and KDE neon/Noble are recognized Ubuntu derivatives, but are not qualified automatic installation targets. Packages built locally on newer Ubuntu are development artifacts, not the Ubuntu 22.04 baseline release. See the [Linux installation instructions](deployment/linux/RUNTIME.md).
 
 ## Quick Start
 

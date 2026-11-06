@@ -6,7 +6,7 @@ if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 
 project(BrickSuite
-    VERSION 0.4.0
+    VERSION 0.4.1
     LANGUAGES CXX
 )
 
@@ -2936,7 +2936,7 @@ set(APP_ORGANIZATION_NAME "RFStateSide")
 set(APP_DOMAIN            "rfstateside.com")
 set(APP_COPYRIGHT_YEAR    "2026")
 set(APP_RELEASE           "Release")
-set(APP_RELEASE_DATE      "2026-10-07")
+set(APP_RELEASE_DATE      "2026-11-06")
 set(APP_UPDATE_MANIFEST_URL "https://raw.githubusercontent.com/RayJr2/BrickSuite/master/deployment/update/update.json")
 
 # --------------------------------------------------------------------

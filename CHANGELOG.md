@@ -4,6 +4,21 @@ All notable changes to BrickSuite are documented in this file.
 
 BrickSuite follows semantic versioning for public releases.
 
+## [0.4.1] - 2026-11-06
+
+### Added and Improved
+
+- Support BrickSuite now opens the RF StateSide checkout, with automatic direct PayPal fallback when unavailable.
+- Qualified Linux Mint 22.3 / Ubuntu Noble installation, with safer dependency plans and explicit consent for prerequisite changes.
+- Recognizes Pop!_OS 24.04, Zorin OS 18 and KDE neon/Noble as Ubuntu derivatives without qualifying them for automatic installation.
+- Provenance-safe installer-only Linux candidate packaging reduces repeated work during maintenance qualification; public releases still use a normal single-source build.
+
+### Fixed
+
+- Linux Mint 22.3 is no longer rejected solely because its distribution ID is not `ubuntu`.
+- Qualified Mint/Noble installations use the correct `libglib2.0-0t64` prerequisite package.
+- Desktop/cache-helper failures warn without falsely failing an otherwise successful Linux install or uninstall.
+
 ## [0.4.0] - 2026-10-07
 
 ### Added and Improved
