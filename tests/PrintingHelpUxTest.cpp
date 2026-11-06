@@ -22,6 +22,9 @@
 #include "../src/ui/about/AboutDialog.h"
 #include "../src/ui/common/ThemeRichTextLabel.h"
 #include "../src/ui/common/SupportLinks.h"
+#include "SupportNetworkFixture.h"
+#include <QEventLoop>
+#include <QMessageBox>
 #include <QDesktopServices>
 #include <QAbstractTextDocumentLayout>
 #include <QUrl>
@@ -39,6 +42,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QEventLoop>
+#include <QMessageBox>
 #include <QTimer>
 #include <QLineEdit>
 #include <QProcess>
@@ -189,7 +193,7 @@ int main(int argc,char** argv){
     }
     LinkReceiver receiver;
     QDesktopServices::setUrlHandler("https",&receiver,"receive");
-    const QUrl supportUrl(QString::fromLatin1(AppConstants::SupportUrl));
+    const QUrl supportUrl(QString::fromLatin1(AppConstants::SupportPayPalFallbackUrl));
     ok&=check(supportUrl.isValid()&&supportUrl.scheme()=="https"&&supportUrl.host()=="www.paypal.com"
         &&supportUrl.path()=="/ncp/payment/WB8RKBVN6DTYW"&&supportUrl.port()==-1
         &&supportUrl.userInfo().isEmpty()&&!supportUrl.hasQuery()&&!supportUrl.hasFragment(),
@@ -200,7 +204,19 @@ int main(int argc,char** argv){
         "support action is attached to Help with the requested label");
     ok&=check(source("src/ui/MainWindow.cpp").contains("SupportLinks::addHelpAction(helpMenu, this);"),
         "main window installs the shared action in its Help menu");
+    SupportFixtureNetwork supportNetwork; supportNetwork.status=503;
+    SupportAvailabilityService supportSelector(nullptr,&supportNetwork);
+    SupportLinks::Coordinator supportCoordinator(nullptr,&supportSelector);
+    SupportLinks::setTestCoordinator(&supportCoordinator);
+    AboutDialog about;about.show();
+    auto* supportLabel=about.findChild<QLabel*>("supportBrickSuiteLink");
     supportAction->trigger();
+    if(supportLabel)QMetaObject::invokeMethod(supportLabel,"linkActivated",Qt::DirectConnection,
+        Q_ARG(QString,QString::fromLatin1(AppConstants::SupportCheckoutUrl)));
+    ok&=check(supportNetwork.calls==1,"Help and About coalesce while preflight is pending");
+    const auto waitSupport = [](int ms) { QEventLoop loop; QTimer::singleShot(ms,&loop,&QEventLoop::quit);loop.exec(); };
+    QEventLoop supportLoop;
+    QTimer::singleShot(30,&supportLoop,&QEventLoop::quit);supportLoop.exec();
     ok&=check(receiver.urls.count(supportUrl)==1,"Help action uses the centralized external desktop URL");
     bool failureShown=false;
     QTimer dismissFailure;dismissFailure.setInterval(5);
@@ -215,18 +231,23 @@ int main(int argc,char** argv){
         }
     });
     dismissFailure.start();
-    SupportLinks::openSupportPage(&menuOwner,[](const QUrl&){return false;});
+    SupportLinks::handoff(&menuOwner,supportUrl,[](const QUrl&){return false;});
     dismissFailure.stop();
     ok&=check(failureShown,"browser failure returns normally after a selectable-address warning");
-    AboutDialog about;about.show();
-    auto* supportLabel=about.findChild<QLabel*>("supportBrickSuiteLink");
     bool voluntaryText=false;for(auto* label:about.findChildren<QLabel*>())voluntaryText|=label->text().contains("Voluntary contributions");
     ok&=check(supportLabel&&voluntaryText
-        &&supportLabel->text().contains(supportUrl.toString())
-        &&supportLabel->accessibleName()=="Support BrickSuite with PayPal"
+        &&supportLabel->text().contains(QString::fromLatin1(AppConstants::SupportCheckoutUrl))
+        &&supportLabel->accessibleName()=="Support BrickSuite"
         &&supportLabel->focusPolicy()==Qt::StrongFocus
         &&supportLabel->textInteractionFlags().testFlag(Qt::LinksAccessibleByKeyboard)
         &&!supportLabel->openExternalLinks(),"About support uses shared handling and accessible keyboard link text");
+    if(supportLabel){
+        QMetaObject::invokeMethod(supportLabel,"linkActivated",Qt::DirectConnection,
+            Q_ARG(QString,QString::fromLatin1(AppConstants::SupportCheckoutUrl)));
+        waitSupport(30);
+        ok&=check(supportNetwork.calls==1&&receiver.urls.count(supportUrl)==1,
+            "Help and About share the same post-handoff guard");
+    }
     ThemeRichTextLabel provider("-");
     provider.setText("<a href=\"https://brickset.com/sets/test\">Open on Brickset</a>");
     const auto labelContrast=[&](QLabel* label){
@@ -274,7 +295,9 @@ int main(int argc,char** argv){
             anchor+=label->contentsRect().topLeft()+QPoint(0,int((label->contentsRect().height()-layout.size().height())/2));
             QMouseEvent press(QEvent::MouseButtonPress,anchor,label->mapToGlobal(anchor),Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
             QMouseEvent release(QEvent::MouseButtonRelease,anchor,label->mapToGlobal(anchor),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
+            if(label==supportLabel)waitSupport(1020);
             QApplication::sendEvent(label,&press);QApplication::sendEvent(label,&release);
+            if(label==supportLabel)waitSupport(30);
         }
         ok&=check(aboutLinks==3,"About retains original links and adds the support link");
         QPushButton disabled("Unavailable");disabled.setEnabled(false);disabled.ensurePolished();
@@ -301,7 +324,9 @@ int main(int argc,char** argv){
         QKeyEvent selectLink(QEvent::KeyPress,Qt::Key_Tab,Qt::NoModifier);
         QApplication::sendEvent(supportLabel,&selectLink);
         QKeyEvent activate(QEvent::KeyPress,Qt::Key_Return,Qt::NoModifier);
+        waitSupport(1020);
         QApplication::sendEvent(supportLabel,&activate);
+        waitSupport(30);
         ok&=check(receiver.urls.count(supportUrl)==5,"About support link activates from the keyboard");
     }
     QDesktopServices::unsetUrlHandler("https");about.hide();
@@ -415,7 +440,9 @@ int main(int argc,char** argv){
     }
     help.showTopic(HelpTopic::Home);
     ok &= check(!browser->toPlainText().contains("v0.3.0")
-        && browser->toPlainText().contains("Support BrickSuite"),
+        && browser->toPlainText().contains("Support BrickSuite")
+        && browser->toPlainText().contains("RF StateSide checkout is preferred")
+        && browser->toPlainText().contains("does not process payments"),
         "Help Home describes the current application and optional support");
     help.showTopic(HelpTopic::PrintTroubleshooting);
     ok &= check(browser->toPlainText().contains("Part Reference audit mode")

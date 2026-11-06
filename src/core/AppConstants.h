@@ -24,7 +24,9 @@
 
 namespace AppConstants {
 
-inline constexpr char SupportUrl[] = "https://www.paypal.com/ncp/payment/WB8RKBVN6DTYW";
+inline constexpr char SupportCheckoutUrl[] = "https://rfstateside.com/support/checkout/bricksuite";
+inline constexpr char SupportAvailabilityUrl[] = "https://rfstateside.com/support/checkout/bricksuite/availability";
+inline constexpr char SupportPayPalFallbackUrl[] = "https://www.paypal.com/ncp/payment/WB8RKBVN6DTYW";
 
 inline QString name()
 {

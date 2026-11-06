@@ -185,10 +185,10 @@ AboutDialog::AboutDialog(QWidget* parent)
         "BrickSuite is free and open-source software. Voluntary contributions help "
         "with development, testing, documentation, and maintenance."), this));
     auto* support = createWrappedLabel(tr(
-        "<a href=\"%1\">Support BrickSuite with PayPal</a>")
-        .arg(QString::fromLatin1(AppConstants::SupportUrl)), this);
+        "<a href=\"%1\">Support BrickSuite</a>")
+        .arg(QString::fromLatin1(AppConstants::SupportCheckoutUrl)), this);
     support->setObjectName(QStringLiteral("supportBrickSuiteLink"));
-    support->setAccessibleName(tr("Support BrickSuite with PayPal"));
+    support->setAccessibleName(tr("Support BrickSuite"));
     support->setFocusPolicy(Qt::StrongFocus);
     support->setOpenExternalLinks(false);
     connect(support, &QLabel::linkActivated, this,

@@ -251,6 +251,8 @@ qt_add_executable(BrickSuite
     src/services/database/AutomaticBackupRetention.cpp
     src/services/Logger.h
     src/services/Updater.h
+    src/services/SupportAvailabilityService.cpp src/services/SupportAvailabilityService.h
+    src/ui/common/SupportLinks.cpp src/ui/common/SupportLinks.h
     src/services/Updater.cpp
     src/services/Logger.cpp
     src/services/CredentialStore.h
@@ -722,6 +724,14 @@ endif()
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(SupportCheckoutTest EXCLUDE_FROM_ALL tests/SupportCheckoutTest.cpp
+        src/services/SupportAvailabilityService.cpp src/services/SupportAvailabilityService.h
+        src/ui/common/SupportLinks.cpp src/ui/common/SupportLinks.h)
+    target_link_libraries(SupportCheckoutTest PRIVATE Qt6::Widgets Qt6::Network)
+    target_compile_definitions(SupportCheckoutTest PRIVATE BRICKSUITE_SUPPORT_TESTING
+        "$<FILTER:$<TARGET_PROPERTY:BrickSuite,COMPILE_DEFINITIONS>,INCLUDE,^(APP_|BRICKSUITE_VERSION=)>")
+    add_test(NAME SupportCheckout COMMAND SupportCheckoutTest -platform offscreen)
+    set_tests_properties(SupportCheckout PROPERTIES TIMEOUT 30)
     qt_add_executable(UpdaterTest EXCLUDE_FROM_ALL tests/UpdaterTest.cpp
         src/services/Updater.cpp src/services/Updater.h)
     target_link_libraries(UpdaterTest PRIVATE Qt6::Core Qt6::Network)
@@ -1012,11 +1022,14 @@ if(BUILD_TESTING)
     set_tests_properties(CatalogSetPartOut PROPERTIES TIMEOUT 90)
 
     qt_add_executable(PrintingHelpUxTest EXCLUDE_FROM_ALL
+        src/services/SupportAvailabilityService.cpp src/services/SupportAvailabilityService.h
+        src/ui/common/SupportLinks.cpp src/ui/common/SupportLinks.h
         tests/PrintingHelpUxTest.cpp
         src/ui/about/AboutDialog.cpp src/ui/about/AboutDialog.h
         src/ui/help/HelpManager.cpp src/ui/help/HelpDialog.cpp resources/help/help.qrc
         src/settings/UserSettings.cpp src/settings/ThemeManager.cpp src/services/CredentialStore.cpp)
-    target_link_libraries(PrintingHelpUxTest PRIVATE Qt6::Widgets)
+    target_link_libraries(PrintingHelpUxTest PRIVATE Qt6::Widgets Qt6::Network)
+    target_compile_definitions(PrintingHelpUxTest PRIVATE BRICKSUITE_SUPPORT_TESTING)
     # About needs application metadata, not the GUI executable's Qt entry-point defines.
     target_compile_definitions(PrintingHelpUxTest PRIVATE
         "$<FILTER:$<TARGET_PROPERTY:BrickSuite,COMPILE_DEFINITIONS>,INCLUDE,^(APP_|BRICKSUITE_VERSION=)>")

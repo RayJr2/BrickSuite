@@ -113,11 +113,11 @@ ZLIB and OpenSSL development files must be discoverable by CMake. Qt Creator can
 
 ## Support BrickSuite
 
-BrickSuite is free and open-source software. If you find it useful and would like to support continued development, testing, documentation, and maintenance, you can make a voluntary contribution through PayPal.
+BrickSuite is free and open-source software. If you find it useful and would like to support continued development, testing, documentation, and maintenance, you can make a voluntary contribution through the Support checkout.
 
-Support is completely optional and does not unlock additional features or services. Payments are handled by PayPal, not by BrickSuite.
+Support is completely optional and does not unlock additional features or services. Checkout opens in your browser; BrickSuite does not process payments or collect supporter information. In the application, RF StateSide checkout is preferred, with direct PayPal as a fallback if it is unavailable.
 
-[Support BrickSuite with PayPal](https://www.paypal.com/ncp/payment/WB8RKBVN6DTYW)
+[Support BrickSuite](https://rfstateside.com/support/checkout/bricksuite)
 
 ## Help, Contributions, and License
 

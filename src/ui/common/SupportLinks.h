@@ -21,40 +21,42 @@
 #pragma once
 
 #include "../../core/AppConstants.h"
+#include "../../services/SupportAvailabilityService.h"
 #include <QAction>
 #include <QDesktopServices>
+#include <QElapsedTimer>
 #include <QMenu>
-#include <QMessageBox>
-#include <QUrl>
+#include <QPointer>
+#include <functional>
 
 namespace SupportLinks {
+using UrlOpener = std::function<bool(const QUrl&)>;
+void handoff(QWidget* parent, const QUrl& url, UrlOpener opener = &QDesktopServices::openUrl);
 
-using UrlOpener = bool (*)(const QUrl&);
-
-inline void openSupportPage(QWidget* parent,
-                            UrlOpener opener = &QDesktopServices::openUrl)
+class Coordinator final : public QObject
 {
-    // No caller-supplied address, user data, or tracking parameters.
-    const QUrl url(QString::fromLatin1(AppConstants::SupportUrl));
-    if (opener(url))
-        return;
-
-    QMessageBox warning(QMessageBox::Warning, QObject::tr("Support BrickSuite"),
-        QObject::tr("BrickSuite could not open the PayPal support page in your web browser.\n\n"
-                    "You can open this address manually:\n\n%1").arg(url.toString()),
-        QMessageBox::Ok, parent);
-    warning.setTextFormat(Qt::PlainText);
-    warning.setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
-    warning.exec();
-}
-
-inline QAction* addHelpAction(QMenu* helpMenu, QWidget* parent)
-{
-    auto* action = helpMenu->addAction(QObject::tr("Support BrickSuite…"));
-    action->setObjectName(QStringLiteral("supportBrickSuiteAction"));
-    action->setStatusTip(QObject::tr("Open the voluntary PayPal support page in your web browser."));
-    QObject::connect(action, &QAction::triggered, parent, [parent] { openSupportPage(parent); });
-    return action;
-}
-
+public:
+    explicit Coordinator(QObject* parent = nullptr, SupportAvailabilityService* selector = nullptr);
+    ~Coordinator() override;
+    void start(QWidget* owner, UrlOpener opener = &QDesktopServices::openUrl);
+    void cancel();
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+private:
+    void selected(const QUrl& url);
+    SupportAvailabilityService* m_selector;
+    QPointer<QWidget> m_owner;
+    QMetaObject::Connection m_destroyed;
+    QElapsedTimer m_guard;
+    UrlOpener m_opener;
+    bool m_active = false;
+    bool m_handingOff = false;
+    bool m_quitting = false;
+};
+Coordinator* coordinator();
+#ifdef BRICKSUITE_SUPPORT_TESTING
+void setTestCoordinator(Coordinator* coordinator);
+#endif
+void openSupportPage(QWidget* parent, UrlOpener opener = &QDesktopServices::openUrl);
+QAction* addHelpAction(QMenu* helpMenu, QWidget* parent);
 } // namespace SupportLinks

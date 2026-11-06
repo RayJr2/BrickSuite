@@ -38,7 +38,11 @@ int main(int argc, char** argv)
     check(AppConstants::updateManifestUrl() == QStringLiteral(
         "https://raw.githubusercontent.com/RayJr2/BrickSuite/master/deployment/update/update.json"),
         "released Windows update endpoint preserved");
-    check(QString::fromLatin1(AppConstants::SupportUrl) == QStringLiteral(
+    check(QString::fromLatin1(AppConstants::SupportPayPalFallbackUrl) == QStringLiteral(
         "https://www.paypal.com/ncp/payment/WB8RKBVN6DTYW"), "central support address unchanged");
+    check(QString::fromLatin1(AppConstants::SupportCheckoutUrl) == QStringLiteral(
+        "https://rfstateside.com/support/checkout/bricksuite"), "central RFSS checkout");
+    check(QString::fromLatin1(AppConstants::SupportAvailabilityUrl) == QStringLiteral(
+        "https://rfstateside.com/support/checkout/bricksuite/availability"), "central availability endpoint");
     return ok ? 0 : 1;
 }
